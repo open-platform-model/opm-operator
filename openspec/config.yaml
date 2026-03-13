@@ -1,20 +1,125 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  # OPM Controller Development Constitution
+  
+  ## Core Principles (Kubernetes Controller)
+  
+  ### I. Flux for Transport, OPM for Semantics
+  The controller MUST rely on Flux `source-controller` (via `OCIRepository`) for source acquisition, authentication, and provenance tracking. It MUST NOT build a custom artifact polling loop. However, OPM retains full responsibility for validating and evaluating CUE module semantics.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  ### II. Separation of Concerns
+  The controller MUST maintain clear internal boundaries:
+  - `controllers/`: Reconcile orchestration and event handling.
+  - `internal/source/`: Flux artifact fetching and CUE layout validation.
+  - `internal/render/`: CUE evaluation and object generation (via shared CLI packages).
+  - `internal/apply/`: Server-side apply and prune execution.
+  - `internal/inventory/`: Resource ownership calculations.
+
+  ### III. Authoritative Inventory
+  Resource ownership MUST be tracked explicitly via `status.inventory`.
+  - Pruning decisions rely on inventory, not labels.
+  - Labels (`app.kubernetes.io/managed-by`) are supportive hints for humans.
+  - Apply must succeed before prune executes.
+
+  ### IV. Status as the Operational Ledger
+  The CRD `status` is the single source of truth for reconcile history.
+  - Reconcile outcomes, source digests, config digests, and render digests live in `status`.
+  - History is bounded and compact.
+
+  ### V. Declarative Intent via SSA
+  Mutations MUST use Server-Side Apply (SSA).
+  - The controller declares desired state; the API server resolves conflicts.
+  - Transient API errors should requeue; permanent errors (invalid config) should stall.
+
+  ### VI. Semantic Versioning & Commits
+  Controller releases MUST follow SemVer 2.0.0.
+  All commits MUST follow Conventional Commits v1: type(scope): description
+  - Types: feat, fix, refactor, docs, test, chore
+  - Scope: api, controller, source, render, apply, inventory, etc.
+
+  ### VII. Simplicity & YAGNI
+  Start simple. Complexity MUST be justified.
+  - e.g., Defer complex rollback logic or cross-release dependency graphs (`dependsOn`) until v1alpha1 basic execution is proven.
+
+  ### VIII. Small Batch Sizes (Iterative & Incremental Delivery)
+  All changes MUST be kept TINY. Small, incremental, independently verifiable steps are required.
+  - **WARNING & BLOCK**: If a user requests a change that is too large (e.g., implementing an entire controller, refactoring multiple packages at once, or designing + implementing + testing a major feature in one go), the Agent MUST warn the user, block the execution, and suggest a way to split the request into smaller, sequential tasks.
+  - **Commit Quality**: Tiny changes lead to focused, atomic commits. A single commit should ideally touch one specific concern (e.g., scaffolding an API, adding one reconcile phase, or writing tests for one package).
+
+  ## Execution Gate (Agent Directive)
+  Before beginning ANY implementation, the Agent MUST evaluate the scope of the request against the "Small Batch Sizes" principle.
+  If the request is too large, the Agent MUST reply with:
+  "🛑 **Scope Warning**: This request is too large for a single safe iteration. I suggest we split it into the following smaller steps: [list 2-3 logical, tiny steps]. Should we start with step 1?"
+
+  ## Technology Standards
+  
+  See [AGENTS.md](../AGENTS.md) for full details.
+  - Framework: `controller-runtime` + `kubebuilder`
+  - GitOps Toolkit: `github.com/fluxcd/pkg` for conditions, patching, ssa, fetch.
+
+  ## Code Style
+  
+  ### Go Patterns
+  - Accept interfaces, return structs.
+  - Context propagation for all async operations.
+  - Wrap errors with context: `fmt.Errorf("fetching artifact: %w", err)`.
+  - Prefer concrete types over `map[string]any`.
+  - Do not hand-edit generated files (`zz_generated.deepcopy.go`, `config/crd/bases/`).
+  
+  ### Logging
+  - Use structured logging via controller-runtime `logf`.
+  - Capitalize messages, no trailing periods.
+
+  ### Import Order
+  1. Standard library
+  2. External packages (including Flux)
+  3. Internal packages
+  
+  ## Validation Gates (before merge)
+  1. `make manifests generate` — CRDs and DeepCopy code are up-to-date.
+  2. `make fmt vet` — Code is formatted and passes go vet.
+  3. `make lint` — golangci-lint passes.
+  4. `make test` — Envtest-based unit/controller tests pass.
+
+rules:
+  proposal:
+    - "Focus: WHY we're doing this, WHAT's in/out of scope"
+    - "Updates when: Scope changes, intent clarifies, approach fundamentally shifts"
+    - Identify affected API types and controllers.
+    - State whether this is MAJOR/MINOR/PATCH per SemVer.
+    - Complexity additions MUST include justification (Principle VII).
+    - Scope MUST be small enough to implement in a short session (Principle VIII).
+  
+  design:
+    - "Focus: HOW we'll implement it technically"
+    - "Updates when: Implementation reveals better approach, constraints change"
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY).
+    - MUST include "Research & Decisions" section when exploration was done.
+    - Format: |
+        ## Research & Decisions
+        
+        ### [Topic]
+        **Context**: [Why this decision was needed]
+        **Explored**: [What was investigated - link to exploration notes]
+        **Decision**: [Chosen option]
+        **Rationale**: [Why this option was selected]
+    - Include Go pseudo-code or Kubernetes manifest examples.
+    - Detail Reconcile phase impact (Source, Render, Apply, Prune, Status).
+  
+  specs:
+    - "Focus: WHAT behavior is changing (not HOW it's implemented)"
+    - "Updates when: New or changed requirements emerge"
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY).
+    - Describe observable behavior (CRD status changes, created resources, logs).
+    - Use ADDED/MODIFIED/REMOVED sections to show deltas.
+    - Include scenarios demonstrating controller behavior (e.g., Transient Error vs Stalled).
+  
+  tasks:
+    - "Focus: STEPS to take for implementation"
+    - "Updates when: Tasks complete, new tasks discovered, blockers identified"
+    - "CRITICAL: Break tasks into TINY chunks (max 1-2 hours)."
+    - "CRITICAL: If the task list grows too long (>10 items) or spans multiple distinct features, suggest splitting into a new OpenSpec change."
+    - Group tasks by component (API, Internal Packages, Controller).
+    - Ensure `make manifests generate` is run after API changes.
+    - Include validation gates as final tasks (`make fmt vet lint test`).

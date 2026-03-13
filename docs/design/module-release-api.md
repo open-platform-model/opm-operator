@@ -32,6 +32,10 @@ This document proposes the first `ModuleRelease` API for the POC controller and 
 - Final `BundleRelease` orchestration semantics.
 - Cross-release dependency resolution.
 - Persisting full rendered manifests.
+- Rich drift reporting or remediation UX.
+- Complex values composition from multiple external sources.
+
+This document follows the narrower experiment boundary defined in `experimental-scope-and-non-goals.md`.
 
 ## Design Principles
 
@@ -86,9 +90,13 @@ The controller should use `OCIRepository.status.artifact` as the resolved source
 The artifact requirements for the POC are:
 
 - the artifact is fetched by Flux
+- the referenced `OCIRepository` must preserve the native CUE `application/zip` layer
+- for the current experiment that means `spec.layerSelector.mediaType=application/zip` and `spec.layerSelector.operation=copy`
 - the artifact contains a CUE module
 - the artifact contains the module content OPM needs to evaluate
 - the controller validates the expected layout after extraction, including `cue.mod`
+
+If the referenced `OCIRepository` does not satisfy that contract, the controller should fail clearly rather than attempting to infer alternate source behavior.
 
 ## Proposed ModuleRelease API
 
@@ -99,10 +107,10 @@ Recommended initial `spec` fields:
 - `suspend`: stops reconciliation when true
 - `sourceRef`: Flux-managed source reference
 - `module.path`: module path to evaluate from the source artifact
-- `values`: user-supplied configuration values for evaluation
+- `values`: inline user-supplied configuration values for evaluation
 - `prune`: enables deletion of previously owned stale resources
 - `serviceAccountName`: service account used for apply operations
-- `rollout`: optional apply behavior knobs
+- `rollout`: optional low-level apply behavior knobs only
 
 Example:
 
@@ -132,19 +140,11 @@ spec:
     ingress:
       enabled: true
       host: jellyfin.example.com
-    persistence:
-      enabled: true
-      size: 50Gi
-    resources:
-      limits:
-        cpu: "2"
-        memory: 4Gi
 
   prune: true
   serviceAccountName: opm-controller
 
   rollout:
-    strategy: Apply
     forceConflicts: true
 ```
 
@@ -160,6 +160,8 @@ Recommended initial `status` areas:
 - `failureCounters`
 - `inventory`
 - `history`
+
+For the experiment, status should stay focused on source, digests, ownership, and recent operational results. It should not become a rich health or drift reporting surface.
 
 Full example:
 
@@ -186,12 +188,6 @@ status:
       message: Source artifact fetched successfully
       observedGeneration: 4
       lastTransitionTime: "2026-03-11T15:01:50Z"
-    - type: Drifted
-      status: "False"
-      reason: NoDrift
-      message: Live state matches rendered desired state
-      observedGeneration: 4
-      lastTransitionTime: "2026-03-11T15:02:10Z"
 
   source:
     ref:
@@ -219,7 +215,6 @@ status:
     reconcile: 0
     apply: 0
     prune: 0
-    drift: 0
 
   inventory:
     revision: 9
@@ -351,14 +346,15 @@ Recommended flow for the controller:
 
 1. Watch `ModuleRelease` and the referenced `OCIRepository`.
 2. Resolve the current source artifact from Flux status.
-3. Fetch and extract the artifact.
-4. Validate that the artifact contains a CUE module.
-5. Evaluate the desired module using `spec.module.path` and `spec.values`.
-6. Compute source, config, render, and inventory digests.
-7. Compare current desired inventory against previously recorded ownership inventory.
-8. Apply desired resources with server-side apply.
-9. Prune stale previously owned resources when `spec.prune` is true.
-10. Update status, inventory, history, and conditions.
+3. Validate that the source preserves the native CUE zip payload expected by OPM.
+4. Fetch and recover the artifact payload.
+5. Validate that the recovered content contains a CUE module.
+6. Evaluate the desired module using `spec.module.path` and `spec.values`.
+7. Compute source, config, render, and inventory digests.
+8. Compare current desired inventory against previously recorded ownership inventory.
+9. Apply desired resources with server-side apply.
+10. Prune stale previously owned resources when `spec.prune` is true.
+11. Update status, inventory, history, and conditions.
 
 ## CLI Interop
 
@@ -383,4 +379,4 @@ Those should come from top-level controller status fields.
 - Should `spec.module.path` remain required if the OCI artifact root is already the only module?
 - Should `component` remain part of ownership identity long-term, or eventually become informational only?
 - How much bounded `status.history` should the POC retain?
-- Should drift correction be POC scope, or only drift detection?
+- Should `failureCounters` remain in the first experimental API, or is bounded history enough?

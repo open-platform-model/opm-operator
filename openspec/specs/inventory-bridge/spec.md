@@ -48,7 +48,7 @@ The `internal/inventory` package MUST expose a `NewEntryFromResource` function t
 The controller MUST define a `LabelComponentName` constant with value `component.opmodel.dev/name`, used by `NewEntryFromResource` to extract the component name from resource labels.
 
 ### Requirement: CLI packages copied to `pkg/`
-The controller MUST contain locally copied CLI packages under `pkg/` with all internal import paths rewritten from `github.com/opmodel/cli/pkg/` to `github.com/open-platform-model/poc-controller/pkg/`. The following packages MUST be present: `core`, `errors`, `validate`, `provider`, `module`, `bundle`, `loader`, `render`, `resourceorder`.
+The controller MUST contain locally copied CLI packages under `pkg/` with all internal import paths rewritten from `github.com/opmodel/cli/pkg/` to `github.com/open-platform-model/poc-controller/pkg/`. The following packages MUST be present: `core`, `errors`, `validate`, `provider`, `module`, `loader`, `render`, `resourceorder`. (`bundle` was excluded — not yet implemented in OPM.)
 
 #### Scenario: Copied packages compile
 - **WHEN** `go build ./pkg/...` is run
@@ -58,20 +58,12 @@ The controller MUST contain locally copied CLI packages under `pkg/` with all in
 - **WHEN** `go.mod` is inspected
 - **THEN** there is no `require` entry for `github.com/opmodel/cli`
 
-### Requirement: Process files relocated to domain packages
-During the CLI package copy, `process_modulerelease.go` MUST be relocated from `pkg/render/` to `pkg/module/process.go` with the function renamed from `ProcessModuleRelease` to `Process`. Similarly, `process_bundlerelease.go` MUST be relocated from `pkg/render/` to `pkg/bundle/process.go` with the function renamed from `ProcessBundleRelease` to `Process`.
+### Requirement: Process file remains in pkg/render (revised)
+The `process_modulerelease.go` file MUST remain in `pkg/render/` with its original function name (`ProcessModuleRelease`). Relocation to `pkg/module` was infeasible due to import cycles (`render → module` already exists; adding `module → render` creates a cycle). Bundle processing was excluded — not yet implemented in OPM.
 
-#### Scenario: Module processing in domain package
-- **WHEN** `pkg/module` is inspected
-- **THEN** it contains a `Process` function (formerly `ProcessModuleRelease`) in `process.go`
-
-#### Scenario: Bundle processing in domain package
-- **WHEN** `pkg/bundle` is inspected
-- **THEN** it contains a `Process` function (formerly `ProcessBundleRelease`) in `process.go`
-
-#### Scenario: No process files in pkg/render
+#### Scenario: ProcessModuleRelease available in render package
 - **WHEN** `pkg/render/` is inspected
-- **THEN** it does NOT contain `process_modulerelease.go` or `process_bundlerelease.go`
+- **THEN** it contains `ProcessModuleRelease` in `process_modulerelease.go`
 
 ## CHANGED Requirements
 

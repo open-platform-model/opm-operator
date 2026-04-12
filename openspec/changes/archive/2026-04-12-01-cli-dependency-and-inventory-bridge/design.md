@@ -38,7 +38,7 @@ The existing `type Current = releasesv1alpha1.Inventory` alias stays — it's us
 
 ### 4. Label constant placement
 
-The `LabelComponentName` constant (`component.opmodel.dev/name`) is defined in `internal/inventory/` since it's only used by `NewEntryFromResource`. If other packages need it later, it can be moved to a shared location.
+The `LabelComponentName` constant (`component.opmodel.dev/name`) is defined in `pkg/core/labels.go` as the single source of truth for OPM label constants. `internal/inventory/entry.go` imports it from `pkg/core` rather than duplicating it locally.
 
 ### 5. Copy all relevant CLI packages to `pkg/`
 
@@ -53,23 +53,17 @@ Packages copied (with transitive dependencies):
 | `pkg/validate` | CUE config validation | `pkg/errors` |
 | `pkg/provider` | `Provider` type | (none) |
 | `pkg/module` | `Module`, `Release`, `ParseModuleRelease` | `pkg/validate` |
-| `pkg/bundle` | `Bundle`, `Release` types | `pkg/module` |
 | `pkg/loader` | `LoadModulePackage`, `LoadProvider` | `pkg/provider` |
-| `pkg/render` | `ModuleResult`, match/execute/finalize pipeline | `pkg/core`, `pkg/errors`, `pkg/module`, `pkg/provider`, `pkg/bundle`, `pkg/validate` |
+| `pkg/render` | `ModuleResult`, match/execute/finalize pipeline | `pkg/core`, `pkg/errors`, `pkg/module`, `pkg/provider`, `pkg/validate` |
 | `pkg/resourceorder` | `GetWeight` for apply staging | (none) |
 
-### 6. Relocate process files to their domain packages
+`pkg/bundle` was excluded — bundle support is not yet implemented in OPM.
 
-During the copy, `process_modulerelease.go` and `process_bundlerelease.go` are moved out of `pkg/render/` into their respective domain packages and renamed:
+### 6. ProcessModuleRelease remains in `pkg/render/` (revised)
 
-| CLI source | Controller destination | Method rename |
-|---|---|---|
-| `pkg/render/process_modulerelease.go` | `pkg/module/process.go` | `ProcessModuleRelease` → `Process` |
-| `pkg/render/process_bundlerelease.go` | `pkg/bundle/process.go` | `ProcessBundleRelease` → `Process` |
+The original plan was to relocate `process_modulerelease.go` to `pkg/module/process.go`. This was **not feasible** due to an import cycle: `pkg/render` already imports `pkg/module` (for `module.Release` in `Execute()`). Moving the process file into `pkg/module` would create a `module → render → module` cycle.
 
-The processing logic for a module release belongs in `pkg/module`, and bundle processing belongs in `pkg/bundle`. This keeps each package focused on its own domain rather than stuffing all processing into `pkg/render/`. The relocated functions import `pkg/render` for shared pipeline types (e.g., `ModuleResult`, `BundleResult`, match/execute helpers) — this direction is clean since module/bundle depend on render, not the reverse.
-
-Callers reference `module.Process(...)` and `bundle.Process(...)` instead of `render.ProcessModuleRelease(...)` / `render.ProcessBundleRelease(...)`.
+`ProcessModuleRelease` stays in `pkg/render/` with its original name. `finalizeValue` was exported as `FinalizeValue` for use by this orchestrator function and any future external callers. Bundle processing was excluded — not yet implemented in OPM.
 
 All internal `github.com/opmodel/cli/pkg/` imports are rewritten to `github.com/open-platform-model/poc-controller/pkg/`. This adds `cuelang.org/go` as a transitive dependency (required by CUE packages), but avoids coupling to the CLI module itself.
 

@@ -23,6 +23,8 @@ BRANCH_PREFIX="impl"
 REMOTE="origin"
 OWNER_REPO="open-platform-model/poc-controller"
 MAX_CONCURRENT="${MAX_CONCURRENT:-6}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-opus}"
+CLAUDE_FLAGS="${CLAUDE_FLAGS:---dangerously-skip-permissions --output-format stream-json}"
 
 # ---------------------------------------------------------------------------
 # Dependency graph
@@ -230,7 +232,7 @@ launch_agent() {
 
   branch=$(branch_name "$change")
   wt_dir=$(worktree_dir "$change")
-  log_file="${LOG_DIR}/${change}.log"
+  log_file="${LOG_DIR}/${change}.jsonl"
 
   # Create worktree if it doesn't exist.
   if [[ ! -d "$wt_dir" ]]; then
@@ -249,9 +251,14 @@ launch_agent() {
 
   # Launch claude in the worktree, log output.
   # Subshell propagates claude's exit code so `wait` captures it.
+  # shellcheck disable=SC2086
   (
     cd "$wt_dir"
-    claude -p "$(cat "$prompt_file")" > "$log_file" 2>&1
+    claude -p "$(cat "$prompt_file")" \
+      --model "$CLAUDE_MODEL" \
+      --name "impl-${change}" \
+      $CLAUDE_FLAGS \
+      > "$log_file" 2>&1
     exit_code=$?
     if [[ "$exit_code" -eq 0 ]]; then
       echo "EXIT_SUCCESS" >> "$log_file"
@@ -277,7 +284,7 @@ wait_for_batch() {
 
   for pid in "${_pids[@]}"; do
     local change="${_changes[$i]}"
-    local log_file="${LOG_DIR}/${change}.log"
+    local log_file="${LOG_DIR}/${change}.jsonl"
 
     if wait "$pid" 2>/dev/null; then
       set_state "$change" "completed"
@@ -341,11 +348,14 @@ Commands:
   reset <change>    Reset a change to pending (re-run it)
   reset-failed      Reset all failed changes to pending
   retry             Reset failed changes and run
-  logs <change>     Tail the log for a change
+  logs <change>     Pretty-print the session log for a change
+  logs-raw <change> View raw JSONL session log
+  open <change>     Open a change's worktree in a new VS Code window
   clean             Remove all worktrees and state
   graph             Print the dependency graph
 
 Options:
+  CLAUDE_MODEL=X    Model to use (default: sonnet)
   MAX_CONCURRENT=N  Max parallel agents (default: 6)
 
 Examples:
@@ -382,11 +392,30 @@ cmd_reset_failed() {
 
 cmd_logs() {
   local change="$1"
-  local log_file="${LOG_DIR}/${change}.log"
+  local log_file="${LOG_DIR}/${change}.jsonl"
   if [[ ! -f "$log_file" ]]; then
     die "No log file for ${change}"
   fi
-  less +G "$log_file"
+  # Pretty-print: extract assistant messages and tool calls as readable text.
+  jq -r '
+    if .type == "assistant" and .message.content then
+      (.message.content[] |
+        if .type == "text" then ">>> " + .text
+        elif .type == "tool_use" then "--- tool: " + .name + " ---"
+        else empty end)
+    elif .type == "result" then
+      "\n=== RESULT (cost: $" + (.total_cost_usd // 0 | tostring) + ") ==="
+    else empty end
+  ' "$log_file" 2>/dev/null | less +G
+}
+
+cmd_logs_raw() {
+  local change="$1"
+  local log_file="${LOG_DIR}/${change}.jsonl"
+  if [[ ! -f "$log_file" ]]; then
+    die "No log file for ${change}"
+  fi
+  jq '.' "$log_file" | less +G
 }
 
 cmd_graph() {
@@ -402,6 +431,23 @@ cmd_graph() {
     fi
   done
   echo ""
+}
+
+cmd_open() {
+  local change="$1"
+  if [[ -z "${DEPS[$change]+x}" ]]; then
+    die "Unknown change: ${change}"
+  fi
+
+  local wt_dir
+  wt_dir=$(worktree_dir "$change")
+
+  if [[ ! -d "$wt_dir" ]]; then
+    die "Worktree not found: ${wt_dir} (has the change been launched?)"
+  fi
+
+  log_info "Opening ${wt_dir} in VS Code"
+  code --new-window "$wt_dir"
 }
 
 cmd_clean() {
@@ -560,6 +606,14 @@ case "$1" in
   logs)
     [[ $# -lt 2 ]] && die "Usage: $(basename "$0") logs <change-name>"
     cmd_logs "$2"
+    ;;
+  logs-raw)
+    [[ $# -lt 2 ]] && die "Usage: $(basename "$0") logs-raw <change-name>"
+    cmd_logs_raw "$2"
+    ;;
+  open)
+    [[ $# -lt 2 ]] && die "Usage: $(basename "$0") open <change-name>"
+    cmd_open "$2"
     ;;
   graph)        cmd_graph ;;
   clean)        cmd_clean ;;

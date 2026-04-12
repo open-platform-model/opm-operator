@@ -21,18 +21,23 @@
 
 ## Repository Layout
 
-- `adr/` - Architecture Decision Records
-- `cmd/main.go`: manager entrypoint, controller registration.
-- `api/v1alpha1/*.go`: API schemas, validation markers, shared CRD types.
-- `api/v1alpha1/zz_generated.deepcopy.go`: generated DeepCopy; no hand-edit.
-- `internal/controller/*.go`: reconcilers, envtest-backed controller tests.
-- `internal/{apply,inventory,reconcile,render,source,status}`: domain packages for controllers.
-- `config/crd/bases/*.yaml`: generated CRDs; regenerate, no hand-edit.
-- `config/rbac/role.yaml`: generated RBAC; regenerate, no hand-edit.
-- `config/samples/*.yaml`: sample manifests; update when schema changes.
-- `test/e2e/*.go`: Kind-backed e2e tests, `e2e` build tag.
-- `Makefile`: source of truth for generation/build/lint/test/deploy.
-- `Taskfile.yml`: convenience wrappers delegating to `make`.
+```
+.
+├── adr/            # Architecture Decision Records
+├── api/            # CRD schemas (`v1alpha1/`), validation markers, generated DeepCopy (no hand-edit)
+├── cmd/            # manager entrypoint (`main.go`), controller registration
+├── config/         # Kustomize overlays: generated CRDs + RBAC (no hand-edit), samples, manager, network-policy, prometheus
+├── docs/           # design documents
+├── enhancements/   # enhancement proposals
+├── experiments/    # exploratory prototypes
+├── hack/           # helper scripts
+├── internal/       # domain packages: apply, controller, inventory, reconcile, render, source, status
+├── openspec/       # OpenSpec config + change specs
+├── scripts/        # build/dev helper scripts
+├── test/           # Kind-backed e2e tests (`e2e` build tag) + test utilities
+├── Makefile        # source of truth for generation/build/lint/test/deploy
+└── Taskfile.yml    # convenience wrappers delegating to `make`
+```
 
 ## Architecture Decision Records
 

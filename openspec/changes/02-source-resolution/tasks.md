@@ -6,12 +6,22 @@
 ## 2. Source resolution
 
 - [ ] 2.1 Implement `Resolve(ctx, client, sourceRef, namespace) (*ArtifactRef, error)` in `internal/source/resolve.go`
-- [ ] 2.2 Write unit tests for Resolve: source found and ready, source not found, source not ready, source ready but no artifact
+- [ ] 2.2 Write unit tests for Resolve with fake client covering all scenarios:
+  - source found and ready → assert exact field mapping (URL, Revision, Digest)
+  - source not found → assert `errors.Is(err, ErrSourceNotFound)`
+  - source not ready (Ready=False) → assert `errors.Is(err, ErrSourceNotReady)`
+  - source not ready (Ready=Unknown) → assert `errors.Is(err, ErrSourceNotReady)`
+  - source ready but nil artifact → assert `errors.Is(err, ErrSourceNotReady)`
+  - namespace resolution: empty sourceRef.Namespace uses releaseNamespace, set sourceRef.Namespace overrides
 
 ## 3. Controller watch setup
 
-- [ ] 3.1 Add OCIRepository watch with `handler.EnqueueRequestsFromMapFunc` to `ModuleReleaseReconciler.SetupWithManager`
-- [ ] 3.2 Implement the map function that finds ModuleReleases referencing a given OCIRepository
+- [ ] 3.1 Vendor Flux OCIRepository CRD YAML into `internal/controller/testdata/crds/` and add to `CRDDirectoryPaths` in `suite_test.go`
+- [ ] 3.2 Register `sourcev1.AddToScheme` in the test suite scheme setup
+- [ ] 3.3 Add OCIRepository watch with `handler.EnqueueRequestsFromMapFunc` to `ModuleReleaseReconciler.SetupWithManager`
+- [ ] 3.4 Implement the map function that finds ModuleReleases referencing a given OCIRepository
+- [ ] 3.5 Write envtest integration test: OCIRepository status update triggers reconciliation of referencing ModuleRelease
+- [ ] 3.6 Write envtest integration test: map function only enqueues ModuleReleases that reference the changed OCIRepository
 
 ## 4. Validation
 

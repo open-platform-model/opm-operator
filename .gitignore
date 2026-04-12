@@ -32,3 +32,6 @@ go.work.sum
 # .idea/
 # .vscode/
 tui.json
+
+# Agent orchestration state
+.claude-agents/

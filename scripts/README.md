@@ -1,59 +1,90 @@
 # Scripts
 
-## worktree-init.sh — Parallel AI Model Benchmarking
+## orchestrate-changes.sh — Parallel OpenSpec Change Implementation
 
-Creates isolated Git worktrees so multiple AI coding agents can work on the same
-codebase simultaneously, each on its own branch.
+Launches Claude Code agents in parallel to implement OpenSpec changes, respecting
+the dependency graph between changes. Each agent runs in its own git worktree on
+a dedicated branch, and creates a PR back to `implement-claude`.
 
-Each worktree is a sibling directory to the main repo with its own branch
-(`bench/<model>`), sharing the same Git object store — no cloning needed.
+### How it works
+
+1. Reads a hardcoded dependency DAG (18 changes, their prerequisites).
+2. Tracks state in `.claude-agents/state.json` (pending/running/completed/failed).
+3. Finds changes whose dependencies are all completed → launches them in parallel.
+4. Each agent gets its own git worktree + branch (`impl/<change-name>`).
+5. Agent runs `/openspec-apply-change`, verifies with `make`, commits, pushes, creates PR.
+6. Orchestrator waits for the batch, updates state, launches the next wave.
+7. Repeats until all changes are done or blocked by failures.
+
+Resumable — re-run and it skips completed changes.
 
 ### Quick start
 
 ```bash
-# Create worktrees for the models you want to benchmark
-./scripts/worktree-init.sh claude-opus-4-6 gemini-3-1 gpt-5-4
+# Launch the full orchestration
+./scripts/orchestrate-changes.sh run
 
-# This produces:
-#   ../poc-controller-gpt4o/          branch: bench/gpt4o
-#   ../poc-controller-gemini/         branch: bench/gemini
-#   ../poc-controller-claude-sonnet/  branch: bench/claude-sonnet
-#   ../poc-controller-o3/             branch: bench/o3
+# Check progress
+./scripts/orchestrate-changes.sh status
+
+# View dependency graph
+./scripts/orchestrate-changes.sh graph
 ```
-
-Point each AI agent at its own directory. All branches start from the current
-HEAD of the main repo, so every model starts from the same baseline.
 
 ### Commands
 
 | Command | Description |
 |---|---|
-| `./scripts/worktree-init.sh <model> [...]` | Create a worktree + branch per model |
-| `./scripts/worktree-init.sh --list` | List active bench worktrees |
-| `./scripts/worktree-init.sh --clean` | Remove all bench worktrees and branches |
-| `./scripts/worktree-init.sh --help` | Show usage |
+| `run` | Run the orchestrator (launch agents, respect dependencies) |
+| `status` | Show current state of all changes |
+| `graph` | Print the dependency graph |
+| `reset <change>` | Reset a specific change to pending |
+| `reset-failed` | Reset all failed changes to pending |
+| `retry` | Reset failed + re-run |
+| `logs <change>` | View the log for a change |
+| `clean` | Remove all worktrees, branches, and state |
 
-### Comparing results
+### Configuration
 
-After each model has finished its work, compare branches from the main repo:
+| Env var | Default | Description |
+|---|---|---|
+| `MAX_CONCURRENT` | 6 | Maximum parallel agents |
 
 ```bash
-# Diff two models against each other
-git diff bench/gpt4o bench/gemini
-
-# Diff a model against the starting point
-git diff HEAD bench/claude-sonnet
-
-# Log all changes a model made
-git log HEAD..bench/o3 --oneline
+# Run with at most 4 agents at a time
+MAX_CONCURRENT=4 ./scripts/orchestrate-changes.sh run
 ```
+
+### Dependency graph
+
+```
+Batch 1 (foundation):
+  01-cli-dependency-and-inventory-bridge
+
+Batch 2 (parallel after 01):
+  02, 04, 06, 07, 08, 09, 10, 13, 18  (9 independent changes)
+
+Batch 3 (depend on batch 2):
+  03←02  05←01,04  12←09  14←08  16←07
+
+Batch 4:
+  15←08,09  17←07,16
+
+Batch 5 (finale):
+  11←02,03,05,06,08,09,10,12,13
+```
+
+### State and logs
+
+- State file: `.claude-agents/state.json`
+- Agent logs: `.claude-agents/logs/<change-name>.log`
+- Agent prompts: `.claude-agents/prompts/<change-name>.md`
+
+All under `.claude-agents/` which is gitignored.
 
 ### Cleanup
 
 ```bash
-# Remove all bench worktrees and delete their branches
-./scripts/worktree-init.sh --clean
+# Remove all worktrees, branches, and state
+./scripts/orchestrate-changes.sh clean
 ```
-
-This removes the sibling directories and deletes the local `bench/*` branches.
-The main repo is not affected.

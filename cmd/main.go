@@ -37,8 +37,10 @@ import (
 
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+	"github.com/open-platform-model/poc-controller/internal/apply"
 	"github.com/open-platform-model/poc-controller/internal/catalog"
 	"github.com/open-platform-model/poc-controller/internal/controller"
+	"github.com/open-platform-model/poc-controller/internal/source"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -217,10 +219,14 @@ func main() {
 	}
 	setupLog.Info("OPM provider loaded", "provider", opmProvider.Metadata.Name)
 
+	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
+
 	if err := (&controller.ModuleReleaseReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Provider: opmProvider,
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Provider:        opmProvider,
+		ResourceManager: resourceManager,
+		ArtifactFetcher: &source.ArtifactFetcher{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleRelease")
 		os.Exit(1)

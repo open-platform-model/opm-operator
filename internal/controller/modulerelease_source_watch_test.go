@@ -158,8 +158,9 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			baseReconciler := &ModuleReleaseReconciler{
-				Client: mgr.GetClient(),
-				Scheme: mgr.GetScheme(),
+				Client:          mgr.GetClient(),
+				Scheme:          mgr.GetScheme(),
+				ArtifactFetcher: &stubFetcher{},
 			}
 
 			err = ctrl.NewControllerManagedBy(mgr).

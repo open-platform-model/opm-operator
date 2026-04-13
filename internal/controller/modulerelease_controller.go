@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	fluxssa "github.com/fluxcd/pkg/ssa"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,14 +30,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+	opmreconcile "github.com/open-platform-model/poc-controller/internal/reconcile"
+	"github.com/open-platform-model/poc-controller/internal/source"
 	"github.com/open-platform-model/poc-controller/pkg/provider"
 )
 
-// ModuleReleaseReconciler reconciles a ModuleRelease object
+// ModuleReleaseReconciler reconciles a ModuleRelease object.
+// Dependencies are injected via struct fields at manager setup time.
 type ModuleReleaseReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Provider *provider.Provider
+	Scheme          *runtime.Scheme
+	Provider        *provider.Provider
+	ResourceManager *fluxssa.ResourceManager
+	ArtifactFetcher source.Fetcher
 }
 
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases,verbs=get;list;watch;create;update;patch;delete
@@ -45,24 +51,18 @@ type ModuleReleaseReconciler struct {
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories,verbs=get;list;watch
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories/status,verbs=get
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ModuleRelease object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
+// Reconcile runs the full ModuleRelease reconcile loop: source resolution,
+// artifact fetch, CUE rendering, SSA apply, optional prune, and status commit.
 func (r *ModuleReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.Info("Reconciling ModuleRelease", "name", req.Name, "namespace", req.Namespace)
 
-	// TODO: Resolve the referenced OCIRepository, fetch the Flux artifact,
-	// render the module using shared OPM helpers, and reconcile the desired
-	// resources with SSA and ownership inventory.
-
-	return ctrl.Result{}, nil
+	return opmreconcile.ReconcileModuleRelease(ctx, &opmreconcile.ModuleReleaseParams{
+		Client:          r.Client,
+		Provider:        r.Provider,
+		ResourceManager: r.ResourceManager,
+		ArtifactFetcher: r.ArtifactFetcher,
+	}, req)
 }
 
 // ociRepositoryToRequests maps an OCIRepository change to all ModuleRelease

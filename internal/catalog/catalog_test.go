@@ -78,11 +78,3 @@ func TestLoadProvider_EmptyRegistry(t *testing.T) {
 		t.Fatal("expected error for empty registry")
 	}
 }
-
-// TODO: Add e2e test for registry-unreachable scenario.
-// When CUE_REGISTRY points to an unreachable host, LoadProvider should
-// return an error with CUE diagnostic context (registry resolution failure).
-// Requires a composition fixture with real imports (not self-contained).
-func TestLoadProvider_RegistryUnreachable(t *testing.T) {
-	t.Skip("TODO: requires composition fixture with external imports to trigger registry resolution")
-}

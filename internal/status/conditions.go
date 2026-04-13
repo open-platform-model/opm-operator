@@ -12,6 +12,7 @@ const (
 	ReconcilingCondition = meta.ReconcilingCondition // "Reconciling"
 	StalledCondition     = meta.StalledCondition     // "Stalled"
 	SourceReadyCondition = "SourceReady"
+	DriftedCondition     = "Drifted"
 )
 
 // Condition reasons.
@@ -25,6 +26,7 @@ const (
 	ApplyFailedReason             = "ApplyFailed"
 	PruneFailedReason             = "PruneFailed"
 	ReconciliationSucceededReason = "ReconciliationSucceeded"
+	DriftDetectedReason           = "DriftDetected"
 )
 
 // MarkReconciling sets Reconciling=True, removes Stalled, and sets Ready=Unknown.
@@ -56,6 +58,18 @@ func MarkSuspended(obj conditions.Setter) {
 // MarkNotReady sets Ready=False with the given reason and message.
 func MarkNotReady(obj conditions.Setter, reason, messageFormat string, messageArgs ...any) {
 	conditions.MarkFalse(obj, ReadyCondition, reason, messageFormat, messageArgs...)
+}
+
+// MarkDrifted sets Drifted=True with a message indicating the number of drifted resources.
+// Drift is informational only — does not affect Ready condition.
+func MarkDrifted(obj conditions.Setter, count int) {
+	conditions.MarkTrue(obj, DriftedCondition, DriftDetectedReason,
+		"%d resource(s) drifted from desired state", count)
+}
+
+// ClearDrifted removes the Drifted condition (drift resolved by successful apply).
+func ClearDrifted(obj conditions.Setter) {
+	conditions.Delete(obj, DriftedCondition)
 }
 
 // MarkSourceReady sets SourceReady=True with the artifact revision as message.

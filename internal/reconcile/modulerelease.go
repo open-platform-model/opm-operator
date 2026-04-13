@@ -91,6 +91,7 @@ func ReconcileModuleRelease(
 					status.ReconcilingCondition,
 					status.StalledCondition,
 					status.SourceReadyCondition,
+					status.DriftedCondition,
 				},
 			},
 			patch.WithStatusObservedGeneration{},
@@ -163,6 +164,7 @@ func ReconcileModuleRelease(
 					status.ReconcilingCondition,
 					status.StalledCondition,
 					status.SourceReadyCondition,
+					status.DriftedCondition,
 				},
 			},
 			patch.WithStatusObservedGeneration{},
@@ -256,7 +258,17 @@ func ReconcileModuleRelease(
 	digests.Render = renderDigest
 	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
 
-	// Phase 4: Plan actions — no-op detection, compute stale set.
+	// Phase 4: Plan actions — no-op detection, drift detection, compute stale set.
+	//
+	// Convert resources early — needed for both drift detection and apply.
+	resources, err := toUnstructuredSlice(renderResult.Resources)
+	if err != nil {
+		status.MarkStalled(&mr, status.ApplyFailedReason, "converting resources: %s", err)
+		outcome = FailedStalled
+		errMsg = fmt.Sprintf("converting resources: %s", err)
+		return ctrl.Result{}, nil
+	}
+
 	lastApplied := status.DigestSet{
 		Source:    mr.Status.LastAppliedSourceDigest,
 		Config:    mr.Status.LastAppliedConfigDigest,
@@ -264,7 +276,13 @@ func ReconcileModuleRelease(
 		Inventory: inventoryDigest(mr.Status.Inventory),
 	}
 
-	if status.IsNoOp(digests, lastApplied) {
+	isNoOp := status.IsNoOp(digests, lastApplied)
+
+	// Drift detection runs on every reconcile, including no-ops.
+	// Uses SSA dry-run to compare desired state against live cluster state.
+	detectDrift(ctx, params.ResourceManager, &mr, resources)
+
+	if isNoOp {
 		log.Info("No changes detected, skipping apply")
 		status.MarkReady(&mr, "No changes detected")
 		outcome = NoOp
@@ -278,14 +296,6 @@ func ReconcileModuleRelease(
 	staleSet := inventory.ComputeStaleSet(previousEntries, renderResult.InventoryEntries)
 
 	// Phase 5: Apply resources.
-	resources, err := toUnstructuredSlice(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(&mr, status.ApplyFailedReason, "converting resources: %s", err)
-		outcome = FailedStalled
-		errMsg = fmt.Sprintf("converting resources: %s", err)
-		return ctrl.Result{}, nil
-	}
-
 	force := mr.Spec.Rollout != nil && mr.Spec.Rollout.ForceConflicts
 	applyResult, err := apply.Apply(ctx, params.ResourceManager, resources, force)
 	if err != nil {
@@ -297,6 +307,9 @@ func ReconcileModuleRelease(
 
 	log.Info("Applied resources",
 		"created", applyResult.Created, "updated", applyResult.Updated, "unchanged", applyResult.Unchanged)
+
+	// Successful apply resolves any drift.
+	status.ClearDrifted(&mr)
 
 	newEntries = renderResult.InventoryEntries
 
@@ -324,6 +337,34 @@ func ReconcileModuleRelease(
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
 	return ctrl.Result{}, nil
+}
+
+// detectDrift runs SSA dry-run drift detection and updates status accordingly.
+// On error: increments failureCounters.drift but does not set Drifted condition (unknown state).
+// On drift: sets Drifted=True. On no drift: clears Drifted condition.
+// Drift detection failure is non-blocking.
+func detectDrift(
+	ctx context.Context,
+	rm *fluxssa.ResourceManager,
+	mr *releasesv1alpha1.ModuleRelease,
+	resources []*unstructured.Unstructured,
+) {
+	log := logf.FromContext(ctx)
+	driftResult, err := apply.DetectDrift(ctx, rm, resources)
+	if err != nil {
+		log.Error(err, "Drift detection failed, continuing reconcile")
+		if mr.Status.FailureCounters == nil {
+			mr.Status.FailureCounters = &releasesv1alpha1.FailureCounters{}
+		}
+		mr.Status.FailureCounters.Drift++
+		return
+	}
+	if driftResult.Drifted {
+		log.Info("Drift detected", "driftedResources", len(driftResult.Resources))
+		status.MarkDrifted(mr, len(driftResult.Resources))
+	} else {
+		status.ClearDrifted(mr)
+	}
 }
 
 // inventoryDigest returns the digest from the inventory, or empty string if nil.

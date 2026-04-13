@@ -77,17 +77,23 @@ const (
 // Dependencies injected via struct fields (design decision 1).
 type ModuleReleaseReconciler struct {
     client.Client
-    Scheme *runtime.Scheme
-
-    // SourceResolver resolves OCIRepository references to artifact metadata (change 2).
-    // Uses source.Resolve internally.
-    SourceResolver func(ctx context.Context, c client.Client, ref releasesv1alpha1.SourceReference, ns string) (*source.ArtifactRef, error)
-
-    // ArtifactFetcher downloads and extracts artifacts (change 3).
-    ArtifactFetcher source.Fetcher
-
-    // ResourceManager is the Flux SSA apply engine (change 8).
+    Scheme          *runtime.Scheme
+    Provider        *provider.Provider
     ResourceManager *fluxssa.ResourceManager
+    ArtifactFetcher source.Fetcher
+}
+```
+
+### Types — `internal/reconcile/modulerelease.go`
+
+```go
+// ModuleReleaseParams holds the dependencies injected into the reconcile loop.
+// Separated from the controller struct for testability.
+type ModuleReleaseParams struct {
+    Client          client.Client
+    Provider        *provider.Provider
+    ResourceManager *fluxssa.ResourceManager
+    ArtifactFetcher source.Fetcher
 }
 ```
 
@@ -107,10 +113,10 @@ type ModuleReleaseReconciler struct {
 // Phase 6: Prune via apply.Prune → *apply.PruneResult (only if spec.prune && apply succeeded)
 // Phase 7: Commit status — conditions (change 7), digests, inventory, history (change 10)
 //
-// Returns (ctrl.Result, Outcome, error).
+// Returns (ctrl.Result, error). Outcome is tracked internally for logging.
 func ReconcileModuleRelease(
     ctx context.Context,
-    r *ModuleReleaseReconciler,
+    params *ModuleReleaseParams,
     req ctrl.Request,
 ) (ctrl.Result, error)
 ```
@@ -152,7 +158,7 @@ func ReconcileModuleRelease(
 //   status.history                  = prepend success entry (change 10)
 //
 // Updated on failure:
-//   status.failureCounters          = increment relevant counter
+//   status.failureCounters          = (deferred to change 16-failure-counters)
 //   status.history                  = prepend failure entry (change 10)
 ```
 

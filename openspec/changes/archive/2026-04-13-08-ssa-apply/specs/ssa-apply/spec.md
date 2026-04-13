@@ -7,24 +7,24 @@ The `internal/apply` package MUST apply resources using Server-Side Apply with f
 - **WHEN** a set of valid Kubernetes resources is applied
 - **THEN** the resources exist in the cluster with `opm-controller` as the field manager
 
-#### Scenario: Force conflicts enabled
-- **WHEN** `forceConflicts` is true and another manager owns a conflicting field
-- **THEN** the apply succeeds by taking ownership of the conflicting field
+#### Scenario: Force enables immutable field recreation
+- **WHEN** `force` is true and an object has an immutable field change
+- **THEN** the apply succeeds by deleting and recreating the object
 
-#### Scenario: Force conflicts disabled (default)
-- **WHEN** `forceConflicts` is false and another manager owns a conflicting field
-- **THEN** the apply returns a conflict error
+#### Scenario: Different field manager can overwrite fields
+- **WHEN** another field manager owns a field and a second manager applies a change
+- **THEN** the apply succeeds (Flux always uses ForceOwnership; SSA ownership conflicts do not surface through this layer — see `docs/design/flux-ssa-staging.md`)
 
 ### Requirement: Staged apply ordering
-Resources MUST be applied in two stages: CRDs and Namespaces first, then all other resources.
+Resources MUST be applied using Flux's `ApplyAllStaged`, which applies cluster definitions (CRDs, Namespaces, ClusterRoles) first with readiness waits, then class definitions, then everything else. See `docs/design/flux-ssa-staging.md` for the full 4-stage model.
 
 #### Scenario: CRD applied before custom resource
 - **WHEN** the resource set contains both a CRD and an instance of that CRD
-- **THEN** the CRD is applied in stage 1 before the instance in stage 2
+- **THEN** the CRD is applied in the cluster definitions stage before the instance in the default stage
 
 #### Scenario: Namespace applied before namespaced resource
 - **WHEN** the resource set contains a Namespace and resources in that namespace
-- **THEN** the Namespace is applied in stage 1 before the namespaced resources in stage 2
+- **THEN** the Namespace is applied in the cluster definitions stage before the namespaced resources
 
 ### Requirement: Apply result
 The `Apply` function MUST return an `ApplyResult` with counts of created, updated, and unchanged resources.

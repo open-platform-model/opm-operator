@@ -110,6 +110,16 @@ func reconcileParams(fetcher source.Fetcher) *opmreconcile.ModuleReleaseParams {
 	}
 }
 
+// ensureFinalizer runs one reconcile to register the finalizer, then verifies it was added.
+// Call this before the "real" test reconcile for any test that expects to reach Phase 1+.
+func ensureFinalizer(params *opmreconcile.ModuleReleaseParams, nn types.NamespacedName) {
+	result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+		NamespacedName: nn,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(result).To(Equal(ctrl.Result{}))
+}
+
 var _ = Describe("Reconcile Error Paths", func() {
 	Context("Render failure", func() {
 		It("should set Stalled with RenderFailed when module has no components", func() {
@@ -120,6 +130,9 @@ var _ = Describe("Reconcile Error Paths", func() {
 			params := reconcileParams(&copyDirFetcher{
 				sourceDir: renderTestdataDir("no-components-module"),
 			})
+
+			nn := types.NamespacedName{Name: "render-fail-mr", Namespace: namespace}
+			ensureFinalizer(params, nn)
 
 			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
 				NamespacedName: types.NamespacedName{
@@ -171,10 +184,11 @@ var _ = Describe("Reconcile Error Paths", func() {
 				err: fmt.Errorf("connection refused"),
 			})
 
+			nn := types.NamespacedName{Name: "fetch-fail-mr", Namespace: namespace}
+			ensureFinalizer(params, nn)
+
 			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
-				NamespacedName: types.NamespacedName{
-					Name: "fetch-fail-mr", Namespace: namespace,
-				},
+				NamespacedName: nn,
 			})
 			Expect(err).To(HaveOccurred(), "transient error returned for backoff")
 			Expect(result.RequeueAfter).To(BeZero())
@@ -209,10 +223,11 @@ var _ = Describe("Reconcile Error Paths", func() {
 				err: fmt.Errorf("bad archive: %w", source.ErrMissingCUEModule),
 			})
 
+			nn := types.NamespacedName{Name: "invalid-artifact-mr", Namespace: namespace}
+			ensureFinalizer(params, nn)
+
 			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
-				NamespacedName: types.NamespacedName{
-					Name: "invalid-artifact-mr", Namespace: namespace,
-				},
+				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred(), "stalled errors return nil")
 			Expect(result.RequeueAfter).To(BeZero())
@@ -258,10 +273,11 @@ var _ = Describe("Reconcile Error Paths", func() {
 
 			params := reconcileParams(&stubFetcher{})
 
+			nn := types.NamespacedName{Name: "stalled-mr", Namespace: namespace}
+			ensureFinalizer(params, nn)
+
 			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
-				NamespacedName: types.NamespacedName{
-					Name: "stalled-mr", Namespace: namespace,
-				},
+				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred(), "stalled returns nil error")
 			Expect(result.RequeueAfter).To(BeZero(), "stalled does not requeue")
@@ -294,10 +310,11 @@ var _ = Describe("Reconcile Error Paths", func() {
 				err: fmt.Errorf("network timeout"),
 			})
 
+			nn := types.NamespacedName{Name: "status-fail-mr", Namespace: namespace}
+			ensureFinalizer(params, nn)
+
 			_, _ = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
-				NamespacedName: types.NamespacedName{
-					Name: "status-fail-mr", Namespace: namespace,
-				},
+				NamespacedName: nn,
 			})
 
 			var mr releasesv1alpha1.ModuleRelease
@@ -361,8 +378,11 @@ var _ = Describe("Reconcile Error Paths", func() {
 				sourceDir: renderTestdataDir("valid-module"),
 			})
 
-			// First reconcile — succeeds, populates inventory.
+			// First reconcile — adds finalizer.
 			nn := types.NamespacedName{Name: "partial-fail-mr", Namespace: namespace}
+			ensureFinalizer(params, nn)
+
+			// Second reconcile — succeeds, populates inventory.
 			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})

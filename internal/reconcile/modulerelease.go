@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/fluxcd/pkg/runtime/patch"
@@ -27,6 +28,10 @@ import (
 )
 
 const (
+	// FinalizerName is the finalizer registered on ModuleRelease resources
+	// to ensure owned resources are cleaned up before deletion completes.
+	FinalizerName = "releases.opmodel.dev/cleanup"
+
 	// softBlockedRequeue is the requeue delay for SoftBlocked outcomes.
 	softBlockedRequeue = 30 * time.Second
 )
@@ -55,10 +60,19 @@ func ReconcileModuleRelease(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Skip deleted objects (finalizer handling is a separate change).
-	if !mr.DeletionTimestamp.IsZero() {
-		log.Info("ModuleRelease is being deleted, skipping reconciliation")
+	// Register finalizer if not present.
+	// The patch triggers a watch event, so no explicit requeue is needed.
+	if !controllerutil.ContainsFinalizer(&mr, FinalizerName) {
+		log.Info("Adding finalizer to ModuleRelease")
+		if err := addFinalizer(ctx, params.Client, &mr); err != nil {
+			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
+		}
 		return ctrl.Result{}, nil
+	}
+
+	// Deletion branch: if DeletionTimestamp is set, run cleanup and return.
+	if !mr.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, handleDeletion(ctx, params, &mr)
 	}
 
 	// Create serial patcher for deferred status commit.
@@ -299,6 +313,52 @@ func inventoryDigest(inv *releasesv1alpha1.Inventory) string {
 		return ""
 	}
 	return inv.Digest
+}
+
+// handleDeletion runs the deletion cleanup path.
+// If spec.prune is true, all inventory entries are pruned (respecting safety exclusions).
+// On success (or prune disabled), the finalizer is removed.
+// On partial failure, the finalizer is retained and the error is returned for requeue.
+func handleDeletion(
+	ctx context.Context,
+	params *ModuleReleaseParams,
+	mr *releasesv1alpha1.ModuleRelease,
+) error {
+	log := logf.FromContext(ctx)
+	log.Info("Running deletion cleanup for ModuleRelease")
+
+	if mr.Spec.Prune && mr.Status.Inventory != nil && len(mr.Status.Inventory.Entries) > 0 {
+		pruneResult, err := apply.Prune(ctx, params.Client, mr.Status.Inventory.Entries)
+		if err != nil {
+			log.Error(err, "Partial failure during deletion cleanup, retaining finalizer")
+			return err
+		}
+		log.Info("Deletion cleanup pruned resources",
+			"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)
+	} else if !mr.Spec.Prune {
+		log.Info("Prune disabled, orphaning managed resources on deletion")
+	}
+
+	if err := removeFinalizer(ctx, params.Client, mr); err != nil {
+		return fmt.Errorf("removing finalizer: %w", err)
+	}
+	log.Info("Finalizer removed, deletion can proceed")
+
+	return nil
+}
+
+// addFinalizer adds the cleanup finalizer to the ModuleRelease and patches it.
+func addFinalizer(ctx context.Context, c client.Client, mr *releasesv1alpha1.ModuleRelease) error {
+	mergePatch := client.MergeFrom(mr.DeepCopy())
+	controllerutil.AddFinalizer(mr, FinalizerName)
+	return c.Patch(ctx, mr, mergePatch)
+}
+
+// removeFinalizer removes the cleanup finalizer from the ModuleRelease and patches it.
+func removeFinalizer(ctx context.Context, c client.Client, mr *releasesv1alpha1.ModuleRelease) error {
+	mergePatch := client.MergeFrom(mr.DeepCopy())
+	controllerutil.RemoveFinalizer(mr, FinalizerName)
+	return c.Patch(ctx, mr, mergePatch)
 }
 
 // toUnstructuredSlice converts core.Resource slice to unstructured slice for apply.

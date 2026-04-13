@@ -7,6 +7,7 @@ Phase 4 (Plan Actions) from ADR-009 is the designated location for drift detecti
 ## Goals / Non-Goals
 
 **Goals:**
+
 - Implement `DetectDrift` in `internal/apply/` using SSA dry-run via Flux's `ResourceManager`.
 - Return a `DriftResult` listing which resources have drifted.
 - Set `Drifted=True` condition when any resource has drifted.
@@ -14,6 +15,7 @@ Phase 4 (Plan Actions) from ADR-009 is the designated location for drift detecti
 - Integrate into Phase 4 of the reconcile loop.
 
 **Non-Goals:**
+
 - Automatic drift correction (deferred per ADR-012 to future `spec.rollout.driftCorrection`).
 - Field-level diff reporting (v1alpha1 reports presence/absence of drift, not specific fields).
 - Drift detection for resources not in inventory (out of scope).

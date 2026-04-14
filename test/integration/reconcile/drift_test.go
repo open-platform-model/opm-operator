@@ -28,6 +28,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -218,6 +219,7 @@ var _ = Describe("Drift Detection", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
 				ArtifactFetcher: fetcher,
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			// Second reconcile — drift detection fails, but reconcile continues as no-op.

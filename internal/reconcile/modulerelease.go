@@ -8,11 +8,13 @@ import (
 	"time"
 
 	fluxssa "github.com/fluxcd/pkg/ssa"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -46,6 +48,7 @@ type ModuleReleaseParams struct {
 	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	ArtifactFetcher source.Fetcher
+	EventRecorder   record.EventRecorder
 }
 
 // ReconcileModuleRelease orchestrates all phases of the reconcile loop.
@@ -87,6 +90,7 @@ func ReconcileModuleRelease(
 		log.Info("Reconciliation is suspended")
 		status.MarkSuspended(&mr)
 		mr.Status.ObservedGeneration = mr.Generation
+		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.SuspendedReason, "Reconciliation is suspended")
 		if patchErr := patcher.Patch(ctx, &mr,
 			patch.WithOwnedConditions{
 				Conditions: []string{
@@ -107,6 +111,7 @@ func ReconcileModuleRelease(
 	// Check for resume from suspend.
 	if ready := apimeta.FindStatusCondition(mr.Status.Conditions, status.ReadyCondition); ready != nil && ready.Reason == status.SuspendedReason {
 		log.Info("Reconciliation resumed")
+		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.ResumedReason, "Reconciliation resumed")
 	}
 
 	// Track reconcile start time for duration calculation.
@@ -188,7 +193,7 @@ func ReconcileModuleRelease(
 	// Phase 1: Resolve source.
 	artifactRef, err := source.Resolve(ctx, params.Client, mr.Spec.SourceRef, mr.Namespace)
 	if err != nil {
-		return sourceError(&mr, err, &outcome, &errMsg)
+		return sourceError(&mr, err, &outcome, &errMsg, params.EventRecorder)
 	}
 
 	status.MarkSourceReady(&mr, artifactRef.Revision)
@@ -218,6 +223,7 @@ func ReconcileModuleRelease(
 	}()
 
 	if err := params.ArtifactFetcher.Fetch(ctx, artifactRef.URL, artifactRef.Digest, dir); err != nil {
+		params.EventRecorder.Eventf(&mr, corev1.EventTypeWarning, status.ArtifactFetchFailedReason, "%s", err)
 		if errors.Is(err, source.ErrMissingCUEModule) {
 			status.MarkStalled(&mr, status.ArtifactInvalidReason, "%s", err)
 			outcome = FailedStalled
@@ -233,6 +239,7 @@ func ReconcileModuleRelease(
 	// Phase 3: Render module, compute digests.
 	renderResult, err := render.RenderModule(ctx, dir, mr.Spec.Values, params.Provider)
 	if err != nil {
+		params.EventRecorder.Eventf(&mr, corev1.EventTypeWarning, status.RenderFailedReason, "%s", err)
 		status.MarkStalled(&mr, status.RenderFailedReason, "%s", err)
 		outcome = FailedStalled
 		errMsg = err.Error()
@@ -277,6 +284,7 @@ func ReconcileModuleRelease(
 	if isNoOp {
 		log.Info("No changes detected, skipping apply")
 		status.MarkReady(&mr, "No changes detected")
+		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.NoOpReason, "No changes detected")
 		outcome = NoOp
 		return ctrl.Result{}, nil
 	}
@@ -303,6 +311,7 @@ func ReconcileModuleRelease(
 	applyResult, err := apply.Apply(ctx, applyRM, resources, force)
 	if err != nil {
 		phases.applyFailed = true
+		params.EventRecorder.Eventf(&mr, corev1.EventTypeWarning, status.ApplyFailedReason, "%s", err)
 		if mr.Spec.ServiceAccountName != "" && isForbidden(err) {
 			status.MarkStalled(&mr, status.ImpersonationFailedReason, "%s", err)
 			outcome = FailedStalled
@@ -315,6 +324,11 @@ func ReconcileModuleRelease(
 		return ctrl.Result{}, err
 	}
 
+	total := applyResult.Created + applyResult.Updated + applyResult.Unchanged
+	params.EventRecorder.Eventf(&mr, corev1.EventTypeNormal, status.AppliedReason,
+		"Applied %d resources (%d created, %d updated, %d unchanged)",
+		total, applyResult.Created, applyResult.Updated, applyResult.Unchanged)
+
 	log.Info("Applied resources",
 		"created", applyResult.Created, "updated", applyResult.Updated, "unchanged", applyResult.Unchanged)
 
@@ -325,7 +339,7 @@ func ReconcileModuleRelease(
 
 	// Phase 6: Prune stale resources (only if spec.prune=true and apply succeeded).
 	phases.pruneRan = true
-	outcome, reconciled, err = pruneStaleResources(ctx, &mr, applyClient, staleSet)
+	outcome, reconciled, err = pruneStaleResources(ctx, &mr, applyClient, staleSet, params.EventRecorder)
 	if err != nil {
 		phases.pruneFailed = true
 		errMsg = err.Error()
@@ -337,6 +351,7 @@ func ReconcileModuleRelease(
 
 	// Phase 7: Commit status (handled by deferred function).
 	status.MarkReady(&mr, "Reconciliation succeeded")
+	params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.ReconciliationSucceededReason, "Reconciliation succeeded")
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
 	return ctrl.Result{}, nil
@@ -485,12 +500,13 @@ func removeFinalizer(ctx context.Context, c client.Client, mr *releasesv1alpha1.
 }
 
 // pruneStaleResources runs Phase 6: prune stale resources if spec.prune is true and stale resources exist.
-// Returns the outcome, whether reconcile succeeded, and any error.
+// Emits prune events via the provided recorder. Returns the outcome, whether reconcile succeeded, and any error.
 func pruneStaleResources(
 	ctx context.Context,
 	mr *releasesv1alpha1.ModuleRelease,
 	c client.Client,
 	staleSet []releasesv1alpha1.InventoryEntry,
+	recorder record.EventRecorder,
 ) (Outcome, bool, error) {
 	if !mr.Spec.Prune || len(staleSet) == 0 {
 		return Applied, true, nil
@@ -498,6 +514,7 @@ func pruneStaleResources(
 	log := logf.FromContext(ctx)
 	pruneResult, err := apply.Prune(ctx, c, staleSet)
 	if err != nil {
+		recorder.Eventf(mr, corev1.EventTypeWarning, status.PruneFailedReason, "%s", err)
 		if mr.Spec.ServiceAccountName != "" && isForbidden(err) {
 			status.MarkStalled(mr, status.ImpersonationFailedReason, "%s", err)
 			return FailedStalled, false, nil
@@ -505,20 +522,26 @@ func pruneStaleResources(
 		status.MarkNotReady(mr, status.PruneFailedReason, "%s", err)
 		return FailedTransient, false, err
 	}
+	if pruneResult.Deleted > 0 {
+		recorder.Eventf(mr, corev1.EventTypeNormal, status.PrunedReason,
+			"Pruned %d stale resources", pruneResult.Deleted)
+	}
 	log.Info("Pruned stale resources", "deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)
 	return AppliedAndPruned, true, nil
 }
 
-// sourceError classifies a source resolution error, sets conditions, and writes
-// the outcome and error message into the caller's deferred-captured variables.
+// sourceError classifies a source resolution error, sets conditions, emits
+// events, and writes the outcome and error message into the caller's deferred-captured variables.
 func sourceError(
 	mr *releasesv1alpha1.ModuleRelease,
 	err error,
 	outcome *Outcome,
 	errMsg *string,
+	recorder record.EventRecorder,
 ) (ctrl.Result, error) {
 	*errMsg = err.Error()
 	if errors.Is(err, source.ErrSourceNotReady) {
+		recorder.Eventf(mr, corev1.EventTypeWarning, status.SourceNotReadyReason, "%s", err)
 		status.MarkSourceNotReady(mr, status.SourceNotReadyReason, "%s", err)
 		*outcome = SoftBlocked
 		return ctrl.Result{RequeueAfter: softBlockedRequeue}, nil

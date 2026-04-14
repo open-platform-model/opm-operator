@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
@@ -161,6 +162,7 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 				Client:          mgr.GetClient(),
 				Scheme:          mgr.GetScheme(),
 				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			err = ctrl.NewControllerManagedBy(mgr).

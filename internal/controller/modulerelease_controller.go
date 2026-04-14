@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -45,6 +46,7 @@ type ModuleReleaseReconciler struct {
 	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	ArtifactFetcher source.Fetcher
+	EventRecorder   record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases,verbs=get;list;watch;create;update;patch;delete
@@ -53,6 +55,7 @@ type ModuleReleaseReconciler struct {
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories,verbs=get;list;watch
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile runs the full ModuleRelease reconcile loop: source resolution,
 // artifact fetch, CUE rendering, SSA apply, optional prune, and status commit.
@@ -66,6 +69,7 @@ func (r *ModuleReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Provider:        r.Provider,
 		ResourceManager: r.ResourceManager,
 		ArtifactFetcher: r.ArtifactFetcher,
+		EventRecorder:   r.EventRecorder,
 	}, req)
 }
 

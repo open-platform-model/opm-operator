@@ -28,6 +28,12 @@ const (
 	ImpersonationFailedReason     = "ImpersonationFailed"
 	ReconciliationSucceededReason = "ReconciliationSucceeded"
 	DriftDetectedReason           = "DriftDetected"
+
+	// Event-only reasons (no corresponding condition).
+	AppliedReason = "Applied"
+	PrunedReason  = "Pruned"
+	ResumedReason = "Resumed"
+	NoOpReason    = "NoOp"
 )
 
 // MarkReconciling sets Reconciling=True, removes Stalled, and sets Ready=Unknown.

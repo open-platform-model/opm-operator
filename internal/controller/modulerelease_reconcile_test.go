@@ -30,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -121,6 +122,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "full-reconcile-mr", Namespace: namespace}
@@ -224,6 +226,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "suspended-mr", Namespace: namespace}
@@ -287,6 +290,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "suspend-preserve-mr", Namespace: namespace}
@@ -383,6 +387,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "resume-mr", Namespace: namespace}
@@ -467,6 +472,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "src-not-ready-mr", Namespace: namespace}
@@ -511,6 +517,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "noop-mr", Namespace: namespace}
@@ -583,6 +590,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "finalizer-add-mr", Namespace: namespace}
@@ -633,6 +641,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "delete-prune-mr", Namespace: namespace}
@@ -714,6 +723,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "delete-orphan-mr", Namespace: namespace}
@@ -818,6 +828,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			// Reconcile deletion.
@@ -872,6 +883,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "delete-suspend-mr", Namespace: namespace}
@@ -978,6 +990,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			// Reconcile should fail — prune cannot delete the non-existent GVK resource.
@@ -1006,6 +1019,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
 				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "counter-fail-mr", Namespace: namespace}
@@ -1051,6 +1065,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 			_, err := realReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
@@ -1070,6 +1085,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			// Second reconcile — drift detection fails (non-blocking), apply fails.
@@ -1127,6 +1143,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			// Finalizer reconcile.
@@ -1169,6 +1186,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			// Third reconcile — apply succeeds, prune fails.
@@ -1205,6 +1223,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
 			nn := types.NamespacedName{Name: "counter-reset-mr", Namespace: namespace}
@@ -1244,6 +1263,379 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			})).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &sourcev1.OCIRepository{
 				ObjectMeta: metav1.ObjectMeta{Name: "counter-reset-repo", Namespace: namespace},
+			})).To(Succeed())
+		})
+	})
+
+	Context("Event emission", func() {
+		It("should emit Applied and ReconciliationSucceeded events after successful reconcile", func() {
+			ctx := context.Background()
+
+			createReadyOCIRepository(ctx, "event-apply-repo")
+			createModuleRelease(ctx, "event-apply-mr", "event-apply-repo")
+
+			recorder := record.NewFakeRecorder(10)
+			reconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				Provider:        testProvider(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   recorder,
+			}
+
+			nn := types.NamespacedName{Name: "event-apply-mr", Namespace: namespace}
+
+			// First reconcile adds finalizer.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile runs the full pipeline.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify Applied event with resource counts.
+			var appliedEvent string
+			Eventually(recorder.Events).Should(Receive(&appliedEvent))
+			Expect(appliedEvent).To(ContainSubstring("Applied"))
+			Expect(appliedEvent).To(ContainSubstring("created"))
+			Expect(appliedEvent).To(ContainSubstring("unchanged"))
+
+			// Verify ReconciliationSucceeded event.
+			var succeededEvent string
+			Eventually(recorder.Events).Should(Receive(&succeededEvent))
+			Expect(succeededEvent).To(ContainSubstring("ReconciliationSucceeded"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-apply-mr", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &sourcev1.OCIRepository{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-apply-repo", Namespace: namespace},
+			})).To(Succeed())
+		})
+
+		It("should emit Warning event on source not ready", func() {
+			ctx := context.Background()
+
+			// Create OCIRepository without ready status.
+			repo := &sourcev1.OCIRepository{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "event-notready-repo",
+					Namespace: namespace,
+				},
+				Spec: sourcev1.OCIRepositorySpec{
+					URL:      "oci://example.com/event-notready",
+					Interval: metav1.Duration{Duration: time.Minute},
+				},
+			}
+			Expect(k8sClient.Create(ctx, repo)).To(Succeed())
+
+			createModuleRelease(ctx, "event-notready-mr", "event-notready-repo")
+
+			recorder := record.NewFakeRecorder(10)
+			reconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   recorder,
+			}
+
+			nn := types.NamespacedName{Name: "event-notready-mr", Namespace: namespace}
+
+			// First reconcile adds finalizer.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile hits source not ready.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify Warning event with SourceNotReady reason.
+			var event string
+			Eventually(recorder.Events).Should(Receive(&event))
+			Expect(event).To(ContainSubstring("Warning"))
+			Expect(event).To(ContainSubstring("SourceNotReady"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-notready-mr", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, repo)).To(Succeed())
+		})
+
+		It("should emit Warning event on apply failure", func() {
+			ctx := context.Background()
+
+			createReadyOCIRepository(ctx, "event-applyfail-repo")
+			createModuleRelease(ctx, "event-applyfail-mr", "event-applyfail-repo")
+
+			nn := types.NamespacedName{Name: "event-applyfail-mr", Namespace: namespace}
+
+			// First reconcile adds finalizer (use real reconciler).
+			realReconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				Provider:        testProvider(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
+			}
+			_, err := realReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Build a failing ResourceManager.
+			realWithWatch, watchErr := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
+			Expect(watchErr).NotTo(HaveOccurred())
+			failingClient := interceptor.NewClient(realWithWatch, interceptor.Funcs{
+				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+					return fmt.Errorf("injected apply failure")
+				},
+			})
+
+			recorder := record.NewFakeRecorder(10)
+			failReconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				Provider:        testProvider(),
+				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
+				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   recorder,
+			}
+
+			// Second reconcile — apply fails.
+			_, err = failReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			// Verify Warning/ApplyFailed event.
+			var event string
+			Eventually(recorder.Events).Should(Receive(&event))
+			Expect(event).To(ContainSubstring("Warning"))
+			Expect(event).To(ContainSubstring("ApplyFailed"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-applyfail-mr", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &sourcev1.OCIRepository{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-applyfail-repo", Namespace: namespace},
+			})).To(Succeed())
+		})
+
+		It("should emit Suspended event when reconcile is suspended", func() {
+			ctx := context.Background()
+
+			mr := &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "event-suspend-mr",
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleReleaseSpec{
+					Suspend: true,
+					SourceRef: releasesv1alpha1.SourceReference{
+						APIVersion: "source.toolkit.fluxcd.io/v1",
+						Kind:       "OCIRepository",
+						Name:       "any-source",
+					},
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+
+			recorder := record.NewFakeRecorder(10)
+			reconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   recorder,
+			}
+
+			nn := types.NamespacedName{Name: "event-suspend-mr", Namespace: namespace}
+
+			// First reconcile adds finalizer.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile hits suspend.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify Normal/Suspended event.
+			var event string
+			Eventually(recorder.Events).Should(Receive(&event))
+			Expect(event).To(ContainSubstring("Normal"))
+			Expect(event).To(ContainSubstring("Suspended"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, mr)).To(Succeed())
+		})
+
+		It("should emit Resumed event when unsuspended", func() {
+			ctx := context.Background()
+
+			createReadyOCIRepository(ctx, "event-resume-repo")
+
+			mr := &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "event-resume-mr",
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleReleaseSpec{
+					Suspend: true,
+					SourceRef: releasesv1alpha1.SourceReference{
+						APIVersion: "source.toolkit.fluxcd.io/v1",
+						Kind:       "OCIRepository",
+						Name:       "event-resume-repo",
+					},
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module"},
+					Values: &releasesv1alpha1.RawValues{},
+				},
+			}
+			mr.Spec.Values.Raw = []byte(`{"message": "hello"}`)
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+
+			reconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				Provider:        testProvider(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
+			}
+
+			nn := types.NamespacedName{Name: "event-resume-mr", Namespace: namespace}
+
+			// Finalizer reconcile.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Suspend reconcile.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Unsuspend.
+			var current releasesv1alpha1.ModuleRelease
+			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			current.Spec.Suspend = false
+			Expect(k8sClient.Update(ctx, &current)).To(Succeed())
+
+			// Fresh recorder for the resume reconcile.
+			resumeRecorder := record.NewFakeRecorder(10)
+			reconciler.EventRecorder = resumeRecorder
+
+			// Resume reconcile — should emit Resumed, then Applied, then ReconciliationSucceeded.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// First event should be Resumed.
+			var event string
+			Eventually(resumeRecorder.Events).Should(Receive(&event))
+			Expect(event).To(ContainSubstring("Normal"))
+			Expect(event).To(ContainSubstring("Resumed"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-resume-mr", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &sourcev1.OCIRepository{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-resume-repo", Namespace: namespace},
+			})).To(Succeed())
+		})
+
+		It("should emit NoOp event when digests match", func() {
+			ctx := context.Background()
+
+			createReadyOCIRepository(ctx, "event-noop-repo")
+			createModuleRelease(ctx, "event-noop-mr", "event-noop-repo")
+
+			reconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				Provider:        testProvider(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				ArtifactFetcher: &copyDirFetcher{sourceDir: testModuleDir()},
+				EventRecorder:   record.NewFakeRecorder(10),
+			}
+
+			nn := types.NamespacedName{Name: "event-noop-mr", Namespace: namespace}
+
+			// Finalizer reconcile.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// First full reconcile — applies resources.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Fresh recorder for the no-op reconcile.
+			noopRecorder := record.NewFakeRecorder(10)
+			reconciler.EventRecorder = noopRecorder
+
+			// Second full reconcile — should be no-op.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify Normal/NoOp event.
+			var event string
+			Eventually(noopRecorder.Events).Should(Receive(&event))
+			Expect(event).To(ContainSubstring("Normal"))
+			Expect(event).To(ContainSubstring("NoOp"))
+			Expect(event).To(ContainSubstring("No changes detected"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-noop-mr", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &sourcev1.OCIRepository{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-noop-repo", Namespace: namespace},
+			})).To(Succeed())
+		})
+
+		It("should emit Warning event on artifact fetch failure", func() {
+			ctx := context.Background()
+
+			createReadyOCIRepository(ctx, "event-fetchfail-repo")
+			createModuleRelease(ctx, "event-fetchfail-mr", "event-fetchfail-repo")
+
+			recorder := record.NewFakeRecorder(10)
+			reconciler := &ModuleReleaseReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ArtifactFetcher: &stubFetcher{},
+				EventRecorder:   recorder,
+			}
+
+			nn := types.NamespacedName{Name: "event-fetchfail-mr", Namespace: namespace}
+
+			// First reconcile adds finalizer.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile — source ready, fetch fails.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred())
+
+			// Verify Warning/ArtifactFetchFailed event.
+			var event string
+			Eventually(recorder.Events).Should(Receive(&event))
+			Expect(event).To(ContainSubstring("Warning"))
+			Expect(event).To(ContainSubstring("ArtifactFetchFailed"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-fetchfail-mr", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &sourcev1.OCIRepository{
+				ObjectMeta: metav1.ObjectMeta{Name: "event-fetchfail-repo", Namespace: namespace},
 			})).To(Succeed())
 		})
 	})

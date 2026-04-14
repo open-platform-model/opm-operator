@@ -40,6 +40,7 @@ import (
 	"github.com/open-platform-model/poc-controller/internal/apply"
 	"github.com/open-platform-model/poc-controller/internal/catalog"
 	"github.com/open-platform-model/poc-controller/internal/controller"
+	_ "github.com/open-platform-model/poc-controller/internal/metrics"
 	"github.com/open-platform-model/poc-controller/internal/source"
 	// +kubebuilder:scaffold:imports
 )

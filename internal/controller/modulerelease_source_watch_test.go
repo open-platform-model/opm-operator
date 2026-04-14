@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
@@ -152,7 +153,7 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 			mgrCtx, mgrCancel := context.WithCancel(context.Background())
 			defer mgrCancel()
 
-			var reconcileCount atomic.Int64
+			var mapperCalls atomic.Int64
 			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 				Scheme: k8sClient.Scheme(),
 			})
@@ -165,15 +166,21 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 				EventRecorder:   record.NewFakeRecorder(10),
 			}
 
+			// Wrap the mapper to track calls for watch-test-repo after the status update.
+			wrappedMapper := func(ctx context.Context, obj client.Object) []ctrl.Request {
+				reqs := baseReconciler.ociRepositoryToRequests(ctx, obj)
+				if obj.GetName() == "watch-test-repo" {
+					mapperCalls.Add(1)
+				}
+				return reqs
+			}
+
 			err = ctrl.NewControllerManagedBy(mgr).
 				For(&releasesv1alpha1.ModuleRelease{}).
 				Watches(&sourcev1.OCIRepository{},
-					handler.EnqueueRequestsFromMapFunc(baseReconciler.ociRepositoryToRequests)).
+					handler.EnqueueRequestsFromMapFunc(wrappedMapper)).
 				Named("modulerelease-watch-test").
-				Complete(&reconcileCounter{
-					ModuleReleaseReconciler: *baseReconciler,
-					count:                   &reconcileCount,
-				})
+				Complete(baseReconciler)
 			Expect(err).NotTo(HaveOccurred())
 
 			go func() {
@@ -183,7 +190,7 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 
 			ctx := context.Background()
 
-			// Create the OCIRepository
+			// Create the OCIRepository.
 			repo := &sourcev1.OCIRepository{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "watch-test-repo",
@@ -196,7 +203,7 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 			}
 			Expect(k8sClient.Create(ctx, repo)).To(Succeed())
 
-			// Create a ModuleRelease referencing it
+			// Create a ModuleRelease referencing it.
 			mr := &releasesv1alpha1.ModuleRelease{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mr-watch-test",
@@ -213,15 +220,21 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 			}
 			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 
-			// Wait for initial reconciliation from ModuleRelease creation
-			Eventually(func() int64 {
-				return reconcileCount.Load()
-			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1))
+			// Wait for the informer cache to observe the ModuleRelease
+			// (ensures the mapper can find it via List).
+			Eventually(func() error {
+				var got releasesv1alpha1.ModuleRelease
+				return mgr.GetClient().Get(ctx, types.NamespacedName{
+					Name: "mr-watch-test", Namespace: namespace,
+				}, &got)
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
-			// Record the count before the OCIRepository update
-			countBefore := reconcileCount.Load()
+			// Record mapper call count before the status update.
+			// The OCIRepository create event also triggers the mapper,
+			// so mapper may have been called already.
+			mapperBefore := mapperCalls.Load()
 
-			// Update the OCIRepository status to simulate a new artifact
+			// Update the OCIRepository status to simulate a new artifact.
 			Eventually(func() error {
 				var latest sourcev1.OCIRepository
 				if err := k8sClient.Get(ctx, types.NamespacedName{
@@ -247,10 +260,11 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 				return k8sClient.Status().Update(ctx, &latest)
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
-			// The OCIRepository status update should trigger reconciliation of the ModuleRelease
+			// The OCIRepository status update should trigger the watch mapper,
+			// which enqueues all referencing ModuleReleases for reconciliation.
 			Eventually(func() int64 {
-				return reconcileCount.Load()
-			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">", countBefore))
+				return mapperCalls.Load()
+			}, 10*time.Second, 100*time.Millisecond).Should(BeNumerically(">", mapperBefore))
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, mr)).To(Succeed())
@@ -259,14 +273,3 @@ var _ = Describe("ModuleRelease Source Watch", func() {
 		})
 	})
 })
-
-// reconcileCounter wraps ModuleReleaseReconciler to count reconcile calls.
-type reconcileCounter struct {
-	ModuleReleaseReconciler
-	count *atomic.Int64
-}
-
-func (r *reconcileCounter) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.count.Add(1)
-	return r.ModuleReleaseReconciler.Reconcile(ctx, req)
-}

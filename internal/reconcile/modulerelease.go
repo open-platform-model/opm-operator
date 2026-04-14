@@ -25,6 +25,7 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
 	"github.com/open-platform-model/poc-controller/internal/apply"
 	"github.com/open-platform-model/poc-controller/internal/inventory"
+	opmmetrics "github.com/open-platform-model/poc-controller/internal/metrics"
 	"github.com/open-platform-model/poc-controller/internal/render"
 	"github.com/open-platform-model/poc-controller/internal/source"
 	"github.com/open-platform-model/poc-controller/internal/status"
@@ -67,6 +68,10 @@ func ReconcileModuleRelease(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Track reconcile start time for duration calculation.
+	// Set before suspend/deletion checks so all paths are measured.
+	reconcileStart := time.Now()
+
 	// Register finalizer if not present.
 	// The patch triggers a watch event, so no explicit requeue is needed.
 	if !controllerutil.ContainsFinalizer(&mr, FinalizerName) {
@@ -79,7 +84,9 @@ func ReconcileModuleRelease(
 
 	// Deletion branch: if DeletionTimestamp is set, run cleanup and return.
 	if !mr.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, handleDeletion(ctx, params, &mr)
+		err := handleDeletion(ctx, params, &mr)
+		opmmetrics.RecordDuration(mr.Name, mr.Namespace, time.Since(reconcileStart))
+		return ctrl.Result{}, err
 	}
 
 	// Create serial patcher for status patching.
@@ -105,6 +112,7 @@ func ReconcileModuleRelease(
 		); patchErr != nil {
 			return ctrl.Result{}, patchErr
 		}
+		opmmetrics.RecordDuration(mr.Name, mr.Namespace, time.Since(reconcileStart))
 		return ctrl.Result{}, nil
 	}
 
@@ -113,9 +121,6 @@ func ReconcileModuleRelease(
 		log.Info("Reconciliation resumed")
 		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.ResumedReason, "Reconciliation resumed")
 	}
-
-	// Track reconcile start time for duration calculation.
-	reconcileStart := time.Now()
 
 	// Track digests and outcome across phases for deferred status commit.
 	var (
@@ -170,6 +175,9 @@ func ReconcileModuleRelease(
 
 		// Update failure counters based on phase outcomes.
 		updateFailureCounters(&mr.Status, outcome, phases)
+
+		// Record reconcile metrics.
+		recordReconcileMetrics(mr.Name, mr.Namespace, outcome, time.Since(reconcileStart), reconciled, len(newEntries))
 
 		if patchErr := patcher.Patch(ctx, &mr,
 			patch.WithOwnedConditions{
@@ -332,6 +340,9 @@ func ReconcileModuleRelease(
 	log.Info("Applied resources",
 		"created", applyResult.Created, "updated", applyResult.Updated, "unchanged", applyResult.Unchanged)
 
+	// Record apply metrics.
+	opmmetrics.RecordApply(mr.Name, mr.Namespace, applyResult.Created, applyResult.Updated, applyResult.Unchanged)
+
 	// Successful apply resolves any drift.
 	status.ClearDrifted(&mr)
 
@@ -339,7 +350,8 @@ func ReconcileModuleRelease(
 
 	// Phase 6: Prune stale resources (only if spec.prune=true and apply succeeded).
 	phases.pruneRan = true
-	outcome, reconciled, err = pruneStaleResources(ctx, &mr, applyClient, staleSet, params.EventRecorder)
+	var pruneDeleted int
+	outcome, reconciled, pruneDeleted, err = pruneStaleResources(ctx, &mr, applyClient, staleSet, params.EventRecorder)
 	if err != nil {
 		phases.pruneFailed = true
 		errMsg = err.Error()
@@ -348,6 +360,9 @@ func ReconcileModuleRelease(
 	if !reconciled {
 		phases.pruneFailed = true
 	}
+
+	// Record prune metrics.
+	opmmetrics.RecordPrune(mr.Name, mr.Namespace, pruneDeleted)
 
 	// Phase 7: Commit status (handled by deferred function).
 	status.MarkReady(&mr, "Reconciliation succeeded")
@@ -500,16 +515,17 @@ func removeFinalizer(ctx context.Context, c client.Client, mr *releasesv1alpha1.
 }
 
 // pruneStaleResources runs Phase 6: prune stale resources if spec.prune is true and stale resources exist.
-// Emits prune events via the provided recorder. Returns the outcome, whether reconcile succeeded, and any error.
+// Emits prune events via the provided recorder. Returns the outcome, whether reconcile succeeded,
+// the number of resources deleted, and any error.
 func pruneStaleResources(
 	ctx context.Context,
 	mr *releasesv1alpha1.ModuleRelease,
 	c client.Client,
 	staleSet []releasesv1alpha1.InventoryEntry,
 	recorder record.EventRecorder,
-) (Outcome, bool, error) {
+) (Outcome, bool, int, error) {
 	if !mr.Spec.Prune || len(staleSet) == 0 {
-		return Applied, true, nil
+		return Applied, true, 0, nil
 	}
 	log := logf.FromContext(ctx)
 	pruneResult, err := apply.Prune(ctx, c, staleSet)
@@ -517,17 +533,17 @@ func pruneStaleResources(
 		recorder.Eventf(mr, corev1.EventTypeWarning, status.PruneFailedReason, "%s", err)
 		if mr.Spec.ServiceAccountName != "" && isForbidden(err) {
 			status.MarkStalled(mr, status.ImpersonationFailedReason, "%s", err)
-			return FailedStalled, false, nil
+			return FailedStalled, false, 0, nil
 		}
 		status.MarkNotReady(mr, status.PruneFailedReason, "%s", err)
-		return FailedTransient, false, err
+		return FailedTransient, false, 0, err
 	}
 	if pruneResult.Deleted > 0 {
 		recorder.Eventf(mr, corev1.EventTypeNormal, status.PrunedReason,
 			"Pruned %d stale resources", pruneResult.Deleted)
 	}
 	log.Info("Pruned stale resources", "deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)
-	return AppliedAndPruned, true, nil
+	return AppliedAndPruned, true, pruneResult.Deleted, nil
 }
 
 // sourceError classifies a source resolution error, sets conditions, emits
@@ -586,6 +602,14 @@ func buildApplyClient(
 		return nil, nil, err
 	}
 	return apply.NewResourceManager(impClient, "opm-controller"), impClient, nil
+}
+
+// recordReconcileMetrics records outcome, duration, and inventory size metrics.
+func recordReconcileMetrics(name, namespace string, outcome Outcome, duration time.Duration, reconciled bool, inventoryCount int) {
+	opmmetrics.RecordReconcile(name, namespace, outcome.MetricLabel(), duration)
+	if reconciled {
+		opmmetrics.SetInventorySize(name, namespace, inventoryCount)
+	}
 }
 
 // toUnstructuredSlice converts core.Resource slice to unstructured slice for apply.

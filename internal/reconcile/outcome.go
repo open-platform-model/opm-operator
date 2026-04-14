@@ -30,6 +30,26 @@ const (
 	FailedStalled
 )
 
+// MetricLabel returns the snake_case label value for Prometheus metrics.
+func (o Outcome) MetricLabel() string {
+	switch o {
+	case SoftBlocked:
+		return "soft_blocked"
+	case NoOp:
+		return "no_op"
+	case Applied:
+		return "applied"
+	case AppliedAndPruned:
+		return "applied_and_pruned"
+	case FailedTransient:
+		return "failed_transient"
+	case FailedStalled:
+		return "failed_stalled"
+	default:
+		return "unknown"
+	}
+}
+
 // String returns a human-readable name for the outcome.
 func (o Outcome) String() string {
 	switch o {

@@ -13,6 +13,6 @@
 
 ## 4. Validation
 
-- [ ] 4.1 Run `make local-run` from scratch — verify Kind cluster created, Flux running, controller running, ModuleRelease reconciled
-- [ ] 4.2 Verify the test ConfigMap is created in the cluster (`kubectl get configmap` in default namespace)
-- [ ] 4.3 Run `make local-clean` and verify cluster deleted
+- [x] 4.1 Run `make local-run` from scratch — verify Kind cluster created, Flux running, controller running, ModuleRelease reconciled
+- [x] 4.2 Verify the test ConfigMap is created in the cluster (`kubectl get configmap` in default namespace)
+- [x] 4.3 Run `make local-clean` and verify cluster deleted

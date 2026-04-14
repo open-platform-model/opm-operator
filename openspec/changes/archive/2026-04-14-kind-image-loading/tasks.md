@@ -12,4 +12,4 @@
 
 ## 4. Validation
 
-- [ ] 4.1 Run `make kind-load` against a Kind cluster and verify image appears in `docker exec <node> crictl images`
+- [x] 4.1 Run `make kind-load` against a Kind cluster and verify image appears in `docker exec <node> crictl images`

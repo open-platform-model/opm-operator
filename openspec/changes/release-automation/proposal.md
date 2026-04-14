@@ -14,6 +14,7 @@ The controller has no release automation. Version bumps, changelog generation, g
 ## Capabilities
 
 ### New Capabilities
+
 - `release-automation`: GitHub Actions workflow and configuration for automated semantic version bumps, changelog generation, and GitHub Release creation via release-please.
 
 ### Modified Capabilities

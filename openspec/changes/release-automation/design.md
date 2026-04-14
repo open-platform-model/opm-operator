@@ -7,12 +7,14 @@ The repo is `github.com/open-platform-model/poc-controller`. Docker images are b
 ## Goals / Non-Goals
 
 **Goals:**
+
 - Automate MINOR and PATCH version bumps from Conventional Commits on `main`.
 - Auto-generate a changelog grouped by commit type.
 - Create git tags and GitHub Releases on release PR merge.
 - Keep MAJOR bumps manual and intentional.
 
 **Non-Goals:**
+
 - Docker image build/push automation (separate future change).
 - Binary release artifacts, SBOMs, or signing (separate future change).
 - Version injection into Go binary via ldflags (separate future change).
@@ -26,12 +28,14 @@ The repo is `github.com/open-platform-model/poc-controller`. Docker images are b
 **Choice**: Google's `release-please` GitHub Action.
 
 **Why over semantic-release**:
+
 - release-please creates a **Release PR** that accumulates changes — gives human review before cutting a release. semantic-release publishes immediately on merge to `main` with no review gate.
 - release-please is config-file driven (JSON), no plugin ecosystem to manage.
 - Native support for Go release type and changelog generation.
 - Simpler CI footprint — single workflow file, no npm dependencies.
 
 **Why over goreleaser**:
+
 - goreleaser handles artifact building (binaries, Docker images), not version determination. Complementary, not competing — goreleaser can be added later triggered by the tag release-please creates.
 
 ### 2. MAJOR bumps: manual-only via `release-as`
@@ -55,6 +59,7 @@ The repo is `github.com/open-platform-model/poc-controller`. Docker images are b
 ### 5. Commit types that trigger releases
 
 **Choice**:
+
 - `feat` → MINOR bump
 - `fix`, `perf` → PATCH bump
 - `chore`, `docs`, `test`, `ci`, `refactor` → no version bump (included in next release's changelog under "Miscellaneous")

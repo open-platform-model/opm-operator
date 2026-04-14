@@ -146,6 +146,12 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
+##@ Kind
+
+.PHONY: kind-load
+kind-load: docker-build ## Build and load the controller image into the Kind cluster.
+	$(KIND) load docker-image $(IMG) --name $(KIND_CLUSTER)
+
 ##@ Deployment
 
 ifndef ignore-not-found

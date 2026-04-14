@@ -79,6 +79,11 @@ tasks:
     cmds:
       - make undeploy
 
+  kind-load:
+    desc: Build and load controller image into Kind cluster
+    cmds:
+      - make kind-load
+
   docker-build:
     desc: Build the manager image
     cmds:

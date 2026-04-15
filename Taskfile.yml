@@ -124,6 +124,11 @@ tasks:
     cmds:
       - make apply-samples
 
+  delete-samples:
+    desc: Delete sample CRs from the cluster
+    cmds:
+      - make delete-samples
+
   start-registry:
     desc: Start the local OCI registry
     cmds:

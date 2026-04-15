@@ -110,7 +110,7 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	CUE_REGISTRY="opmodel.dev=localhost:5000+insecure,registry.cue.works" go run ./cmd/main.go --catalog-path=$(shell realpath ./catalog)
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -152,7 +152,11 @@ LOCAL_REGISTRY ?= opmodel.dev=opm-registry:5000+insecure,registry.cue.works
 
 .PHONY: apply-samples
 apply-samples: ## Apply sample OCIRepository and ModuleRelease CRs to the cluster.
-	$(KUBECTL) apply -f config/samples/source_v1_ocirepository.yaml -f config/samples/releases_v1alpha1_modulerelease.yaml
+	$(KUBECTL) apply -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml
+
+.PHONY: delete-samples
+delete-samples: ## Delete sample OCIRepository and ModuleRelease CRs from the cluster.
+	$(KUBECTL) delete -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml
 
 .PHONY: local-run
 local-run: setup-test-e2e start-registry connect-registry install-flux publish-test-module kind-load deploy apply-samples ## Deploy controller to local Kind cluster (full setup).

@@ -7,10 +7,9 @@ metadata:
   name: modulerelease-sample
   namespace: default
 spec:
-  sourceRef:
-    apiVersion: source.toolkit.fluxcd.io/v1
-    kind: OCIRepository
-    name: test-hello
   module:
-    path: opmodel.dev/test/hello
+    path: opmodel.dev/test/hello@v0
+    version: v0.0.1
+  values:
+    message: "hello from local dev"
   prune: true

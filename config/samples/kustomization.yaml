@@ -2,5 +2,6 @@
 resources:
 - source_v1_ocirepository.yaml
 - releases_v1alpha1_modulerelease.yaml
+- releases_v1alpha1_modulerelease_jellyfin.yaml
 - releases_v1alpha1_bundlerelease.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

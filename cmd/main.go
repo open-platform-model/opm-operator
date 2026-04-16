@@ -91,9 +91,11 @@ func main() {
 		"The directory containing the OPM catalog CUE composition module.")
 	flag.StringVar(&providerName, "provider-name", "kubernetes",
 		"The provider to load from the catalog registry.")
-	flag.StringVar(&registry, "registry", "",
+	flag.StringVar(&registry, "registry",
+		"testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works",
 		"CUE registry mapping for resolving module dependencies. "+
-			"Falls back to OPM_REGISTRY env var. If neither is set, uses CUE default resolution.")
+			"Falls back to OPM_REGISTRY env var if empty. Default routes opmodel.dev/* and "+
+			"testing.opmodel.dev/* to ghcr.io/open-platform-model with registry.cue.works as fallback.")
 	flag.StringVar(&cueCacheDir, "cue-cache-dir", "/tmp/cue-cache",
 		"Directory for CUE module download cache.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,

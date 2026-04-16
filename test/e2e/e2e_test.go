@@ -72,6 +72,18 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+
+		By("configuring registry for the controller")
+		localRegistry := os.Getenv("LOCAL_REGISTRY")
+		if localRegistry == "" {
+			localRegistry = "opmodel.dev=opm-registry:5000+insecure,testing.opmodel.dev=opm-registry:5000+insecure,registry.cue.works"
+		}
+		cmd = exec.Command("kubectl", "-n", namespace, "patch", "deployment",
+			"poc-controller-controller-manager",
+			"--type=json",
+			fmt.Sprintf(`-p=[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=%s"}]`, localRegistry))
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to configure registry for controller")
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
@@ -226,7 +238,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"image": "curlimages/curl:latest",
 							"command": ["/bin/sh", "-c"],
 							"args": [
-								"for i in $(seq 1 30); do curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics && exit 0 || sleep 2; done; exit 1"
+								"for i in $(seq 1 30); do curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local.:8443/metrics && exit 0 || sleep 2; done; exit 1"
 							],
 							"securityContext": {
 								"readOnlyRootFilesystem": true,

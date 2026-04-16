@@ -82,8 +82,8 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+test-e2e: setup-test-e2e start-registry connect-registry publish-test-module manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) LOCAL_REGISTRY="$(LOCAL_REGISTRY)" go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
@@ -148,7 +148,7 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 
 ##@ Local Workflow
 
-LOCAL_REGISTRY ?= opmodel.dev=opm-registry:5000+insecure,registry.cue.works
+LOCAL_REGISTRY ?= opmodel.dev=opm-registry:5000+insecure,testing.opmodel.dev=opm-registry:5000+insecure,registry.cue.works
 
 .PHONY: apply-samples
 apply-samples: ## Apply sample OCIRepository and ModuleRelease CRs to the cluster.

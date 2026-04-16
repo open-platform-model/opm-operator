@@ -38,11 +38,13 @@ The repo is `github.com/open-platform-model/poc-controller`. Docker images are b
 
 - goreleaser handles artifact building (binaries, Docker images), not version determination. Complementary, not competing — goreleaser can be added later triggered by the tag release-please creates.
 
-### 2. MAJOR bumps: manual-only via `release-as`
+### 2. MAJOR bumps: commit-driven, not manual-only
 
-**Choice**: Do not use `feat!:` or `BREAKING CHANGE:` footer in commits. MAJOR bumps are triggered by adding `release-as: X.0.0` to the release-please config or editing the Release PR.
+**Choice**: Allow `feat!:` prefix and `BREAKING CHANGE:` footer to drive MAJOR bumps once the baseline crosses 1.0.0. Pre-1.0 (0.x), `bump-minor-pre-major: true` demotes breaking commits to MINOR bumps per SemVer pre-release semantics. Maintainers MAY still override via `release-as` when needed.
 
-**Why**: Breaking changes are rare and high-stakes for a Kubernetes controller. Automated MAJOR bumps risk accidental API-breaking releases. Human judgment on when to cross a major version boundary is worth the small friction.
+**Why**: Commit-level signalling of breaking changes keeps the Release PR accurate — reviewers see the correct proposed version before merge, and the changelog automatically groups breaking changes. The Release PR itself is the human review gate, so accidental MAJOR bumps can still be caught before tagging. The previous "never use `feat!:`" policy shifted review burden to maintainers without a corresponding automation benefit.
+
+**Pre-1.0 note**: `bump-minor-pre-major: true` ensures 0.x never auto-jumps to 1.0.0 from a breaking commit. The 1.0.0 cut remains an explicit `release-as` decision.
 
 ### 3. Changelog: CHANGELOG.md in repo root
 

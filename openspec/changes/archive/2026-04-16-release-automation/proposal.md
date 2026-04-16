@@ -1,13 +1,14 @@
 ## Why
 
-The controller has no release automation. Version bumps, changelog generation, git tags, and GitHub Releases are all manual. Conventional Commits are already enforced but not leveraged for automated versioning. Adding release-please automates MINOR and PATCH releases while keeping MAJOR bumps under human control.
+The controller has no release automation. Version bumps, changelog generation, git tags, and GitHub Releases are all manual. Conventional Commits are already enforced but not leveraged for automated versioning. Adding release-please automates MAJOR, MINOR, and PATCH releases driven entirely by commit semantics.
 
 ## What Changes
 
 - Add a release-please GitHub Actions workflow that opens/updates a Release PR on each push to `main`.
 - Add a release-please configuration file scoping behavior to this repository.
-- Conventional Commits determine bump level: `feat` → MINOR, `fix`/`perf` → PATCH.
-- MAJOR bumps are manual-only — `feat!:` and `BREAKING CHANGE:` footers are not used; major versions are set explicitly via `release-as` override when needed.
+- Conventional Commits determine bump level: `feat!:` or `BREAKING CHANGE:` footer → MAJOR, `feat` → MINOR, `fix`/`perf` → PATCH.
+- Pre-1.0 (0.x): SemVer allows breaking changes in MINOR; `bump-minor-pre-major` demotes breaking commits to MINOR bumps until the baseline crosses 1.0.0.
+- A maintainer MAY still override the proposed version explicitly via `release-as` when automated bump inference is wrong.
 - release-please auto-generates `CHANGELOG.md` grouped by commit type.
 - On Release PR merge, release-please creates a git tag and GitHub Release with release notes.
 

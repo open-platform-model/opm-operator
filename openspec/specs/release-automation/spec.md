@@ -26,14 +26,18 @@ The workflow SHALL determine the version bump level by analyzing commit messages
 - **WHEN** commits since last release include `fix` or `perf` types but no `feat`
 - **THEN** the proposed version SHALL be a PATCH bump (e.g., 0.1.0 → 0.1.1)
 
-#### Scenario: MAJOR bump is never automated
-- **WHEN** commits include `feat!:` prefix or `BREAKING CHANGE:` footer
-- **THEN** the workflow SHALL treat them as MINOR bumps (not MAJOR), because the team policy prohibits automated MAJOR bumps
+#### Scenario: Breaking-change commit post-1.0 triggers MAJOR bump
+- **WHEN** commits include `feat!:` prefix or `BREAKING CHANGE:` footer and the current version is >= `1.0.0`
+- **THEN** the proposed version SHALL be a MAJOR bump (e.g., 1.2.3 → 2.0.0)
 
-### Requirement: Manual MAJOR version override
-The workflow SHALL support explicit version overrides for MAJOR bumps via the `release-as` configuration option.
+#### Scenario: Breaking-change commit pre-1.0 is demoted to MINOR
+- **WHEN** commits include `feat!:` prefix or `BREAKING CHANGE:` footer and the current version is `0.x.y`
+- **THEN** the proposed version SHALL be a MINOR bump (e.g., 0.2.3 → 0.3.0); `bump-minor-pre-major` prevents an automated 0.x → 1.0.0 jump
 
-#### Scenario: Manual major bump via release-as
+### Requirement: Manual version override via release-as
+The workflow SHALL support explicit version overrides via the `release-as` configuration option. This is the required mechanism to cross the 0.x → 1.0.0 boundary and MAY be used to override any automated bump decision.
+
+#### Scenario: Manual 1.0.0 cut via release-as
 - **WHEN** a maintainer sets `release-as: 1.0.0` in the release-please config and pushes to `main`
 - **THEN** the Release PR SHALL propose version 1.0.0 regardless of commit types
 

@@ -130,29 +130,38 @@ func ReconcileModuleRelease(
 		phases phaseOutcomes
 	)
 
-	// Deferred status commit — always patches status when meaningful state changed.
-	// The GenerationChangedPredicate on the controller's event filter prevents
-	// status-only patches from triggering watch-driven reconcile storms.
+	// Deferred status commit — patches status on every reconcile attempt,
+	// including NoOp. On NoOp, the patch is bounded to drift condition,
+	// failure counter deltas, and clearing nextRetryAt; lastAttempted/history/
+	// inventory are not touched (they describe meaningful outcomes).
+	// Storm-safe: GenerationChangedPredicate on the controller's event filter
+	// prevents status-only patches from triggering watch-driven reconciles.
 	defer func() {
 		if outcome == NoOp {
-			// Clear NextRetryAt if it was set by a previous failed reconcile,
-			// then patch to reflect the healthy state.
-			if mr.Status.NextRetryAt != nil {
-				mr.Status.NextRetryAt = nil
-				if patchErr := patcher.Patch(ctx, &mr,
-					patch.WithOwnedConditions{
-						Conditions: []string{
-							status.ReadyCondition,
-							status.ReconcilingCondition,
-							status.StalledCondition,
-							status.ModuleResolvedCondition,
-							status.DriftedCondition,
-						},
+			// Drift detection ran and may have set/cleared the Drifted
+			// condition; phase counters may need increment/reset. Persist
+			// these via a bounded patch.
+			//
+			// NoOp implies digests match LastApplied — a previous reconcile
+			// applied successfully — so Ready=True is the correct state.
+			// MarkReconciling at the start of this reconcile transiently set
+			// Ready=Unknown; reset it now before patching.
+			status.MarkReady(&mr, "Reconciliation succeeded")
+			updateFailureCounters(&mr.Status, outcome, phases)
+			mr.Status.NextRetryAt = nil
+			if patchErr := patcher.Patch(ctx, &mr,
+				patch.WithOwnedConditions{
+					Conditions: []string{
+						status.ReadyCondition,
+						status.ReconcilingCondition,
+						status.StalledCondition,
+						status.ModuleResolvedCondition,
+						status.DriftedCondition,
 					},
-					patch.WithStatusObservedGeneration{},
-				); patchErr != nil {
-					log.Error(patchErr, "Failed to clear NextRetryAt on NoOp")
-				}
+				},
+				patch.WithStatusObservedGeneration{},
+			); patchErr != nil {
+				log.Error(patchErr, "Failed to patch NoOp status")
 			}
 			recordReconcileMetrics(mr.Name, mr.Namespace, outcome, time.Since(reconcileStart), false, 0)
 			opmmetrics.RecordDuration(mr.Name, mr.Namespace, time.Since(reconcileStart))

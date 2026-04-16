@@ -1,0 +1,30 @@
+version: '3'
+
+tasks:
+  start:
+    desc: Start the local OCI registry
+    cmds:
+      - |
+        if ! {{.CONTAINER_TOOL}} ps --filter name={{.REGISTRY_CONTAINER}} --format '{{`{{.Names}}`}}' | grep -q {{.REGISTRY_CONTAINER}}; then
+          if {{.CONTAINER_TOOL}} ps -a --filter name={{.REGISTRY_CONTAINER}} --format '{{`{{.Names}}`}}' | grep -q {{.REGISTRY_CONTAINER}}; then
+            echo "Starting existing {{.REGISTRY_CONTAINER}} container..."
+            {{.CONTAINER_TOOL}} start {{.REGISTRY_CONTAINER}}
+          else
+            echo "Creating {{.REGISTRY_CONTAINER}} container..."
+            {{.CONTAINER_TOOL}} run -d --name {{.REGISTRY_CONTAINER}} -p {{.REGISTRY_PORT}}:5000 --restart=unless-stopped {{.REGISTRY_IMAGE}}
+          fi
+        else
+          echo "{{.REGISTRY_CONTAINER}} is already running."
+        fi
+
+  connect:
+    desc: Connect local registry to Kind network
+    cmds:
+      - '{{.CONTAINER_TOOL}} network connect kind {{.REGISTRY_CONTAINER}} || true'
+
+  publish-test-module:
+    desc: Publish test hello module to local registry
+    env:
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+    cmds:
+      - cd {{.TEST_MODULE_DIR}} && cue mod tidy && cue mod publish v0.0.1

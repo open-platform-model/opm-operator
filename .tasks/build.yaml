@@ -1,0 +1,24 @@
+version: '3'
+
+tasks:
+  binary:
+    desc: Build the manager binary
+    deps: [":dev:manifests", ":dev:generate", ":dev:fmt", ":dev:vet"]
+    cmds:
+      - go build -o bin/manager cmd/main.go
+
+  run:
+    desc: Run the controller locally
+    deps: [":dev:manifests", ":dev:generate", ":dev:fmt", ":dev:vet"]
+    env:
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+    cmds:
+      - go run ./cmd/main.go --catalog-path=$(realpath ./catalog)
+
+  installer:
+    desc: Build consolidated install manifest
+    deps: [":dev:manifests", ":dev:generate", ":tool:kustomize"]
+    cmds:
+      - mkdir -p dist
+      - 'cd config/manager && "{{.KUSTOMIZE}}" edit set image controller={{.IMG}}'
+      - '"{{.KUSTOMIZE}}" build config/default > dist/install.yaml'

@@ -17,7 +17,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+
       - name: Check linter configuration
-        run: make lint-config
+        run: task dev:lint:config
       - name: Run linter
-        run: make lint
+        run: task dev:lint

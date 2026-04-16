@@ -1,145 +1,115 @@
 version: '3'
 
-# Silent by default - set TASK_VERBOSE=1 or use --verbose to show commands
 silent: true
+
+vars:
+  IMG: '{{.IMG | default "controller:latest"}}'
+  CONTAINER_TOOL: '{{.CONTAINER_TOOL | default "docker"}}'
+  LOCALBIN: '{{.ROOT_DIR}}/bin'
+  KUBECTL: '{{.KUBECTL | default "kubectl"}}'
+  KIND: '{{.KIND | default "kind"}}'
+  FLUX: '{{.FLUX | default "flux"}}'
+  KUSTOMIZE: '{{.LOCALBIN}}/kustomize'
+  CONTROLLER_GEN: '{{.LOCALBIN}}/controller-gen'
+  ENVTEST: '{{.LOCALBIN}}/setup-envtest'
+  GOLANGCI_LINT: '{{.LOCALBIN}}/golangci-lint'
+  KUSTOMIZE_VERSION: v5.8.1
+  CONTROLLER_TOOLS_VERSION: v0.20.1
+  GOLANGCI_LINT_VERSION: v2.8.0
+  ENVTEST_VERSION:
+    sh: |
+      v=$(go list -m -f '{{`{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}`}}' sigs.k8s.io/controller-runtime 2>/dev/null)
+      [ -n "$v" ] || { echo "Set ENVTEST_VERSION manually (controller-runtime replace has no tag)" >&2; exit 1; }
+      printf '%s\n' "$v" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/release-\1.\2/'
+  ENVTEST_K8S_VERSION:
+    sh: |
+      v=$(go list -m -f '{{`{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}`}}' k8s.io/api 2>/dev/null)
+      [ -n "$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }
+      printf '%s\n' "$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/'
+  KIND_CLUSTER: '{{.KIND_CLUSTER | default "poc-controller-test-e2e"}}'
+  REGISTRY_CONTAINER: '{{.REGISTRY_CONTAINER | default "opm-registry"}}'
+  REGISTRY_PORT: '{{.REGISTRY_PORT | default "5000"}}'
+  REGISTRY_IMAGE: '{{.REGISTRY_IMAGE | default "registry:2"}}'
+  CUE_REGISTRY: '{{.CUE_REGISTRY | default "opmodel.dev=ghcr.io/open-platform-model,testing.opmodel.dev=localhost:5000+insecure,registry.cue.works"}}'
+  LOCAL_REGISTRY: '{{.LOCAL_REGISTRY | default "opmodel.dev=opm-registry:5000+insecure,registry.cue.works"}}'
+  TEST_MODULE_DIR: '{{.TEST_MODULE_DIR | default "test/fixtures/modules/hello"}}'
+  PLATFORMS: '{{.PLATFORMS | default "linux/arm64,linux/amd64,linux/s390x,linux/ppc64le"}}'
+  IGNORE_NOT_FOUND: '{{.IGNORE_NOT_FOUND | default "false"}}'
+
+includes:
+  dev:
+    taskfile: ./.tasks/dev.yaml
+    vars:
+      LOCALBIN: '{{.LOCALBIN}}'
+      CONTROLLER_GEN: '{{.CONTROLLER_GEN}}'
+      ENVTEST: '{{.ENVTEST}}'
+      GOLANGCI_LINT: '{{.GOLANGCI_LINT}}'
+      ENVTEST_K8S_VERSION: '{{.ENVTEST_K8S_VERSION}}'
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+
+  build:
+    taskfile: ./.tasks/build.yaml
+    vars:
+      KUSTOMIZE: '{{.KUSTOMIZE}}'
+      IMG: '{{.IMG}}'
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+
+  docker:
+    taskfile: ./.tasks/docker.yaml
+    vars:
+      CONTAINER_TOOL: '{{.CONTAINER_TOOL}}'
+      IMG: '{{.IMG}}'
+      PLATFORMS: '{{.PLATFORMS}}'
+
+  deploy:
+    taskfile: ./.tasks/deploy.yaml
+    vars:
+      KUBECTL: '{{.KUBECTL}}'
+      KUSTOMIZE: '{{.KUSTOMIZE}}'
+      IMG: '{{.IMG}}'
+      IGNORE_NOT_FOUND: '{{.IGNORE_NOT_FOUND}}'
+
+  kind:
+    taskfile: ./.tasks/kind.yaml
+    vars:
+      KIND: '{{.KIND}}'
+      KUBECTL: '{{.KUBECTL}}'
+      IMG: '{{.IMG}}'
+      KIND_CLUSTER: '{{.KIND_CLUSTER}}'
+      LOCAL_REGISTRY: '{{.LOCAL_REGISTRY}}'
+
+  registry:
+    taskfile: ./.tasks/registry.yaml
+    vars:
+      CONTAINER_TOOL: '{{.CONTAINER_TOOL}}'
+      REGISTRY_CONTAINER: '{{.REGISTRY_CONTAINER}}'
+      REGISTRY_PORT: '{{.REGISTRY_PORT}}'
+      REGISTRY_IMAGE: '{{.REGISTRY_IMAGE}}'
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+      TEST_MODULE_DIR: '{{.TEST_MODULE_DIR}}'
+
+  flux:
+    taskfile: ./.tasks/flux.yaml
+    vars:
+      FLUX: '{{.FLUX}}'
+
+  tool:
+    taskfile: ./.tasks/tools.yaml
+    internal: true
+    vars:
+      LOCALBIN: '{{.LOCALBIN}}'
+      CONTROLLER_GEN: '{{.CONTROLLER_GEN}}'
+      KUSTOMIZE: '{{.KUSTOMIZE}}'
+      ENVTEST: '{{.ENVTEST}}'
+      GOLANGCI_LINT: '{{.GOLANGCI_LINT}}'
+      KUSTOMIZE_VERSION: '{{.KUSTOMIZE_VERSION}}'
+      CONTROLLER_TOOLS_VERSION: '{{.CONTROLLER_TOOLS_VERSION}}'
+      GOLANGCI_LINT_VERSION: '{{.GOLANGCI_LINT_VERSION}}'
+      ENVTEST_VERSION: '{{.ENVTEST_VERSION}}'
+      ENVTEST_K8S_VERSION: '{{.ENVTEST_K8S_VERSION}}'
 
 tasks:
   default:
     desc: Show available tasks
     cmds:
       - task --list
-
-  help:
-    desc: Show available tasks
-    cmds:
-      - make help
-
-  manifests:
-    desc: Generate CRDs and RBAC manifests
-    cmds:
-      - make manifests
-
-  generate:
-    desc: Generate deepcopy code
-    cmds:
-      - make generate
-
-  fmt:
-    desc: Format Go code
-    cmds:
-      - make fmt
-
-  vet:
-    desc: Run go vet
-    cmds:
-      - make vet
-
-  lint:
-    desc: Run golangci-lint
-    cmds:
-      - make lint
-
-  lint-fix:
-    desc: Run golangci-lint with fixes
-    cmds:
-      - make lint-fix
-
-  test:
-    desc: Run unit tests
-    cmds:
-      - make test
-
-  build:
-    desc: Build the manager binary
-    cmds:
-      - make build
-
-  run:
-    desc: Run the controller locally
-    cmds:
-      - make run
-
-  install:
-    desc: Install CRDs
-    cmds:
-      - make install
-
-  uninstall:
-    desc: Uninstall CRDs
-    cmds:
-      - make uninstall
-
-  deploy:
-    desc: Deploy the controller manager
-    cmds:
-      - make deploy
-
-  undeploy:
-    desc: Remove the controller manager
-    cmds:
-      - make undeploy
-
-  kind-load:
-    desc: Build and load controller image into Kind cluster
-    cmds:
-      - make kind-load
-
-  docker-build:
-    desc: Build the manager image
-    cmds:
-      - make docker-build
-
-  docker-push:
-    desc: Push the manager image
-    cmds:
-      - make docker-push
-
-  build-installer:
-    desc: Build consolidated install manifest
-    cmds:
-      - make build-installer
-
-  install-flux:
-    desc: Install Flux source-controller
-    cmds:
-      - make install-flux
-
-  uninstall-flux:
-    desc: Uninstall Flux
-    cmds:
-      - make uninstall-flux
-
-  local-run:
-    desc: Deploy controller to local Kind cluster (full setup)
-    cmds:
-      - make local-run
-
-  local-clean:
-    desc: Tear down local Kind cluster and deployment
-    cmds:
-      - make local-clean
-
-  apply-samples:
-    desc: Apply sample CRs to the cluster
-    cmds:
-      - make apply-samples
-
-  delete-samples:
-    desc: Delete sample CRs from the cluster
-    cmds:
-      - make delete-samples
-
-  start-registry:
-    desc: Start the local OCI registry
-    cmds:
-      - make start-registry
-
-  connect-registry:
-    desc: Connect local registry to Kind network
-    cmds:
-      - make connect-registry
-
-  publish-test-module:
-    desc: Publish test hello module to local registry
-    cmds:
-      - make publish-test-module

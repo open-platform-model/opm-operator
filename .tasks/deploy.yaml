@@ -1,0 +1,41 @@
+version: '3'
+
+tasks:
+  crds:
+    desc: Install CRDs
+    deps: [":dev:manifests", ":tool:kustomize"]
+    cmds:
+      - |
+        out="$("{{.KUSTOMIZE}}" build config/crd 2>/dev/null || true)"
+        if [ -n "$out" ]; then echo "$out" | "{{.KUBECTL}}" apply -f -; else echo "No CRDs to install; skipping."; fi
+
+  crds:remove:
+    desc: Uninstall CRDs
+    deps: [":dev:manifests", ":tool:kustomize"]
+    cmds:
+      - |
+        out="$("{{.KUSTOMIZE}}" build config/crd 2>/dev/null || true)"
+        if [ -n "$out" ]; then echo "$out" | "{{.KUBECTL}}" delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -; else echo "No CRDs to delete; skipping."; fi
+
+  controller:
+    desc: Deploy the controller manager
+    deps: [":dev:manifests", ":tool:kustomize"]
+    cmds:
+      - 'cd config/manager && "{{.KUSTOMIZE}}" edit set image controller={{.IMG}}'
+      - '"{{.KUSTOMIZE}}" build config/default | "{{.KUBECTL}}" apply -f -'
+
+  controller:remove:
+    desc: Remove the controller manager
+    deps: [":tool:kustomize"]
+    cmds:
+      - '"{{.KUSTOMIZE}}" build config/default | "{{.KUBECTL}}" delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -'
+
+  samples:
+    desc: Apply sample CRs to the cluster
+    cmds:
+      - '{{.KUBECTL}} apply -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml'
+
+  samples:remove:
+    desc: Delete sample CRs from the cluster
+    cmds:
+      - '{{.KUBECTL}} delete -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml'

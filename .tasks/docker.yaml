@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the manager image
+    cmds:
+      - '{{.CONTAINER_TOOL}} build -t {{.IMG}} .'
+
+  push:
+    desc: Push the manager image
+    cmds:
+      - '{{.CONTAINER_TOOL}} push {{.IMG}}'
+
+  buildx:
+    desc: Build and push docker image for cross-platform support
+    cmds:
+      - sed -e '1 s/\(^FROM\)/FROM --platform=$${BUILDPLATFORM}/' -e ' 1,// s//FROM --platform=$${BUILDPLATFORM}/' Dockerfile > Dockerfile.cross
+      - '{{.CONTAINER_TOOL}} buildx create --name poc-controller-builder || true'
+      - '{{.CONTAINER_TOOL}} buildx use poc-controller-builder'
+      - '{{.CONTAINER_TOOL}} buildx build --push --platform={{.PLATFORMS}} --tag {{.IMG}} -f Dockerfile.cross . || true'
+      - '{{.CONTAINER_TOOL}} buildx rm poc-controller-builder || true'
+      - rm -f Dockerfile.cross

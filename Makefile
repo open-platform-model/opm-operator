@@ -230,8 +230,12 @@ connect-registry: ## Connect the local registry to the Kind Docker network.
 	-$(CONTAINER_TOOL) network connect kind $(REGISTRY_CONTAINER)
 
 .PHONY: publish-test-module
+# Use a target-local CUE_REGISTRY that always maps both namespaces to the local
+# registry, regardless of the shell's CUE_REGISTRY. Shell exports that omit
+# testing.opmodel.dev cause `cue mod publish` to 401 against a non-local host.
+publish-test-module: PUBLISH_REGISTRY := testing.opmodel.dev=localhost:$(REGISTRY_PORT)+insecure,opmodel.dev=localhost:$(REGISTRY_PORT)+insecure,registry.cue.works
 publish-test-module: ## Publish the test hello module to the local registry.
-	cd $(TEST_MODULE_DIR) && CUE_REGISTRY=$(CUE_REGISTRY) cue mod tidy && CUE_REGISTRY=$(CUE_REGISTRY) cue mod publish v0.0.1
+	cd $(TEST_MODULE_DIR) && CUE_REGISTRY="$(PUBLISH_REGISTRY)" cue mod tidy && CUE_REGISTRY="$(PUBLISH_REGISTRY)" cue mod publish v0.0.1
 
 ##@ Flux
 

@@ -45,6 +45,9 @@ type ModuleReleaseParams struct {
 	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   record.EventRecorder
+	// Renderer produces the render result for a ModuleRelease. Must be non-nil;
+	// production wires render.RegistryRenderer, tests wire a stub.
+	Renderer render.ModuleRenderer
 }
 
 // ReconcileModuleRelease orchestrates all phases of the reconcile loop.
@@ -245,7 +248,7 @@ func ReconcileModuleRelease(
 
 	// Phase 1: Synthesize, resolve, and render module from OCI registry.
 	// CUE's native module system resolves the target module from the registry.
-	renderResult, err := render.RenderModuleFromRegistry(
+	renderResult, err := params.Renderer.RenderModule(
 		ctx,
 		mr.Name, mr.Namespace,
 		mr.Spec.Module.Path, mr.Spec.Module.Version,
@@ -306,6 +309,7 @@ func ReconcileModuleRelease(
 
 	if isNoOp {
 		log.Info("No changes detected, skipping apply")
+		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.NoOpReason, "No changes detected")
 		outcome = NoOp
 		return ctrl.Result{}, nil
 	}

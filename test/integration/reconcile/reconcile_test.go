@@ -61,6 +61,7 @@ func reconcileParams() *opmreconcile.ModuleReleaseParams {
 		Provider:        testProvider(),
 		ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 		EventRecorder:   record.NewFakeRecorder(10),
+		Renderer:        &stubRenderer{},
 	}
 }
 
@@ -76,11 +77,12 @@ func ensureFinalizer(params *opmreconcile.ModuleReleaseParams, nn types.Namespac
 
 var _ = Describe("Reconcile Error Paths", func() {
 	Context("Render failure", func() {
-		PIt("should set Stalled with RenderFailed when module has no components", func() {
+		It("should set Stalled with RenderFailed when module has no components", func() {
 			createModuleRelease("render-fail-mr")
 
-			// no-components-module causes "no resources rendered" error in render.
+			// Inject a render failure (not classified as resolution error).
 			params := reconcileParams()
+			params.Renderer = renderErrorRenderer("module \"render-fail\": no resources rendered")
 
 			nn := types.NamespacedName{Name: "render-fail-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
@@ -141,6 +143,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 
 			params := reconcileParams()
+			params.Renderer = resolutionErrorRenderer()
 
 			nn := types.NamespacedName{Name: "stalled-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
@@ -172,10 +175,11 @@ var _ = Describe("Reconcile Error Paths", func() {
 	})
 
 	Context("Status updated on failure", func() {
-		PIt("should populate lastAttempted fields even when reconcile fails", func() {
+		It("should populate lastAttempted fields even when reconcile fails", func() {
 			createModuleRelease("status-fail-mr")
 
 			params := reconcileParams()
+			params.Renderer = renderErrorRenderer("network timeout")
 
 			nn := types.NamespacedName{Name: "status-fail-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
@@ -229,6 +233,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 
 			params := reconcileParams()
+			params.Renderer = resolutionErrorRenderer()
 			nn := types.NamespacedName{Name: "retry-stalled-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
 
@@ -249,7 +254,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 	})
 
 	Context("Partial failure preserves inventory", func() {
-		PIt("should keep previous inventory when prune fails after successful apply", func() {
+		It("should keep previous inventory when prune fails after successful apply", func() {
 			// Create MR with prune=true.
 			mr := &releasesv1alpha1.ModuleRelease{
 				ObjectMeta: metav1.ObjectMeta{

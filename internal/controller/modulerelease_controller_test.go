@@ -78,6 +78,7 @@ var _ = Describe("ModuleRelease Controller", func() {
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: record.NewFakeRecorder(10),
+				Renderer:      &stubRenderer{},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

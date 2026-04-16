@@ -43,12 +43,13 @@ func reconcileParamsWithConfig() *opmreconcile.ModuleReleaseParams {
 		Provider:        testProvider(),
 		ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 		EventRecorder:   record.NewFakeRecorder(10),
+		Renderer:        &stubRenderer{},
 	}
 }
 
 var _ = Describe("ServiceAccount Impersonation", func() {
 	Context("Reconcile with valid ServiceAccount", func() {
-		PIt("should apply resources using impersonated identity", func() {
+		It("should apply resources using impersonated identity", func() {
 			mrName := "imp-valid-mr"
 			saName := "deploy-sa"
 
@@ -153,7 +154,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 	})
 
 	Context("Reconcile with missing ServiceAccount", func() {
-		PIt("should stall with ImpersonationFailed when SA does not exist", func() {
+		It("should stall with ImpersonationFailed when SA does not exist", func() {
 			mrName := "imp-missing-mr"
 
 			// Create MR with nonexistent SA.
@@ -210,7 +211,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 	})
 
 	Context("Reconcile with impersonation RBAC denial", func() {
-		PIt("should stall when controller user lacks impersonate permission", func() {
+		It("should stall when controller user lacks impersonate permission", func() {
 			mrName := "imp-denied-mr"
 			saName := "target-sa"
 
@@ -285,6 +286,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
@@ -330,7 +332,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 	})
 
 	Context("Reconcile without serviceAccountName", func() {
-		PIt("should use controller client when SA is not specified", func() {
+		It("should use controller client when SA is not specified", func() {
 			mrName := "imp-nosa-mr"
 
 			createModuleRelease(mrName)

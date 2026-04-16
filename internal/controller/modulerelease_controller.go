@@ -34,6 +34,7 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
 	opmreconcile "github.com/open-platform-model/poc-controller/internal/reconcile"
+	"github.com/open-platform-model/poc-controller/internal/render"
 	"github.com/open-platform-model/poc-controller/pkg/provider"
 )
 
@@ -46,6 +47,7 @@ type ModuleReleaseReconciler struct {
 	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   record.EventRecorder
+	Renderer        render.ModuleRenderer
 }
 
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases,verbs=get;list;watch;create;update;patch;delete
@@ -67,6 +69,7 @@ func (r *ModuleReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Provider:        r.Provider,
 		ResourceManager: r.ResourceManager,
 		EventRecorder:   r.EventRecorder,
+		Renderer:        r.Renderer,
 	}, req)
 }
 

@@ -18,6 +18,7 @@ package reconcile_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,6 +38,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+	"github.com/open-platform-model/poc-controller/internal/inventory"
+	"github.com/open-platform-model/poc-controller/internal/render"
+	"github.com/open-platform-model/poc-controller/pkg/core"
 	"github.com/open-platform-model/poc-controller/pkg/provider"
 )
 
@@ -105,6 +109,98 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+// stubRenderer is a test ModuleRenderer that returns a pre-built result or
+// an error without touching an OCI registry. Leave result nil + err nil to
+// use the default ConfigMap-based render result.
+type stubRenderer struct {
+	result *render.RenderResult
+	err    error
+}
+
+func (s *stubRenderer) RenderModule(
+	_ context.Context,
+	_, namespace, _, _ string,
+	values *releasesv1alpha1.RawValues,
+	_ *provider.Provider,
+) (*render.RenderResult, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.result != nil {
+		return s.result, nil
+	}
+	return stubRenderResult(namespace, values), nil
+}
+
+// stubRenderResult builds a ConfigMap render result named "test-module" in the
+// given namespace, with data.message extracted from values (default "hello").
+// Mirrors what testProvider would produce for the test fixture module.
+func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *render.RenderResult {
+	message := "hello"
+	if values != nil && len(values.Raw) > 0 {
+		var parsed map[string]any
+		if err := json.Unmarshal(values.Raw, &parsed); err == nil {
+			if m, ok := parsed["message"].(string); ok {
+				message = m
+			}
+		}
+	}
+
+	cueCtx := cuecontext.New()
+	cm := cueCtx.CompileString(fmt.Sprintf(`{
+	apiVersion: "v1"
+	kind:       "ConfigMap"
+	metadata: {
+		name:      "test-module"
+		namespace: %q
+		labels: {
+			%q: %q
+			%q: %q
+		}
+	}
+	data: {
+		message: %q
+	}
+}`, namespace,
+		core.LabelManagedBy, core.LabelManagedByControllerValue,
+		core.LabelModuleReleaseNamespace, namespace,
+		message))
+	if cm.Err() != nil {
+		panic(fmt.Sprintf("compiling stub ConfigMap: %v", cm.Err()))
+	}
+
+	resource := &core.Resource{
+		Value:       cm,
+		Release:     "test-module",
+		Component:   "hello",
+		Transformer: "kubernetes#simple",
+	}
+
+	u, err := resource.ToUnstructured()
+	if err != nil {
+		panic(fmt.Sprintf("converting stub resource: %v", err))
+	}
+
+	return &render.RenderResult{
+		Resources:        []*core.Resource{resource},
+		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
+	}
+}
+
+// resolutionErrorRenderer returns a stub whose error matches the reconcile
+// loop's isResolutionError() classification.
+func resolutionErrorRenderer() *stubRenderer {
+	return &stubRenderer{
+		err: fmt.Errorf("loading synthesized release: module not found in registry"),
+	}
+}
+
+// renderErrorRenderer returns a stub with a render-style error that the
+// reconcile loop classifies as RenderFailed (not ResolutionFailed).
+func renderErrorRenderer(msg string) *stubRenderer {
+	return &stubRenderer{err: fmt.Errorf("%s", msg)}
 }
 
 // testProvider builds a minimal provider that produces a ConfigMap.

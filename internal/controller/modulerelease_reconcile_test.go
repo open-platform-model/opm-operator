@@ -63,7 +63,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	}
 
 	Context("Full reconcile pipeline", func() {
-		PIt("should apply resources and populate status on first reconcile", func() {
+		It("should apply resources and populate status on first reconcile", func() {
 			ctx := context.Background()
 
 			createModuleRelease(ctx, "full-reconcile-mr")
@@ -74,6 +74,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "full-reconcile-mr", Namespace: namespace}
@@ -165,6 +166,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: record.NewFakeRecorder(10),
+				Renderer:      &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "suspended-mr", Namespace: namespace}
@@ -199,7 +201,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			Expect(k8sClient.Delete(ctx, mr)).To(Succeed())
 		})
 
-		PIt("should preserve existing status when suspend is true", func() {
+		It("should preserve existing status when suspend is true", func() {
 			ctx := context.Background()
 
 			mr := &releasesv1alpha1.ModuleRelease{
@@ -221,6 +223,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "suspend-preserve-mr", Namespace: namespace}
@@ -284,7 +287,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			})).To(Succeed())
 		})
 
-		PIt("should perform full reconcile when unsuspended", func() {
+		It("should perform full reconcile when unsuspended", func() {
 			ctx := context.Background()
 
 			mr := &releasesv1alpha1.ModuleRelease{
@@ -307,6 +310,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "resume-mr", Namespace: namespace}
@@ -366,7 +370,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("No-op detection", func() {
-		PIt("should skip apply on second reconcile when digests match", func() {
+		It("should skip apply on second reconcile when digests match", func() {
 			ctx := context.Background()
 
 			createModuleRelease(ctx, "noop-mr")
@@ -377,6 +381,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "noop-mr", Namespace: namespace}
@@ -441,6 +446,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: record.NewFakeRecorder(10),
+				Renderer:      &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "finalizer-add-mr", Namespace: namespace}
@@ -461,7 +467,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("Deletion with prune enabled", func() {
-		PIt("should delete inventory resources and remove finalizer", func() {
+		It("should delete inventory resources and remove finalizer", func() {
 			ctx := context.Background()
 
 			mr := &releasesv1alpha1.ModuleRelease{
@@ -484,6 +490,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "delete-prune-mr", Namespace: namespace}
@@ -531,7 +538,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("Deletion with prune disabled", func() {
-		PIt("should remove finalizer without deleting resources", func() {
+		It("should remove finalizer without deleting resources", func() {
 			ctx := context.Background()
 
 			mr := &releasesv1alpha1.ModuleRelease{
@@ -554,6 +561,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "delete-orphan-mr", Namespace: namespace}
@@ -598,7 +606,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("Deletion safety exclusions", func() {
-		PIt("should skip Namespace and CRD during deletion cleanup", func() {
+		It("should skip Namespace and CRD during deletion cleanup", func() {
 			ctx := context.Background()
 
 			// Create a ModuleRelease with finalizer and fake inventory containing
@@ -650,6 +658,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: record.NewFakeRecorder(10),
+				Renderer:      &stubRenderer{},
 			}
 
 			// Reconcile deletion.
@@ -674,7 +683,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("Deletion with suspend enabled", func() {
-		PIt("should perform cleanup even when suspend is true", func() {
+		It("should perform cleanup even when suspend is true", func() {
 			ctx := context.Background()
 
 			mr := &releasesv1alpha1.ModuleRelease{
@@ -697,6 +706,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "delete-suspend-mr", Namespace: namespace}
@@ -747,7 +757,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("Deletion partial failure", func() {
-		PIt("should retain finalizer when prune fails on some resources", func() {
+		It("should retain finalizer when prune fails on some resources", func() {
 			ctx := context.Background()
 
 			// Create a ModuleRelease with finalizer and inventory containing
@@ -794,12 +804,14 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: record.NewFakeRecorder(10),
+				Renderer:      &stubRenderer{},
 			}
 
 			// Reconcile should fail — prune cannot delete the non-existent GVK resource.
-			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred(), "transient failure returns nil error with backoff")
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "transient failure requeues with backoff")
+			// Deletion path surfaces errors directly (no backoff semantics); the
+			// controller-runtime workqueue handles retry via its own rate limiter.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).To(HaveOccurred(), "deletion partial failure surfaces error")
 
 			// Verify finalizer is still present (not removed due to partial failure).
 			var updated releasesv1alpha1.ModuleRelease
@@ -813,7 +825,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("Failure counters", func() {
-		PIt("should increment reconcile counter on failed reconcile", func() {
+		It("should increment reconcile counter on failed reconcile", func() {
 			ctx := context.Background()
 
 			// ModuleRelease points to a non-existent source → FailedStalled.
@@ -823,6 +835,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: record.NewFakeRecorder(10),
+				Renderer:      resolutionErrorRenderer(),
 			}
 
 			nn := types.NamespacedName{Name: "counter-fail-mr", Namespace: namespace}
@@ -853,7 +866,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			})).To(Succeed())
 		})
 
-		PIt("should increment apply counter on apply failure", func() {
+		It("should increment apply counter on apply failure", func() {
 			ctx := context.Background()
 
 			createModuleRelease(ctx, "apply-fail-mr")
@@ -867,6 +880,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 			_, err := realReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
@@ -886,6 +900,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			// Second reconcile — drift detection fails (non-blocking), apply fails.
@@ -906,7 +921,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			})).To(Succeed())
 		})
 
-		PIt("should increment prune counter on prune failure", func() {
+		It("should increment prune counter on prune failure", func() {
 			ctx := context.Background()
 
 			// Create MR with prune enabled.
@@ -935,6 +950,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			// Finalizer reconcile.
@@ -977,6 +993,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			// Third reconcile — apply succeeds, prune fails.
@@ -999,7 +1016,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			})).To(Succeed())
 		})
 
-		PIt("should reset counters on successful reconcile", func() {
+		It("should reset counters on successful reconcile", func() {
 			ctx := context.Background()
 
 			createModuleRelease(ctx, "counter-reset-mr")
@@ -1010,6 +1027,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "counter-reset-mr", Namespace: namespace}
@@ -1051,7 +1069,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 	})
 
 	Context("Event emission", func() {
-		PIt("should emit Applied and ReconciliationSucceeded events after successful reconcile", func() {
+		It("should emit Applied and ReconciliationSucceeded events after successful reconcile", func() {
 			ctx := context.Background()
 
 			createModuleRelease(ctx, "event-apply-mr")
@@ -1063,6 +1081,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   recorder,
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "event-apply-mr", Namespace: namespace}
@@ -1096,7 +1115,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			})).To(Succeed())
 		})
 
-		PIt("should emit Warning event on apply failure", func() {
+		It("should emit Warning event on apply failure", func() {
 			ctx := context.Background()
 
 			createModuleRelease(ctx, "event-applyfail-mr")
@@ -1110,6 +1129,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 			_, err := realReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
@@ -1130,6 +1150,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
 				EventRecorder:   recorder,
+				Renderer:        &stubRenderer{},
 			}
 
 			// Second reconcile — apply fails.
@@ -1170,6 +1191,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme: k8sClient.Scheme(),
 
 				EventRecorder: recorder,
+				Renderer:      &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "event-suspend-mr", Namespace: namespace}
@@ -1192,7 +1214,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			Expect(k8sClient.Delete(ctx, mr)).To(Succeed())
 		})
 
-		PIt("should emit Resumed event when unsuspended", func() {
+		It("should emit Resumed event when unsuspended", func() {
 			ctx := context.Background()
 
 			mr := &releasesv1alpha1.ModuleRelease{
@@ -1215,6 +1237,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "event-resume-mr", Namespace: namespace}
@@ -1256,7 +1279,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			})).To(Succeed())
 		})
 
-		PIt("should emit NoOp event when digests match", func() {
+		It("should emit NoOp event when digests match", func() {
 			ctx := context.Background()
 
 			createModuleRelease(ctx, "event-noop-mr")
@@ -1267,6 +1290,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			nn := types.NamespacedName{Name: "event-noop-mr", Namespace: namespace}

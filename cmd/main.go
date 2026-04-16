@@ -41,6 +41,7 @@ import (
 	"github.com/open-platform-model/poc-controller/internal/catalog"
 	"github.com/open-platform-model/poc-controller/internal/controller"
 	_ "github.com/open-platform-model/poc-controller/internal/metrics"
+	"github.com/open-platform-model/poc-controller/internal/render"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -237,6 +238,7 @@ func main() {
 		Provider:        opmProvider,
 		ResourceManager: resourceManager,
 		EventRecorder:   mgr.GetEventRecorderFor("opm-controller"),
+		Renderer:        &render.RegistryRenderer{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleRelease")
 		os.Exit(1)

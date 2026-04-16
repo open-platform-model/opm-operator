@@ -40,7 +40,7 @@ import (
 
 var _ = Describe("Drift Detection", func() {
 	Context("When drift is detected during reconcile", func() {
-		PIt("should set Drifted=True condition on first apply", func() {
+		It("should set Drifted=True condition on first apply", func() {
 			createModuleRelease("drift-detect-mr")
 
 			params := reconcileParams()
@@ -109,7 +109,7 @@ var _ = Describe("Drift Detection", func() {
 	})
 
 	Context("When drift is detected on no-op reconcile", func() {
-		PIt("should set Drifted=True and preserve Ready=True", func() {
+		It("should set Drifted=True and preserve Ready=True", func() {
 			createModuleRelease("drift-noop-mr")
 
 			params := reconcileParams()
@@ -170,7 +170,7 @@ var _ = Describe("Drift Detection", func() {
 	})
 
 	Context("When drift detection itself fails", func() {
-		PIt("should increment failureCounters.drift and not set Drifted condition", func() {
+		It("should increment failureCounters.drift and not set Drifted condition", func() {
 			createModuleRelease("drift-fail-mr")
 
 			params := reconcileParams()
@@ -204,6 +204,7 @@ var _ = Describe("Drift Detection", func() {
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
 				EventRecorder:   record.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
 			}
 
 			// Second reconcile — drift detection fails, but reconcile continues as no-op.
@@ -238,7 +239,7 @@ var _ = Describe("Drift Detection", func() {
 	})
 
 	Context("When apply resolves drift", func() {
-		PIt("should clear Drifted condition after successful apply", func() {
+		It("should clear Drifted condition after successful apply", func() {
 			createModuleRelease("drift-clear-mr")
 
 			params := reconcileParams()

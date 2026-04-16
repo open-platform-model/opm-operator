@@ -59,7 +59,9 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+	CUE_REGISTRY="opmodel.dev=ghcr.io/open-platform-model,testing.opmodel.dev=localhost:5000+insecure,registry.cue.works" \
+	go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
@@ -110,7 +112,7 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	CUE_REGISTRY="opmodel.dev=localhost:5000+insecure,registry.cue.works" go run ./cmd/main.go --catalog-path=$(shell realpath ./catalog)
+	CUE_REGISTRY="testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works" go run ./cmd/main.go --catalog-path=$(shell realpath ./catalog)
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -206,7 +208,7 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 REGISTRY_CONTAINER ?= opm-registry
 REGISTRY_PORT ?= 5000
 REGISTRY_IMAGE ?= registry:2
-CUE_REGISTRY ?= opmodel.dev=localhost:$(REGISTRY_PORT)+insecure,registry.cue.works
+CUE_REGISTRY ?= testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works
 TEST_MODULE_DIR ?= test/fixtures/modules/hello
 
 .PHONY: start-registry

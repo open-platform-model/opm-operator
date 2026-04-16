@@ -5,7 +5,7 @@ metadata:
     app.kubernetes.io/name: poc-controller
     app.kubernetes.io/managed-by: kustomize
   name: jellyfin
-  namespace: media
+  namespace: default
 spec:
   module:
     path: opmodel.dev/modules/jellyfin@v1

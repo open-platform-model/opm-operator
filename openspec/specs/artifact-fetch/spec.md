@@ -15,31 +15,39 @@ The `Fetcher` implementation MUST download the artifact from the provided URL an
 - **WHEN** the artifact URL is unreachable or returns a non-200 status
 - **THEN** the fetcher returns an error with context about the failure
 
-### Requirement: Zip extraction
-The `Fetcher` MUST extract the downloaded artifact as a zip archive into a temporary directory. It MUST handle the Flux artifact format where the file path ends in `.tar.gz` but the body is a zip.
+### Requirement: Multi-format extraction
+The `Fetcher` MUST support both zip and tar.gz extraction formats. The format MUST be selectable by the caller (based on source kind: OCIRepository → zip, GitRepository/Bucket → tar.gz).
 
 #### Scenario: Valid zip extraction
-- **WHEN** the downloaded artifact is a valid zip archive containing a CUE module tree
+- **WHEN** the caller requests zip extraction and the downloaded artifact is a valid zip archive
 - **THEN** the zip is extracted to a temp directory preserving the directory structure
 
-#### Scenario: Not a zip
-- **WHEN** the downloaded artifact is not a valid zip file
+#### Scenario: Valid tar.gz extraction
+- **WHEN** the caller requests tar.gz extraction and the downloaded artifact is a valid gzipped tar archive
+- **THEN** the tar.gz is extracted to a temp directory preserving the directory structure
+
+#### Scenario: Not a valid archive
+- **WHEN** the downloaded artifact is not a valid zip or tar.gz file (depending on requested format)
 - **THEN** the fetcher returns an error indicating invalid artifact format
 
-#### Scenario: Zip path traversal protection
+#### Scenario: Path traversal protection (zip)
 - **WHEN** a zip entry contains path components like `../`
 - **THEN** the fetcher rejects the entry and returns an error
 
-### Requirement: CUE module layout validation
-After extraction, the fetcher MUST validate that the extracted directory contains a valid CUE module layout.
+#### Scenario: Path traversal protection (tar.gz)
+- **WHEN** a tar entry contains path components like `../`
+- **THEN** the fetcher rejects the entry and returns an error
 
-#### Scenario: Valid CUE module
-- **WHEN** the extracted directory contains `cue.mod/module.cue`
-- **THEN** validation passes and the directory path is returned
+### Requirement: CUE module validation optional
+The `Fetcher` MUST support skipping CUE module layout validation at the extraction root. When fetching for Release CRDs, the CUE module structure is at `spec.path`, not at the artifact root.
 
-#### Scenario: Missing cue.mod
-- **WHEN** the extracted directory does not contain `cue.mod/module.cue`
-- **THEN** the fetcher returns `ErrMissingCUEModule`
+#### Scenario: Fetch without root validation
+- **WHEN** the caller opts out of root-level CUE module validation
+- **THEN** the fetcher extracts the artifact without checking for `cue.mod/module.cue` at the root
+
+#### Scenario: Fetch with root validation (existing behavior)
+- **WHEN** the caller requests root-level CUE module validation
+- **THEN** the fetcher validates `cue.mod/module.cue` exists at the extraction root (existing behavior)
 
 ### Requirement: Size and count limits
 The fetcher MUST enforce limits on artifact size and file count to prevent resource exhaustion.

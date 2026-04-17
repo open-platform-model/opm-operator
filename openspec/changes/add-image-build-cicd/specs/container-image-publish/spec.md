@@ -102,14 +102,14 @@ Release image-release job SHALL attach, in addition to the cosign signature, an 
 
 ### Requirement: Release install manifest with digest-pinned image
 
-On a gated release run, the image-release job SHALL invoke `task build:installer IMG="ghcr.io/open-platform-model/opm-operator:v<VERSION>@sha256:<DIGEST>"` where `<DIGEST>` is the manifest-list digest returned by the push step, render `dist/install.yaml`, and upload that file as an asset on the GitHub release created by release-please. The existing `task build:installer` target SHALL remain unchanged in behavior and its default invocation (no `IMG` override) SHALL still produce a manifest using `controller:latest`.
+On a gated release run, the image-release job SHALL invoke `task operator:installer IMG="ghcr.io/open-platform-model/opm-operator:v<VERSION>@sha256:<DIGEST>"` where `<DIGEST>` is the manifest-list digest returned by the push step, render `dist/install.yaml`, and upload that file as an asset on the GitHub release created by release-please. The existing `task operator:installer` target SHALL remain unchanged in behavior and its default invocation (no `IMG` override) SHALL still produce a manifest using `controller:latest`.
 
 #### Scenario: Release asset upload
 - **WHEN** the image-release job finishes building and signing `v1.2.3` at digest `sha256:abc...`
 - **THEN** `dist/install.yaml` SHALL be rendered with image references pinned to `ghcr.io/open-platform-model/opm-operator:v1.2.3@sha256:abc...` AND the file SHALL be uploaded as an asset on the GitHub release tagged `v1.2.3`
 
 #### Scenario: Default build-installer unchanged
-- **WHEN** a developer runs `task build:installer` locally without an `IMG` override
+- **WHEN** a developer runs `task operator:installer` locally without an `IMG` override
 - **THEN** the rendered `dist/install.yaml` SHALL continue to reference `controller:latest` as before this change
 
 #### Scenario: Install manifest image is immutable

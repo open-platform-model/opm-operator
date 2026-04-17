@@ -12,6 +12,42 @@
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
+### Installing
+
+Install the latest release directly from the GitHub release asset:
+
+```sh
+kubectl apply -f https://github.com/open-platform-model/poc-controller/releases/latest/download/install.yaml
+```
+
+The manifest pins the controller image by digest (`ghcr.io/open-platform-model/opm-operator:vX.Y.Z@sha256:...`), so the exact bytes from the release are pulled regardless of future tag movement.
+
+Verify the release image signature with cosign:
+
+```sh
+cosign verify ghcr.io/open-platform-model/opm-operator:vX.Y.Z \
+  --certificate-identity-regexp='^https://github.com/open-platform-model/poc-controller/\.github/workflows/release\.yml@refs/heads/main$' \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
+For a PR preview image, swap the workflow path to `image-pr.yml` and adjust the ref:
+
+```sh
+cosign verify ghcr.io/open-platform-model/opm-operator:pr-123 \
+  --certificate-identity-regexp='^https://github.com/open-platform-model/poc-controller/\.github/workflows/image-pr\.yml@refs/pull/.*$' \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
+#### Image tag semantics
+
+| Tag | Stability | Purpose |
+| --- | --- | --- |
+| `:v<version>` | Immutable | Exact release version; points at a specific manifest-list digest. |
+| `:<digest>` (`@sha256:...`) | Immutable | Cryptographic pin, always the same bytes. |
+| `:latest` | Moves | Tracks the newest published release. |
+| `:pr-<N>` | Mutable | Preview for PR `N`; overwrites on force-push. Not for production. |
+| `:sha-<short7>` | Effectively immutable | Commit-pinned build; published on both PR and release runs. |
+
 ### To Deploy on the cluster
 **Build and push your image to the location specified by `IMG`:**
 

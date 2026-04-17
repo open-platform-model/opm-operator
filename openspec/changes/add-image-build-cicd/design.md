@@ -3,7 +3,7 @@
 The `poc-controller` repo produces a Kubebuilder-based controller manager. Today:
 
 - `Dockerfile` (distroless/static:nonroot) builds a multi-arch-capable static binary and bundles the `catalog/` CUE module.
-- `Taskfile.yml` + `.tasks/` expose `docker:build`, `docker:push`, `docker:buildx` (platforms: `linux/amd64,linux/arm64,linux/s390x,linux/ppc64le`), and `build:installer` (renders `dist/install.yaml` via `kustomize edit set image controller=${IMG}`).
+- `Taskfile.yml` + `.tasks/` expose `docker:build`, `docker:push`, `docker:buildx` (platforms: `linux/amd64,linux/arm64,linux/s390x,linux/ppc64le`), and `operator:installer` (renders `dist/install.yaml` via `kustomize edit set image controller=${IMG}`).
 - `.github/workflows/` has `lint.yml`, `test.yml`, `test-e2e.yml`, and `release.yml` (release-please only).
 - **Gap**: nothing in CI executes `docker build`. No image lands in any registry. Release-please cuts tags with no published artifact. PRs never verify that the Dockerfile still builds.
 
@@ -18,7 +18,7 @@ Downstream installation (via `kubectl apply -f`) requires a published, signed, d
 - Gate release image publication on release-please actually cutting a release (not every push to `main`).
 - Attach a `dist/install.yaml` release asset pinned to `<image>:<version>@sha256:<digest>` so `kubectl apply -f <release-url>` pulls an immutable, verifiable image.
 - Sign with cosign keyless (Sigstore OIDC + Rekor) and attach SBOM + SLSA provenance attestations.
-- Reuse the existing `task build:installer` target — avoid inventing a parallel "release-installer" task.
+- Reuse the existing `task operator:installer` target — avoid inventing a parallel "release-installer" task.
 
 **Non-Goals:**
 
@@ -84,19 +84,19 @@ cosign verify ghcr.io/open-platform-model/opm-operator:v1.2.3 \
 - `:pr-<PR_ID>` is mutable (overwrites on force-push); acceptable per user's explicit choice for simplicity. The immutable identifier for any PR build is `:sha-<short7>`.
 - `:latest` updates only on release, not on main-push (avoids pointing at an unsigned, un-SBOMed, untagged commit).
 
-### D5. Install manifest digest pinning reuses `task build:installer`
+### D5. Install manifest digest pinning reuses `task operator:installer`
 
-**Decision**: The release job calls the existing `task build:installer` target with an `IMG` override containing both tag and digest:
+**Decision**: The release job calls the existing `task operator:installer` target with an `IMG` override containing both tag and digest:
 
 ```bash
-task build:installer IMG="ghcr.io/open-platform-model/opm-operator:v${VERSION}@sha256:${DIGEST}"
+task operator:installer IMG="ghcr.io/open-platform-model/opm-operator:v${VERSION}@sha256:${DIGEST}"
 ```
 
-**Rationale**: `kustomize edit set image controller=<name>:<tag>@<digest>` is natively supported. Adding a parallel `build:installer:release` task would duplicate logic. Default dev invocation (`task build:installer` with no `IMG`) still produces `controller:latest` as before.
+**Rationale**: `kustomize edit set image controller=<name>:<tag>@<digest>` is natively supported. Adding a parallel `operator:installer:release` task would duplicate logic. Default dev invocation (`task operator:installer` with no `IMG`) still produces `controller:latest` as before.
 
 **Digest source**: `docker/build-push-action` returns `steps.<id>.outputs.digest` (format: `sha256:...`). The release job consumes that output, strips the `sha256:` prefix if needed for templating, and constructs the `IMG` argument.
 
-**Trade-off**: The render requires `kustomize` to be available in the runner (already true — `task build:installer` depends on `:tool:kustomize` via `.tasks/tools.yaml` auto-download).
+**Trade-off**: The render requires `kustomize` to be available in the runner (already true — `task operator:installer` depends on `:tool:kustomize` via `.tasks/tools.yaml` auto-download).
 
 ### D6. Attestations — SBOM + SLSA provenance, on release only
 
@@ -153,6 +153,6 @@ None blocking implementation. Resolved during exploration:
 - Registry: `ghcr.io/open-platform-model/opm-operator` ✓
 - Signing: cosign keyless ✓
 - Arches: asymmetric (amd64 PR, all 4 release) ✓
-- Digest pinning: reuse `task build:installer` with `IMG` override ✓
+- Digest pinning: reuse `task operator:installer` with `IMG` override ✓
 - Gating: `release-please.outputs.releases_created == 'true'` ✓
 - Rename: deferred ✓

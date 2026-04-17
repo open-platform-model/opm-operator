@@ -40,7 +40,10 @@ const (
 
 // ModuleReleaseParams holds the dependencies injected into the reconcile loop.
 type ModuleReleaseParams struct {
-	Client          client.Client
+	Client client.Client
+	// APIReader is an uncached reader used for one-off reads (e.g. ServiceAccount
+	// existence checks for impersonation) that should not provision a cache informer.
+	APIReader       client.Reader
 	RestConfig      *rest.Config
 	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
@@ -70,14 +73,15 @@ func ReconcileModuleRelease(
 	// Set before suspend/deletion checks so all paths are measured.
 	reconcileStart := time.Now()
 
-	// Register finalizer if not present.
-	// The patch triggers a watch event, so no explicit requeue is needed.
+	// Register finalizer if not present. Finalizer patches don't bump
+	// .metadata.generation, so GenerationChangedPredicate filters the
+	// subsequent UPDATE event — explicit Requeue re-enters the workqueue.
 	if !controllerutil.ContainsFinalizer(&mr, FinalizerName) {
 		log.Info("Adding finalizer to ModuleRelease")
 		if err := addFinalizer(ctx, params.Client, &mr); err != nil {
 			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
 		}
-		return ctrl.Result{}, nil
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Deletion branch: if DeletionTimestamp is set, run cleanup and return.
@@ -504,7 +508,7 @@ func handleDeletion(
 	if mr.Spec.Prune && mr.Status.Inventory != nil && len(mr.Status.Inventory.Entries) > 0 {
 		deleteClient := params.Client
 		if mr.Spec.ServiceAccountName != "" && params.RestConfig != nil {
-			impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.Client, mr.Namespace, mr.Spec.ServiceAccountName)
+			impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mr.Namespace, mr.Spec.ServiceAccountName)
 			if impErr != nil {
 				log.Info("ServiceAccount unavailable for deletion cleanup, using controller client",
 					"serviceAccount", mr.Spec.ServiceAccountName, "error", impErr)
@@ -608,7 +612,7 @@ func buildApplyClient(
 	}
 	log := logf.FromContext(ctx)
 	log.Info("Building impersonated client", "serviceAccount", mr.Spec.ServiceAccountName)
-	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.Client, mr.Namespace, mr.Spec.ServiceAccountName)
+	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mr.Namespace, mr.Spec.ServiceAccountName)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -22,9 +22,52 @@ tasks:
     cmds:
       - '{{.CONTAINER_TOOL}} network connect kind {{.REGISTRY_CONTAINER}} || true'
 
-  publish-test-module:
-    desc: Publish test hello module to local registry
-    env:
-      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+  list:all:
+    desc: 'Flat list of all artifacts (repo@tag) in the local registry'
+    vars:
+      REGISTRY_URL: 'http://localhost:{{.REGISTRY_PORT}}'
     cmds:
-      - cd {{.TEST_MODULE_DIR}} && cue mod tidy && cue mod publish v0.0.1
+      - |
+        set -euo pipefail
+        repos=$(curl -sf "{{.REGISTRY_URL}}/v2/_catalog" | jq -r '.repositories[]?')
+        [ -z "$repos" ] && { echo "(registry empty)"; exit 0; }
+        while IFS= read -r repo; do
+          curl -sf "{{.REGISTRY_URL}}/v2/$repo/tags/list" \
+            | jq -r --arg r "$repo" '.tags[]? // empty | "\($r)@\(.)"'
+        done <<< "$repos" | LC_ALL=C sort -V
+
+  list:
+    desc: 'List all artifacts in the local registry, grouped by parent path (REPO=<path> to filter one repo)'
+    vars:
+      REGISTRY_URL: 'http://localhost:{{.REGISTRY_PORT}}'
+    cmds:
+      - |
+        set -euo pipefail
+        if [ -n "{{.REPO | default ""}}" ]; then
+          curl -sf "{{.REGISTRY_URL}}/v2/{{.REPO}}/tags/list" | jq .
+          exit 0
+        fi
+
+        tmp=$(mktemp)
+        trap "rm -f $tmp" EXIT
+
+        repos=$(curl -sf "{{.REGISTRY_URL}}/v2/_catalog" | jq -r '.repositories[]')
+        [ -z "$repos" ] && { echo "(registry empty)"; exit 0; }
+
+        while IFS= read -r repo; do
+          tags=$(curl -sf "{{.REGISTRY_URL}}/v2/$repo/tags/list" | jq -r '.tags[]? // empty' | sort -V)
+          [ -z "$tags" ] && continue
+          count=$(echo "$tags" | wc -l | tr -d ' ')
+          latest=$(echo "$tags" | tail -1)
+          parent=$(dirname "$repo")
+          name=$(basename "$repo")
+          printf '%s\t%s\t%s\t%s\n' "$parent" "$name" "$count" "$latest" >> "$tmp"
+        done <<< "$repos"
+
+        LC_ALL=C sort "$tmp" | awk -F'\t' '
+          BEGIN { last = "" }
+          {
+            if ($1 != last) { printf "\n\033[1m%s/\033[0m\n", $1; last = $1 }
+            printf "  %-40s %3s versions  (latest %s)\n", $2, $3, $4
+          }
+        '

@@ -1,7 +1,10 @@
 package source
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -85,6 +88,89 @@ func createEmptyZip(t *testing.T, destPath string) {
 
 	w := zip.NewWriter(out)
 	_ = w.Close()
+}
+
+// createTarGzFromDir creates a tar.gz archive at destPath containing all
+// files from srcDir, preserving relative paths.
+func createTarGzFromDir(t *testing.T, srcDir, destPath string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+
+	err := filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		hdr.Name = rel
+		if info.IsDir() {
+			hdr.Name += "/"
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		_, err = tw.Write(data)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("walking source dir: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("closing tar writer: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("closing gzip writer: %v", err)
+	}
+	if err := os.WriteFile(destPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("writing tar.gz: %v", err)
+	}
+}
+
+// createTraversalTarGz creates a tar.gz with a path traversal entry.
+func createTraversalTarGz(t *testing.T, destPath string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+
+	hdr := &tar.Header{
+		Name:     "../escape.txt",
+		Mode:     0o644,
+		Size:     int64(len("escaped")),
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatalf("writing tar header: %v", err)
+	}
+	if _, err := tw.Write([]byte("escaped")); err != nil {
+		t.Fatalf("writing tar body: %v", err)
+	}
+	_ = tw.Close()
+	_ = gz.Close()
+	if err := os.WriteFile(destPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("writing tar.gz: %v", err)
+	}
 }
 
 // createOversizedZip creates a zip with more than maxEntries files.

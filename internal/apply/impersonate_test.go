@@ -26,7 +26,7 @@ func TestNewImpersonatedClient(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		cfg := &rest.Config{Host: "https://localhost:6443"}
 
-		_, err := NewImpersonatedClient(context.Background(), cfg, c, "team-a", "nonexistent")
+		_, err := NewImpersonatedClient(context.Background(), cfg, c, scheme, "team-a", "nonexistent")
 		if err == nil {
 			t.Fatal("expected error for missing SA, got nil")
 		}
@@ -36,7 +36,7 @@ func TestNewImpersonatedClient(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sa).Build()
 		cfg := &rest.Config{Host: "https://localhost:6443"}
 
-		impClient, err := NewImpersonatedClient(context.Background(), cfg, c, "team-a", "deploy-sa")
+		impClient, err := NewImpersonatedClient(context.Background(), cfg, c, scheme, "team-a", "deploy-sa")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -49,7 +49,7 @@ func TestNewImpersonatedClient(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sa).Build()
 		cfg := &rest.Config{Host: "https://localhost:6443"}
 
-		_, err := NewImpersonatedClient(context.Background(), cfg, c, "team-a", "deploy-sa")
+		_, err := NewImpersonatedClient(context.Background(), cfg, c, scheme, "team-a", "deploy-sa")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

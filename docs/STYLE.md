@@ -38,7 +38,7 @@ Operational procedures must use numbered steps:
 3. Deploy the controller:
 
    ```bash
-   make deploy IMG=ghcr.io/open-platform-model/poc-controller:latest
+   task operator:controller:install IMG=ghcr.io/open-platform-model/poc-controller:latest
    ```
 
 - Number every step. Do not use prose paragraphs for multi-step procedures.

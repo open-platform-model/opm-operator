@@ -42,6 +42,9 @@ import (
 // Dependencies are injected via struct fields at manager setup time.
 type ModuleReleaseReconciler struct {
 	client.Client
+	// APIReader is an uncached reader (manager.GetAPIReader()) used for one-off
+	// reads that must not provision a cache informer.
+	APIReader       client.Reader
 	Scheme          *runtime.Scheme
 	RestConfig      *rest.Config
 	Provider        *provider.Provider
@@ -66,6 +69,7 @@ func (r *ModuleReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	return opmreconcile.ReconcileModuleRelease(ctx, &opmreconcile.ModuleReleaseParams{
 		Client:          r.Client,
+		APIReader:       r.APIReader,
 		RestConfig:      r.RestConfig,
 		Provider:        r.Provider,
 		ResourceManager: r.ResourceManager,

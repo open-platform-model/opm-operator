@@ -159,6 +159,83 @@ func TestResolve(t *testing.T) {
 				Digest:   digest,
 			},
 		},
+		{
+			name: "GitRepository found and ready",
+			objects: []runtime.Object{&sourcev1.GitRepository{
+				ObjectMeta: metav1.ObjectMeta{Name: repoName, Namespace: ns},
+				Status: sourcev1.GitRepositoryStatus{
+					Conditions: []metav1.Condition{readyCondition(metav1.ConditionTrue)},
+					Artifact: &fluxmeta.Artifact{
+						URL:      url,
+						Revision: revision,
+						Digest:   digest,
+					},
+				},
+			}},
+			sourceRef: releasesv1alpha1.SourceReference{
+				Kind: "GitRepository",
+				Name: repoName,
+			},
+			releaseNS: ns,
+			wantArtifact: &ArtifactRef{
+				URL:      url,
+				Revision: revision,
+				Digest:   digest,
+			},
+		},
+		{
+			name: "GitRepository not ready",
+			objects: []runtime.Object{&sourcev1.GitRepository{
+				ObjectMeta: metav1.ObjectMeta{Name: repoName, Namespace: ns},
+				Status: sourcev1.GitRepositoryStatus{
+					Conditions: []metav1.Condition{readyCondition(metav1.ConditionFalse)},
+				},
+			}},
+			sourceRef: releasesv1alpha1.SourceReference{Kind: "GitRepository", Name: repoName},
+			releaseNS: ns,
+			wantErr:   ErrSourceNotReady,
+		},
+		{
+			name:    "GitRepository not found",
+			objects: []runtime.Object{},
+			sourceRef: releasesv1alpha1.SourceReference{
+				Kind: "GitRepository",
+				Name: repoName,
+			},
+			releaseNS: ns,
+			wantErr:   ErrSourceNotFound,
+		},
+		{
+			name: "Bucket found and ready",
+			objects: []runtime.Object{&sourcev1.Bucket{
+				ObjectMeta: metav1.ObjectMeta{Name: repoName, Namespace: ns},
+				Status: sourcev1.BucketStatus{
+					Conditions: []metav1.Condition{readyCondition(metav1.ConditionTrue)},
+					Artifact: &fluxmeta.Artifact{
+						URL:      url,
+						Revision: revision,
+						Digest:   digest,
+					},
+				},
+			}},
+			sourceRef: releasesv1alpha1.SourceReference{
+				Kind: "Bucket",
+				Name: repoName,
+			},
+			releaseNS: ns,
+			wantArtifact: &ArtifactRef{
+				URL:      url,
+				Revision: revision,
+				Digest:   digest,
+			},
+		},
+		{
+			name:      "unsupported source kind",
+			objects:   []runtime.Object{},
+			sourceRef: releasesv1alpha1.SourceReference{Kind: "HelmRepository", Name: repoName},
+			releaseNS: ns,
+			wantErr:   ErrUnsupportedSourceKind,
+		},
 	}
 
 	for _, tt := range tests {

@@ -7,11 +7,15 @@ import (
 	"path/filepath"
 )
 
-// ErrSourceNotFound indicates the referenced OCIRepository does not exist.
+// ErrSourceNotFound indicates the referenced source object does not exist.
 var ErrSourceNotFound = errors.New("source not found")
 
-// ErrSourceNotReady indicates the OCIRepository exists but is not ready.
+// ErrSourceNotReady indicates the source exists but is not ready.
 var ErrSourceNotReady = errors.New("source not ready")
+
+// ErrUnsupportedSourceKind indicates the source reference kind is not one of the
+// supported Flux source kinds (OCIRepository, GitRepository, Bucket).
+var ErrUnsupportedSourceKind = errors.New("unsupported source kind")
 
 // ErrMissingCUEModule indicates the fetched artifact does not contain a CUE module.
 var ErrMissingCUEModule = errors.New("artifact does not contain a cue module")

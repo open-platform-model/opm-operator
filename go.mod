@@ -1,6 +1,6 @@
 module github.com/open-platform-model/poc-controller
 
-go 1.25.3
+go 1.26.2
 
 require (
 	cuelang.org/go v0.16.1

@@ -14,7 +14,7 @@ The gaps are all **reconcile-level behaviors that span multiple phases or multip
 
 - Catalog every missing integration and e2e test with clear rationale.
 - Create stub files grouped by theme so they're ready for implementation.
-- Each stub compiles and runs (as skipped tests), keeping `make test` green.
+- Each stub compiles and runs (as skipped tests), keeping `task dev:test` green.
 
 **Non-Goals:**
 
@@ -231,7 +231,7 @@ Each test below targets a code path that has **no reconcile-level coverage** des
 
 ## Risks / Trade-offs
 
-**Stub tests pass silently** → Stubs use `Skip()`, so `make test` stays green but coverage doesn't actually improve until bodies are implemented. Mitigation: tasks track implementation as follow-up work.
+**Stub tests pass silently** → Stubs use `Skip()`, so `task dev:test` stays green but coverage doesn't actually improve until bodies are implemented. Mitigation: tasks track implementation as follow-up work.
 
 **Test isolation** → Integration tests sharing the same envtest instance need unique resource names to avoid collisions. The existing pattern (unique names per test like `render-fail-mr`) works. New tests must follow this.
 

@@ -39,6 +39,7 @@ import (
 func reconcileParamsWithConfig() *opmreconcile.ModuleReleaseParams {
 	return &opmreconcile.ModuleReleaseParams{
 		Client:          k8sClient,
+		APIReader:       k8sClient,
 		RestConfig:      cfg,
 		Provider:        testProvider(),
 		ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
@@ -282,6 +283,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			restrictedCfg := restrictedUser.Config()
 			params := &opmreconcile.ModuleReleaseParams{
 				Client:          k8sClient,
+				APIReader:       k8sClient,
 				RestConfig:      restrictedCfg,
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),

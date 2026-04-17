@@ -11,6 +11,24 @@ tasks:
     cmds:
       - go vet ./...
 
+  lint:
+    desc: Run golangci-lint
+    deps: [":tool:golangci-lint"]
+    cmds:
+      - '"{{.GOLANGCI_LINT}}" run'
+
+  lint:fix:
+    desc: Run golangci-lint with fixes
+    deps: [":tool:golangci-lint"]
+    cmds:
+      - '"{{.GOLANGCI_LINT}}" run --fix'
+
+  lint:config:
+    desc: Verify golangci-lint configuration
+    deps: [":tool:golangci-lint"]
+    cmds:
+      - '"{{.GOLANGCI_LINT}}" config verify'
+
   manifests:
     desc: Generate CRDs and RBAC manifests
     deps: [":tool:controller-gen"]
@@ -62,21 +80,3 @@ tasks:
       LOCAL_REGISTRY: '{{.KIND_CUE_REGISTRY}}'
     cmds:
       - go test -tags=e2e ./test/e2e/ -v -ginkgo.v
-
-  lint:
-    desc: Run golangci-lint
-    deps: [":tool:golangci-lint"]
-    cmds:
-      - '"{{.GOLANGCI_LINT}}" run'
-
-  lint:fix:
-    desc: Run golangci-lint with fixes
-    deps: [":tool:golangci-lint"]
-    cmds:
-      - '"{{.GOLANGCI_LINT}}" run --fix'
-
-  lint:config:
-    desc: Verify golangci-lint configuration
-    deps: [":tool:golangci-lint"]
-    cmds:
-      - '"{{.GOLANGCI_LINT}}" config verify'

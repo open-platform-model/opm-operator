@@ -1,6 +1,6 @@
 ## Why
 
-The reconcile loop has good unit test coverage of individual packages and good integration coverage of error paths, but lacks integration-level tests for several critical happy-path and recovery scenarios. Config changes, stale pruning during normal reconciliation, state recovery transitions, and multi-reconcile status tracking are all untested at the reconcile level. These gaps mean regressions in the most common user-facing flows would go undetected by `make test`.
+The reconcile loop has good unit test coverage of individual packages and good integration coverage of error paths, but lacks integration-level tests for several critical happy-path and recovery scenarios. Config changes, stale pruning during normal reconciliation, state recovery transitions, and multi-reconcile status tracking are all untested at the reconcile level. These gaps mean regressions in the most common user-facing flows would go undetected by `task dev:test`.
 
 ## What Changes
 

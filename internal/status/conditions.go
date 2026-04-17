@@ -26,6 +26,14 @@ const (
 	ReconciliationSucceededReason = "ReconciliationSucceeded"
 	DriftDetectedReason           = "DriftDetected"
 
+	// Release-specific reasons.
+	SourceNotReadyReason       = "SourceNotReady"
+	FetchFailedReason          = "FetchFailed"
+	PathNotFoundReason         = "PathNotFound"
+	ReleaseFileNotFoundReason  = "ReleaseFileNotFound"
+	UnsupportedKindReason      = "UnsupportedKind"
+	DependenciesNotReadyReason = "DependenciesNotReady"
+
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
 	PrunedReason  = "Pruned"

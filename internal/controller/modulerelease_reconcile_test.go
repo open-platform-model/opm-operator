@@ -82,7 +82,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			// First reconcile adds finalizer.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
 
 			// Second reconcile runs the full pipeline.
 			result, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -174,7 +174,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			// First reconcile adds finalizer.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
 
 			// Second reconcile hits suspend.
 			result, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -389,7 +389,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			// Finalizer reconcile.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
 
 			// First full reconcile — applies resources.
 			result, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -452,7 +452,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			nn := types.NamespacedName{Name: "finalizer-add-mr", Namespace: namespace}
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
 
 			// Verify finalizer was added.
 			var updated releasesv1alpha1.ModuleRelease
@@ -498,7 +498,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			// Finalizer reconcile.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
 
 			// Full reconcile — applies the ConfigMap.
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})

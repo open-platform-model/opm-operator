@@ -78,10 +78,10 @@ context: |
   3. Internal packages
   
   ## Validation Gates (before merge)
-  1. `make manifests generate` — CRDs and DeepCopy code are up-to-date.
-  2. `make fmt vet` — Code is formatted and passes go vet.
-  3. `make lint` — golangci-lint passes.
-  4. `make test` — Envtest-based unit/controller tests pass.
+  1. `task dev:manifests dev:generate` — CRDs and DeepCopy code are up-to-date.
+  2. `task dev:fmt dev:vet` — Code is formatted and passes go vet.
+  3. `task dev:lint` — golangci-lint passes.
+  4. `task dev:test` — Envtest-based unit/controller tests pass.
 
 rules:
   proposal:
@@ -122,5 +122,5 @@ rules:
     - "CRITICAL: Break tasks into TINY chunks (max 1-2 hours)."
     - "CRITICAL: If the task list grows too long (>10 items) or spans multiple distinct features, suggest splitting into a new OpenSpec change."
     - Group tasks by component (API, Internal Packages, Controller).
-    - Ensure `make manifests generate` is run after API changes.
-    - Include validation gates as final tasks (`make fmt vet lint test`).
+    - Ensure `task dev:manifests dev:generate` is run after API changes.
+    - Include validation gates as final tasks (`task dev:fmt dev:vet dev:lint dev:test`).

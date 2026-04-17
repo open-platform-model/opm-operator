@@ -31,6 +31,7 @@ rules:
   resources:
   - bundlereleases
   - modulereleases
+  - releases
   verbs:
   - create
   - delete
@@ -44,6 +45,7 @@ rules:
   resources:
   - bundlereleases/finalizers
   - modulereleases/finalizers
+  - releases/finalizers
   verbs:
   - update
 - apiGroups:
@@ -51,7 +53,18 @@ rules:
   resources:
   - bundlereleases/status
   - modulereleases/status
+  - releases/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - source.toolkit.fluxcd.io
+  resources:
+  - buckets
+  - gitrepositories
+  - ocirepositories
+  verbs:
+  - get
+  - list
+  - watch

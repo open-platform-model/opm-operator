@@ -1,7 +1,11 @@
 package source
 
-// ArtifactRef carries resolved artifact metadata from a Flux OCIRepository.
+// ArtifactRef carries resolved artifact metadata from a Flux source object.
 type ArtifactRef struct {
+	// Kind is the source kind (OCIRepository, GitRepository, Bucket).
+	// Determines extraction format: OCIRepository → zip, others → tar.gz.
+	Kind string
+
 	// URL is the HTTP(S) address where the artifact can be fetched.
 	URL string
 

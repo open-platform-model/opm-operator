@@ -67,10 +67,22 @@ func RecordHistory(
 	status *releasesv1alpha1.ModuleReleaseStatus,
 	entry releasesv1alpha1.HistoryEntry,
 ) {
-	entry.Sequence = nextSequence(status.History)
-	status.History = append([]releasesv1alpha1.HistoryEntry{entry}, status.History...)
-	if len(status.History) > MaxHistoryEntries {
-		status.History = status.History[:MaxHistoryEntries]
+	recordHistoryEntry(&status.History, entry)
+}
+
+// RecordReleaseHistory is the Release equivalent of RecordHistory.
+func RecordReleaseHistory(
+	status *releasesv1alpha1.ReleaseStatus,
+	entry releasesv1alpha1.HistoryEntry,
+) {
+	recordHistoryEntry(&status.History, entry)
+}
+
+func recordHistoryEntry(history *[]releasesv1alpha1.HistoryEntry, entry releasesv1alpha1.HistoryEntry) {
+	entry.Sequence = nextSequence(*history)
+	*history = append([]releasesv1alpha1.HistoryEntry{entry}, *history...)
+	if len(*history) > MaxHistoryEntries {
+		*history = (*history)[:MaxHistoryEntries]
 	}
 }
 

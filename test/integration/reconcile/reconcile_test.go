@@ -72,7 +72,9 @@ func ensureFinalizer(params *opmreconcile.ModuleReleaseParams, nn types.Namespac
 		NamespacedName: nn,
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(result).To(Equal(ctrl.Result{}))
+	// Finalizer-add returns Requeue: true so GenerationChangedPredicate doesn't
+	// drop the subsequent finalizer-only UPDATE event in production.
+	Expect(result).To(Equal(ctrl.Result{Requeue: true}))
 }
 
 var _ = Describe("Reconcile Error Paths", func() {

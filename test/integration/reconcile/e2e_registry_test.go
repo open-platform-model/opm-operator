@@ -41,12 +41,14 @@ import (
 //
 // Bring-up:
 //
-//	make start-registry
-//	make publish-test-module
+//	task registry:start
+//	task module:publish
+//	task release:publish
 //	CUE_REGISTRY=<testing+opmodel both → localhost:5000+insecure, then registry.cue.works> \
 //	    go test ./test/integration/reconcile/...
 //
-// See reference_local_registry_setup memory or Makefile:211 for the exact value.
+// See reference_local_registry_setup memory or the `CUE_REGISTRY` default in
+// Taskfile.yml for the exact value.
 var _ = Describe("End-to-end module resolution", Ordered, func() {
 	BeforeEach(func() {
 		skipIfNoTestRegistry()
@@ -61,7 +63,7 @@ var _ = Describe("End-to-end module resolution", Ordered, func() {
 		dir, err := synthesis.SynthesizeRelease(synthesis.ReleaseParams{
 			Name:          "e2e-hello",
 			Namespace:     "default",
-			ModulePath:    "testing.opmodel.dev/test/hello@v0",
+			ModulePath:    "testing.opmodel.dev/modules/hello@v0",
 			ModuleVersion: "v0.0.1",
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -79,7 +81,7 @@ var _ = Describe("End-to-end module resolution", Ordered, func() {
 		_, err := renderer.RenderModule(ctx,
 			"e2e-missing",
 			"default",
-			"testing.opmodel.dev/test/does-not-exist@v0",
+			"testing.opmodel.dev/modules/does-not-exist@v0",
 			"v0.0.1",
 			nil,
 			testProvider(),
@@ -106,7 +108,7 @@ var _ = Describe("End-to-end module resolution", Ordered, func() {
 			},
 			Spec: releasesv1alpha1.ModuleReleaseSpec{
 				Module: releasesv1alpha1.ModuleReference{
-					Path:    "testing.opmodel.dev/test/hello@v0",
+					Path:    "testing.opmodel.dev/modules/hello@v0",
 					Version: "v0.0.1",
 				},
 				Prune:  true,

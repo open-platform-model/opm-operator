@@ -29,20 +29,9 @@ tasks:
       - task: :registry:start
       - task: :registry:connect
       - task: :flux:install
-      - task: :registry:publish-test-module
       - task: load
-      - task: :deploy:controller
-      - task: :deploy:samples
+      - task: :operator:controller:install
       - |
         {{.KUBECTL}} -n poc-controller-system patch deployment poc-controller-controller-manager \
           --type=json \
           -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry={{.KIND_CUE_REGISTRY}}"}]'
-
-  teardown:
-    desc: Tear down local Kind deployment
-    cmds:
-      - task: :deploy:controller:remove
-        vars:
-          IGNORE_NOT_FOUND: "true"
-      - task: :flux:uninstall
-      - task: cleanup

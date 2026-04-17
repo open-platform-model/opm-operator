@@ -24,4 +24,4 @@
 
 ## 7. Validation
 
-- [ ] 7.1 Run `make fmt vet test` and verify all stubs compile and are skipped correctly
+- [ ] 7.1 Run `task dev:fmt dev:vet dev:test` and verify all stubs compile and are skipped correctly

@@ -1,0 +1,53 @@
+version: '3'
+
+# Release CR end-to-end test tasks.
+#
+# Prerequisites:
+#   - Local registry running: `task registry:start`
+#   - Registry connected to kind network: `task registry:connect`
+#   - Hello module published: `task module:publish`
+#   - Flux source-controller installed: `task flux:install`
+#   - Controller running (or deployed): `task build:run` / `task deploy:controller`
+
+vars:
+  RELEASE_DIR: '{{.RELEASE_DIR | default "test/fixtures/releases/hello"}}'
+  RELEASE_REPO: '{{.RELEASE_REPO | default "oci://localhost:5000/testing.opmodel.dev/releases/hello"}}'
+  RELEASE_GHCR_REPO: '{{.RELEASE_GHCR_REPO | default "oci://ghcr.io/open-platform-model/testing.opmodel.dev/releases/hello"}}'
+  RELEASE_TAG: '{{.RELEASE_TAG | default "v0.0.1"}}'
+
+tasks:
+  publish:
+    desc: Push the hello release fixture as a Flux OCI artifact to the local registry
+    preconditions:
+      - sh: command -v {{.FLUX}} >/dev/null 2>&1
+        msg: 'flux CLI not found — install from https://fluxcd.io/flux/installation/'
+    cmds:
+      - |
+        {{.FLUX}} push artifact {{.RELEASE_REPO}}:{{.RELEASE_TAG}} \
+          --path={{.RELEASE_DIR}} \
+          --source="poc-controller/test/fixtures" \
+          --revision="{{.RELEASE_TAG}}"
+
+  publish:ghcr:
+    desc: Push the hello release fixture as a Flux OCI artifact to GHCR (requires `docker login ghcr.io` or ORAS-compatible creds)
+    preconditions:
+      - sh: command -v {{.FLUX}} >/dev/null 2>&1
+        msg: 'flux CLI not found — install from https://fluxcd.io/flux/installation/'
+    cmds:
+      - |
+        {{.FLUX}} push artifact {{.RELEASE_GHCR_REPO}}:{{.RELEASE_TAG}} \
+          --path={{.RELEASE_DIR}} \
+          --source="poc-controller/test/fixtures" \
+          --revision="{{.RELEASE_TAG}}"
+
+  apply:
+    desc: Apply OCIRepository + Release manifests for the hello fixture
+    cmds:
+      - '{{.KUBECTL}} apply -f {{.RELEASE_DIR}}/ocirepository.yaml'
+      - '{{.KUBECTL}} apply -f {{.RELEASE_DIR}}/release.yaml'
+
+  delete:
+    desc: Remove the hello Release CR + OCIRepository
+    cmds:
+      - '{{.KUBECTL}} delete --ignore-not-found -f {{.RELEASE_DIR}}/release.yaml'
+      - '{{.KUBECTL}} delete --ignore-not-found -f {{.RELEASE_DIR}}/ocirepository.yaml'

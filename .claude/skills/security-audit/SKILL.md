@@ -33,7 +33,7 @@ The audit is organized into seven dimensions. Each dimension is checked against 
 - Status subresource RBAC separated from main resource RBAC
 - Leader election Role scoped to operator namespace (not ClusterRole)
 - ServiceAccount permissions match actual reconciler needs — no unused grants
-- Generated `config/rbac/role.yaml` matches marker intent (run `make manifests` and diff)
+- Generated `config/rbac/role.yaml` matches marker intent (run `task dev:manifests` and diff)
 - No RBAC grants that enable privilege escalation (create on workloads + arbitrary serviceAccountName)
 - `resourceNames` used where controller only accesses specific named resources
 
@@ -165,7 +165,7 @@ Apply the relevant subset based on in-scope code.
 - `+kubebuilder:default` values are safe and don't grant unintended access
 - `+kubebuilder:subresource:status` present on all CRDs that use status
 - `+kubebuilder:printcolumn` does not expose sensitive data in `kubectl get` output
-- Generated `zz_generated.deepcopy.go` is current (matches types after `make generate`)
+- Generated `zz_generated.deepcopy.go` is current (matches types after `task dev:generate`)
 
 ### Kustomize Manifests & Deployment Config
 

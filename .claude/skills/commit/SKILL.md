@@ -11,7 +11,7 @@ Create a git commit following these rules strictly.
 
 1. Run `git status` and `git diff --cached` to understand what is staged.
 2. If nothing is staged, look at unstaged changes and stage files that form a coherent, minimal commit. Prefer `git add <file>...` over `git add -A`.
-3. If changes span multiple unrelated concerns, commit them separately, one commit per logical change.
+3. If changes span multiple unrelated concerns, commit them separately, one commit per logical change. If unclear, ask for clarification or make a best effort to group related changes together, utilise the AskUserQuestion tool.
 4. Write the commit message and create the commit.
 
 ## Commit Message Format

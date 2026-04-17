@@ -43,7 +43,7 @@ import (
 //
 //	task registry:start
 //	task module:publish
-//  task release:publish
+//	task release:publish
 //	CUE_REGISTRY=<testing+opmodel both → localhost:5000+insecure, then registry.cue.works> \
 //	    go test ./test/integration/reconcile/...
 //

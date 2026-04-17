@@ -5,7 +5,7 @@ The controller has a `Dockerfile` and `task docker:build` / `task docker:buildx`
 ## What Changes
 
 - Add `.github/workflows/image-pr.yml`: on `pull_request`, build single-arch image (`linux/amd64`) and push to GHCR with `:sha-<short>` and `:pr-<PR_ID>` tags.
-- Extend `.github/workflows/release.yml`: add an `image-release` job gated on `release-please.outputs.releases_created == 'true'`, build multi-arch (`linux/amd64,arm64,s390x,ppc64le`), push `:sha-<short>`, `:v<version>`, `:latest`.
+- Extend `.github/workflows/release.yml`: add an `image-release` job gated on `release-please.outputs.releases_created == 'true'`, build multi-arch (`linux/amd64,linux/arm64`), push `:sha-<short>`, `:v<version>`, `:latest`.
 - Publish to `ghcr.io/open-platform-model/opm-operator`.
 - Sign all pushed images with **cosign keyless** (Sigstore OIDC + Rekor transparency log).
 - Generate SBOM (SPDX JSON) and attach as registry attestation for every push.

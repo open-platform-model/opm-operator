@@ -58,7 +58,7 @@ On a gated release run, the image-release job SHALL push exactly three tags for 
 
 ### Requirement: Multi-architecture support
 
-PR image builds SHALL produce a single-architecture image for `linux/amd64` only. Release image builds SHALL produce a multi-architecture manifest list covering `linux/amd64`, `linux/arm64`, `linux/s390x`, and `linux/ppc64le`.
+PR image builds SHALL produce a single-architecture image for `linux/amd64` only. Release image builds SHALL produce a multi-architecture manifest list covering `linux/amd64` and `linux/arm64`.
 
 #### Scenario: PR build architecture set
 - **WHEN** the PR image workflow runs
@@ -66,7 +66,7 @@ PR image builds SHALL produce a single-architecture image for `linux/amd64` only
 
 #### Scenario: Release build architecture set
 - **WHEN** the release image-release job runs successfully
-- **THEN** the resulting pushed manifest list SHALL expose exactly four platform descriptors: `linux/amd64`, `linux/arm64`, `linux/s390x`, and `linux/ppc64le`
+- **THEN** the resulting pushed manifest list SHALL expose exactly two platform descriptors: `linux/amd64` and `linux/arm64`
 
 ### Requirement: Cosign keyless signatures
 

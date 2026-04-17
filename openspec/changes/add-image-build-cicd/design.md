@@ -13,7 +13,7 @@ Downstream installation (via `kubectl apply -f`) requires a published, signed, d
 
 **Goals:**
 
-- Publish a single, signed, multi-arch image per release to `ghcr.io/open-platform-model/opm-operator`.
+- Publish a single, signed, multi-arch image (`linux/amd64`, `linux/arm64`) per release to `ghcr.io/open-platform-model/opm-operator`.
 - Validate the Dockerfile on every PR by building + pushing a per-PR tag.
 - Gate release image publication on release-please actually cutting a release (not every push to `main`).
 - Attach a `dist/install.yaml` release asset pinned to `<image>:<version>@sha256:<digest>` so `kubectl apply -f <release-url>` pulls an immutable, verifiable image.
@@ -67,9 +67,14 @@ cosign verify ghcr.io/open-platform-model/opm-operator:v1.2.3 \
 **Decision**:
 
 - PR: `linux/amd64` only.
-- Release: `linux/amd64,linux/arm64,linux/s390x,linux/ppc64le` (full Taskfile matrix).
+- Release: `linux/amd64,linux/arm64`.
 
-**Rationale**: s390x and ppc64le require QEMU emulation in GHA runners — a full 4-arch build regularly exceeds 10 minutes. Running that on every PR push is cost + latency waste; PRs primarily need "does the Dockerfile still build?" signal. Releases are infrequent and warrant full coverage for broad K8s node support.
+**Rationale**: `amd64` covers the overwhelming majority of K8s node fleets; `arm64` covers cost-optimized clouds (Graviton, Ampere) and Apple-silicon dev environments. Both build natively fast on GHA runners (arm64 via buildx cross-compile, no QEMU layer needed for a pure-Go static binary using `GOOS`/`GOARCH`). s390x and ppc64le were in scope earlier but required QEMU emulation that regularly pushed release builds past 20 minutes on cold cache; removed because no user need has been identified and the cost is substantial per release. Revisit if a concrete downstream consumer appears.
+
+**Alternatives considered**:
+
+- Keep full 4-arch matrix on release — rejected for latency cost without a paying downstream.
+- Symmetric PR + release (both amd64 only) — rejected; arm64 coverage is cheap enough on the release path and catches GOARCH-specific regressions once per release.
 
 ### D4. Tagging scheme
 
@@ -121,9 +126,6 @@ task operator:installer IMG="ghcr.io/open-platform-model/opm-operator:v${VERSION
 
 ## Risks / Trade-offs
 
-- **Risk**: QEMU emulation of s390x/ppc64le occasionally fails on GHA runners (builder crashes, flaky qemu syscalls).
-  **Mitigation**: Release workflow can be re-run; digest changes on retry are expected and acceptable. Document the re-run playbook briefly in the workflow.
-
 - **Risk**: Dropping a PR's image tag `:pr-<N>` leaks a private PR's code to GHCR if the repo ever goes public with private PRs pending.
   **Mitigation**: `open-platform-model` org repo is public; PRs are public by nature. Non-issue under current policy. Revisit if repo visibility changes.
 
@@ -152,7 +154,7 @@ None blocking implementation. Resolved during exploration:
 
 - Registry: `ghcr.io/open-platform-model/opm-operator` ✓
 - Signing: cosign keyless ✓
-- Arches: asymmetric (amd64 PR, all 4 release) ✓
+- Arches: asymmetric (amd64 PR, amd64+arm64 release) ✓
 - Digest pinning: reuse `task operator:installer` with `IMG` override ✓
 - Gating: `release-please.outputs.releases_created == 'true'` ✓
 - Rename: deferred ✓

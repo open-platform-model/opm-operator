@@ -1,6 +1,30 @@
 version: '3'
 
 tasks:
+  binary:
+    desc: Build the manager binary
+    deps: [":dev:manifests", ":dev:generate", ":dev:fmt", ":dev:vet"]
+    cmds:
+      - go build -o bin/manager cmd/main.go
+
+  run:
+    desc: Run the controller locally
+    deps: [":dev:manifests", ":dev:generate", ":dev:fmt", ":dev:vet"]
+    env:
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+    cmds:
+      - go run ./cmd/main.go --catalog-path=$(realpath ./catalog)
+
+  installer:
+    desc: Build consolidated install manifest
+    deps: [":dev:manifests", ":dev:generate", ":tool:kustomize"]
+    cmds:
+      - mkdir -p dist
+      - 'cd config/manager && "{{.KUSTOMIZE}}" edit set image controller={{.IMG}}'
+      - '"{{.KUSTOMIZE}}" build config/default > dist/install.yaml'
+
+  ## DEPLOY ##
+
   crds:
     desc: Install CRDs
     deps: [":dev:manifests", ":tool:kustomize"]
@@ -17,25 +41,30 @@ tasks:
         out="$("{{.KUSTOMIZE}}" build config/crd 2>/dev/null || true)"
         if [ -n "$out" ]; then echo "$out" | "{{.KUBECTL}}" delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -; else echo "No CRDs to delete; skipping."; fi
 
-  controller:
+  controller:install:
     desc: Deploy the controller manager
-    deps: [":dev:manifests", ":tool:kustomize"]
+    deps: [":dev:manifests", ":tool:kustomize", ":kind:load", "crds"]
     cmds:
       - 'cd config/manager && "{{.KUSTOMIZE}}" edit set image controller={{.IMG}}'
       - '"{{.KUSTOMIZE}}" build config/default | "{{.KUBECTL}}" apply -f -'
+      - |
+        {{.KUBECTL}} -n poc-controller-system patch deployment poc-controller-controller-manager \
+          --type=json \
+          -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry={{.KIND_CUE_REGISTRY}}"}]'
+      - '{{.KUBECTL}} -n poc-controller-system rollout status deployment/poc-controller-controller-manager --timeout=120s'
 
-  controller:remove:
+  controller:uninstall:
     desc: Remove the controller manager
     deps: [":tool:kustomize"]
     cmds:
       - '"{{.KUSTOMIZE}}" build config/default | "{{.KUBECTL}}" delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -'
 
-  samples:
+  samples:apply:
     desc: Apply sample CRs to the cluster
     cmds:
       - '{{.KUBECTL}} apply -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml'
 
-  samples:remove:
+  samples:delete:
     desc: Delete sample CRs from the cluster
     cmds:
       - '{{.KUBECTL}} delete -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml'

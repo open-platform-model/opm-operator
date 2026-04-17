@@ -55,12 +55,13 @@ includes:
       KIND_CLUSTER: '{{.KIND_CLUSTER}}'
       KIND_CUE_REGISTRY: '{{.KIND_CUE_REGISTRY}}'
 
-  build:
-    taskfile: ./.tasks/build.yaml
+  operator:
+    taskfile: ./.tasks/operator.yaml
     vars:
       KUSTOMIZE: '{{.KUSTOMIZE}}'
       IMG: '{{.IMG}}'
       CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+      KIND_CUE_REGISTRY: '{{.KIND_CUE_REGISTRY}}'
 
   docker:
     taskfile: ./.tasks/docker.yaml
@@ -68,14 +69,6 @@ includes:
       CONTAINER_TOOL: '{{.CONTAINER_TOOL}}'
       IMG: '{{.IMG}}'
       PLATFORMS: '{{.PLATFORMS}}'
-
-  deploy:
-    taskfile: ./.tasks/deploy.yaml
-    vars:
-      KUBECTL: '{{.KUBECTL}}'
-      KUSTOMIZE: '{{.KUSTOMIZE}}'
-      IMG: '{{.IMG}}'
-      IGNORE_NOT_FOUND: '{{.IGNORE_NOT_FOUND}}'
 
   kind:
     taskfile: ./.tasks/kind.yaml
@@ -100,6 +93,18 @@ includes:
     taskfile: ./.tasks/flux.yaml
     vars:
       FLUX: '{{.FLUX}}'
+
+  release:
+    taskfile: ./.tasks/release.yaml
+    vars:
+      FLUX: '{{.FLUX}}'
+      KUBECTL: '{{.KUBECTL}}'
+
+  module:
+    taskfile: ./.tasks/module.yaml
+    vars:
+      KUBECTL: '{{.KUBECTL}}'
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
 
   tool:
     taskfile: ./.tasks/tools.yaml

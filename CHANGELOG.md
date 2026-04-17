@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/open-platform-model/poc-controller/compare/v0.3.0...v0.4.0) (2026-04-17)
+
+
+### Features
+
+* **ci:** add signed image build and publish workflows ([799e844](https://github.com/open-platform-model/poc-controller/commit/799e844d3cbc2228a82415f85073d7d19bca0592))
+* **ci:** add signed image build and publish workflows ([a62bc2e](https://github.com/open-platform-model/poc-controller/commit/a62bc2e58d2de819ba3f6063931fe2c7c20bbc93))
+
+
+### Bug Fixes
+
+* **ci:** disable buildkit default attestations on pr builds ([49326dd](https://github.com/open-platform-model/poc-controller/commit/49326dd3ae18258193e9387659a6e8acd2e95e7a))
+
 ## [0.3.0](https://github.com/open-platform-model/poc-controller/compare/v0.2.0...v0.3.0) (2026-04-17)
 
 

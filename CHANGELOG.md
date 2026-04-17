@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.3.0](https://github.com/open-platform-model/poc-controller/compare/v0.2.0...v0.3.0) (2026-04-17)
+
+
+### Features
+
+* **controller:** wire Release reconciler and source-controller scheme ([d445707](https://github.com/open-platform-model/poc-controller/commit/d4457078e72f15b6057a4299f76420c93a489162))
+* **release:** add Release CRD and Flux artifact reconciler ([e17947a](https://github.com/open-platform-model/poc-controller/commit/e17947a350a71ee3a8f24fa3ee516afca14ac901))
+
+
+### Bug Fixes
+
+* **reconcile:** requeue after finalizer add ([54f158c](https://github.com/open-platform-model/poc-controller/commit/54f158ccc7d146e3d479d47fa1989445de38d9b7))
+
+
+### Documentation
+
+* migrate make command references to task ([109edb8](https://github.com/open-platform-model/poc-controller/commit/109edb8082d243f16b486c6abe49f4a88685292b))
+* **openspec:** add release-artifact-loading spec ([ad38832](https://github.com/open-platform-model/poc-controller/commit/ad38832355221e440f07af160f80e6f427a521a4))
+* **openspec:** add release-depends-on spec ([c1cfbf1](https://github.com/open-platform-model/poc-controller/commit/c1cfbf1957ac2b30a2e6d27cac1afb83029a450b))
+* **openspec:** add release-kind-detection spec ([49fd03f](https://github.com/open-platform-model/poc-controller/commit/49fd03ff7af4fa6e90740f6bf5d4893d26b5030d))
+* **openspec:** archive release-cr and sync release-reconcile-loop spec ([637500e](https://github.com/open-platform-model/poc-controller/commit/637500e9114006f8842d57553dff5389edb06b09))
+* **openspec:** sync artifact-fetch and source-resolution specs ([98eab9e](https://github.com/open-platform-model/poc-controller/commit/98eab9e6b3aafe34e11fd41a39bc82cbee7507da))
+
+
+### Code Refactoring
+
+* **apply:** use APIReader for ServiceAccount existence check ([08314ea](https://github.com/open-platform-model/poc-controller/commit/08314ea3e7d73ceaa3e4c7fc32d9c6945ab823bb))
+* **fixtures:** rename hello module path to testing.opmodel.dev/modules/hello ([31b1837](https://github.com/open-platform-model/poc-controller/commit/31b1837c152c0d301da2d19a0da92652e3ce0e91))
+* **taskfile:** consolidate build+deploy into operator taskfile ([71f17b9](https://github.com/open-platform-model/poc-controller/commit/71f17b9e7d5bee328554d1b7749c5f8bc921badd))
+
+
+### Miscellaneous Chores
+
+* **openspec:** add changes ([a173f59](https://github.com/open-platform-model/poc-controller/commit/a173f592286e64e0ddcfe260b028fbd21dbadce5))
+
 ## [0.2.0](https://github.com/open-platform-model/poc-controller/compare/v0.1.0...v0.2.0) (2026-04-17)
 
 

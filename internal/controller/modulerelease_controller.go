@@ -24,7 +24,7 @@ import (
 	"golang.org/x/time/rate"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,7 +46,7 @@ type ModuleReleaseReconciler struct {
 	RestConfig      *rest.Config
 	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
-	EventRecorder   record.EventRecorder
+	EventRecorder   events.EventRecorder
 	Renderer        render.ModuleRenderer
 }
 
@@ -55,6 +55,7 @@ type ModuleReleaseReconciler struct {
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch;update
 
 // Reconcile runs the full ModuleRelease reconcile loop: CUE module synthesis
 // and resolution from OCI registry, rendering, SSA apply, optional prune,

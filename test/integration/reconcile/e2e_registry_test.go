@@ -22,7 +22,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
@@ -125,7 +125,7 @@ var _ = Describe("End-to-end module resolution", Ordered, func() {
 			Client:          k8sClient,
 			Provider:        realProv,
 			ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-			EventRecorder:   record.NewFakeRecorder(10),
+			EventRecorder:   events.NewFakeRecorder(10),
 			Renderer:        &render.RegistryRenderer{},
 		}
 		nn := types.NamespacedName{Name: mrName, Namespace: namespace}

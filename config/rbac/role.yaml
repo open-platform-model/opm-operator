@@ -19,6 +19,14 @@ rules:
   - get
   - impersonate
 - apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
+- apiGroups:
   - releases.opmodel.dev
   resources:
   - bundlereleases

@@ -28,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -73,7 +73,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -165,7 +165,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			reconciler := &ModuleReleaseReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
-				EventRecorder: record.NewFakeRecorder(10),
+				EventRecorder: events.NewFakeRecorder(10),
 				Renderer:      &stubRenderer{},
 			}
 
@@ -222,7 +222,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -309,7 +309,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -380,7 +380,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -445,7 +445,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			reconciler := &ModuleReleaseReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
-				EventRecorder: record.NewFakeRecorder(10),
+				EventRecorder: events.NewFakeRecorder(10),
 				Renderer:      &stubRenderer{},
 			}
 
@@ -489,7 +489,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -560,7 +560,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -657,7 +657,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			reconciler := &ModuleReleaseReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
-				EventRecorder: record.NewFakeRecorder(10),
+				EventRecorder: events.NewFakeRecorder(10),
 				Renderer:      &stubRenderer{},
 			}
 
@@ -705,7 +705,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -803,7 +803,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			reconciler := &ModuleReleaseReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
-				EventRecorder: record.NewFakeRecorder(10),
+				EventRecorder: events.NewFakeRecorder(10),
 				Renderer:      &stubRenderer{},
 			}
 
@@ -834,7 +834,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			reconciler := &ModuleReleaseReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
-				EventRecorder: record.NewFakeRecorder(10),
+				EventRecorder: events.NewFakeRecorder(10),
 				Renderer:      resolutionErrorRenderer(),
 			}
 
@@ -879,7 +879,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 			_, err := realReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -899,7 +899,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -949,7 +949,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -992,7 +992,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -1026,7 +1026,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -1074,7 +1074,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 
 			createModuleRelease(ctx, "event-apply-mr")
 
-			recorder := record.NewFakeRecorder(10)
+			recorder := events.NewFakeRecorder(10)
 			reconciler := &ModuleReleaseReconciler{
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
@@ -1128,7 +1128,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 			_, err := realReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
@@ -1143,7 +1143,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				},
 			})
 
-			recorder := record.NewFakeRecorder(10)
+			recorder := events.NewFakeRecorder(10)
 			failReconciler := &ModuleReleaseReconciler{
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
@@ -1185,7 +1185,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			}
 			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 
-			recorder := record.NewFakeRecorder(10)
+			recorder := events.NewFakeRecorder(10)
 			reconciler := &ModuleReleaseReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
@@ -1236,7 +1236,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -1257,7 +1257,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			Expect(k8sClient.Update(ctx, &current)).To(Succeed())
 
 			// Fresh recorder for the resume reconcile.
-			resumeRecorder := record.NewFakeRecorder(10)
+			resumeRecorder := events.NewFakeRecorder(10)
 			reconciler.EventRecorder = resumeRecorder
 
 			// Resume reconcile — should emit Resumed, then Applied, then ReconciliationSucceeded.
@@ -1289,7 +1289,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 				Scheme:          k8sClient.Scheme(),
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 
@@ -1304,7 +1304,7 @@ var _ = Describe("ModuleRelease Reconcile Loop", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Fresh recorder for the no-op reconcile.
-			noopRecorder := record.NewFakeRecorder(10)
+			noopRecorder := events.NewFakeRecorder(10)
 			reconciler.EventRecorder = noopRecorder
 
 			// Second full reconcile — should be no-op.

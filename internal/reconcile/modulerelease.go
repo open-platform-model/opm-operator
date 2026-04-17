@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -44,7 +44,7 @@ type ModuleReleaseParams struct {
 	RestConfig      *rest.Config
 	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
-	EventRecorder   record.EventRecorder
+	EventRecorder   events.EventRecorder
 	// Renderer produces the render result for a ModuleRelease. Must be non-nil;
 	// production wires render.RegistryRenderer, tests wire a stub.
 	Renderer render.ModuleRenderer
@@ -95,7 +95,7 @@ func ReconcileModuleRelease(
 		log.Info("Reconciliation is suspended")
 		status.MarkSuspended(&mr)
 		mr.Status.ObservedGeneration = mr.Generation
-		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.SuspendedReason, "Reconciliation is suspended")
+		params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeNormal, status.SuspendedReason, "Suspend", "Reconciliation is suspended")
 		if patchErr := patcher.Patch(ctx, &mr,
 			patch.WithOwnedConditions{
 				Conditions: []string{
@@ -117,7 +117,7 @@ func ReconcileModuleRelease(
 	// Check for resume from suspend.
 	if ready := apimeta.FindStatusCondition(mr.Status.Conditions, status.ReadyCondition); ready != nil && ready.Reason == status.SuspendedReason {
 		log.Info("Reconciliation resumed")
-		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.ResumedReason, "Reconciliation resumed")
+		params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeNormal, status.ResumedReason, "Resume", "Reconciliation resumed")
 	}
 
 	// Track digests and outcome across phases for deferred status commit.
@@ -260,7 +260,7 @@ func ReconcileModuleRelease(
 		if isResolutionError(err) {
 			reason = status.ResolutionFailedReason
 		}
-		params.EventRecorder.Eventf(&mr, corev1.EventTypeWarning, reason, "%s", err)
+		params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
 		status.MarkStalled(&mr, reason, "%s", err)
 		outcome = FailedStalled
 		errMsg = err.Error()
@@ -309,7 +309,7 @@ func ReconcileModuleRelease(
 
 	if isNoOp {
 		log.Info("No changes detected, skipping apply")
-		params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.NoOpReason, "No changes detected")
+		params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeNormal, status.NoOpReason, "Reconcile", "No changes detected")
 		outcome = NoOp
 		return ctrl.Result{}, nil
 	}
@@ -337,7 +337,7 @@ func ReconcileModuleRelease(
 	applyResult, err := apply.Apply(ctx, applyRM, resources, force)
 	if err != nil {
 		phases.applyFailed = true
-		params.EventRecorder.Eventf(&mr, corev1.EventTypeWarning, status.ApplyFailedReason, "%s", err)
+		params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", err)
 		if mr.Spec.ServiceAccountName != "" && isForbidden(err) {
 			status.MarkStalled(&mr, status.ImpersonationFailedReason, "%s", err)
 			outcome = FailedStalled
@@ -353,7 +353,7 @@ func ReconcileModuleRelease(
 	}
 
 	total := applyResult.Created + applyResult.Updated + applyResult.Unchanged
-	params.EventRecorder.Eventf(&mr, corev1.EventTypeNormal, status.AppliedReason,
+	params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeNormal, status.AppliedReason, "Apply",
 		"Applied %d resources (%d created, %d updated, %d unchanged)",
 		total, applyResult.Created, applyResult.Updated, applyResult.Unchanged)
 
@@ -389,7 +389,7 @@ func ReconcileModuleRelease(
 
 	// Phase 7: Commit status (handled by deferred function).
 	status.MarkReady(&mr, "Reconciliation succeeded")
-	params.EventRecorder.Event(&mr, corev1.EventTypeNormal, status.ReconciliationSucceededReason, "Reconciliation succeeded")
+	params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeNormal, status.ReconciliationSucceededReason, "Reconcile", "Reconciliation succeeded")
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
 	return ctrl.Result{}, nil
@@ -553,7 +553,7 @@ func pruneStaleResources(
 	mr *releasesv1alpha1.ModuleRelease,
 	c client.Client,
 	staleSet []releasesv1alpha1.InventoryEntry,
-	recorder record.EventRecorder,
+	recorder events.EventRecorder,
 ) (Outcome, bool, int, error) {
 	if !mr.Spec.Prune || len(staleSet) == 0 {
 		return Applied, true, 0, nil
@@ -561,7 +561,7 @@ func pruneStaleResources(
 	log := logf.FromContext(ctx)
 	pruneResult, err := apply.Prune(ctx, c, staleSet)
 	if err != nil {
-		recorder.Eventf(mr, corev1.EventTypeWarning, status.PruneFailedReason, "%s", err)
+		recorder.Eventf(mr, nil, corev1.EventTypeWarning, status.PruneFailedReason, "Prune", "%s", err)
 		if mr.Spec.ServiceAccountName != "" && isForbidden(err) {
 			status.MarkStalled(mr, status.ImpersonationFailedReason, "%s", err)
 			return FailedStalled, false, 0, nil
@@ -570,7 +570,7 @@ func pruneStaleResources(
 		return FailedTransient, false, 0, err
 	}
 	if pruneResult.Deleted > 0 {
-		recorder.Eventf(mr, corev1.EventTypeNormal, status.PrunedReason,
+		recorder.Eventf(mr, nil, corev1.EventTypeNormal, status.PrunedReason, "Prune",
 			"Pruned %d stale resources", pruneResult.Deleted)
 	}
 	log.Info("Pruned stale resources", "deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)

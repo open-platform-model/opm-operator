@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,7 +77,7 @@ var _ = Describe("ModuleRelease Controller", func() {
 			controllerReconciler := &ModuleReleaseReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
-				EventRecorder: record.NewFakeRecorder(10),
+				EventRecorder: events.NewFakeRecorder(10),
 				Renderer:      &stubRenderer{},
 			}
 

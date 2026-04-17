@@ -27,7 +27,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -203,7 +203,7 @@ var _ = Describe("Drift Detection", func() {
 				Client:          k8sClient,
 				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
-				EventRecorder:   record.NewFakeRecorder(10),
+				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
 			}
 

@@ -239,7 +239,7 @@ func main() {
 		RestConfig:      restConfig,
 		Provider:        opmProvider,
 		ResourceManager: resourceManager,
-		EventRecorder:   mgr.GetEventRecorderFor("opm-controller"),
+		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
 		Renderer:        &render.RegistryRenderer{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleRelease")

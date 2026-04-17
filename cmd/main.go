@@ -25,6 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,6 +42,7 @@ import (
 	"github.com/open-platform-model/poc-controller/internal/controller"
 	_ "github.com/open-platform-model/poc-controller/internal/metrics"
 	"github.com/open-platform-model/poc-controller/internal/render"
+	"github.com/open-platform-model/poc-controller/internal/source"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -52,6 +54,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(releasesv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(sourcev1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -246,6 +249,20 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "BundleRelease")
+		os.Exit(1)
+	}
+	if err := (&controller.ReleaseReconciler{
+		Client:          mgr.GetClient(),
+		APIReader:       mgr.GetAPIReader(),
+		Scheme:          mgr.GetScheme(),
+		RestConfig:      restConfig,
+		Provider:        opmProvider,
+		ResourceManager: resourceManager,
+		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
+		Fetcher:         &source.ArtifactFetcher{},
+		Renderer:        render.PackageReleaseRenderer{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "Release")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

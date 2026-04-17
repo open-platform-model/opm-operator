@@ -17,9 +17,11 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -104,15 +106,33 @@ var _ = AfterSuite(func() {
 // findSourceControllerCRDs returns the path to the Flux source-controller
 // CRD bases within the Go module cache so envtest can install GitRepository,
 // OCIRepository, and Bucket CRDs for Release reconciler tests.
+//
+// The repo only depends on github.com/fluxcd/source-controller/api (a sub-module
+// without CRDs). The parent source-controller module ships the CRDs and must be
+// fetched into the module cache separately. We pin to the same version as the
+// /api sub-module since flux releases them together.
 // Panics if the directory cannot be located — tests cannot run without it.
 func findSourceControllerCRDs() string {
 	gopath := os.Getenv("GOPATH")
 	if gopath == "" {
 		gopath = filepath.Join(os.Getenv("HOME"), "go")
 	}
-	matches, err := filepath.Glob(filepath.Join(gopath, "pkg", "mod", "github.com", "fluxcd", "source-controller@*", "config", "crd", "bases"))
+	pattern := filepath.Join(gopath, "pkg", "mod", "github.com", "fluxcd", "source-controller@*", "config", "crd", "bases")
+	if matches, _ := filepath.Glob(pattern); len(matches) > 0 {
+		return matches[len(matches)-1]
+	}
+	ver, err := exec.Command("go", "list", "-m", "-f", "{{.Version}}", "github.com/fluxcd/source-controller/api").Output()
+	if err != nil {
+		panic(fmt.Sprintf("resolving source-controller/api version: %v", err))
+	}
+	version := string(bytes.TrimSpace(ver))
+	out, err := exec.Command("go", "mod", "download", "github.com/fluxcd/source-controller@"+version).CombinedOutput()
+	if err != nil {
+		panic(fmt.Sprintf("downloading source-controller@%s: %v\n%s", version, err, out))
+	}
+	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
-		panic(fmt.Sprintf("source-controller CRDs not found under %s; run `go mod download github.com/fluxcd/source-controller`", gopath))
+		panic(fmt.Sprintf("source-controller CRDs not found under %s after `go mod download github.com/fluxcd/source-controller@%s`", gopath, version))
 	}
 	return matches[len(matches)-1]
 }

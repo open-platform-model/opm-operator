@@ -187,12 +187,12 @@ Let `gofmt` and `goimports` control formatting and grouping.
 
 Before merge, the following checks SHOULD pass:
 
-1. `make manifests generate`
-2. `make fmt vet`
-3. `make lint`
-4. `make test`
+1. `task dev:manifests dev:generate`
+2. `task dev:fmt dev:vet`
+3. `task dev:lint`
+4. `task dev:test`
 
-When API types or markers change, `make manifests generate` is mandatory.
+When API types or markers change, `task dev:manifests dev:generate` is mandatory.
 
 ---
 
@@ -246,7 +246,7 @@ Recommended `Research & Decisions` shape:
 - Break tasks into tiny chunks, ideally no more than 1-2 hours each
 - If the list grows beyond roughly 10 items or spans multiple features, split it into another OpenSpec change
 - Group tasks by component such as API, internal packages, and controller
-- Include validation gates as final tasks, especially `make fmt vet lint test`
+- Include validation gates as final tasks, especially `task dev:fmt dev:vet dev:lint dev:test`
 
 ---
 

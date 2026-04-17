@@ -13,7 +13,7 @@ Package-scoped tests co-located with production code. Controller unit tests (`in
 **Run:**
 
 ```bash
-make test                          # all unit tests
+task dev:test                      # all unit + integration tests
 go test ./internal/apply           # single package
 ```
 
@@ -32,7 +32,7 @@ Cross-package tests that exercise how multiple internal packages work together a
 **Run:**
 
 ```bash
-make test                                    # included in default test target
+task dev:test                                # included in default test target
 go test ./test/integration/...               # all integration tests
 go test ./test/integration/apply             # single integration package
 ```
@@ -53,8 +53,8 @@ Full-stack tests against a Kind cluster with the controller deployed as a real w
 **Run:**
 
 ```bash
-make setup-test-e2e                # create Kind cluster if missing
-make test-e2e                      # build, deploy, test, cleanup
+task kind:setup                    # create Kind cluster if missing
+task dev:e2e                       # build, deploy, test, cleanup
 ```
 
 **Infrastructure:** Kind cluster. Slow. May install CertManager (skip with `CERT_MANAGER_INSTALL_SKIP=true`).
@@ -87,8 +87,8 @@ All tiers share these conventions:
 
 ### Build tags
 
-- Unit and integration tests: no build tag (included in `make test`).
-- E2E tests: `//go:build e2e` (excluded from `make test`, run via `make test-e2e`).
+- Unit and integration tests: no build tag (included in `task dev:test`).
+- E2E tests: `//go:build e2e` (excluded from `task dev:test`, run via `task dev:e2e`).
 
 ### File layout
 

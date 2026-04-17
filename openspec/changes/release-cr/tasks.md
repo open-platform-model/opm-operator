@@ -30,4 +30,4 @@
 ## 6. Validation
 
 - [x] 6.1 Run `task dev:fmt dev:vet dev:lint dev:test`
-- [x] 6.2 Run `task build:binary` to verify compilation
+- [x] 6.2 Run `task operator:binary` to verify compilation

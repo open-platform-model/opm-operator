@@ -72,6 +72,20 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+
+		// Local-dev override: when LOCAL_REGISTRY is set, append a --registry arg
+		// so the controller resolves catalog deps from a registry reachable
+		// inside Kind (e.g. opm-registry:5000). CI leaves this unset → controller
+		// uses the ghcr default baked into cmd/main.go.
+		if localRegistry := os.Getenv("LOCAL_REGISTRY"); localRegistry != "" {
+			By("overriding controller registry for local dev")
+			cmd = exec.Command("kubectl", "-n", namespace, "patch", "deployment",
+				"poc-controller-controller-manager",
+				"--type=json",
+				fmt.Sprintf(`-p=[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=%s"}]`, localRegistry))
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to override controller registry")
+		}
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,

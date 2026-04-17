@@ -23,6 +23,8 @@ jobs:
           version: 3.x
 
       - name: Running Tests
+        env:
+          CUE_REGISTRY: testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works
         run: |
           go mod tidy
           task dev:test

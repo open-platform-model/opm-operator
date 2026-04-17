@@ -32,6 +32,8 @@ vars:
   REGISTRY_IMAGE: '{{.REGISTRY_IMAGE | default "registry:2"}}'
   # Used for publishing modules to the local registry
   CUE_REGISTRY: '{{.CUE_REGISTRY | default "testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works"}}'
+  # Used in CI and for pulling catalog/test modules from public ghcr
+  GHCR_CUE_REGISTRY: '{{.GHCR_CUE_REGISTRY | default "testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works"}}'
   # Used for pulling the local registry from within kind
   KIND_CUE_REGISTRY: '{{.KIND_CUE_REGISTRY | default "testing.opmodel.dev=opm-registry:5000+insecure,opmodel.dev=opm-registry:5000+insecure,registry.cue.works"}}'
   TEST_MODULE_DIR: '{{.TEST_MODULE_DIR | default "test/fixtures/modules/hello"}}'
@@ -48,8 +50,10 @@ includes:
       GOLANGCI_LINT: '{{.GOLANGCI_LINT}}'
       ENVTEST_K8S_VERSION: '{{.ENVTEST_K8S_VERSION}}'
       CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+      GHCR_CUE_REGISTRY: '{{.GHCR_CUE_REGISTRY}}'
       KIND: '{{.KIND}}'
       KIND_CLUSTER: '{{.KIND_CLUSTER}}'
+      KIND_CUE_REGISTRY: '{{.KIND_CUE_REGISTRY}}'
 
   build:
     taskfile: ./.tasks/build.yaml

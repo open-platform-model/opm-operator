@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,6 +64,8 @@ var _ = BeforeSuite(func() {
 	var err error
 	err = releasesv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	err = sourcev1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
 
@@ -69,6 +73,7 @@ var _ = BeforeSuite(func() {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd", "bases"),
+			findSourceControllerCRDs(),
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -96,14 +101,31 @@ var _ = AfterSuite(func() {
 	}, time.Minute, time.Second).Should(Succeed())
 })
 
+// findSourceControllerCRDs returns the path to the Flux source-controller
+// CRD bases within the Go module cache so envtest can install GitRepository,
+// OCIRepository, and Bucket CRDs for Release reconciler tests.
+// Panics if the directory cannot be located — tests cannot run without it.
+func findSourceControllerCRDs() string {
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		gopath = filepath.Join(os.Getenv("HOME"), "go")
+	}
+	matches, err := filepath.Glob(filepath.Join(gopath, "pkg", "mod", "github.com", "fluxcd", "source-controller@*", "config", "crd", "bases"))
+	if err != nil || len(matches) == 0 {
+		panic(fmt.Sprintf("source-controller CRDs not found under %s; run `go mod download github.com/fluxcd/source-controller`", gopath))
+	}
+	return matches[len(matches)-1]
+}
+
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 // ENVTEST-based tests depend on specific binaries, usually located in paths set by
 // controller-runtime. When running tests directly (e.g., via an IDE) without using
-// Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
+// Taskfile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
 //
 // This function streamlines the process by finding the required binaries, similar to
 // setting the 'KUBEBUILDER_ASSETS' environment variable. To ensure the binaries are
-// properly set up, run 'make setup-envtest' beforehand.
+// properly set up, run 'task dev:test' once beforehand (it provisions envtest via
+// the :tool:setup-envtest dependency).
 func getFirstFoundEnvTestBinaryDir() string {
 	basePath := filepath.Join("..", "..", "bin", "k8s")
 	entries, err := os.ReadDir(basePath)

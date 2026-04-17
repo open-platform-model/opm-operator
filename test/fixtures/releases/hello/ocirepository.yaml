@@ -1,0 +1,14 @@
+# OCIRepository pointing at the hello release package artifact pushed by
+# `task release:publish`. Uses the kind-internal registry hostname so the
+# Flux source-controller pod can reach the local registry.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: hello-release
+  namespace: default
+spec:
+  interval: 1m
+  url: oci://opm-registry:5000/testing.opmodel.dev/releases/hello
+  ref:
+    tag: v0.0.1
+  insecure: true

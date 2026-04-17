@@ -1,0 +1,39 @@
+version: '3'
+
+# ModuleRelease end-to-end test tasks (CUE-native OCI resolution path).
+#
+# Prerequisites:
+#   - Local registry running: `task registry:start`
+#   - Registry connected to kind network: `task registry:connect`
+#   - Controller running (or deployed): `task build:run` / `task deploy:controller`
+#
+# The ModuleRelease path does NOT use Flux sources — the controller resolves
+# the module directly from the OCI registry via CUE's module system.
+
+vars:
+  MODULE_DIR: '{{.MODULE_DIR | default "test/fixtures/modules/hello"}}'
+  MODULE_VERSION: '{{.MODULE_VERSION | default "v0.0.1"}}'
+  # Force the mapping used for `cue mod publish` regardless of shell env.
+  # A shell-exported CUE_REGISTRY without `testing.opmodel.dev=localhost:...`
+  # otherwise falls through to registry.cue.works and fails with 401.
+  PUBLISH_REGISTRY: 'testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works'
+
+tasks:
+  publish:
+    desc: Publish the hello module to the local registry via `cue mod publish`
+    cmds:
+      # Explicit env prefix on each command — Task v3's `env:` block loses to
+      # shell-exported CUE_REGISTRY, so force the mapping inline.
+      - cd {{.MODULE_DIR}} && CUE_REGISTRY='{{.PUBLISH_REGISTRY}}' cue mod tidy
+      - cd {{.MODULE_DIR}} && CUE_REGISTRY='{{.PUBLISH_REGISTRY}}' cue mod publish {{.MODULE_VERSION}}
+      - echo "Published {{.MODULE_DIR}}:{{.MODULE_VERSION}}"
+
+  apply:
+    desc: Apply the hello ModuleRelease manifest
+    cmds:
+      - '{{.KUBECTL}} apply -f {{.MODULE_DIR}}/modulerelease.yaml'
+
+  delete:
+    desc: Remove the hello ModuleRelease CR
+    cmds:
+      - '{{.KUBECTL}} delete --ignore-not-found -f {{.MODULE_DIR}}/modulerelease.yaml'

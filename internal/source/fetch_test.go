@@ -51,7 +51,7 @@ func TestArtifactFetcherFetch(t *testing.T) {
 
 		dest := t.TempDir()
 		fetcher := &ArtifactFetcher{HTTPClient: srv.Client()}
-		err := fetcher.Fetch(context.Background(), srv.URL+"/artifact.tar.gz", correctDigest, dest)
+		err := fetcher.Fetch(context.Background(), srv.URL+"/artifact.tar.gz", correctDigest, dest, FetchOptions{})
 		if err != nil {
 			t.Fatalf("Fetch returned error: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestArtifactFetcherFetch(t *testing.T) {
 
 		dest := t.TempDir()
 		fetcher := &ArtifactFetcher{HTTPClient: srv.Client()}
-		err := fetcher.Fetch(context.Background(), srv.URL, "sha256:0000000000000000000000000000000000000000000000000000000000000000", dest)
+		err := fetcher.Fetch(context.Background(), srv.URL, "sha256:0000000000000000000000000000000000000000000000000000000000000000", dest, FetchOptions{})
 		if err == nil {
 			t.Fatal("expected error for digest mismatch, got nil")
 		}
@@ -94,7 +94,7 @@ func TestArtifactFetcherFetch(t *testing.T) {
 
 		dest := t.TempDir()
 		fetcher := &ArtifactFetcher{HTTPClient: srv.Client()}
-		err := fetcher.Fetch(context.Background(), srv.URL, correctDigest, dest)
+		err := fetcher.Fetch(context.Background(), srv.URL, correctDigest, dest, FetchOptions{})
 		if err == nil {
 			t.Fatal("expected error for non-200 response, got nil")
 		}
@@ -112,12 +112,63 @@ func TestArtifactFetcherFetch(t *testing.T) {
 			HTTPClient: srv.Client(),
 			MaxSize:    10, // Tiny limit to trigger overflow.
 		}
-		err := fetcher.Fetch(context.Background(), srv.URL, correctDigest, dest)
+		err := fetcher.Fetch(context.Background(), srv.URL, correctDigest, dest, FetchOptions{})
 		if err == nil {
 			t.Fatal("expected error for size limit exceeded, got nil")
 		}
 		if !strings.Contains(err.Error(), "exceeds limit") {
 			t.Fatalf("expected size limit error, got: %v", err)
+		}
+	})
+
+	t.Run("tar.gz format extracts correctly", func(t *testing.T) {
+		tarDir := t.TempDir()
+		tarPath := filepath.Join(tarDir, "module.tar.gz")
+		createTarGzFromDir(t, fixtureDir, tarPath)
+		tarDigest := digestOf(t, tarPath)
+
+		srv := serveZip(t, tarPath) // serves bytes; filename irrelevant
+		defer srv.Close()
+
+		dest := t.TempDir()
+		fetcher := &ArtifactFetcher{HTTPClient: srv.Client()}
+		err := fetcher.Fetch(context.Background(), srv.URL+"/artifact.tar.gz", tarDigest, dest, FetchOptions{Format: ArchiveFormatTarGz})
+		if err != nil {
+			t.Fatalf("tar.gz Fetch returned error: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "cue.mod", "module.cue")); err != nil {
+			t.Error("cue.mod/module.cue not found after tar.gz fetch")
+		}
+	})
+
+	t.Run("skip root CUE module validation", func(t *testing.T) {
+		// Build a tar.gz with no cue.mod at the root.
+		tarDir := t.TempDir()
+		src := filepath.Join(tarDir, "src")
+		if err := os.MkdirAll(filepath.Join(src, "releases", "prod"), 0o755); err != nil {
+			t.Fatalf("prep src: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(src, "releases", "prod", "release.cue"), []byte("package release\n"), 0o644); err != nil {
+			t.Fatalf("prep file: %v", err)
+		}
+		tarPath := filepath.Join(tarDir, "bare.tar.gz")
+		createTarGzFromDir(t, src, tarPath)
+		tarDigest := digestOf(t, tarPath)
+
+		srv := serveZip(t, tarPath)
+		defer srv.Close()
+
+		dest := t.TempDir()
+		fetcher := &ArtifactFetcher{HTTPClient: srv.Client()}
+		err := fetcher.Fetch(context.Background(), srv.URL, tarDigest, dest, FetchOptions{
+			Format:                      ArchiveFormatTarGz,
+			SkipRootCUEModuleValidation: true,
+		})
+		if err != nil {
+			t.Fatalf("Fetch with skip validation returned error: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "releases", "prod", "release.cue")); err != nil {
+			t.Error("release.cue not found after fetch")
 		}
 	})
 
@@ -128,7 +179,7 @@ func TestArtifactFetcherFetch(t *testing.T) {
 		dest := t.TempDir()
 		fetcher := &ArtifactFetcher{HTTPClient: srv.Client()}
 		// URL ends in .tar.gz but body is zip — fetcher must handle this.
-		err := fetcher.Fetch(context.Background(), srv.URL+"/ocirepository/default/my-repo/sha256:abc123.tar.gz", correctDigest, dest)
+		err := fetcher.Fetch(context.Background(), srv.URL+"/ocirepository/default/my-repo/sha256:abc123.tar.gz", correctDigest, dest, FetchOptions{})
 		if err != nil {
 			t.Fatalf("Fetch returned error for .tar.gz URL: %v", err)
 		}

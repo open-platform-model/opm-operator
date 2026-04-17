@@ -14,9 +14,25 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
 )
 
-// Resolve looks up the OCIRepository referenced by sourceRef, validates its
-// readiness, and extracts artifact metadata. The OCIRepository is looked up
-// in releaseNamespace unless sourceRef.Namespace is set.
+// Source kinds supported by Resolve.
+const (
+	SourceKindOCIRepository = "OCIRepository"
+	SourceKindGitRepository = "GitRepository"
+	SourceKindBucket        = "Bucket"
+)
+
+// fluxSource is the subset of the Flux source-controller API used by Resolve:
+// a runtime object with readiness conditions and an artifact pointer.
+type fluxSource interface {
+	client.Object
+	GetArtifact() *fluxmeta.Artifact
+	GetConditions() []metav1.Condition
+}
+
+// Resolve looks up the Flux source referenced by sourceRef, validates its
+// readiness, and extracts artifact metadata. Supports OCIRepository,
+// GitRepository, and Bucket source kinds. The source is looked up in
+// releaseNamespace unless sourceRef.Namespace is set.
 func Resolve(
 	ctx context.Context,
 	c client.Client,
@@ -28,28 +44,48 @@ func Resolve(
 		ns = sourceRef.Namespace
 	}
 
-	var repo sourcev1.OCIRepository
+	obj, err := newSourceObject(sourceRef.Kind)
+	if err != nil {
+		return nil, fmt.Errorf("%s/%s: %w", ns, sourceRef.Name, err)
+	}
+
 	key := types.NamespacedName{Name: sourceRef.Name, Namespace: ns}
-	if err := c.Get(ctx, key, &repo); err != nil {
-		if client.IgnoreNotFound(err) == nil {
-			return nil, fmt.Errorf("OCIRepository %s/%s: %w", ns, sourceRef.Name, ErrSourceNotFound)
+	if getErr := c.Get(ctx, key, obj); getErr != nil {
+		if client.IgnoreNotFound(getErr) == nil {
+			return nil, fmt.Errorf("%s %s/%s: %w", sourceRef.Kind, ns, sourceRef.Name, ErrSourceNotFound)
 		}
-		return nil, fmt.Errorf("getting OCIRepository %s/%s: %w", ns, sourceRef.Name, err)
+		return nil, fmt.Errorf("getting %s %s/%s: %w", sourceRef.Kind, ns, sourceRef.Name, getErr)
 	}
 
-	ready := apimeta.FindStatusCondition(repo.Status.Conditions, fluxmeta.ReadyCondition)
+	ready := apimeta.FindStatusCondition(obj.GetConditions(), fluxmeta.ReadyCondition)
 	if ready == nil || ready.Status != metav1.ConditionTrue {
-		return nil, fmt.Errorf("OCIRepository %s/%s: %w", ns, sourceRef.Name, ErrSourceNotReady)
+		return nil, fmt.Errorf("%s %s/%s: %w", sourceRef.Kind, ns, sourceRef.Name, ErrSourceNotReady)
 	}
 
-	artifact := repo.GetArtifact()
+	artifact := obj.GetArtifact()
 	if artifact == nil {
-		return nil, fmt.Errorf("OCIRepository %s/%s has no artifact: %w", ns, sourceRef.Name, ErrSourceNotReady)
+		return nil, fmt.Errorf("%s %s/%s has no artifact: %w", sourceRef.Kind, ns, sourceRef.Name, ErrSourceNotReady)
 	}
 
 	return &ArtifactRef{
+		Kind:     sourceRef.Kind,
 		URL:      artifact.URL,
 		Revision: artifact.Revision,
 		Digest:   artifact.Digest,
 	}, nil
+}
+
+// newSourceObject returns a zero-value source object matching the given kind.
+// Returns an error wrapping ErrUnsupportedSourceKind for unknown kinds.
+func newSourceObject(kind string) (fluxSource, error) {
+	switch kind {
+	case SourceKindOCIRepository:
+		return &sourcev1.OCIRepository{}, nil
+	case SourceKindGitRepository:
+		return &sourcev1.GitRepository{}, nil
+	case SourceKindBucket:
+		return &sourcev1.Bucket{}, nil
+	default:
+		return nil, fmt.Errorf("source kind %q: %w", kind, ErrUnsupportedSourceKind)
+	}
 }

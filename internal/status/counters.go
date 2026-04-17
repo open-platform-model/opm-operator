@@ -15,10 +15,19 @@ const (
 // EnsureCounters initializes status.FailureCounters if nil and returns the pointer.
 // Callers can safely use the returned pointer without nil checks.
 func EnsureCounters(status *releasesv1alpha1.ModuleReleaseStatus) *releasesv1alpha1.FailureCounters {
-	if status.FailureCounters == nil {
-		status.FailureCounters = &releasesv1alpha1.FailureCounters{}
+	return ensureCountersField(&status.FailureCounters)
+}
+
+// EnsureReleaseCounters is the Release equivalent of EnsureCounters.
+func EnsureReleaseCounters(status *releasesv1alpha1.ReleaseStatus) *releasesv1alpha1.FailureCounters {
+	return ensureCountersField(&status.FailureCounters)
+}
+
+func ensureCountersField(counters **releasesv1alpha1.FailureCounters) *releasesv1alpha1.FailureCounters {
+	if *counters == nil {
+		*counters = &releasesv1alpha1.FailureCounters{}
 	}
-	return status.FailureCounters
+	return *counters
 }
 
 // IncrementCounter increments the named failure counter by one.

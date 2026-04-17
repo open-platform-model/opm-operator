@@ -38,7 +38,7 @@ func TestFetchIntegration(t *testing.T) {
 	// Fetch into temp dir.
 	dest := t.TempDir()
 	fetcher := &ArtifactFetcher{HTTPClient: srv.Client()}
-	if err := fetcher.Fetch(context.Background(), srv.URL+"/artifact.tar.gz", digest, dest); err != nil {
+	if err := fetcher.Fetch(context.Background(), srv.URL+"/artifact.tar.gz", digest, dest, FetchOptions{}); err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
 

@@ -12,17 +12,52 @@ import (
 // MaxArtifactSize is the maximum allowed artifact download size (64 MB).
 const MaxArtifactSize int64 = 64 << 20
 
-// Fetcher fetches a resolved source artifact into a local directory.
-type Fetcher interface {
-	Fetch(ctx context.Context, artifactURL, artifactDigest, dir string) error
+// ArchiveFormat identifies the encoding of a Flux source artifact.
+type ArchiveFormat int
+
+const (
+	// ArchiveFormatZip is used by Flux OCIRepository artifacts.
+	ArchiveFormatZip ArchiveFormat = iota
+	// ArchiveFormatTarGz is used by Flux GitRepository and Bucket artifacts.
+	ArchiveFormatTarGz
+)
+
+// FetchOptions controls extraction behavior for ArtifactFetcher.Fetch.
+type FetchOptions struct {
+	// Format selects the extraction format. Defaults to ArchiveFormatZip.
+	Format ArchiveFormat
+
+	// SkipRootCUEModuleValidation skips the post-extraction check that
+	// cue.mod/module.cue exists at the destination root. Callers that place
+	// the CUE module at a subdirectory (Release CR) should enable this.
+	SkipRootCUEModuleValidation bool
 }
 
-// ArtifactFetcher downloads OCI artifacts via HTTP and extracts them as zip files.
-// Implements the Fetcher interface.
+// FormatForKind returns the archive format used by the given Flux source kind
+// when consumed by the Release reconciler.
 //
-// Uses direct HTTP fetch with SHA-256 digest verification rather than Flux's
-// ArchiveFetcher, because Flux assumes tar.gz format while CUE OCI artifacts
-// use zip format.
+// All three kinds produce tar.gz: GitRepository/Bucket bundle the repo tree as
+// tar.gz natively, and OCIRepository artifacts for Release are expected to be
+// published via `flux push artifact`, which emits
+// `application/vnd.cncf.flux.content.v1.tar+gzip`.
+//
+// The legacy zip format (used by `cue mod publish`) belongs to the
+// ModuleRelease cue-native path and does NOT flow through this fetcher.
+func FormatForKind(_ string) ArchiveFormat {
+	return ArchiveFormatTarGz
+}
+
+// Fetcher fetches a resolved source artifact into a local directory.
+type Fetcher interface {
+	Fetch(ctx context.Context, artifactURL, artifactDigest, dir string, opts FetchOptions) error
+}
+
+// ArtifactFetcher downloads Flux source artifacts via HTTP and extracts them
+// as either zip or tar.gz. Implements the Fetcher interface.
+//
+// Zip is used by CUE OCI artifacts (despite URLs often ending in .tar.gz);
+// tar.gz is used by GitRepository and Bucket artifacts. The caller selects
+// the format via FetchOptions.
 type ArtifactFetcher struct {
 	// HTTPClient is the HTTP client used for downloads. If nil, http.DefaultClient is used.
 	HTTPClient *http.Client
@@ -31,12 +66,11 @@ type ArtifactFetcher struct {
 	MaxSize int64
 }
 
-// Fetch downloads the artifact from artifactURL, verifies its SHA-256 digest matches
-// artifactDigest, extracts the zip contents to dir, and validates the CUE module layout.
-//
-// The artifact body is expected to be a zip file despite the URL path possibly
-// ending in .tar.gz (Flux artifact format quirk confirmed in experiment 001).
-func (f *ArtifactFetcher) Fetch(ctx context.Context, artifactURL, artifactDigest, dir string) error {
+// Fetch downloads the artifact from artifactURL, verifies its SHA-256 digest
+// matches artifactDigest, and extracts it to dir using the format selected in
+// opts. When opts.SkipRootCUEModuleValidation is false, ValidateCUEModule is
+// called on dir after extraction.
+func (f *ArtifactFetcher) Fetch(ctx context.Context, artifactURL, artifactDigest, dir string, opts FetchOptions) error {
 	client := f.HTTPClient
 	if client == nil {
 		client = http.DefaultClient
@@ -62,7 +96,7 @@ func (f *ArtifactFetcher) Fetch(ctx context.Context, artifactURL, artifactDigest
 		return fmt.Errorf("downloading artifact: status %d", resp.StatusCode)
 	}
 
-	tmpFile, err := os.CreateTemp("", "artifact-*.zip")
+	tmpFile, err := os.CreateTemp("", "artifact-*")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
@@ -86,13 +120,22 @@ func (f *ArtifactFetcher) Fetch(ctx context.Context, artifactURL, artifactDigest
 		return fmt.Errorf("artifact digest mismatch: got %s, want %s", got, artifactDigest)
 	}
 
-	if err := extractZip(tmpPath, dir); err != nil {
-		return fmt.Errorf("extracting artifact: %w", err)
+	switch opts.Format {
+	case ArchiveFormatZip:
+		if err := extractZip(tmpPath, dir); err != nil {
+			return fmt.Errorf("extracting artifact: %w", err)
+		}
+	case ArchiveFormatTarGz:
+		if err := extractTarGz(tmpPath, dir); err != nil {
+			return fmt.Errorf("extracting artifact: %w", err)
+		}
+	default:
+		return fmt.Errorf("unknown archive format: %d", opts.Format)
 	}
 
-	if err := ValidateCUEModule(dir); err != nil {
-		return err
+	if opts.SkipRootCUEModuleValidation {
+		return nil
 	}
 
-	return nil
+	return ValidateCUEModule(dir)
 }

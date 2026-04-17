@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/open-platform-model/poc-controller/compare/v0.4.0...v0.4.1) (2026-04-17)
+
+
+### Bug Fixes
+
+* **ci:** drop s390x and ppc64le from release image matrix ([9f2ec87](https://github.com/open-platform-model/poc-controller/commit/9f2ec87f61a3e16515b699ae28f8cc2d8d4a0cbe))
+* **ci:** drop s390x and ppc64le from release image matrix ([34329ec](https://github.com/open-platform-model/poc-controller/commit/34329ecc376574b9bf3fa51f0d284eb38518caf5))
+
 ## [0.4.0](https://github.com/open-platform-model/poc-controller/compare/v0.3.0...v0.4.0) (2026-04-17)
 
 

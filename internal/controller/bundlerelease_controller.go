@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 
-	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,8 +38,6 @@ type BundleReleaseReconciler struct {
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=bundlereleases/finalizers,verbs=update
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories,verbs=get;list;watch
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories/status,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -57,7 +54,6 @@ func (r *BundleReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// TODO: Evaluate bundle intent, manage child ModuleReleases, and aggregate
 	// child release state into bundle status.
-	_ = sourcev1.OCIRepository{}
 
 	return ctrl.Result{}, nil
 }

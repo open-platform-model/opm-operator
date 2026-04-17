@@ -20,9 +20,16 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Ready
       type: string
-    - jsonPath: .status.source.artifactRevision
-      name: Source
+    - jsonPath: .spec.module.path
+      name: Module
       type: string
+    - jsonPath: .spec.module.version
+      name: Version
+      type: string
+    - jsonPath: .status.nextRetryAt
+      name: Retry
+      priority: 1
+      type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -49,15 +56,24 @@ spec:
             description: spec defines the desired state of ModuleRelease
             properties:
               module:
-                description: Module selects the module to evaluate from the source
-                  artifact.
+                description: Module identifies the CUE module to evaluate from the
+                  OCI registry.
                 properties:
                   path:
-                    description: Path is the module path to evaluate.
+                    description: |-
+                      Path is the CUE module import path.
+                      Example: "opmodel.dev/modules/cert_manager@v0"
+                    minLength: 1
+                    type: string
+                  version:
+                    description: |-
+                      Version is the pinned module version to resolve from the registry.
+                      Example: "v0.2.1"
                     minLength: 1
                     type: string
                 required:
                 - path
+                - version
                 type: object
               prune:
                 type: boolean
@@ -75,28 +91,6 @@ spec:
                 type: object
               serviceAccountName:
                 type: string
-              sourceRef:
-                description: SourceRef points to the Flux source object that provides
-                  the artifact.
-                properties:
-                  apiVersion:
-                    description: API version of the referent, if not specified the
-                      Kubernetes preferred version will be used.
-                    type: string
-                  kind:
-                    description: Kind of the referent.
-                    type: string
-                  name:
-                    description: Name of the referent.
-                    type: string
-                  namespace:
-                    description: Namespace of the referent, when not specified it
-                      acts as LocalObjectReference.
-                    type: string
-                required:
-                - kind
-                - name
-                type: object
               suspend:
                 type: boolean
               values:
@@ -105,7 +99,6 @@ spec:
                 x-kubernetes-preserve-unknown-fields: true
             required:
             - module
-            - sourceRef
             type: object
           status:
             description: status defines the observed state of ModuleRelease
@@ -284,47 +277,15 @@ spec:
                 type: string
               lastAttemptedSourceDigest:
                 type: string
+              nextRetryAt:
+                description: |-
+                  NextRetryAt indicates when the controller will next attempt reconciliation
+                  after a transient or stalled failure. Nil when the resource is healthy or no-op.
+                format: date-time
+                type: string
               observedGeneration:
                 format: int64
                 type: integer
-              source:
-                description: SourceStatus describes the resolved source artifact used
-                  by a reconcile.
-                properties:
-                  artifactDigest:
-                    description: ArtifactDigest is the digest reported by the source
-                      artifact.
-                    type: string
-                  artifactRevision:
-                    description: ArtifactRevision is the revision reported by the
-                      source artifact.
-                    type: string
-                  artifactURL:
-                    description: ArtifactURL is the fetch URL reported by the source
-                      artifact.
-                    type: string
-                  ref:
-                    description: Ref is the resolved source reference.
-                    properties:
-                      apiVersion:
-                        description: API version of the referent, if not specified
-                          the Kubernetes preferred version will be used.
-                        type: string
-                      kind:
-                        description: Kind of the referent.
-                        type: string
-                      name:
-                        description: Name of the referent.
-                        type: string
-                      namespace:
-                        description: Namespace of the referent, when not specified
-                          it acts as LocalObjectReference.
-                        type: string
-                    required:
-                    - kind
-                    - name
-                    type: object
-                type: object
             type: object
         required:
         - spec

@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,13 +53,9 @@ var _ = Describe("ModuleRelease Controller", func() {
 						Namespace: "default",
 					},
 					Spec: releasesv1alpha1.ModuleReleaseSpec{
-						SourceRef: releasesv1alpha1.SourceReference{
-							APIVersion: "source.toolkit.fluxcd.io/v1",
-							Kind:       "OCIRepository",
-							Name:       "test-source",
-						},
 						Module: releasesv1alpha1.ModuleReference{
-							Path: "opmodel.dev/test/module",
+							Path:    "opmodel.dev/test/module",
+							Version: "v0.1.0",
 						},
 					},
 				}
@@ -78,8 +75,10 @@ var _ = Describe("ModuleRelease Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ModuleReleaseReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:        k8sClient,
+				Scheme:        k8sClient.Scheme(),
+				EventRecorder: events.NewFakeRecorder(10),
+				Renderer:      &stubRenderer{},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

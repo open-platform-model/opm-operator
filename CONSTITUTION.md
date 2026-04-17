@@ -19,14 +19,19 @@ This document is the reader-friendly reference for the principles that shape con
 
 ---
 
-### I. Flux for Transport, OPM for Semantics
+### I. CUE-Native Module Resolution
 
-The controller MUST rely on Flux `source-controller`, specifically `OCIRepository`, for source acquisition, authentication, and provenance tracking. It MUST NOT introduce a custom artifact polling or transport loop. OPM remains responsible for validating repository layout, evaluating CUE semantics, and turning source content into desired Kubernetes objects.
+> **Note:** This principle was updated from "Flux for Transport, OPM for Semantics".
+> CUE module delivery now uses CUE's native OCI module resolution instead of Flux
+> source-controller. See change `cue-native-module-release` for context.
 
-- Flux handles fetching, auth, and artifact provenance
-- The controller does not duplicate source-controller behavior
-- OPM owns layout validation, semantic evaluation, and rendering
-- Transport concerns and semantic concerns stay intentionally separate
+For CUE module acquisition, the controller MUST use CUE's native module system to resolve modules from OCI registries. The controller synthesizes a `#ModuleRelease` CUE package at reconcile time that imports the target module via standard CUE import paths. CUE handles OCI resolution, dependency resolution, and caching.
+
+- CUE's module system handles OCI transport and dependency resolution
+- The controller synthesizes release packages, not custom transport
+- OPM owns semantic evaluation and rendering
+- The `internal/source/` package is retained for potential future use
+- BundleRelease continues to use Flux source-controller (separate concern)
 
 ---
 
@@ -35,7 +40,8 @@ The controller MUST rely on Flux `source-controller`, specifically `OCIRepositor
 The codebase MUST preserve clear package boundaries:
 
 - `internal/controller/` handles reconcile orchestration, watches, and event handling
-- `internal/source/` handles Flux artifact interaction and CUE layout validation
+- `internal/synthesis/` handles CUE release package generation for module resolution
+- `internal/source/` handles Flux artifact interaction (retained, used by BundleRelease)
 - `internal/render/` handles CUE evaluation and object generation
 - `internal/apply/` handles server-side apply and prune behavior
 - `internal/inventory/` handles ownership and previously-applied resource tracking
@@ -248,7 +254,7 @@ Recommended `Research & Decisions` shape:
 
 These principles reinforce each other:
 
-- Flux for transport keeps source handling simple and composable
+- CUE-native resolution keeps module loading simple and composable
 - Separation of concerns keeps reconcile flow understandable and testable
 - Inventory and status make operations explicit and auditable
 - SSA keeps mutation declarative and retry-safe

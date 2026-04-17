@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git blame*)",
+      "Bash(git branch*)",
+      "Bash(git ls-files*)",
+      "Bash(kubectl get*)",
+      "Bash(kubectl describe*)",
+      "Bash(kubectl logs*)",
+      "Bash(kubectl events*)",
+      "Bash(kubectl explain*)",
+      "Bash(helm template*)",
+      "Bash(helm lint*)",
+      "Bash(rg *)",
+      "Bash(gh *)",
+      "Bash(docker inspect*)",
+      "Bash(docker logs*)",
+      "Read",
+      "Grep",
+      "Glob"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Bash(kubectl delete*)",
+      "Bash(kubectl apply*)"
+    ]
+  }
+}

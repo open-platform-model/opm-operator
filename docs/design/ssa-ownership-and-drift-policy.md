@@ -33,11 +33,9 @@ If a desired change conflicts with fields owned by another manager, the controll
 
 ### Apply Ordering
 
-The controller SHOULD use the Flux `ssa.ResourceManager` staged apply logic (`ApplyAllStaged`).
+The controller uses the Flux `ssa.ResourceManager` staged apply logic (`ApplyAllStaged`). Flux applies resources in four stages: cluster definitions (CRDs, Namespaces, ClusterRoles), class definitions (StorageClass, etc.), custom-staged kinds, then everything else. Stages 1 and 2 include readiness waits.
 
-- **Stage 1**: Apply CustomResourceDefinitions (CRDs) and Namespaces.
-- **Stage 2**: Apply all other resources.
-- **Why**: Avoids race conditions where a custom resource is applied in the same batch as the CRD that defines it, before the API server has fully registered the new schema.
+For the full staging model, classification functions, and the `CustomStageKinds` extension point, see [flux-ssa-staging.md](flux-ssa-staging.md).
 
 ## Pruning Policy
 
@@ -101,7 +99,8 @@ In the initial implementation, the controller MUST detect drift but MUST NOT aut
 
 ### Why Detection Only?
 
-Automatic drift correction is dangerous in early controller iterations. 
+Automatic drift correction is dangerous in early controller iterations.
+
 - If a mutating webhook (e.g., Istio, Linkerd, or a security policy injector) modifies a field that OPM also manages, automatic correction will trigger an infinite reconcile loop (OPM reverts it -> Webhook changes it back -> OPM reverts it).
 - It is safer to alert the human operator via a condition.
 

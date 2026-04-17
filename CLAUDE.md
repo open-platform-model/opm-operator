@@ -18,6 +18,7 @@
 - `openspec/config.yaml`: normative OpenSpec constitutional source.
 - `Makefile`: authoritative build/generate/lint/test entrypoints.
 - `docs/STYLE.md`: documentation prose style rules.
+- `docs/TESTING.md`: test tier selection guide (unit vs integration vs e2e).
 
 ## Repository Layout
 
@@ -167,10 +168,14 @@ ADRs capture significant technical decisions w/ context + consequences.
 
 ## Testing Style
 
-- Ginkgo v2 + Gomega.
-- Envtest controller tests in `internal/controller`, load CRDs from `config/crd/bases`.
+Full guide: [`docs/TESTING.md`](docs/TESTING.md). Key rules:
+
+- Three tiers: **unit** (`internal/*/`), **integration** (`test/integration/`), **e2e** (`test/e2e/`).
+- Default to the lightest tier that validates the behavior.
+- Unit: single-package logic. Integration: cross-package behavior against real API server (envtest). E2E: deployed controller on Kind cluster.
+- `make test` runs unit + integration. `make test-e2e` runs e2e (requires Kind).
 - E2E needs Kind; may install CertManager unless `CERT_MANAGER_INSTALL_SKIP=true`.
-- Descriptive `Describe`/`Context`/`It` text, `-ginkgo.focus`-friendly.
+- Ginkgo v2 + Gomega. Descriptive `Describe`/`Context`/`It` text, `-ginkgo.focus`-friendly.
 - `Eventually` for async K8s behavior, no sleeps.
 - `Expect(err).NotTo(HaveOccurred())` or `Expect(...).To(Succeed())`.
 - Package-local helpers for repeated assertions; keep setup readable.

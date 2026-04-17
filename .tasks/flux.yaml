@@ -1,0 +1,15 @@
+version: '3'
+
+tasks:
+  install:
+    desc: Install Flux source-controller
+    preconditions:
+      - sh: command -v {{.FLUX}} >/dev/null 2>&1
+        msg: 'Error: flux CLI not found. Install it from https://fluxcd.io/flux/installation/'
+    cmds:
+      - '{{.FLUX}} install --components=source-controller --network-policy=false'
+
+  uninstall:
+    desc: Uninstall Flux
+    cmds:
+      - '{{.FLUX}} uninstall --silent'

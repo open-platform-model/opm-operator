@@ -1,0 +1,16 @@
+# OCIRepository pointing to the test module published by the local registry.
+# Requires `make connect-registry` so that opm-registry:5000 is reachable in-cluster.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: test-hello
+  namespace: default
+spec:
+  interval: 1m
+  url: oci://opm-registry:5000/opmodel.dev/test/hello
+  ref:
+    tag: v0.0.1
+  layerSelector:
+    mediaType: application/zip
+    operation: copy
+  insecure: true

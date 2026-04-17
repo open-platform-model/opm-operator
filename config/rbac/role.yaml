@@ -5,6 +5,28 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - impersonate
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
+- apiGroups:
   - releases.opmodel.dev
   resources:
   - bundlereleases
@@ -33,17 +55,3 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - source.toolkit.fluxcd.io
-  resources:
-  - ocirepositories
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - source.toolkit.fluxcd.io
-  resources:
-  - ocirepositories/status
-  verbs:
-  - get

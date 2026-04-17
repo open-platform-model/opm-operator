@@ -72,6 +72,20 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+
+		// Local-dev override: when LOCAL_REGISTRY is set, append a --registry arg
+		// so the controller resolves catalog deps from a registry reachable
+		// inside Kind (e.g. opm-registry:5000). CI leaves this unset → controller
+		// uses the ghcr default baked into cmd/main.go.
+		if localRegistry := os.Getenv("LOCAL_REGISTRY"); localRegistry != "" {
+			By("overriding controller registry for local dev")
+			cmd = exec.Command("kubectl", "-n", namespace, "patch", "deployment",
+				"poc-controller-controller-manager",
+				"--type=json",
+				fmt.Sprintf(`-p=[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=%s"}]`, localRegistry))
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to override controller registry")
+		}
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
@@ -226,7 +240,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"image": "curlimages/curl:latest",
 							"command": ["/bin/sh", "-c"],
 							"args": [
-								"for i in $(seq 1 30); do curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics && exit 0 || sleep 2; done; exit 1"
+								"for i in $(seq 1 30); do curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local.:8443/metrics && exit 0 || sleep 2; done; exit 1"
 							],
 							"securityContext": {
 								"readOnlyRootFilesystem": true,

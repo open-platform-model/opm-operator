@@ -1,0 +1,48 @@
+version: '3'
+
+tasks:
+  setup:
+    desc: Create the Kind cluster if it does not exist
+    cmds:
+      - |
+        command -v {{.KIND}} >/dev/null 2>&1 || { echo "Kind is not installed. Please install Kind manually."; exit 1; }
+        case "$({{.KIND}} get clusters)" in
+          *"{{.KIND_CLUSTER}}"*) echo "Kind cluster '{{.KIND_CLUSTER}}' already exists. Skipping creation." ;;
+          *) echo "Creating Kind cluster '{{.KIND_CLUSTER}}'..."; {{.KIND}} create cluster --name {{.KIND_CLUSTER}} ;;
+        esac
+
+  cleanup:
+    desc: Tear down the Kind cluster
+    cmds:
+      - '{{.KIND}} delete cluster --name {{.KIND_CLUSTER}}'
+
+  load:
+    desc: Build and load controller image into the Kind cluster
+    deps: [":docker:build"]
+    cmds:
+      - '{{.KIND}} load docker-image {{.IMG}} --name {{.KIND_CLUSTER}}'
+
+  bootstrap:
+    desc: Deploy controller to local Kind cluster (full setup)
+    cmds:
+      - task: setup
+      - task: :registry:start
+      - task: :registry:connect
+      - task: :flux:install
+      - task: :registry:publish-test-module
+      - task: load
+      - task: :deploy:controller
+      - task: :deploy:samples
+      - |
+        {{.KUBECTL}} -n poc-controller-system patch deployment poc-controller-controller-manager \
+          --type=json \
+          -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry={{.KIND_CUE_REGISTRY}}"}]'
+
+  teardown:
+    desc: Tear down local Kind deployment
+    cmds:
+      - task: :deploy:controller:remove
+        vars:
+          IGNORE_NOT_FOUND: "true"
+      - task: :flux:uninstall
+      - task: cleanup

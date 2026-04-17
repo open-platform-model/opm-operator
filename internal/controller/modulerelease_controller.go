@@ -18,53 +18,73 @@ package controller
 
 import (
 	"context"
+	"time"
 
-	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	fluxssa "github.com/fluxcd/pkg/ssa"
+	"golang.org/x/time/rate"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+	opmreconcile "github.com/open-platform-model/poc-controller/internal/reconcile"
+	"github.com/open-platform-model/poc-controller/internal/render"
+	"github.com/open-platform-model/poc-controller/pkg/provider"
 )
 
-// ModuleReleaseReconciler reconciles a ModuleRelease object
+// ModuleReleaseReconciler reconciles a ModuleRelease object.
+// Dependencies are injected via struct fields at manager setup time.
 type ModuleReleaseReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme          *runtime.Scheme
+	RestConfig      *rest.Config
+	Provider        *provider.Provider
+	ResourceManager *fluxssa.ResourceManager
+	EventRecorder   events.EventRecorder
+	Renderer        render.ModuleRenderer
 }
 
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases/finalizers,verbs=update
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories,verbs=get;list;watch
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories/status,verbs=get
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch;update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ModuleRelease object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
+// Reconcile runs the full ModuleRelease reconcile loop: CUE module synthesis
+// and resolution from OCI registry, rendering, SSA apply, optional prune,
+// and status commit.
 func (r *ModuleReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.Info("Reconciling ModuleRelease", "name", req.Name, "namespace", req.Namespace)
 
-	// TODO: Resolve the referenced OCIRepository, fetch the Flux artifact,
-	// render the module using shared OPM helpers, and reconcile the desired
-	// resources with SSA and ownership inventory.
-	_ = sourcev1.OCIRepository{}
-
-	return ctrl.Result{}, nil
+	return opmreconcile.ReconcileModuleRelease(ctx, &opmreconcile.ModuleReleaseParams{
+		Client:          r.Client,
+		RestConfig:      r.RestConfig,
+		Provider:        r.Provider,
+		ResourceManager: r.ResourceManager,
+		EventRecorder:   r.EventRecorder,
+		Renderer:        r.Renderer,
+	}, req)
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ModuleReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.ModuleRelease{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewTypedMaxOfRateLimiter(
+				workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](1*time.Second, 5*time.Minute),
+				&workqueue.TypedBucketRateLimiter[ctrl.Request]{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+			),
+		}).
 		Named("modulerelease").
 		Complete(r)
 }

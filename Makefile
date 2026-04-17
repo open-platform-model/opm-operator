@@ -59,7 +59,9 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+	CUE_REGISTRY="opmodel.dev=ghcr.io/open-platform-model,testing.opmodel.dev=localhost:5000+insecure,registry.cue.works" \
+	go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
@@ -82,8 +84,8 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+test-e2e: setup-test-e2e start-registry connect-registry publish-test-module manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) LOCAL_REGISTRY="$(LOCAL_REGISTRY)" go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
@@ -110,7 +112,7 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	CUE_REGISTRY="testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works" go run ./cmd/main.go --catalog-path=$(shell realpath ./catalog)
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -146,6 +148,36 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
+##@ Local Workflow
+
+LOCAL_REGISTRY ?= opmodel.dev=opm-registry:5000+insecure,testing.opmodel.dev=opm-registry:5000+insecure,registry.cue.works
+
+.PHONY: apply-samples
+apply-samples: ## Apply sample OCIRepository and ModuleRelease CRs to the cluster.
+	$(KUBECTL) apply -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml
+
+.PHONY: delete-samples
+delete-samples: ## Delete sample OCIRepository and ModuleRelease CRs from the cluster.
+	$(KUBECTL) delete -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml
+
+.PHONY: local-run
+local-run: setup-test-e2e start-registry connect-registry install-flux publish-test-module kind-load deploy apply-samples ## Deploy controller to local Kind cluster (full setup).
+	$(KUBECTL) -n poc-controller-system patch deployment poc-controller-controller-manager \
+		--type=json \
+		-p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=$(LOCAL_REGISTRY)"}]'
+
+.PHONY: local-clean
+local-clean: ## Tear down local Kind cluster and deployment.
+	-$(MAKE) undeploy ignore-not-found=true
+	-$(MAKE) uninstall-flux
+	$(MAKE) cleanup-test-e2e
+
+##@ Kind
+
+.PHONY: kind-load
+kind-load: docker-build ## Build and load the controller image into the Kind cluster.
+	$(KIND) load docker-image $(IMG) --name $(KIND_CLUSTER)
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -171,6 +203,54 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
 
+##@ Registry
+
+REGISTRY_CONTAINER ?= opm-registry
+REGISTRY_PORT ?= 5000
+REGISTRY_IMAGE ?= registry:2
+CUE_REGISTRY ?= testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works
+TEST_MODULE_DIR ?= test/fixtures/modules/hello
+
+.PHONY: start-registry
+start-registry: ## Start the local OCI registry container if not running.
+	@if ! $(CONTAINER_TOOL) ps --filter name=$(REGISTRY_CONTAINER) --format '{{.Names}}' | grep -q $(REGISTRY_CONTAINER); then \
+		if $(CONTAINER_TOOL) ps -a --filter name=$(REGISTRY_CONTAINER) --format '{{.Names}}' | grep -q $(REGISTRY_CONTAINER); then \
+			echo "Starting existing $(REGISTRY_CONTAINER) container..."; \
+			$(CONTAINER_TOOL) start $(REGISTRY_CONTAINER); \
+		else \
+			echo "Creating $(REGISTRY_CONTAINER) container..."; \
+			$(CONTAINER_TOOL) run -d --name $(REGISTRY_CONTAINER) -p $(REGISTRY_PORT):5000 --restart=unless-stopped $(REGISTRY_IMAGE); \
+		fi \
+	else \
+		echo "$(REGISTRY_CONTAINER) is already running."; \
+	fi
+
+.PHONY: connect-registry
+connect-registry: ## Connect the local registry to the Kind Docker network.
+	-$(CONTAINER_TOOL) network connect kind $(REGISTRY_CONTAINER)
+
+.PHONY: publish-test-module
+# Use a target-local CUE_REGISTRY that always maps both namespaces to the local
+# registry, regardless of the shell's CUE_REGISTRY. Shell exports that omit
+# testing.opmodel.dev cause `cue mod publish` to 401 against a non-local host.
+publish-test-module: PUBLISH_REGISTRY := testing.opmodel.dev=localhost:$(REGISTRY_PORT)+insecure,opmodel.dev=localhost:$(REGISTRY_PORT)+insecure,registry.cue.works
+publish-test-module: ## Publish the test hello module to the local registry.
+	cd $(TEST_MODULE_DIR) && CUE_REGISTRY="$(PUBLISH_REGISTRY)" cue mod tidy && CUE_REGISTRY="$(PUBLISH_REGISTRY)" cue mod publish v0.0.1
+
+##@ Flux
+
+.PHONY: install-flux
+install-flux: ## Install Flux source-controller into the current cluster.
+	@command -v $(FLUX) >/dev/null 2>&1 || { \
+		echo "Error: flux CLI not found. Install it from https://fluxcd.io/flux/installation/"; \
+		exit 1; \
+	}
+	$(FLUX) install --components=source-controller --network-policy=false
+
+.PHONY: uninstall-flux
+uninstall-flux: ## Uninstall Flux from the current cluster.
+	$(FLUX) uninstall --silent
+
 ##@ Dependencies
 
 ## Location to install dependencies to
@@ -181,6 +261,7 @@ $(LOCALBIN):
 ## Tool Binaries
 KUBECTL ?= kubectl
 KIND ?= kind
+FLUX ?= flux
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest

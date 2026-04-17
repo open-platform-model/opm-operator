@@ -1,0 +1,1049 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+    control-plane: controller-manager
+  name: poc-controller-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: bundlereleases.releases.opmodel.dev
+spec:
+  group: releases.opmodel.dev
+  names:
+    kind: BundleRelease
+    listKind: BundleReleaseList
+    plural: bundlereleases
+    shortNames:
+    - br
+    singular: bundlerelease
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.source.artifactRevision
+      name: Source
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: BundleRelease is the Schema for the bundlereleases API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of BundleRelease
+            properties:
+              prune:
+                type: boolean
+              serviceAccountName:
+                type: string
+              sourceRef:
+                description: |-
+                  NamespacedObjectKindReference contains enough information to locate the typed referenced Kubernetes resource object
+                  in any namespace.
+                properties:
+                  apiVersion:
+                    description: API version of the referent, if not specified the
+                      Kubernetes preferred version will be used.
+                    type: string
+                  kind:
+                    description: Kind of the referent.
+                    type: string
+                  name:
+                    description: Name of the referent.
+                    type: string
+                  namespace:
+                    description: Namespace of the referent, when not specified it
+                      acts as LocalObjectReference.
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+              suspend:
+                type: boolean
+              values:
+                description: RawValues stores arbitrary CUE/JSON-compatible values.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            required:
+            - sourceRef
+            type: object
+          status:
+            description: status defines the observed state of BundleRelease
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the BundleRelease resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              history:
+                items:
+                  description: HistoryEntry captures a compact reconcile history record.
+                  properties:
+                    action:
+                      type: string
+                    configDigest:
+                      type: string
+                    finishedAt:
+                      format: date-time
+                      type: string
+                    inventoryCount:
+                      format: int64
+                      type: integer
+                    inventoryDigest:
+                      type: string
+                    message:
+                      type: string
+                    phase:
+                      type: string
+                    renderDigest:
+                      type: string
+                    sequence:
+                      format: int64
+                      type: integer
+                    sourceDigest:
+                      type: string
+                    startedAt:
+                      format: date-time
+                      type: string
+                  type: object
+                type: array
+              inventory:
+                description: Inventory stores the current set of owned resources.
+                properties:
+                  count:
+                    format: int64
+                    type: integer
+                  digest:
+                    type: string
+                  entries:
+                    items:
+                      description: InventoryEntry identifies one owned Kubernetes
+                        resource.
+                      properties:
+                        component:
+                          type: string
+                        group:
+                          type: string
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        v:
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                  revision:
+                    format: int64
+                    type: integer
+                type: object
+              lastAppliedAt:
+                format: date-time
+                type: string
+              lastAppliedConfigDigest:
+                type: string
+              lastAppliedRenderDigest:
+                type: string
+              lastAppliedSourceDigest:
+                type: string
+              lastAttemptedAction:
+                type: string
+              lastAttemptedAt:
+                format: date-time
+                type: string
+              lastAttemptedConfigDigest:
+                type: string
+              lastAttemptedRenderDigest:
+                type: string
+              lastAttemptedSourceDigest:
+                type: string
+              modules:
+                items:
+                  description: ModuleStatusSummary reports a child module status summary
+                    for bundles.
+                  properties:
+                    configDigest:
+                      type: string
+                    inventoryCount:
+                      format: int64
+                      type: integer
+                    name:
+                      type: string
+                    ready:
+                      type: boolean
+                    releaseRef:
+                      description: |-
+                        NamespacedObjectReference contains enough information to locate the referenced Kubernetes resource object in any
+                        namespace.
+                      properties:
+                        name:
+                          description: Name of the referent.
+                          type: string
+                        namespace:
+                          description: Namespace of the referent, when not specified
+                            it acts as LocalObjectReference.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    renderDigest:
+                      type: string
+                    sourceDigest:
+                      type: string
+                  required:
+                  - name
+                  - releaseRef
+                  type: object
+                type: array
+              observedGeneration:
+                format: int64
+                type: integer
+              source:
+                description: SourceStatus describes the resolved source artifact used
+                  by a reconcile.
+                properties:
+                  artifactDigest:
+                    description: ArtifactDigest is the digest reported by the source
+                      artifact.
+                    type: string
+                  artifactRevision:
+                    description: ArtifactRevision is the revision reported by the
+                      source artifact.
+                    type: string
+                  artifactURL:
+                    description: ArtifactURL is the fetch URL reported by the source
+                      artifact.
+                    type: string
+                  ref:
+                    description: Ref is the resolved source reference.
+                    properties:
+                      apiVersion:
+                        description: API version of the referent, if not specified
+                          the Kubernetes preferred version will be used.
+                        type: string
+                      kind:
+                        description: Kind of the referent.
+                        type: string
+                      name:
+                        description: Name of the referent.
+                        type: string
+                      namespace:
+                        description: Namespace of the referent, when not specified
+                          it acts as LocalObjectReference.
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    type: object
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: modulereleases.releases.opmodel.dev
+spec:
+  group: releases.opmodel.dev
+  names:
+    kind: ModuleRelease
+    listKind: ModuleReleaseList
+    plural: modulereleases
+    shortNames:
+    - mr
+    singular: modulerelease
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .spec.module.path
+      name: Module
+      type: string
+    - jsonPath: .spec.module.version
+      name: Version
+      type: string
+    - jsonPath: .status.nextRetryAt
+      name: Retry
+      priority: 1
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ModuleRelease is the Schema for the modulereleases API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of ModuleRelease
+            properties:
+              module:
+                description: Module identifies the CUE module to evaluate from the
+                  OCI registry.
+                properties:
+                  path:
+                    description: |-
+                      Path is the CUE module import path.
+                      Example: "opmodel.dev/modules/cert_manager@v0"
+                    minLength: 1
+                    type: string
+                  version:
+                    description: |-
+                      Version is the pinned module version to resolve from the registry.
+                      Example: "v0.2.1"
+                    minLength: 1
+                    type: string
+                required:
+                - path
+                - version
+                type: object
+              prune:
+                type: boolean
+              rollout:
+                description: RolloutSpec configures apply behavior for a release.
+                properties:
+                  forceConflicts:
+                    description: ForceConflicts enables SSA force ownership when desired.
+                    type: boolean
+                  strategy:
+                    description: Strategy controls how apply operations are performed.
+                    enum:
+                    - Apply
+                    type: string
+                type: object
+              serviceAccountName:
+                type: string
+              suspend:
+                type: boolean
+              values:
+                description: Values contains arbitrary release input values.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            required:
+            - module
+            type: object
+          status:
+            description: status defines the observed state of ModuleRelease
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the ModuleRelease resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureCounters:
+                description: FailureCounters tracks bounded reconcile failure counts
+                  by action.
+                properties:
+                  apply:
+                    format: int64
+                    type: integer
+                  drift:
+                    format: int64
+                    type: integer
+                  prune:
+                    format: int64
+                    type: integer
+                  reconcile:
+                    format: int64
+                    type: integer
+                type: object
+              history:
+                items:
+                  description: HistoryEntry captures a compact reconcile history record.
+                  properties:
+                    action:
+                      type: string
+                    configDigest:
+                      type: string
+                    finishedAt:
+                      format: date-time
+                      type: string
+                    inventoryCount:
+                      format: int64
+                      type: integer
+                    inventoryDigest:
+                      type: string
+                    message:
+                      type: string
+                    phase:
+                      type: string
+                    renderDigest:
+                      type: string
+                    sequence:
+                      format: int64
+                      type: integer
+                    sourceDigest:
+                      type: string
+                    startedAt:
+                      format: date-time
+                      type: string
+                  type: object
+                type: array
+              inventory:
+                description: Inventory stores the current set of owned resources.
+                properties:
+                  count:
+                    format: int64
+                    type: integer
+                  digest:
+                    type: string
+                  entries:
+                    items:
+                      description: InventoryEntry identifies one owned Kubernetes
+                        resource.
+                      properties:
+                        component:
+                          type: string
+                        group:
+                          type: string
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        v:
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                  revision:
+                    format: int64
+                    type: integer
+                type: object
+              lastAppliedAt:
+                format: date-time
+                type: string
+              lastAppliedConfigDigest:
+                type: string
+              lastAppliedRenderDigest:
+                type: string
+              lastAppliedSourceDigest:
+                type: string
+              lastAttemptedAction:
+                type: string
+              lastAttemptedAt:
+                format: date-time
+                type: string
+              lastAttemptedConfigDigest:
+                type: string
+              lastAttemptedDuration:
+                type: string
+              lastAttemptedRenderDigest:
+                type: string
+              lastAttemptedSourceDigest:
+                type: string
+              nextRetryAt:
+                description: |-
+                  NextRetryAt indicates when the controller will next attempt reconciliation
+                  after a transient or stalled failure. Nil when the resource is healthy or no-op.
+                format: date-time
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-controller-manager
+  namespace: poc-controller-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-leader-election-role
+  namespace: poc-controller-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-bundlerelease-admin-role
+rules:
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases
+  verbs:
+  - '*'
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-bundlerelease-editor-role
+rules:
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-bundlerelease-viewer-role
+rules:
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: poc-controller-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - impersonate
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases
+  - modulereleases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases/finalizers
+  - modulereleases/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - bundlereleases/status
+  - modulereleases/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: poc-controller-metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: poc-controller-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-modulerelease-admin-role
+rules:
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - modulereleases
+  verbs:
+  - '*'
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - modulereleases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-modulerelease-editor-role
+rules:
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - modulereleases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - modulereleases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-modulerelease-viewer-role
+rules:
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - modulereleases
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - modulereleases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-leader-election-rolebinding
+  namespace: poc-controller-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: poc-controller-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: poc-controller-controller-manager
+  namespace: poc-controller-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+  name: poc-controller-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: poc-controller-manager-role
+subjects:
+- kind: ServiceAccount
+  name: poc-controller-controller-manager
+  namespace: poc-controller-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: poc-controller-metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: poc-controller-metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: poc-controller-controller-manager
+  namespace: poc-controller-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+    control-plane: controller-manager
+  name: poc-controller-controller-manager-metrics-service
+  namespace: poc-controller-system
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app.kubernetes.io/name: poc-controller
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: poc-controller
+    control-plane: controller-manager
+  name: poc-controller-controller-manager
+  namespace: poc-controller-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: poc-controller
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: poc-controller
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --metrics-bind-address=:8443
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        command:
+        - /manager
+        image: controller:latest
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports: []
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: poc-controller-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - emptyDir: {}
+        name: tmp

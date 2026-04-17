@@ -5,13 +5,14 @@ context: |
   
   ## Core Principles (Kubernetes Controller)
   
-  ### I. Flux for Transport, OPM for Semantics
-  The controller MUST rely on Flux `source-controller` (via `OCIRepository`) for source acquisition, authentication, and provenance tracking. It MUST NOT build a custom artifact polling loop. However, OPM retains full responsibility for validating and evaluating CUE module semantics.
+  ### I. CUE-Native Module Resolution
+  For CUE module acquisition, the controller MUST use CUE's native module system to resolve modules from OCI registries. The controller synthesizes a `#ModuleRelease` CUE package at reconcile time. CUE handles OCI resolution, dependency resolution, and caching. The `internal/source/` package is retained for BundleRelease and potential future use.
 
   ### II. Separation of Concerns
   The controller MUST maintain clear internal boundaries:
   - `controllers/`: Reconcile orchestration and event handling.
-  - `internal/source/`: Flux artifact fetching and CUE layout validation.
+  - `internal/synthesis/`: CUE release package generation for module resolution.
+  - `internal/source/`: Flux artifact interaction (retained for BundleRelease).
   - `internal/render/`: CUE evaluation and object generation (via shared CLI packages).
   - `internal/apply/`: Server-side apply and prune execution.
   - `internal/inventory/`: Resource ownership calculations.

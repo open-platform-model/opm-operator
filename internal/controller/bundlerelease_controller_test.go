@@ -53,8 +53,8 @@ var _ = Describe("BundleRelease Controller", func() {
 					},
 					Spec: releasesv1alpha1.BundleReleaseSpec{
 						SourceRef: releasesv1alpha1.SourceReference{
-							APIVersion: "source.toolkit.fluxcd.io/v1",
-							Kind:       "OCIRepository",
+							APIVersion: "releases.opmodel.dev/v1alpha1",
+							Kind:       "Placeholder",
 							Name:       "test-source",
 						},
 					},

@@ -1,0 +1,82 @@
+version: '3'
+
+tasks:
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  manifests:
+    desc: Generate CRDs and RBAC manifests
+    deps: [":tool:controller-gen"]
+    cmds:
+      - '"{{.CONTROLLER_GEN}}" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases'
+
+  generate:
+    desc: Generate deepcopy code
+    deps: [":tool:controller-gen"]
+    cmds:
+      - '"{{.CONTROLLER_GEN}}" object:headerFile="hack/boilerplate.go.txt" paths="./..."'
+
+  test:
+    desc: Run unit and integration tests (resolves catalog from ghcr)
+    deps: [manifests, generate, fmt, vet, ":tool:setup-envtest"]
+    env:
+      CUE_REGISTRY: '{{.GHCR_CUE_REGISTRY}}'
+    cmds:
+      - |
+        KUBEBUILDER_ASSETS="$("{{.ENVTEST}}" use {{.ENVTEST_K8S_VERSION}} --bin-dir "{{.LOCALBIN}}" -p path)" \
+        go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+  test:local:
+    desc: Run unit and integration tests against local opm-registry (workspace modules must be published to localhost:5000)
+    deps: [manifests, generate, fmt, vet, ":tool:setup-envtest"]
+    env:
+      CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+    cmds:
+      - |
+        KUBEBUILDER_ASSETS="$("{{.ENVTEST}}" use {{.ENVTEST_K8S_VERSION}} --bin-dir "{{.LOCALBIN}}" -p path)" \
+        go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+  e2e:
+    desc: Run e2e tests against a Kind cluster (controller pulls catalog from ghcr default)
+    deps: [":kind:setup", manifests, generate, fmt, vet]
+    env:
+      KIND: '{{.KIND}}'
+      KIND_CLUSTER: '{{.KIND_CLUSTER}}'
+    cmds:
+      - defer: '{{.KIND}} delete cluster --name {{.KIND_CLUSTER}}'
+      - go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+
+  e2e:local:
+    desc: Run e2e against local Kind w/ opm-registry override (workspace modules must already be published to localhost:5000 — see modules/ task publish)
+    deps: [":kind:setup", ":registry:start", ":registry:connect", manifests, generate, fmt, vet]
+    env:
+      KIND: '{{.KIND}}'
+      KIND_CLUSTER: '{{.KIND_CLUSTER}}'
+      LOCAL_REGISTRY: '{{.KIND_CUE_REGISTRY}}'
+    cmds:
+      - go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+
+  lint:
+    desc: Run golangci-lint
+    deps: [":tool:golangci-lint"]
+    cmds:
+      - '"{{.GOLANGCI_LINT}}" run'
+
+  lint:fix:
+    desc: Run golangci-lint with fixes
+    deps: [":tool:golangci-lint"]
+    cmds:
+      - '"{{.GOLANGCI_LINT}}" run --fix'
+
+  lint:config:
+    desc: Verify golangci-lint configuration
+    deps: [":tool:golangci-lint"]
+    cmds:
+      - '"{{.GOLANGCI_LINT}}" config verify'

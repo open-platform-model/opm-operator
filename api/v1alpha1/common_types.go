@@ -23,13 +23,20 @@ import (
 )
 
 // SourceReference points to a Flux source object.
+// Used by BundleRelease; ModuleRelease uses CUE-native module resolution instead.
 type SourceReference = fluxmeta.NamespacedObjectKindReference
 
-// ModuleReference identifies the module path to evaluate within an artifact.
+// ModuleReference identifies the CUE module to evaluate from an OCI registry.
 type ModuleReference struct {
-	// Path is the module path to evaluate.
+	// Path is the CUE module import path.
+	// Example: "opmodel.dev/modules/cert_manager@v0"
 	// +kubebuilder:validation:MinLength=1
 	Path string `json:"path"`
+
+	// Version is the pinned module version to resolve from the registry.
+	// Example: "v0.2.1"
+	// +kubebuilder:validation:MinLength=1
+	Version string `json:"version"`
 }
 
 // RolloutSpec configures apply behavior for a release.

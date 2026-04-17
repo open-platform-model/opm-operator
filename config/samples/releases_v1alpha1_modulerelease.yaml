@@ -5,5 +5,11 @@ metadata:
     app.kubernetes.io/name: poc-controller
     app.kubernetes.io/managed-by: kustomize
   name: modulerelease-sample
+  namespace: default
 spec:
-  # TODO(user): Add fields here
+  module:
+    path: testing.opmodel.dev/test/hello@v0
+    version: v0.0.1
+  values:
+    message: "hello from local dev"
+  prune: true

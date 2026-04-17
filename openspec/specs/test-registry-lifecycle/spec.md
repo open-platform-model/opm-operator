@@ -12,18 +12,18 @@ minimal environments that lack a container runtime.
 A local OCI registry MUST be available for e2e tests that exercise the real
 `RegistryRenderer`. The registry MUST be a `registry:2` container published on
 `localhost:$(REGISTRY_PORT)` (default `5000`). Lifecycle is operator-driven via
-the `Makefile` rather than in-process auto-start, keeping the integration suite
-runnable in environments without a container runtime. Tests that require the
-registry MUST call `skipIfNoTestRegistry()` which skips the spec when
-`CUE_REGISTRY` lacks a `testing.opmodel.dev` mapping OR when no container tool
-is on `PATH`.
+the Taskfile (`.tasks/registry.yaml`) rather than in-process auto-start,
+keeping the integration suite runnable in environments without a container
+runtime. Tests that require the registry MUST call `skipIfNoTestRegistry()`
+which skips the spec when `CUE_REGISTRY` lacks a `testing.opmodel.dev`
+mapping OR when no container tool is on `PATH`.
 
-#### Scenario: Operator starts registry via Makefile
-- **WHEN** the operator runs `make start-registry`
+#### Scenario: Operator starts registry via Taskfile
+- **WHEN** the operator runs `task registry:start`
 - **THEN** an `opm-registry` container (image `registry:2`) is created/started on `localhost:$(REGISTRY_PORT)` (default `5000`)
 
 #### Scenario: Operator publishes fixture module
-- **WHEN** the operator runs `make publish-test-module` after `make start-registry`
+- **WHEN** the operator runs `task registry:publish-test-module` after `task registry:start`
 - **THEN** the fixture module is published to the local registry so registry-dependent tests can resolve it
 
 #### Scenario: Test opts into registry via guard helper
@@ -38,7 +38,7 @@ not to `ghcr.io/open-platform-model`). This separates test module namespace
 (`testing.opmodel.dev`) from catalog namespace (`opmodel.dev`) while pointing
 both at the local registry.
 
-Example (matches `Makefile:211`):
+Example (matches the `CUE_REGISTRY` default in `Taskfile.yml`):
 
 ```
 testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works
@@ -50,29 +50,29 @@ testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,
 
 ### Requirement: Test module publication
 The fixture module at `test/fixtures/modules/hello/` MUST be publishable to the
-local registry as `testing.opmodel.dev/test/hello@v0` version `v0.0.1`. The
-`publish-test-module` target MUST use a target-local `CUE_REGISTRY` so it
+local registry as `testing.opmodel.dev/modules/hello@v0` version `v0.0.1`. The
+`registry:publish-test-module` task MUST use a task-local `CUE_REGISTRY` so it
 cannot be broken by an unrelated shell export (shell `CUE_REGISTRY` values
 that omit `testing.opmodel.dev=` would otherwise cause a 401 against a
 non-local host).
 
-#### Scenario: Publish target uses target-local CUE_REGISTRY
-- **WHEN** `make publish-test-module` runs in a shell whose `CUE_REGISTRY` lacks `testing.opmodel.dev=`
-- **THEN** the target still publishes to the local registry because it sets its own `CUE_REGISTRY` instead of inheriting the shell value
+#### Scenario: Publish task uses task-local CUE_REGISTRY
+- **WHEN** `task registry:publish-test-module` runs in a shell whose `CUE_REGISTRY` lacks `testing.opmodel.dev=`
+- **THEN** the task still publishes to the local registry because it sets its own `CUE_REGISTRY` instead of inheriting the shell value
 
 #### Scenario: Fixture published at expected coordinates
-- **WHEN** `make publish-test-module` succeeds
-- **THEN** `testing.opmodel.dev/test/hello@v0` version `v0.0.1` is available in the local registry
+- **WHEN** `task registry:publish-test-module` succeeds
+- **THEN** `testing.opmodel.dev/modules/hello@v0` version `v0.0.1` is available in the local registry
 
 ### Requirement: Test fixture module path
 The fixture at `test/fixtures/modules/hello/cue.mod/module.cue` MUST use module
-path `testing.opmodel.dev/test/hello@v0`. The fixture's catalog imports
+path `testing.opmodel.dev/modules/hello@v0`. The fixture's catalog imports
 (`opmodel.dev/core/v1alpha1@v1`, `opmodel.dev/opm/v1alpha1@v1`) MUST remain
 unchanged — they resolve from the local registry via the `opmodel.dev=`
 mapping.
 
 #### Scenario: Fixture module path isolated from public catalog
-- **WHEN** the fixture `module.cue` declares `module: "testing.opmodel.dev/test/hello@v0"`
+- **WHEN** the fixture `module.cue` declares `module: "testing.opmodel.dev/modules/hello@v0"`
 - **THEN** it does not conflict with the public `opmodel.dev` catalog namespace and publishes/resolves cleanly from the local registry
 
 #### Scenario: Fixture catalog imports unchanged
@@ -114,12 +114,12 @@ environments.
 
 ### Happy path e2e
 
-1. Operator runs `make start-registry && make publish-test-module` before
+1. Operator runs `task registry:start && task registry:publish-test-module` before
    invoking `go test`
 2. Test invokes `skipIfNoTestRegistry()` and proceeds (registry reachable)
 3. Test loads the real `kubernetes` provider via
    `catalog.LoadProvider("../../../catalog", "kubernetes")`
-4. Test creates ModuleRelease CR with `testing.opmodel.dev/test/hello@v0`
+4. Test creates ModuleRelease CR with `testing.opmodel.dev/modules/hello@v0`
 5. Reconcile uses `RegistryRenderer` + real catalog provider
 6. CUE resolves both `testing.opmodel.dev` and `opmodel.dev` from the local
    registry

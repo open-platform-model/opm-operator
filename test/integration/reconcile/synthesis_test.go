@@ -42,7 +42,7 @@ var _ = Describe("Release Synthesis Integration", func() {
 			dir, err := synthesis.SynthesizeRelease(synthesis.ReleaseParams{
 				Name:          "test-hello",
 				Namespace:     "default",
-				ModulePath:    "testing.opmodel.dev/test/hello@v0",
+				ModulePath:    "testing.opmodel.dev/modules/hello@v0",
 				ModuleVersion: "v0.0.1",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -75,7 +75,7 @@ var _ = Describe("Release Synthesis Integration", func() {
 			dir, err := synthesis.SynthesizeRelease(synthesis.ReleaseParams{
 				Name:          "meta-test",
 				Namespace:     "test-ns",
-				ModulePath:    "testing.opmodel.dev/test/hello@v0",
+				ModulePath:    "testing.opmodel.dev/modules/hello@v0",
 				ModuleVersion: "v0.0.1",
 			})
 			Expect(err).NotTo(HaveOccurred())

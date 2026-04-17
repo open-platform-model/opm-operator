@@ -133,7 +133,7 @@ func TestSynthesizeRelease_DirectoryStructure(t *testing.T) {
 	dir, err := SynthesizeRelease(ReleaseParams{
 		Name:          "test",
 		Namespace:     "default",
-		ModulePath:    "opmodel.dev/test/hello@v0",
+		ModulePath:    "opmodel.dev/modules/hello@v0",
 		ModuleVersion: "v0.1.0",
 	})
 	if err != nil {

@@ -19,13 +19,13 @@ import (
 )
 
 // skipIfNoTestRegistry skips the current spec when the local OCI registry is
-// not available. Tests that load the fixture module (testing.opmodel.dev/test/hello)
+// not available. Tests that load the fixture module (testing.opmodel.dev/modules/hello)
 // require a local registry with the module published — the fixture is not
 // available on remote registries like ghcr.
 //
 // Requirements:
 //   - CUE_REGISTRY env var with a testing.opmodel.dev mapping pointing at
-//     localhost (see `task registry:start && task registry:publish-test-module`)
+//     localhost (see `task registry:start && task module:publish`)
 //   - a container tool (docker or podman) on PATH
 //
 // When running against ghcr (CI default via `task dev:test`) these tests skip
@@ -33,7 +33,7 @@ import (
 func skipIfNoTestRegistry() {
 	reg := os.Getenv("CUE_REGISTRY")
 	if reg == "" {
-		Skip("CUE_REGISTRY not set — run `task registry:start && task registry:publish-test-module` first")
+		Skip("CUE_REGISTRY not set — run `task registry:start && task module:publish` first")
 	}
 	if !strings.Contains(reg, "testing.opmodel.dev=localhost") {
 		Skip("CUE_REGISTRY does not map testing.opmodel.dev to localhost — " +

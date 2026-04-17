@@ -10,8 +10,8 @@ The controller has a `Dockerfile` and `task docker:build` / `task docker:buildx`
 - Sign all pushed images with **cosign keyless** (Sigstore OIDC + Rekor transparency log).
 - Generate SBOM (SPDX JSON) and attach as registry attestation for every push.
 - Generate SLSA build provenance attestation (`actions/attest-build-provenance`) for release builds.
-- On release: invoke `task build:installer IMG=ghcr.io/open-platform-model/opm-operator:v<version>@sha256:<digest>` to render `dist/install.yaml` with the image pinned by tag + digest; upload as release asset via `gh release upload`.
-- Reuse the existing `task build:installer` target (accepts `IMG` override) — no new task, no changes to its default behavior.
+- On release: invoke `task operator:installer IMG=ghcr.io/open-platform-model/opm-operator:v<version>@sha256:<digest>` to render `dist/install.yaml` with the image pinned by tag + digest; upload as release asset via `gh release upload`.
+- Reuse the existing `task operator:installer` target (accepts `IMG` override) — no new task, no changes to its default behavior.
 - No rename of the image-agnostic identifiers (`poc-controller` labels, namespace, kustomize resources remain unchanged).
 
 ## Capabilities

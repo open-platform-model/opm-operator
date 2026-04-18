@@ -106,6 +106,7 @@ jobs:
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: spdx-json
+          output-file: ${{ github.workspace }}/sbom.spdx.json
           upload-release-assets: false
           upload-artifact: false
 
@@ -113,14 +114,14 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
           IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          SBOM_FILE: ${{ github.workspace }}/sbom.spdx.json
         run: |
-          sbom_file=$(find . -maxdepth 1 -name '*.spdx.json' -print -quit)
-          if [ -z "${sbom_file}" ]; then
-            echo "No SPDX SBOM file found in working directory" >&2
+          if [ ! -s "${SBOM_FILE}" ]; then
+            echo "SBOM file ${SBOM_FILE} missing or empty" >&2
             exit 1
           fi
           cosign attest --yes \
-            --predicate "${sbom_file}" \
+            --predicate "${SBOM_FILE}" \
             --type spdxjson \
             "${IMAGE_REF}"
 

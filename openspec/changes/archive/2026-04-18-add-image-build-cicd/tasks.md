@@ -40,8 +40,8 @@
 - [x] 6.2 Run `actionlint` (or `task dev:lint:config` if covered) against the new and modified workflow YAML; fix any warnings.
 - [x] 6.3 Open a draft PR; confirm `image-pr.yml` triggers and pushes `:sha-<short7>` + `:pr-<N>`; pull the image and `docker run --rm <image> --help` to confirm it starts.
 - [x] 6.4 Confirm the signed image verifies with `cosign verify` using the documented identity regex (pointed at `image-pr.yml` for PR builds).
-- [ ] 6.5 After merge, wait for the first release-please cut, confirm `image-release` runs end-to-end, and validate: release assets include `install.yaml`; `install.yaml` references the image by digest; signature + SBOM + provenance are discoverable via `cosign download attestation`.
+- [x] 6.5 After merge, wait for the first release-please cut, confirm `image-release` runs end-to-end, and validate: release assets include `install.yaml`; `install.yaml` references the image by digest; signature + SBOM + provenance are discoverable via `cosign download attestation`.
 
 ## 7. Follow-up (out of scope, capture only)
 
-- [ ] 7.2 Open a follow-up issue for image vulnerability scanning (e.g., Trivy) and CVE-gating policy.
+- [x] 7.2 Open a follow-up issue for image vulnerability scanning (e.g., Trivy) and CVE-gating policy.

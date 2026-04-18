@@ -49,11 +49,11 @@
 
 ## 8. Local bug-introduction proof
 
-- [ ] 8.1 On a scratch local commit, revert ONLY the change in `internal/inventory/stale.go` (1.2). Run `go test ./internal/inventory -run TestComputeStaleSet_ComponentRenameSafe -v` and confirm it FAILS. Restore.
-- [ ] 8.2 On a scratch local commit, revert ONLY the guard implementation in `internal/apply/prune.go` (4.8) — leave the signature change in place. Run the four new prune tests via envtest and confirm they FAIL. Restore.
-- [ ] 8.3 On a scratch local commit, revert ONLY the helper change in `internal/apply/impersonate.go` (5.1) so `Groups` is nil. Run the unit + integration tests from 5.2/5.3 and confirm they FAIL. Restore.
-- [ ] 8.4 On a scratch local commit, revert ONLY the requeue change in `internal/reconcile/modulerelease.go` (6.2). Run the integration test from 6.1 and confirm it FAILS within the 10s window. Restore.
-- [ ] 8.5 None of the above scratch reverts is committed. Document in the PR body that the local proof was performed.
+- [x] 8.1 Reverted `stale.go` comparator to `IdentityEqual`; `TestComputeStaleSet_ComponentRenameSafe` FAILED with stale entry `[{apps Deployment ns app v1 web}]`. Restored; test passes.
+- [x] 8.2 Removed managed-by + UUID checks from `prune.go` (kept Get + signature); the two "skip" regression tests FAILED (`Prune ... missing OPM managed-by label`, `Prune ... UUID disagrees`) with `Skipped=0, Deleted=1`. The matching-UUID and legacy tests still PASS (they assert Delete fires — expected without guard). Restored; all four tests pass.
+- [x] 8.3 Set `buildImpersonationConfig.Groups = nil`; `TestBuildImpersonationConfig_SetsExpectedGroups` FAILED (`Groups = []`). The `group-subject RoleBinding` integration test did NOT fail — Kubernetes apiserver auto-derives SA groups when `Impersonate-User` is in `system:serviceaccount:<ns>:<name>` format (`k8s.io/apiserver/.../impersonation/impersonation.go:85-91`), so the functional bug the proposal describes does not reproduce on modern apiservers. Fix is still correct (matches Flux, makes intent explicit, works with non-SA UserNames); integration test captures spec-compliance rather than a regression. Restored; unit test passes.
+- [x] 8.4 Changed `modulerelease.go:84` back to `ctrl.Result{}, nil`; `Finalizer-add requeue` integration test FAILED with 10s timeout — conditions stayed empty because `GenerationChangedPredicate` filters the finalizer-only UPDATE. Restored; test passes.
+- [x] 8.5 None of the scratch reverts committed (working tree verified clean after each restore). §8.3 finding documented above for PR body.
 
 ## 9. Validation gates
 

@@ -1,4 +1,4 @@
-# Testing Guide — poc-controller
+# Testing Guide — opm-operator
 
 Three test tiers, each with a distinct purpose and infrastructure requirement. Choose the lightest tier that can validate the behavior.
 

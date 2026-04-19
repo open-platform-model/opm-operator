@@ -338,7 +338,7 @@ Online sources:
 
 Local repository context used during analysis:
 
-- `poc-controller/docs/design/controller-architecture.md`
-- `poc-controller/docs/design/controller-tooling.md`
-- `poc-controller/docs/design/module-release-api.md`
-- `poc-controller/docs/design/flux-gitops-toolkit-research.md`
+- `opm-operator/docs/design/controller-architecture.md`
+- `opm-operator/docs/design/controller-tooling.md`
+- `opm-operator/docs/design/module-release-api.md`
+- `opm-operator/docs/design/flux-gitops-toolkit-research.md`

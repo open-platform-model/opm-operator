@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.4](https://github.com/open-platform-model/poc-controller/compare/v0.4.3...v0.4.4) (2026-04-19)
+
+
+### Bug Fixes
+
+* **rbac:** grant impersonate on users and groups for ssa apply ([c978639](https://github.com/open-platform-model/poc-controller/commit/c978639e15f3cc74e2153f87db8ea5b726743f07))
+
+
+### Code Refactoring
+
+* **render:** switch runtime identity from #runtimeLabels map to #runtimeName string ([f080bbe](https://github.com/open-platform-model/poc-controller/commit/f080bbe12e4af47fe53e3f2ec5011321173f279a))
+
+
+### Miscellaneous Chores
+
+* **openspec:** archive catalog-runtime-managed-by and sync spec ([ba1c19c](https://github.com/open-platform-model/poc-controller/commit/ba1c19c7098260ae0de45b2cb50d064de9bc7d76))
+
 ## [0.4.3](https://github.com/open-platform-model/poc-controller/compare/v0.4.2...v0.4.3) (2026-04-18)
 
 

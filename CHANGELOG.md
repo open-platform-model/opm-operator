@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/open-platform-model/opm-operator/compare/v0.6.1...v0.6.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* **ci:** build image for linux/arm64 platform ([32eb334](https://github.com/open-platform-model/opm-operator/commit/32eb3347cb722d665a710239f9bc6c4e2b3db568))
+
 ## [0.6.1](https://github.com/open-platform-model/opm-operator/compare/v0.6.0...v0.6.1) (2026-04-20)
 
 

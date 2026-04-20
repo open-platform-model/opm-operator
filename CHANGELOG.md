@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/open-platform-model/opm-operator/compare/v0.5.0...v0.6.0) (2026-04-20)
+
+
+### Features
+
+* **controller:** add --default-service-account flag and tenancy guide ([9b705ac](https://github.com/open-platform-model/opm-operator/commit/9b705acd3a1e1002973c15747d93b967bb21c1c1))
+* **reconcile:** stall on DeletionSAMissing with orphan-exit annotation ([69aa1ba](https://github.com/open-platform-model/opm-operator/commit/69aa1ba002fb1f60df7fc4c6f49e55ad7083b32d))
+
+
+### Documentation
+
+* **openspec:** archive rename-to-opm-operator change ([fbefd81](https://github.com/open-platform-model/opm-operator/commit/fbefd81b16080877b1c11f1bb092baca691c6851))
+* **readme:** bump go prerequisite to v1.26.2 ([0fd9916](https://github.com/open-platform-model/opm-operator/commit/0fd9916c59252be9a842960e615447dd78a36bce))
+* **skills:** tighten verify-change output structure for determinism ([d29dec9](https://github.com/open-platform-model/opm-operator/commit/d29dec9502d6b435dd4bb72b2f88a8b1d9db45d3))
+
 ## [0.5.0](https://github.com/open-platform-model/poc-controller/compare/v0.4.4...v0.5.0) (2026-04-20)
 
 

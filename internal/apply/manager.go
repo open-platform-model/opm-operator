@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"github.com/fluxcd/cli-utils/pkg/kstatus/polling"
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -14,8 +15,14 @@ const (
 
 // NewResourceManager constructs a Flux SSA ResourceManager with the opm-controller
 // field manager. The owner string is used for SSA ownership labels.
+//
+// A StatusPoller is wired in because fluxssa.ApplyAllStaged internally calls
+// WaitForSet after applying cluster-scoped resources (CRDs, ClusterRoles,
+// Namespaces); a nil poller there nil-derefs on the first module whose render
+// contains any such resource.
 func NewResourceManager(c client.Client, owner string) *fluxssa.ResourceManager {
-	return fluxssa.NewResourceManager(c, nil, fluxssa.Owner{
+	poller := polling.NewStatusPoller(c, c.RESTMapper(), polling.Options{})
+	return fluxssa.NewResourceManager(c, poller, fluxssa.Owner{
 		Field: FieldManager,
 		Group: owner,
 	})

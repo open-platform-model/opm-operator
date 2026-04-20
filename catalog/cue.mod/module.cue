@@ -17,7 +17,7 @@ deps: {
 		v: "v1.3.2"
 	}
 	"opmodel.dev/core/v1alpha1@v1": {
-		v: "v1.3.5"
+		v: "v1.3.6"
 	}
 	"opmodel.dev/gateway_api/v1alpha1@v1": {
 		v: "v1.3.5"

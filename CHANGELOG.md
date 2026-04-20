@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/open-platform-model/opm-operator/compare/v0.6.2...v0.6.3) (2026-04-20)
+
+
+### Miscellaneous Chores
+
+* **cue:** bump dependencies ([612e3a5](https://github.com/open-platform-model/opm-operator/commit/612e3a5d432bb558574a68fdabf9303ddbc7f429))
+
 ## [0.6.2](https://github.com/open-platform-model/opm-operator/compare/v0.6.1...v0.6.2) (2026-04-20)
 
 

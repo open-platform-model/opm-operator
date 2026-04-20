@@ -1,4 +1,4 @@
-# poc-controller repository guide
+# opm-operator repository guide
 
 ## Purpose
 
@@ -105,7 +105,7 @@ ADRs capture significant technical decisions w/ context + consequences.
   `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers -ginkgo.focus="should successfully reconcile the resource"`.
 - E2E only: `go test -tags=e2e ./test/e2e -v -ginkgo.v`.
 - Single e2e:
-  `KIND_CLUSTER=poc-controller-test-e2e go test -tags=e2e ./test/e2e -run TestE2E -ginkgo.focus="should run successfully" -v -ginkgo.v`.
+  `KIND_CLUSTER=opm-operator-test-e2e go test -tags=e2e ./test/e2e -run TestE2E -ginkgo.focus="should run successfully" -v -ginkgo.v`.
 - `task dev:test` excludes `/test/e2e`; no Kind tests in default unit path.
 
 ## Working Style for Agents

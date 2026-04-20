@@ -22,13 +22,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	"github.com/open-platform-model/poc-controller/internal/inventory"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	opmsource "github.com/open-platform-model/poc-controller/internal/source"
-	"github.com/open-platform-model/poc-controller/internal/status"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/internal/inventory"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	opmsource "github.com/open-platform-model/opm-operator/internal/source"
+	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // DefaultReleaseInterval is the fallback requeue interval when spec.interval

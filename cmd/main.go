@@ -36,13 +36,13 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	"github.com/open-platform-model/poc-controller/internal/catalog"
-	"github.com/open-platform-model/poc-controller/internal/controller"
-	_ "github.com/open-platform-model/poc-controller/internal/metrics"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	"github.com/open-platform-model/poc-controller/internal/source"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/internal/catalog"
+	"github.com/open-platform-model/opm-operator/internal/controller"
+	_ "github.com/open-platform-model/opm-operator/internal/metrics"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/internal/source"
 	// +kubebuilder:scaffold:imports
 )
 

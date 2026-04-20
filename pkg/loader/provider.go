@@ -9,7 +9,7 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // LoadProvider selects and wraps a provider from the pre-loaded config providers map.

@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/open-platform-model/poc-controller/internal/apply"
+	"github.com/open-platform-model/opm-operator/internal/apply"
 )
 
 var _ = Describe("DetectDrift", func() {

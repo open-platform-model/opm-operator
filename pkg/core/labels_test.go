@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/open-platform-model/poc-controller/pkg/core"
+	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 func TestIsOPMManagedBy(t *testing.T) {

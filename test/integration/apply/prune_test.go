@@ -29,9 +29,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	"github.com/open-platform-model/poc-controller/pkg/core"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 const testOwnerUUID = "00000000-0000-0000-0000-0000000000aa"

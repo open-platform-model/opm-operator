@@ -3,8 +3,8 @@ package inventory
 import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/pkg/core"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // NewEntryFromResource creates an inventory entry from an unstructured Kubernetes resource.

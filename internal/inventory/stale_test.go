@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 )
 
 func TestComputeStaleSet_DetectsStaleEntries(t *testing.T) {

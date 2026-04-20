@@ -32,10 +32,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	opmreconcile "github.com/open-platform-model/poc-controller/internal/reconcile"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // ModuleReleaseReconciler reconciles a ModuleRelease object.

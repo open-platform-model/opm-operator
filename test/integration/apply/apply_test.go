@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/open-platform-model/poc-controller/internal/apply"
+	"github.com/open-platform-model/opm-operator/internal/apply"
 )
 
 func newUnstructuredConfigMap(name string, data map[string]string) *unstructured.Unstructured {

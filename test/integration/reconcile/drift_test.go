@@ -32,10 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	opmreconcile "github.com/open-platform-model/poc-controller/internal/reconcile"
-	"github.com/open-platform-model/poc-controller/internal/status"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
 var _ = Describe("Drift Detection", func() {

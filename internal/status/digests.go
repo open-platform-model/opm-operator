@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sort"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/pkg/core"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // DigestSet holds the four reconcile digests tracked in ModuleRelease.status.

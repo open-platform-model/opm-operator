@@ -32,6 +32,6 @@ tasks:
       - task: load
       - task: :operator:controller:install
       - |
-        {{.KUBECTL}} -n poc-controller-system patch deployment poc-controller-controller-manager \
+        {{.KUBECTL}} -n opm-operator-system patch deployment opm-operator-controller-manager \
           --type=json \
           -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry={{.KIND_CUE_REGISTRY}}"}]'

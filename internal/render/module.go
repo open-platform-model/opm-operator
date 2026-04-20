@@ -8,14 +8,14 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/inventory"
-	"github.com/open-platform-model/poc-controller/internal/synthesis"
-	"github.com/open-platform-model/poc-controller/pkg/core"
-	"github.com/open-platform-model/poc-controller/pkg/loader"
-	"github.com/open-platform-model/poc-controller/pkg/module"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
-	pkgrender "github.com/open-platform-model/poc-controller/pkg/render"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/inventory"
+	"github.com/open-platform-model/opm-operator/internal/synthesis"
+	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/pkg/loader"
+	"github.com/open-platform-model/opm-operator/pkg/module"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
+	pkgrender "github.com/open-platform-model/opm-operator/pkg/render"
 )
 
 // RenderResult holds the output of a successful RenderModule call.

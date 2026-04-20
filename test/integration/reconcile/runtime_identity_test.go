@@ -21,12 +21,12 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/open-platform-model/poc-controller/internal/catalog"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	"github.com/open-platform-model/poc-controller/internal/synthesis"
-	opmcore "github.com/open-platform-model/poc-controller/pkg/core"
-	"github.com/open-platform-model/poc-controller/pkg/loader"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	"github.com/open-platform-model/opm-operator/internal/catalog"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/internal/synthesis"
+	opmcore "github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/pkg/loader"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // Render-and-check contract test: locks the contract between the Go constant

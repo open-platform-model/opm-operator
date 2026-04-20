@@ -6,7 +6,7 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 type MatchResult struct {

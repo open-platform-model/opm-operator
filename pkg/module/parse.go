@@ -6,7 +6,7 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"github.com/open-platform-model/poc-controller/pkg/validate"
+	"github.com/open-platform-model/opm-operator/pkg/validate"
 )
 
 // ParseModuleRelease validates values, fills them into the release spec,

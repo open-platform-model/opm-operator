@@ -6,8 +6,8 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"github.com/open-platform-model/poc-controller/pkg/core"
-	"github.com/open-platform-model/poc-controller/pkg/module"
+	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/pkg/module"
 )
 
 // moduleReleaseContextData is the Go-side mirror of #TransformerContext.#moduleReleaseMetadata.

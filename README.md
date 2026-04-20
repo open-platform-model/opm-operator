@@ -1,4 +1,4 @@
-# poc-controller
+# opm-operator
 // TODO(user): Add simple overview of use/purpose
 
 ## Description
@@ -17,7 +17,7 @@
 Install the latest release directly from the GitHub release asset:
 
 ```sh
-kubectl apply -f https://github.com/open-platform-model/poc-controller/releases/latest/download/install.yaml
+kubectl apply -f https://github.com/open-platform-model/opm-operator/releases/latest/download/install.yaml
 ```
 
 The manifest pins the controller image by digest (`ghcr.io/open-platform-model/opm-operator:vX.Y.Z@sha256:...`), so the exact bytes from the release are pulled regardless of future tag movement.
@@ -26,7 +26,7 @@ Verify the release image signature with cosign:
 
 ```sh
 cosign verify ghcr.io/open-platform-model/opm-operator:vX.Y.Z \
-  --certificate-identity-regexp='^https://github.com/open-platform-model/poc-controller/\.github/workflows/release\.yml@refs/heads/main$' \
+  --certificate-identity-regexp='^https://github.com/open-platform-model/opm-operator/\.github/workflows/release\.yml@refs/heads/main$' \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
@@ -34,7 +34,7 @@ For a PR preview image, swap the workflow path to `image-pr.yml` and adjust the 
 
 ```sh
 cosign verify ghcr.io/open-platform-model/opm-operator:pr-123 \
-  --certificate-identity-regexp='^https://github.com/open-platform-model/poc-controller/\.github/workflows/image-pr\.yml@refs/pull/.*$' \
+  --certificate-identity-regexp='^https://github.com/open-platform-model/opm-operator/\.github/workflows/image-pr\.yml@refs/pull/.*$' \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
@@ -52,7 +52,7 @@ cosign verify ghcr.io/open-platform-model/opm-operator:pr-123 \
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-task docker:build docker:push IMG=<some-registry>/poc-controller:tag
+task docker:build docker:push IMG=<some-registry>/opm-operator:tag
 ```
 
 **NOTE:** This image ought to be published in the personal registry you specified.
@@ -68,7 +68,7 @@ task operator:crds
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-task operator:controller:install IMG=<some-registry>/poc-controller:tag
+task operator:controller:install IMG=<some-registry>/opm-operator:tag
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
@@ -111,7 +111,7 @@ Following the options to release and provide this solution to the users.
 1. Build the installer for the image built and published in the registry:
 
 ```sh
-task operator:installer IMG=<some-registry>/poc-controller:tag
+task operator:installer IMG=<some-registry>/opm-operator:tag
 ```
 
 **NOTE:** The task above generates an 'install.yaml' file in the dist
@@ -124,7 +124,7 @@ Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
 the project, i.e.:
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/poc-controller/<tag or branch>/dist/install.yaml
+kubectl apply -f https://raw.githubusercontent.com/<org>/opm-operator/<tag or branch>/dist/install.yaml
 ```
 
 ### By providing a Helm Chart

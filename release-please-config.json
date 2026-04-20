@@ -7,7 +7,7 @@
   "packages": {
     ".": {
       "release-type": "go",
-      "package-name": "poc-controller",
+      "package-name": "opm-operator",
       "changelog-path": "CHANGELOG.md",
       "changelog-sections": [
         { "type": "feat", "section": "Features" },

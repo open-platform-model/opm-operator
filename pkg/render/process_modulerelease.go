@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/open-platform-model/poc-controller/pkg/module"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	"github.com/open-platform-model/opm-operator/pkg/module"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // ProcessModuleRelease renders a prepared release with the given provider.

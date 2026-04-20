@@ -1,4 +1,4 @@
-module: "opmodel.dev/poc-controller/catalog@v1"
+module: "opmodel.dev/opm-operator/catalog@v1"
 language: {
 	version: "v0.15.0"
 }
@@ -17,7 +17,7 @@ deps: {
 		v: "v1.3.2"
 	}
 	"opmodel.dev/core/v1alpha1@v1": {
-		v: "v1.3.4"
+		v: "v1.3.5"
 	}
 	"opmodel.dev/gateway_api/v1alpha1@v1": {
 		v: "v1.3.5"

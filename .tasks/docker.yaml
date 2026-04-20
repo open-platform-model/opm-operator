@@ -15,8 +15,8 @@ tasks:
     desc: Build and push docker image for cross-platform support
     cmds:
       - sed -e '1 s/\(^FROM\)/FROM --platform=$${BUILDPLATFORM}/' -e ' 1,// s//FROM --platform=$${BUILDPLATFORM}/' Dockerfile > Dockerfile.cross
-      - '{{.CONTAINER_TOOL}} buildx create --name poc-controller-builder || true'
-      - '{{.CONTAINER_TOOL}} buildx use poc-controller-builder'
+      - '{{.CONTAINER_TOOL}} buildx create --name opm-operator-builder || true'
+      - '{{.CONTAINER_TOOL}} buildx use opm-operator-builder'
       - '{{.CONTAINER_TOOL}} buildx build --push --platform={{.PLATFORMS}} --tag {{.IMG}} -f Dockerfile.cross . || true'
-      - '{{.CONTAINER_TOOL}} buildx rm poc-controller-builder || true'
+      - '{{.CONTAINER_TOOL}} buildx rm opm-operator-builder || true'
       - rm -f Dockerfile.cross

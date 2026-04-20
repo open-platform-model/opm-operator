@@ -16,3 +16,4 @@ Collection of all design documents
 - `naming-taxonomy.md` - naming taxonomy for CRDs, workload metadata, inventory/status, and CUE modules
 - `ssa-ownership-and-drift-policy.md` - server-side apply, pruning rules, drift detection, and ownership conflict policy
 - `impersonation-and-privilege-escalation.md` - analysis of the `spec.serviceAccountName` escalation surface and option space for constraining it
+- `rbac-delegation-crossplane-flux.md` - comparative research on how Crossplane (`rbac-manager`) and FluxCD handle RBAC delegation, with a proposed per-tenant direction

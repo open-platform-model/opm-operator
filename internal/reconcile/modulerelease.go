@@ -22,14 +22,14 @@ import (
 
 	"github.com/fluxcd/pkg/runtime/patch"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	"github.com/open-platform-model/poc-controller/internal/inventory"
-	opmmetrics "github.com/open-platform-model/poc-controller/internal/metrics"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	"github.com/open-platform-model/poc-controller/internal/status"
-	"github.com/open-platform-model/poc-controller/pkg/core"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/internal/inventory"
+	opmmetrics "github.com/open-platform-model/opm-operator/internal/metrics"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 const (

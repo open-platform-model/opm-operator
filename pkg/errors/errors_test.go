@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	oerrors "github.com/open-platform-model/poc-controller/pkg/errors"
+	oerrors "github.com/open-platform-model/opm-operator/pkg/errors"
 )
 
 func TestSentinelErrors(t *testing.T) {

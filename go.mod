@@ -1,4 +1,4 @@
-module github.com/open-platform-model/poc-controller
+module github.com/open-platform-model/opm-operator
 
 go 1.26.2
 

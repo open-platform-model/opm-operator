@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 )
 
 // BundleReleaseReconciler reconciles a BundleRelease object

@@ -25,14 +25,14 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	"github.com/open-platform-model/poc-controller/internal/catalog"
-	opmreconcile "github.com/open-platform-model/poc-controller/internal/reconcile"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	"github.com/open-platform-model/poc-controller/internal/status"
-	"github.com/open-platform-model/poc-controller/internal/synthesis"
-	"github.com/open-platform-model/poc-controller/pkg/loader"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/internal/catalog"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/internal/synthesis"
+	"github.com/open-platform-model/opm-operator/pkg/loader"
 )
 
 // End-to-end integration against a real local OCI registry. Exercises the

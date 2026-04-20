@@ -34,11 +34,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	opmreconcile "github.com/open-platform-model/poc-controller/internal/reconcile"
-	"github.com/open-platform-model/poc-controller/internal/status"
-	"github.com/open-platform-model/poc-controller/pkg/core"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 var _ = Describe("ModuleRelease Reconcile Loop", func() {

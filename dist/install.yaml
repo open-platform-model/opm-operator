@@ -3,9 +3,9 @@ kind: Namespace
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
+    app.kubernetes.io/name: opm-operator
     control-plane: controller-manager
-  name: poc-controller-system
+  name: opm-operator-system
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -625,6 +625,13 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              releaseUUID:
+                description: |-
+                  ReleaseUUID is the globally-unique identity of the rendered ModuleRelease,
+                  read from the `module-release.opmodel.dev/uuid` label on rendered resources.
+                  Populated on the first successful render; consumed by the prune ownership
+                  guard (including the deletion path where a fresh render is not available).
+                type: string
             type: object
         required:
         - spec
@@ -1006,18 +1013,18 @@ kind: ServiceAccount
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-controller-manager
-  namespace: poc-controller-system
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-controller-manager
+  namespace: opm-operator-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-leader-election-role
-  namespace: poc-controller-system
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-leader-election-role
+  namespace: opm-operator-system
 rules:
 - apiGroups:
   - ""
@@ -1056,8 +1063,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-bundlerelease-admin-role
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-bundlerelease-admin-role
 rules:
 - apiGroups:
   - releases.opmodel.dev
@@ -1077,8 +1084,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-bundlerelease-editor-role
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-bundlerelease-editor-role
 rules:
 - apiGroups:
   - releases.opmodel.dev
@@ -1104,8 +1111,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-bundlerelease-viewer-role
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-bundlerelease-viewer-role
 rules:
 - apiGroups:
   - releases.opmodel.dev
@@ -1125,7 +1132,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: poc-controller-manager-role
+  name: opm-operator-manager-role
 rules:
 - apiGroups:
   - ""
@@ -1134,6 +1141,13 @@ rules:
   verbs:
   - create
   - patch
+- apiGroups:
+  - ""
+  resources:
+  - groups
+  - users
+  verbs:
+  - impersonate
 - apiGroups:
   - ""
   resources:
@@ -1195,7 +1209,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: poc-controller-metrics-auth-role
+  name: opm-operator-metrics-auth-role
 rules:
 - apiGroups:
   - authentication.k8s.io
@@ -1213,7 +1227,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: poc-controller-metrics-reader
+  name: opm-operator-metrics-reader
 rules:
 - nonResourceURLs:
   - /metrics
@@ -1225,8 +1239,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-modulerelease-admin-role
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-modulerelease-admin-role
 rules:
 - apiGroups:
   - releases.opmodel.dev
@@ -1246,8 +1260,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-modulerelease-editor-role
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-modulerelease-editor-role
 rules:
 - apiGroups:
   - releases.opmodel.dev
@@ -1273,8 +1287,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-modulerelease-viewer-role
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-modulerelease-viewer-role
 rules:
 - apiGroups:
   - releases.opmodel.dev
@@ -1296,56 +1310,56 @@ kind: RoleBinding
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-leader-election-rolebinding
-  namespace: poc-controller-system
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-leader-election-rolebinding
+  namespace: opm-operator-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: poc-controller-leader-election-role
+  name: opm-operator-leader-election-role
 subjects:
 - kind: ServiceAccount
-  name: poc-controller-controller-manager
-  namespace: poc-controller-system
+  name: opm-operator-controller-manager
+  namespace: opm-operator-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
-  name: poc-controller-manager-rolebinding
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-manager-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: poc-controller-manager-role
+  name: opm-operator-manager-role
 subjects:
 - kind: ServiceAccount
-  name: poc-controller-controller-manager
-  namespace: poc-controller-system
+  name: opm-operator-controller-manager
+  namespace: opm-operator-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: poc-controller-metrics-auth-rolebinding
+  name: opm-operator-metrics-auth-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: poc-controller-metrics-auth-role
+  name: opm-operator-metrics-auth-role
 subjects:
 - kind: ServiceAccount
-  name: poc-controller-controller-manager
-  namespace: poc-controller-system
+  name: opm-operator-controller-manager
+  namespace: opm-operator-system
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
+    app.kubernetes.io/name: opm-operator
     control-plane: controller-manager
-  name: poc-controller-controller-manager-metrics-service
-  namespace: poc-controller-system
+  name: opm-operator-controller-manager-metrics-service
+  namespace: opm-operator-system
 spec:
   ports:
   - name: https
@@ -1353,7 +1367,7 @@ spec:
     protocol: TCP
     targetPort: 8443
   selector:
-    app.kubernetes.io/name: poc-controller
+    app.kubernetes.io/name: opm-operator
     control-plane: controller-manager
 ---
 apiVersion: apps/v1
@@ -1361,22 +1375,22 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: poc-controller
+    app.kubernetes.io/name: opm-operator
     control-plane: controller-manager
-  name: poc-controller-controller-manager
-  namespace: poc-controller-system
+  name: opm-operator-controller-manager
+  namespace: opm-operator-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: poc-controller
+      app.kubernetes.io/name: opm-operator
       control-plane: controller-manager
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        app.kubernetes.io/name: poc-controller
+        app.kubernetes.io/name: opm-operator
         control-plane: controller-manager
     spec:
       containers:
@@ -1422,7 +1436,7 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: poc-controller-controller-manager
+      serviceAccountName: opm-operator-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
       - emptyDir: {}

@@ -23,11 +23,11 @@ import (
 
 	"cuelang.org/go/cue/cuecontext"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/inventory"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	"github.com/open-platform-model/poc-controller/pkg/core"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/inventory"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // testProvider builds a minimal provider for controller tests.

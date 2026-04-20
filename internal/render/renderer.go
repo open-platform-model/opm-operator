@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // ModuleRenderer is the injection boundary for module rendering in the

@@ -67,7 +67,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
-KIND_CLUSTER ?= poc-controller-test-e2e
+KIND_CLUSTER ?= opm-operator-test-e2e
 
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
@@ -136,10 +136,10 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name poc-controller-builder
-	$(CONTAINER_TOOL) buildx use poc-controller-builder
+	- $(CONTAINER_TOOL) buildx create --name opm-operator-builder
+	$(CONTAINER_TOOL) buildx use opm-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm poc-controller-builder
+	- $(CONTAINER_TOOL) buildx rm opm-operator-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer
@@ -162,7 +162,7 @@ delete-samples: ## Delete sample OCIRepository and ModuleRelease CRs from the cl
 
 .PHONY: local-run
 local-run: setup-test-e2e start-registry connect-registry install-flux publish-test-module kind-load deploy apply-samples ## Deploy controller to local Kind cluster (full setup).
-	$(KUBECTL) -n poc-controller-system patch deployment poc-controller-controller-manager \
+	$(KUBECTL) -n opm-operator-system patch deployment opm-operator-controller-manager \
 		--type=json \
 		-p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=$(LOCAL_REGISTRY)"}]'
 

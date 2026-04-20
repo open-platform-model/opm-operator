@@ -22,7 +22,7 @@ apiVersion: releases.opmodel.dev/v1alpha1
 kind: Release
 metadata:
   labels:
-    app.kubernetes.io/name: poc-controller
+    app.kubernetes.io/name: opm-operator
     app.kubernetes.io/managed-by: kustomize
   name: release-sample
   namespace: default

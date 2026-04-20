@@ -30,20 +30,20 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/open-platform-model/poc-controller/test/utils"
+	"github.com/open-platform-model/opm-operator/test/utils"
 )
 
 // namespace where the project is deployed in
-const namespace = "poc-controller-system"
+const namespace = "opm-operator-system"
 
 // serviceAccountName created for the project
-const serviceAccountName = "poc-controller-controller-manager"
+const serviceAccountName = "opm-operator-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "poc-controller-controller-manager-metrics-service"
+const metricsServiceName = "opm-operator-controller-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "poc-controller-metrics-binding"
+const metricsRoleBindingName = "opm-operator-metrics-binding"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -80,7 +80,7 @@ var _ = Describe("Manager", Ordered, func() {
 		if localRegistry := os.Getenv("LOCAL_REGISTRY"); localRegistry != "" {
 			By("overriding controller registry for local dev")
 			cmd = exec.Command("kubectl", "-n", namespace, "patch", "deployment",
-				"poc-controller-controller-manager",
+				"opm-operator-controller-manager",
 				"--type=json",
 				fmt.Sprintf(`-p=[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=%s"}]`, localRegistry))
 			_, err = utils.Run(cmd)
@@ -190,7 +190,7 @@ var _ = Describe("Manager", Ordered, func() {
 		It("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=poc-controller-metrics-reader",
+				"--clusterrole=opm-operator-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
 			)
 			_, err := utils.Run(cmd)

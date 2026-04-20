@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	oerrors "github.com/open-platform-model/poc-controller/pkg/errors"
+	oerrors "github.com/open-platform-model/opm-operator/pkg/errors"
 )
 
 // UnmatchedComponentsError is returned when one or more components have no

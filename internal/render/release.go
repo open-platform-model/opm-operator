@@ -8,11 +8,11 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/open-platform-model/poc-controller/pkg/core"
-	"github.com/open-platform-model/poc-controller/pkg/loader"
-	"github.com/open-platform-model/poc-controller/pkg/module"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
-	pkgrender "github.com/open-platform-model/poc-controller/pkg/render"
+	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/pkg/loader"
+	"github.com/open-platform-model/opm-operator/pkg/module"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
+	pkgrender "github.com/open-platform-model/opm-operator/pkg/render"
 )
 
 // Kind constants surface the CUE `kind` field so the reconciler can dispatch

@@ -1,4 +1,4 @@
-# Documentation Style Guide — poc-controller
+# Documentation Style Guide — opm-operator
 
 Inherits all rules from the [workspace STYLE.md](../../STYLE.md). This file adds controller-specific conventions.
 
@@ -38,7 +38,7 @@ Operational procedures must use numbered steps:
 3. Deploy the controller:
 
    ```bash
-   task operator:controller:install IMG=ghcr.io/open-platform-model/poc-controller:latest
+   task operator:controller:install IMG=ghcr.io/open-platform-model/opm-operator:latest
    ```
 
 - Number every step. Do not use prose paragraphs for multi-step procedures.

@@ -11,8 +11,8 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/load"
 
-	"github.com/open-platform-model/poc-controller/pkg/loader"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	"github.com/open-platform-model/opm-operator/pkg/loader"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // LoadProvider loads a provider from a CUE composition module directory.

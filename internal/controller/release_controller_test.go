@@ -34,12 +34,12 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
-	"github.com/open-platform-model/poc-controller/internal/apply"
-	"github.com/open-platform-model/poc-controller/internal/render"
-	opmsource "github.com/open-platform-model/poc-controller/internal/source"
-	"github.com/open-platform-model/poc-controller/internal/status"
-	"github.com/open-platform-model/poc-controller/pkg/provider"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/internal/render"
+	opmsource "github.com/open-platform-model/opm-operator/internal/source"
+	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // stubFetcher creates a placeholder release.cue at dir/<path>/release.cue so

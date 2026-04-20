@@ -3,7 +3,7 @@ package status
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 )
 
 const (

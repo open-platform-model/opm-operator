@@ -26,7 +26,7 @@ vars:
       v=$(go list -m -f '{{`{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}`}}' k8s.io/api 2>/dev/null)
       [ -n "$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }
       printf '%s\n' "$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/'
-  KIND_CLUSTER: '{{.KIND_CLUSTER | default "poc-controller-test-e2e"}}'
+  KIND_CLUSTER: '{{.KIND_CLUSTER | default "opm-operator-test-e2e"}}'
   REGISTRY_CONTAINER: '{{.REGISTRY_CONTAINER | default "opm-registry"}}'
   REGISTRY_PORT: '{{.REGISTRY_PORT | default "5000"}}'
   REGISTRY_IMAGE: '{{.REGISTRY_IMAGE | default "registry:2"}}'

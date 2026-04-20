@@ -1,6 +1,6 @@
 package inventory
 
-import releasesv1alpha1 "github.com/open-platform-model/poc-controller/api/v1alpha1"
+import releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 
 // ComputeStaleSet returns entries present in previous but absent from current.
 // Uses K8sIdentityEqual for comparison: matches on Group, Kind, Namespace, and

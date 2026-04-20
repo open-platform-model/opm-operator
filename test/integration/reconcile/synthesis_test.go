@@ -24,8 +24,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/open-platform-model/poc-controller/internal/synthesis"
-	"github.com/open-platform-model/poc-controller/pkg/loader"
+	"github.com/open-platform-model/opm-operator/internal/synthesis"
+	"github.com/open-platform-model/opm-operator/pkg/loader"
 )
 
 // These tests require the fixture module published to a local OCI registry.

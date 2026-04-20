@@ -48,10 +48,10 @@ tasks:
       - 'cd config/manager && "{{.KUSTOMIZE}}" edit set image controller={{.IMG}}'
       - '"{{.KUSTOMIZE}}" build config/default | "{{.KUBECTL}}" apply -f -'
       - |
-        {{.KUBECTL}} -n poc-controller-system patch deployment poc-controller-controller-manager \
+        {{.KUBECTL}} -n opm-operator-system patch deployment opm-operator-controller-manager \
           --type=json \
           -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry={{.KIND_CUE_REGISTRY}}"}]'
-      - '{{.KUBECTL}} -n poc-controller-system rollout status deployment/poc-controller-controller-manager --timeout=120s'
+      - '{{.KUBECTL}} -n opm-operator-system rollout status deployment/opm-operator-controller-manager --timeout=120s'
 
   controller:uninstall:
     desc: Remove the controller manager

@@ -25,7 +25,7 @@ tasks:
       - |
         {{.FLUX}} push artifact {{.RELEASE_REPO}}:{{.RELEASE_TAG}} \
           --path={{.RELEASE_DIR}} \
-          --source="poc-controller/test/fixtures" \
+          --source="opm-operator/test/fixtures" \
           --revision="{{.RELEASE_TAG}}"
 
   publish:ghcr:
@@ -37,7 +37,7 @@ tasks:
       - |
         {{.FLUX}} push artifact {{.RELEASE_GHCR_REPO}}:{{.RELEASE_TAG}} \
           --path={{.RELEASE_DIR}} \
-          --source="poc-controller/test/fixtures" \
+          --source="opm-operator/test/fixtures" \
           --revision="{{.RELEASE_TAG}}"
 
   apply:

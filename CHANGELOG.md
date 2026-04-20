@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/open-platform-model/opm-operator/compare/v0.6.0...v0.6.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* **apply:** wire StatusPoller into ResourceManager ([71fae5a](https://github.com/open-platform-model/opm-operator/commit/71fae5ab5162aab2d8492bfd358b00b2799ea9f8))
+
 ## [0.6.0](https://github.com/open-platform-model/opm-operator/compare/v0.5.0...v0.6.0) (2026-04-20)
 
 

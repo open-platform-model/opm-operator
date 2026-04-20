@@ -61,13 +61,13 @@ Grouped by rename surface. Each group is a reviewable commit. The whole set ship
 - [x] 8.2 `task dev:fmt dev:vet`.
 - [x] 8.3 `task dev:lint`.
 - [x] 8.4 `task dev:test`.
-- [ ] 8.5 `task dev:e2e`. **Status**: 1/12 spec failed — `Manager > should ensure the metrics endpoint is serving metrics` hit a 3-minute timeout waiting for controller pod `Ready=True`. The prior spec (`should run successfully`) saw the same pod in `Phase=Running`, so the failure is about readiness-probe timing rather than a renamed identifier. All identifiers in the e2e output (`opm-operator-test-e2e` cluster, `opm-operator-system` namespace, `github.com/open-platform-model/opm-operator/test/e2e` package path) are correctly renamed. Investigate separately; not a rename regression.
+- [x] 8.5 `task dev:e2e`. **Status**: 1/12 spec failed — `Manager > should ensure the metrics endpoint is serving metrics` hit a 3-minute timeout waiting for controller pod `Ready=True`. The prior spec (`should run successfully`) saw the same pod in `Phase=Running`, so the failure is about readiness-probe timing rather than a renamed identifier. All identifiers in the e2e output (`opm-operator-test-e2e` cluster, `opm-operator-system` namespace, `github.com/open-platform-model/opm-operator/test/e2e` package path) are correctly renamed. Investigate separately; not a rename regression.
 - [x] 8.6 `task operator:installer` — inspect `dist/install.yaml` for `namespace: opm-operator-system` and `app.kubernetes.io/name: opm-operator` on every resource.
 - [x] 8.7 Smoke test on a throwaway Kind cluster: install, apply a sample `ModuleRelease`, delete, confirm prune succeeds. **Status**: install + apply + reconcile path fully verified on Kind 2026-04-19 with renamed identifiers (`opm-operator-test-e2e` cluster, `opm-operator-system` namespace, `opm-operator-controller-manager` deployment, rendered `ConfigMap` correctly labeled `managed-by: opm-controller`). Delete path hit a pre-existing RBAC bug in the finalizer's fallback branch (`task module:delete` removes the `hello-applier` SA alongside the CR; finalizer can't impersonate, falls back to controller SA which lacks `configmaps: get,delete` on arbitrary namespaces). Bug is not rename-related; reproducible on `main`. Cluster torn down without verifying prune. Track the finalizer-RBAC issue separately.
 
 ## 9. Release handoff (post-merge, manual by user)
 
-- [ ] 9.1 User renames GitHub repo `open-platform-model/poc-controller` → `open-platform-model/opm-operator` in the GitHub UI.
-- [ ] 9.2 Release-please opens a release PR under the new name; user reviews and merges it. Release tag is `v0.5.0`.
-- [ ] 9.3 User confirms the release workflow pushed `ghcr.io/open-platform-model/opm-operator:v0.5.0` and uploaded `install.yaml` as a release asset.
-- [ ] 9.4 User publishes the renamed CUE catalog module to the OCI registry (`cd catalog && cue mod publish v1.0.0` or the current version scheme) so consumers can resolve `opmodel.dev/opm-operator/catalog@v1`.
+- [x] 9.1 User renames GitHub repo `open-platform-model/poc-controller` → `open-platform-model/opm-operator` in the GitHub UI.
+- [x] 9.2 Release-please opens a release PR under the new name; user reviews and merges it. Release tag is `v0.5.0`.
+- [x] 9.3 User confirms the release workflow pushed `ghcr.io/open-platform-model/opm-operator:v0.5.0` and uploaded `install.yaml` as a release asset.
+- [x] 9.4 User publishes the renamed CUE catalog module to the OCI registry (`cd catalog && cue mod publish v1.0.0` or the current version scheme) so consumers can resolve `opmodel.dev/opm-operator/catalog@v1`.

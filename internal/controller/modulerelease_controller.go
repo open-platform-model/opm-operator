@@ -51,6 +51,10 @@ type ModuleReleaseReconciler struct {
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   events.EventRecorder
 	Renderer        render.ModuleRenderer
+	// DefaultServiceAccount is the fallback SA name used when a
+	// ModuleRelease has an empty spec.serviceAccountName. Resolved in the
+	// release's own namespace. Empty disables the default.
+	DefaultServiceAccount string
 }
 
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=modulereleases,verbs=get;list;watch;create;update;patch;delete
@@ -69,13 +73,14 @@ func (r *ModuleReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	log.Info("Reconciling ModuleRelease", "name", req.Name, "namespace", req.Namespace)
 
 	return opmreconcile.ReconcileModuleRelease(ctx, &opmreconcile.ModuleReleaseParams{
-		Client:          r.Client,
-		APIReader:       r.APIReader,
-		RestConfig:      r.RestConfig,
-		Provider:        r.Provider,
-		ResourceManager: r.ResourceManager,
-		EventRecorder:   r.EventRecorder,
-		Renderer:        r.Renderer,
+		Client:                r.Client,
+		APIReader:             r.APIReader,
+		RestConfig:            r.RestConfig,
+		Provider:              r.Provider,
+		ResourceManager:       r.ResourceManager,
+		EventRecorder:         r.EventRecorder,
+		Renderer:              r.Renderer,
+		DefaultServiceAccount: r.DefaultServiceAccount,
 	}, req)
 }
 

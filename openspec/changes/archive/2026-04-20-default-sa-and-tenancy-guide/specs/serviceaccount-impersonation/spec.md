@@ -57,3 +57,22 @@ The `--default-service-account` flag value names an SA that MUST exist in each *
 - **WHEN** the controller reconciles the release in `team-b`
 - **THEN** the reconcile stalls with `ImpersonationFailed`
 - **AND** the `opm-system/opm-deployer` SA is not used
+
+### Requirement: Flag default applies to deletion cleanup
+The same spec > flag > empty resolution used during apply and prune MUST also be used when the finalizer runs deletion cleanup. The deletion path is best-effort: if the resolved SA cannot be impersonated (missing, unauthorized, or the manager has no RestConfig), the controller MUST log the failure and fall back to its own client so the finalizer can clear. Deletion MUST NOT stall indefinitely on impersonation failure.
+
+#### Scenario: Deletion cleanup uses flag-defaulted SA when spec is empty
+- **GIVEN** a ModuleRelease in namespace `team-a` with `spec.serviceAccountName` empty, `spec.prune=true`, and an inventory of previously-applied resources
+- **AND** the manager started with `--default-service-account=opm-deployer`
+- **AND** a ServiceAccount `opm-deployer` exists in namespace `team-a`
+- **WHEN** the ModuleRelease is deleted and the finalizer runs cleanup
+- **THEN** prune operations impersonate `system:serviceaccount:team-a:opm-deployer`
+- **AND** the finalizer is removed once cleanup succeeds
+
+#### Scenario: Deletion cleanup falls back to controller client when flag-defaulted SA is missing
+- **GIVEN** a ModuleRelease in namespace `team-a` with `spec.serviceAccountName` empty and an inventory of previously-applied resources
+- **AND** the manager started with `--default-service-account=opm-deployer`
+- **AND** no ServiceAccount named `opm-deployer` exists in namespace `team-a` (e.g. the SA was deleted before the release)
+- **WHEN** the finalizer runs cleanup
+- **THEN** the controller logs that the ServiceAccount is unavailable and falls back to the controller's own client
+- **AND** the finalizer is not blocked by the missing SA

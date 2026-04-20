@@ -53,6 +53,11 @@ type ReleaseParams struct {
 	// Renderer loads and renders a CUE release package from a local directory.
 	// Production wires render.PackageReleaseRenderer; tests inject a stub.
 	Renderer render.ReleaseRenderer
+
+	// DefaultServiceAccount is the fallback SA name used when a Release has
+	// an empty spec.serviceAccountName. Empty disables the default and
+	// preserves the controller-client fallback.
+	DefaultServiceAccount string
 }
 
 // ReconcileRelease runs the full Release reconcile loop: source resolution,
@@ -614,11 +619,17 @@ func handleReleaseDeletion(ctx context.Context, params *ReleaseParams, rel *rele
 
 	if rel.Spec.Prune && rel.Status.Inventory != nil && len(rel.Status.Inventory.Entries) > 0 {
 		deleteClient := params.Client
-		if rel.Spec.ServiceAccountName != "" && params.RestConfig != nil {
-			impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), rel.Namespace, rel.Spec.ServiceAccountName)
+		effectiveSA, source := resolveEffectiveSA(rel.Spec.ServiceAccountName, params.DefaultServiceAccount)
+		if effectiveSA != "" && params.RestConfig != nil {
+			impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), rel.Namespace, effectiveSA)
 			if impErr != nil {
+				// Best-effort: deletion must not be blocked indefinitely by
+				// a missing or unauthorized SA. Fall back to the controller
+				// client so the finalizer can eventually clear.
 				log.Info("ServiceAccount unavailable for deletion cleanup, using controller client",
-					"serviceAccount", rel.Spec.ServiceAccountName, "error", impErr)
+					"serviceAccount", effectiveSA,
+					"serviceAccountSource", source,
+					"error", impErr)
 			} else {
 				deleteClient = impClient
 			}
@@ -641,17 +652,27 @@ func handleReleaseDeletion(ctx context.Context, params *ReleaseParams, rel *rele
 	return nil
 }
 
+// buildReleaseApplyClient returns the ResourceManager and client to use for
+// apply and prune. Resolution order for the impersonation target:
+//  1. spec.serviceAccountName (explicit, wins)
+//  2. params.DefaultServiceAccount (the manager's --default-service-account flag)
+//  3. empty → fall back to the controller's own client
+//
+// The effective SA is always resolved in the release's own namespace.
 func buildReleaseApplyClient(
 	ctx context.Context,
 	params *ReleaseParams,
 	rel *releasesv1alpha1.Release,
 ) (*fluxssa.ResourceManager, client.Client, error) {
-	if rel.Spec.ServiceAccountName == "" {
+	effectiveSA, source := resolveEffectiveSA(rel.Spec.ServiceAccountName, params.DefaultServiceAccount)
+	if effectiveSA == "" {
 		return params.ResourceManager, params.Client, nil
 	}
 	log := logf.FromContext(ctx)
-	log.Info("Building impersonated client", "serviceAccount", rel.Spec.ServiceAccountName)
-	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), rel.Namespace, rel.Spec.ServiceAccountName)
+	log.Info("Building impersonated client",
+		"serviceAccount", effectiveSA,
+		"serviceAccountSource", source)
+	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), rel.Namespace, effectiveSA)
 	if err != nil {
 		return nil, nil, err
 	}

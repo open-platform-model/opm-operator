@@ -19,6 +19,7 @@
 - `Taskfile.yml` (+ `.tasks/*.yaml`): authoritative build/generate/lint/test entrypoints.
 - `docs/STYLE.md`: documentation prose style rules.
 - `docs/TESTING.md`: test tier selection guide (unit vs integration vs e2e).
+- `docs/TENANCY.md`: per-tenant ServiceAccount convention and `--default-service-account` lockdown.
 
 ## Repository Layout
 

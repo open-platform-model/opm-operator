@@ -63,6 +63,11 @@ type ReleaseReconciler struct {
 	// Renderer loads and renders the CUE release package from the extracted
 	// artifact directory. Injected for testability.
 	Renderer render.ReleaseRenderer
+
+	// DefaultServiceAccount is the fallback SA name used when a Release has
+	// an empty spec.serviceAccountName. Resolved in the release's own
+	// namespace. Empty disables the default.
+	DefaultServiceAccount string
 }
 
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=releases,verbs=get;list;watch;create;update;patch;delete
@@ -80,14 +85,15 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log.Info("Reconciling Release", "name", req.Name, "namespace", req.Namespace)
 
 	return opmreconcile.ReconcileRelease(ctx, &opmreconcile.ReleaseParams{
-		Client:          r.Client,
-		APIReader:       r.APIReader,
-		RestConfig:      r.RestConfig,
-		Provider:        r.Provider,
-		ResourceManager: r.ResourceManager,
-		EventRecorder:   r.EventRecorder,
-		Fetcher:         r.Fetcher,
-		Renderer:        r.Renderer,
+		Client:                r.Client,
+		APIReader:             r.APIReader,
+		RestConfig:            r.RestConfig,
+		Provider:              r.Provider,
+		ResourceManager:       r.ResourceManager,
+		EventRecorder:         r.EventRecorder,
+		Fetcher:               r.Fetcher,
+		Renderer:              r.Renderer,
+		DefaultServiceAccount: r.DefaultServiceAccount,
 	}, req)
 }
 

@@ -51,6 +51,10 @@ type ModuleReleaseParams struct {
 	// Renderer produces the render result for a ModuleRelease. Must be non-nil;
 	// production wires render.RegistryRenderer, tests wire a stub.
 	Renderer render.ModuleRenderer
+	// DefaultServiceAccount is the fallback SA name used when a
+	// ModuleRelease has an empty spec.serviceAccountName. Empty disables
+	// the default and preserves the controller-client fallback.
+	DefaultServiceAccount string
 }
 
 // ReconcileModuleRelease orchestrates all phases of the reconcile loop.
@@ -346,11 +350,12 @@ func ReconcileModuleRelease(
 	// Phase 5: Apply resources.
 	phases.applyRan = true
 	force := mr.Spec.Rollout != nil && mr.Spec.Rollout.ForceConflicts
+	effectiveSA, _ := resolveEffectiveSA(mr.Spec.ServiceAccountName, params.DefaultServiceAccount)
 	applyResult, err := apply.Apply(ctx, applyRM, resources, force)
 	if err != nil {
 		phases.applyFailed = true
 		params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", err)
-		if mr.Spec.ServiceAccountName != "" && isForbidden(err) {
+		if effectiveSA != "" && isForbidden(err) {
 			status.MarkStalled(&mr, status.ImpersonationFailedReason, "%s", err)
 			outcome = FailedStalled
 			errMsg = err.Error()
@@ -383,7 +388,7 @@ func ReconcileModuleRelease(
 	// Phase 6: Prune stale resources (only if spec.prune=true and apply succeeded).
 	phases.pruneRan = true
 	var pruneDeleted int
-	outcome, reconciled, pruneDeleted, err = pruneStaleResources(ctx, &mr, applyClient, staleSet, params.EventRecorder)
+	outcome, reconciled, pruneDeleted, err = pruneStaleResources(ctx, &mr, applyClient, staleSet, effectiveSA, params.EventRecorder)
 	if err != nil {
 		phases.pruneFailed = true
 		errMsg = err.Error()
@@ -515,11 +520,17 @@ func handleDeletion(
 
 	if mr.Spec.Prune && mr.Status.Inventory != nil && len(mr.Status.Inventory.Entries) > 0 {
 		deleteClient := params.Client
-		if mr.Spec.ServiceAccountName != "" && params.RestConfig != nil {
-			impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mr.Namespace, mr.Spec.ServiceAccountName)
+		effectiveSA, source := resolveEffectiveSA(mr.Spec.ServiceAccountName, params.DefaultServiceAccount)
+		if effectiveSA != "" && params.RestConfig != nil {
+			impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mr.Namespace, effectiveSA)
 			if impErr != nil {
+				// Best-effort: deletion must not be blocked indefinitely by
+				// a missing or unauthorized SA. Fall back to the controller
+				// client so the finalizer can eventually clear.
 				log.Info("ServiceAccount unavailable for deletion cleanup, using controller client",
-					"serviceAccount", mr.Spec.ServiceAccountName, "error", impErr)
+					"serviceAccount", effectiveSA,
+					"serviceAccountSource", source,
+					"error", impErr)
 			} else {
 				deleteClient = impClient
 			}
@@ -565,6 +576,7 @@ func pruneStaleResources(
 	mr *releasesv1alpha1.ModuleRelease,
 	c client.Client,
 	staleSet []releasesv1alpha1.InventoryEntry,
+	effectiveSA string,
 	recorder events.EventRecorder,
 ) (Outcome, bool, int, error) {
 	if !mr.Spec.Prune || len(staleSet) == 0 {
@@ -574,7 +586,7 @@ func pruneStaleResources(
 	pruneResult, err := apply.Prune(ctx, c, mr.Status.ReleaseUUID, staleSet)
 	if err != nil {
 		recorder.Eventf(mr, nil, corev1.EventTypeWarning, status.PruneFailedReason, "Prune", "%s", err)
-		if mr.Spec.ServiceAccountName != "" && isForbidden(err) {
+		if effectiveSA != "" && isForbidden(err) {
 			status.MarkStalled(mr, status.ImpersonationFailedReason, "%s", err)
 			return FailedStalled, false, 0, nil
 		}
@@ -609,22 +621,44 @@ func isForbidden(err error) bool {
 }
 
 // buildApplyClient returns the ResourceManager and client to use for apply and prune.
-// If serviceAccountName is set, it builds an impersonated client; otherwise it returns the defaults.
+// Resolution order for the impersonation target:
+//  1. spec.serviceAccountName (explicit, wins)
+//  2. params.DefaultServiceAccount (the manager's --default-service-account flag)
+//  3. empty → fall back to the controller's own client
+//
+// The effective SA is always resolved in the release's own namespace; the flag
+// never introduces a cross-namespace reference.
 func buildApplyClient(
 	ctx context.Context,
 	params *ModuleReleaseParams,
 	mr *releasesv1alpha1.ModuleRelease,
 ) (*fluxssa.ResourceManager, client.Client, error) {
-	if mr.Spec.ServiceAccountName == "" {
+	effectiveSA, source := resolveEffectiveSA(mr.Spec.ServiceAccountName, params.DefaultServiceAccount)
+	if effectiveSA == "" {
 		return params.ResourceManager, params.Client, nil
 	}
 	log := logf.FromContext(ctx)
-	log.Info("Building impersonated client", "serviceAccount", mr.Spec.ServiceAccountName)
-	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mr.Namespace, mr.Spec.ServiceAccountName)
+	log.Info("Building impersonated client",
+		"serviceAccount", effectiveSA,
+		"serviceAccountSource", source)
+	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mr.Namespace, effectiveSA)
 	if err != nil {
 		return nil, nil, err
 	}
 	return apply.NewResourceManager(impClient, "opm-controller"), impClient, nil
+}
+
+// resolveEffectiveSA applies the spec > flag > empty precedence and returns
+// the effective SA name plus a source tag ("spec", "default", or "") for
+// logging.
+func resolveEffectiveSA(specSA, defaultSA string) (string, string) {
+	if specSA != "" {
+		return specSA, "spec"
+	}
+	if defaultSA != "" {
+		return defaultSA, "default"
+	}
+	return "", ""
 }
 
 // recordReconcileMetrics records outcome, duration, and inventory size metrics.

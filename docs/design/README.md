@@ -17,3 +17,7 @@ Collection of all design documents
 - `ssa-ownership-and-drift-policy.md` - server-side apply, pruning rules, drift detection, and ownership conflict policy
 - `impersonation-and-privilege-escalation.md` - analysis of the `spec.serviceAccountName` escalation surface and option space for constraining it
 - `rbac-delegation-crossplane-flux.md` - comparative research on how Crossplane (`rbac-manager`) and FluxCD handle RBAC delegation, with a proposed per-tenant direction
+
+Top-level operator guides:
+
+- [`../TENANCY.md`](../TENANCY.md) - per-tenant ServiceAccount convention and `--default-service-account` lockdown

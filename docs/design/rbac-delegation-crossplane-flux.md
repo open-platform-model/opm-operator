@@ -118,8 +118,8 @@ Both are deliverable in a single small change and meaningfully exceed Flux's sto
 
 Near-term (aligns with scope-and-non-goals §9 deferral):
 
-- **Adopt Flux's per-tenant convention as documented practice.** Add a tenancy guide to `docs/` showing: one namespace per tenant, one `deployer` SA per namespace, RoleBinding to built-in `edit` or a curated ClusterRole, all releases reference `deployer`. No per-release RBAC.
-- **Add `--default-service-account` flag.** Match Flux's lockdown mechanism. When set, empty `spec.serviceAccountName` resolves to `system:serviceaccount:<releaseNamespace>:<flag-value>` instead of falling back to controller identity. Cleaner failure mode, better audit.
+- **Adopt Flux's per-tenant convention as documented practice.** Add a tenancy guide to `docs/` showing: one namespace per tenant, one `deployer` SA per namespace, RoleBinding to built-in `edit` or a curated ClusterRole, all releases reference `deployer`. No per-release RBAC. *(Landed: see [`../TENANCY.md`](../TENANCY.md).)*
+- **Add `--default-service-account` flag.** Match Flux's lockdown mechanism. When set, empty `spec.serviceAccountName` resolves to `system:serviceaccount:<releaseNamespace>:<flag-value>` instead of falling back to controller identity. Cleaner failure mode, better audit. *(Landed: flag is wired end-to-end; see [`../TENANCY.md`](../TENANCY.md) §"Lockdown".)*
 - **Add a deny-list of known-privileged roles.** Controller refuses impersonation if the target SA resolves to `cluster-admin` or any `system:*` role via SAR probe. One extra reconcile step, large blast-radius reduction.
 - **Keep the controller's `impersonate` scope to `serviceaccounts` only.** Do not widen to `users`/`groups`. This is already the case and it is better than Flux's default.
 

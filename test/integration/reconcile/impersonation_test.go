@@ -433,6 +433,153 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 		})
 	})
 
+	Context("Reconcile with --default-service-account flag", func() {
+		It("should impersonate the flag-defaulted SA when spec.serviceAccountName is empty", func() {
+			mrName := "imp-default-flag-mr"
+			const flagSA = "opm-deployer"
+
+			// Provision the flag-named SA + permissions in the tenant namespace.
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      flagSA,
+					Namespace: namespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, sa)).To(Succeed())
+
+			role := &rbacv1.ClusterRole{
+				ObjectMeta: metav1.ObjectMeta{Name: "imp-default-flag-role"},
+				Rules: []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{""},
+						Resources: []string{"configmaps"},
+						Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, role)).To(Succeed())
+
+			binding := &rbacv1.ClusterRoleBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: "imp-default-flag-binding"},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: "rbac.authorization.k8s.io",
+					Kind:     "ClusterRole",
+					Name:     "imp-default-flag-role",
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "ServiceAccount",
+						Name:      flagSA,
+						Namespace: namespace,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+
+			// MR leaves spec.serviceAccountName empty so the flag default wins.
+			mr := &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mrName,
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleReleaseSpec{
+					Module: releasesv1alpha1.ModuleReference{
+						Path:    "opmodel.dev/test/module",
+						Version: "v0.1.0",
+					},
+					Prune:  true,
+					Values: &releasesv1alpha1.RawValues{},
+				},
+			}
+			mr.Spec.Values.Raw = []byte(`{"message": "flag-default"}`)
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+
+			params := reconcileParamsWithConfig()
+			params.DefaultServiceAccount = flagSA
+			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
+			ensureFinalizer(params, nn)
+
+			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+				NamespacedName: nn,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			var updated releasesv1alpha1.ModuleRelease
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			ready := apimeta.FindStatusCondition(updated.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue),
+				"apply must succeed under the flag-defaulted identity")
+
+			Expect(updated.Status.Inventory).NotTo(BeNil())
+			Expect(updated.Status.Inventory.Count).To(BeNumerically(">", 0))
+
+			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Name: flagSA, Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &rbacv1.ClusterRoleBinding{
+				ObjectMeta: metav1.ObjectMeta{Name: "imp-default-flag-binding"},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &rbacv1.ClusterRole{
+				ObjectMeta: metav1.ObjectMeta{Name: "imp-default-flag-role"},
+			})).To(Succeed())
+		})
+
+		It("should stall with ImpersonationFailed when the flag-defaulted SA is missing", func() {
+			mrName := "imp-default-missing-mr"
+
+			mr := &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mrName,
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleReleaseSpec{
+					Module: releasesv1alpha1.ModuleReference{
+						Path:    "opmodel.dev/test/module",
+						Version: "v0.1.0",
+					},
+					Prune:  true,
+					Values: &releasesv1alpha1.RawValues{},
+				},
+			}
+			mr.Spec.Values.Raw = []byte(`{"message": "flag-missing"}`)
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+
+			params := reconcileParamsWithConfig()
+			// Flag points at an SA that does not exist in the tenant namespace.
+			params.DefaultServiceAccount = "missing"
+			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
+			ensureFinalizer(params, nn)
+
+			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+				NamespacedName: nn,
+			})
+			Expect(err).NotTo(HaveOccurred(), "stalled errors return nil")
+			Expect(result.RequeueAfter).To(Equal(30*time.Minute), "stalled requeues with safety interval")
+
+			var updated releasesv1alpha1.ModuleRelease
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			stalled := apimeta.FindStatusCondition(updated.Status.Conditions, status.StalledCondition)
+			Expect(stalled).NotTo(BeNil())
+			Expect(stalled.Status).To(Equal(metav1.ConditionTrue))
+			Expect(stalled.Reason).To(Equal(status.ImpersonationFailedReason))
+			Expect(stalled.Message).To(ContainSubstring("missing"))
+
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
+			})).To(Succeed())
+		})
+	})
+
 	Context("Reconcile without serviceAccountName", func() {
 		It("should use controller client when SA is not specified", func() {
 			mrName := "imp-nosa-mr"

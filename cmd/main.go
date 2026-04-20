@@ -64,6 +64,7 @@ func main() {
 	var providerName string
 	var registry string
 	var cueCacheDir string
+	var defaultServiceAccount string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -98,6 +99,12 @@ func main() {
 			"testing.opmodel.dev/* to ghcr.io/open-platform-model with registry.cue.works as fallback.")
 	flag.StringVar(&cueCacheDir, "cue-cache-dir", "/tmp/cue-cache",
 		"Directory for CUE module download cache.")
+	flag.StringVar(&defaultServiceAccount, "default-service-account", "",
+		"Name of the ServiceAccount to impersonate when a ModuleRelease or Release has an empty "+
+			"spec.serviceAccountName. The SA is resolved in the release's own namespace (not the "+
+			"controller's); it must exist in each tenant namespace or the reconcile stalls with "+
+			"ImpersonationFailed. Empty (default) preserves today's behavior: fall back to the "+
+			"controller's own identity. See docs/TENANCY.md for the recommended per-namespace SA pattern.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -232,14 +239,15 @@ func main() {
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
 	if err := (&controller.ModuleReleaseReconciler{
-		Client:          mgr.GetClient(),
-		APIReader:       mgr.GetAPIReader(),
-		Scheme:          mgr.GetScheme(),
-		RestConfig:      restConfig,
-		Provider:        opmProvider,
-		ResourceManager: resourceManager,
-		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
-		Renderer:        &render.RegistryRenderer{},
+		Client:                mgr.GetClient(),
+		APIReader:             mgr.GetAPIReader(),
+		Scheme:                mgr.GetScheme(),
+		RestConfig:            restConfig,
+		Provider:              opmProvider,
+		ResourceManager:       resourceManager,
+		EventRecorder:         mgr.GetEventRecorder("opm-controller"),
+		Renderer:              &render.RegistryRenderer{},
+		DefaultServiceAccount: defaultServiceAccount,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleRelease")
 		os.Exit(1)
@@ -252,15 +260,16 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.ReleaseReconciler{
-		Client:          mgr.GetClient(),
-		APIReader:       mgr.GetAPIReader(),
-		Scheme:          mgr.GetScheme(),
-		RestConfig:      restConfig,
-		Provider:        opmProvider,
-		ResourceManager: resourceManager,
-		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
-		Fetcher:         &source.ArtifactFetcher{},
-		Renderer:        render.PackageReleaseRenderer{},
+		Client:                mgr.GetClient(),
+		APIReader:             mgr.GetAPIReader(),
+		Scheme:                mgr.GetScheme(),
+		RestConfig:            restConfig,
+		Provider:              opmProvider,
+		ResourceManager:       resourceManager,
+		EventRecorder:         mgr.GetEventRecorder("opm-controller"),
+		Fetcher:               &source.ArtifactFetcher{},
+		Renderer:              render.PackageReleaseRenderer{},
+		DefaultServiceAccount: defaultServiceAccount,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Release")
 		os.Exit(1)

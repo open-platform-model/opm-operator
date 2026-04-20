@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.5.0](https://github.com/open-platform-model/poc-controller/compare/v0.4.4...v0.5.0) (2026-04-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **k8s:** kustomize namespace changes from poc-controller-system to opm-operator-system; namePrefix changes from poc-controller- to opm-operator-; app.kubernetes.io/name label value changes across all manager manifests. Deployment selector is immutable, so upgrading from v0.4.x requires deleting the old namespace and RBAC before applying v0.5.0 install.yaml. See design.md for the documented upgrade procedure. User ModuleRelease/BundleRelease CRs are unaffected; they carry
+* go module path changes from github.com/open-platform-model/poc-controller to github.com/open-platform-model/opm-operator. External consumers must update import paths. Pre-1.0, so no /v2 suffix required.
+
+### Documentation
+
+* **design:** add rbac-delegation research document ([d0ae6c5](https://github.com/open-platform-model/poc-controller/commit/d0ae6c5d6aa20f646885cc3868d36d851687bcb7))
+* **openspec:** add default-sa-and-tenancy-guide change ([cb94910](https://github.com/open-platform-model/poc-controller/commit/cb94910ce308fb057b5d7c1bae0e84108973dd2c))
+* **openspec:** add deletion-sa-missing-stall change ([1833a7a](https://github.com/open-platform-model/poc-controller/commit/1833a7a8b9e6a9c6955fd2af1da644ba5d3f7b44))
+* **openspec:** add rename-to-opm-operator change and adr-015 ([97e2a81](https://github.com/open-platform-model/poc-controller/commit/97e2a8156f71e0894bdca6007b9a02ecc69a901c))
+* rename project references from poc-controller to opm-operator ([fcb08d8](https://github.com/open-platform-model/poc-controller/commit/fcb08d8e6dd8bac59484a38831015fcd32339fd8))
+
+
+### Code Refactoring
+
+* **catalog:** rename cue catalog module path to opm-operator ([962bddf](https://github.com/open-platform-model/poc-controller/commit/962bddfe56f37d6a283acb604287184a79bcaabd))
+* **k8s:** rename kustomize namespace and labels to opm-operator ([63345ea](https://github.com/open-platform-model/poc-controller/commit/63345ea3403265c990f6fd10b002c7e20133a9e5))
+* rename go module path to opm-operator ([59d6e66](https://github.com/open-platform-model/poc-controller/commit/59d6e66d32c3088897e6bd320d4031d2a1c71bfd))
+
+
+### Miscellaneous Chores
+
+* **build:** rename kind cluster and buildx builder to opm-operator ([c13e102](https://github.com/open-platform-model/poc-controller/commit/c13e102bfc6be800240e7241cc3efb763eb6ed10))
+* remove stale experiments 001 and 002 ([faa1213](https://github.com/open-platform-model/poc-controller/commit/faa1213d406dfdb0b0dfd23f999c7c958e4db91c))
+
 ## [0.4.4](https://github.com/open-platform-model/poc-controller/compare/v0.4.3...v0.4.4) (2026-04-19)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.4](https://github.com/open-platform-model/opm-operator/compare/v0.6.3...v0.6.4) (2026-04-21)
+
+
+### Documentation
+
+* **research:** add crd lifecycle research ([80a0258](https://github.com/open-platform-model/opm-operator/commit/80a02584497b7934ed5f3a4f6a8c138a80316f29))
+
+
+### Miscellaneous Chores
+
+* **catalog:** add istio ([4edf451](https://github.com/open-platform-model/opm-operator/commit/4edf45172cad5e4c3599234efcf945c42f7db1a5))
+
 ## [0.6.3](https://github.com/open-platform-model/opm-operator/compare/v0.6.2...v0.6.3) (2026-04-20)
 
 

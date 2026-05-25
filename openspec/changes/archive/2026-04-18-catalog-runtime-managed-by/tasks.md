@@ -10,7 +10,7 @@
 
 ## 2. Pin new catalog version in poc-controller
 
-- [x] 2.1 Update `poc-controller/cue.mod/module.cue` (and any subpackages with their own `cue.mod/`) to require the new catalog version published in 1.7. Use the workspace `task update-deps` from the workspace root. **Ran workspace `task update-deps` (bumped `poc-controller/catalog/cue.mod/module.cue`, test fixtures already at v1.3.4 via previous runs). Also updated `internal/synthesis/synthesis.go:16` `CatalogVersion` constant v1.3.2 → v1.3.4 and `test/fixtures/releases/hello/cue.mod/module.cue` v1.3.2 → v1.3.4 (update-deps couldn't resolve because local-only fixture dep was unpublished).**
+- [x] 2.1 Update `poc-controller/cue.mod/module.cue` (and any subpackages with their own `cue.mod/`) to require the new catalog version published in 1.7. Use the workspace `task deps:update` from the workspace root. **Ran workspace `task deps:update` (bumped `poc-controller/catalog/cue.mod/module.cue`, test fixtures already at v1.3.4 via previous runs). Also updated `internal/synthesis/synthesis.go:16` `CatalogVersion` constant v1.3.2 → v1.3.4 and `test/fixtures/releases/hello/cue.mod/module.cue` v1.3.2 → v1.3.4 (deps:update couldn't resolve because local-only fixture dep was unpublished).**
 - [x] 2.2 Verify `task vet` and `task check` in `poc-controller/` pass against the new catalog. If render breaks because `#runtimeName` is missing somewhere, that is the bug task 3.x fixes — proceed. **`task dev:vet` passes — render bug will be fixed in 3.x.**
 
 ## 3. Update controller render code
@@ -41,5 +41,5 @@
 
 ## 6. Coordinate CLI sister change
 
-- [x] 6.1 Notify CLI repo: catalog version published in 1.7 is now available. The CLI sister change (`cli/openspec/changes/catalog-runtime-managed-by`) should pin to that version and run its own runtime update. **Catalog at `opmodel.dev/core/v1alpha1@v1.3.4` is published. CLI sister change at `cli/openspec/changes/catalog-runtime-managed-by/tasks.md` is unmodified — its own `/opsx:apply` run will pick up v1.3.4 via `task update-deps`.**
+- [x] 6.1 Notify CLI repo: catalog version published in 1.7 is now available. The CLI sister change (`cli/openspec/changes/catalog-runtime-managed-by`) should pin to that version and run its own runtime update. **Catalog at `opmodel.dev/core/v1alpha1@v1.3.4` is published. CLI sister change at `cli/openspec/changes/catalog-runtime-managed-by/tasks.md` is unmodified — its own `/opsx:apply` run will pick up v1.3.4 via `task deps:update`.**
 - [x] 6.2 Confirm CLI integration tests against the new catalog version before considering the cross-repo migration complete (tracked in CLI sister change). **Deferred — lives in the CLI sister change; cannot be completed from poc-controller.**

@@ -41,28 +41,6 @@
 └── .tasks/         # Taskfile includes (dev, operator, docker, kind, registry, flux, release, module, tools)
 ```
 
-## Architecture Decision Records
-
-ADRs capture significant technical decisions w/ context + consequences.
-
-- Location: `adr/`
-- Template: `adr/TEMPLATE.md`
-- Naming: `NNN-kebab-case-title.md` (three-digit, zero-padded)
-
-### Creating a new ADR
-
-1. Copy `adr/TEMPLATE.md` → `adr/NNN-title.md`, next available number.
-2. Status → `Proposed`.
-3. Fill Context, Decision, Consequences.
-4. Status → `Accepted` once agreed.
-
-### Updating an ADR
-
-- Never delete ADR — update status.
-- Retire: status → `Deprecated`.
-- Replace: status → `Superseded by ADR-NNN`, create new ADR.
-- One decision per ADR.
-
 ## Generated Files And Scaffold Boundaries
 
 - No hand-edit `api/v1alpha1/zz_generated.deepcopy.go`.

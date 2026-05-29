@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.4](https://github.com/open-platform-model/opm-operator/compare/v0.6.3...v0.6.4) (2026-05-25)
+
+
+### Documentation
+
+* **research:** add crd lifecycle research ([80a0258](https://github.com/open-platform-model/opm-operator/commit/80a02584497b7934ed5f3a4f6a8c138a80316f29))
+
+
+### Miscellaneous Chores
+
+* **agents:** Update agents ([a13d1c9](https://github.com/open-platform-model/opm-operator/commit/a13d1c916e77a60b0fa49c35b12af7a8e22d2f89))
+* **catalog:** add istio ([4edf451](https://github.com/open-platform-model/opm-operator/commit/4edf45172cad5e4c3599234efcf945c42f7db1a5))
+* **cue:** bump ([9942f96](https://github.com/open-platform-model/opm-operator/commit/9942f960d8486be2c911b3e2bac5ee45ca5d3150))
+
 ## [0.6.3](https://github.com/open-platform-model/opm-operator/compare/v0.6.2...v0.6.3) (2026-04-20)
 
 

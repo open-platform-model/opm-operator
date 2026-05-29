@@ -33,11 +33,11 @@ Good: `feat(backup): add s3 retention policy to k8up schedule`
 Bad: `update backup stuff`
 Bad: a one-line subject followed by a paragraph restating the diff
 
-## Strictly Forbidden
+## Attribution
 
-- **Never** include `Co-Authored-By` lines or any AI/Claude attribution.
-- **Never** mention Claude, AI, or assistants in commit messages.
-- **Never** add trailing signatures or metadata lines.
+- **Always** end the commit with the trailer `Co-Authored-By: Claude <noreply@anthropic.com>` as the last line, separated from the body by a blank line.
+- Use exactly that generic identity — no model version.
+- Do not add a "Generated with …" footer or any other AI signature line.
 
 ## Arguments
 

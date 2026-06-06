@@ -22,6 +22,7 @@ import (
 
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	"github.com/open-platform-model/library/opm/kernel"
 	"golang.org/x/time/rate"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -68,6 +69,12 @@ type ReleaseReconciler struct {
 	// an empty spec.serviceAccountName. Resolved in the release's own
 	// namespace. Empty disables the default.
 	DefaultServiceAccount string
+
+	// Kernel is the shared, long-lived library Kernel constructed once at
+	// manager startup. It is the injection seam later enhancement-0001 slices
+	// consume to drive the render path; this slice wires it but does not read
+	// it on any reconcile path.
+	Kernel *kernel.Kernel
 }
 
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=releases,verbs=get;list;watch;create;update;patch;delete

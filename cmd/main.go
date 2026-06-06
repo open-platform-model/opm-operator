@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"log/slog"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -26,6 +27,8 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	"github.com/go-logr/logr"
+	"github.com/open-platform-model/library/opm/kernel"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -236,6 +239,25 @@ func main() {
 	}
 	setupLog.Info("OPM provider loaded", "provider", opmProvider.Metadata.Name)
 
+	// Construct the single long-lived library Kernel. Per library/CLAUDE.md a
+	// long-running consumer MUST keep one Kernel (and therefore one schema
+	// *Cache) alive for the process lifetime — never reconstruct it per
+	// reconcile. It is configured from the same registry value already plumbed
+	// to the legacy loader and a logger bridged to controller-runtime's logr.
+	k := kernel.New(
+		kernel.WithRegistry(registry),
+		kernel.WithLogger(slog.New(logr.ToSlogHandler(ctrl.Log.WithName("kernel")))),
+	)
+
+	// Smoke-verify core-schema resolution at startup so a misconfigured or
+	// unreachable registry fails fast here instead of at the first reconcile.
+	version, err := verifyCoreSchema(k)
+	if err != nil {
+		setupLog.Error(err, "Failed to resolve OPM core schema")
+		os.Exit(1)
+	}
+	setupLog.Info("OPM core schema resolved", "version", version)
+
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
 	if err := (&controller.ModuleReleaseReconciler{
@@ -248,6 +270,7 @@ func main() {
 		EventRecorder:         mgr.GetEventRecorder("opm-controller"),
 		Renderer:              &render.RegistryRenderer{},
 		DefaultServiceAccount: defaultServiceAccount,
+		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleRelease")
 		os.Exit(1)
@@ -270,6 +293,7 @@ func main() {
 		Fetcher:               &source.ArtifactFetcher{},
 		Renderer:              render.PackageReleaseRenderer{},
 		DefaultServiceAccount: defaultServiceAccount,
+		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Release")
 		os.Exit(1)
@@ -290,6 +314,17 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// verifyCoreSchema forces the kernel's otherwise-lazy core-schema fetch so a
+// misconfigured or unreachable registry fails fast at startup. It returns the
+// resolved schema version on success. Kept separate from main() so the failure
+// path is assertable without os.Exit.
+func verifyCoreSchema(k *kernel.Kernel) (string, error) {
+	if _, err := k.SchemaCache().Get(k.CueContext()); err != nil {
+		return "", err
+	}
+	return k.SchemaCache().ResolvedVersion(), nil
 }
 
 // resolveRegistry picks the effective CUE registry mapping.

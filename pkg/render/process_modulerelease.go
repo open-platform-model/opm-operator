@@ -23,7 +23,7 @@ func ProcessModuleRelease(
 		return nil, fmt.Errorf("release %q: no components field in release spec", rel.Metadata.Name)
 	}
 
-	dataComponents, err := FinalizeValue(p.Data.Context(), schemaComponents)
+	dataComponents, err := FinalizeValue(p.Context, schemaComponents)
 	if err != nil {
 		return nil, fmt.Errorf("finalizing components: %w", err)
 	}

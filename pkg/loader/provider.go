@@ -14,10 +14,16 @@ import (
 
 // LoadProvider selects and wraps a provider from the pre-loaded config providers map.
 //
+// cueCtx is the context that owns the values in providers; it is stored on the
+// returned Provider so the render pipeline can reuse it.
 // providers is the map of provider CUE values loaded from config (GlobalConfig.Providers).
 // providerName selects which provider to use. If empty, defaults to "kubernetes".
 // If the named provider is not found, an error listing available names is returned.
-func LoadProvider(providerName string, providers map[string]cue.Value) (*provider.Provider, error) {
+func LoadProvider(
+	cueCtx *cue.Context,
+	providerName string,
+	providers map[string]cue.Value,
+) (*provider.Provider, error) {
 	if len(providers) == 0 {
 		return nil, fmt.Errorf("no providers configured — add a providers block to config.cue")
 	}
@@ -40,6 +46,7 @@ func LoadProvider(providerName string, providers map[string]cue.Value) (*provide
 	return &provider.Provider{
 		Metadata: meta,
 		Data:     providerVal,
+		Context:  cueCtx,
 	}, nil
 }
 

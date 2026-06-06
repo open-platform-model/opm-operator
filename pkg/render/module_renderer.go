@@ -81,8 +81,8 @@ func (r *Module) Execute(
 	dataComponents cue.Value,
 	plan *MatchPlan,
 ) (*ModuleResult, error) {
-	// The CUE context lives on each cue.Value — extract it from the provider.
-	cueCtx := r.provider.Data.Context()
+	// Reuse the context that owns the provider's values.
+	cueCtx := r.provider.Context
 
 	if plan == nil {
 		return nil, fmt.Errorf("match plan is required")

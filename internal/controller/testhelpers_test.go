@@ -72,7 +72,8 @@ func testProvider() *provider.Provider {
 			Name:    "kubernetes",
 			Version: "0.1.0",
 		},
-		Data: data,
+		Data:    data,
+		Context: cueCtx,
 	}
 }
 

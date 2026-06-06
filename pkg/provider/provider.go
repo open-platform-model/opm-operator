@@ -17,6 +17,11 @@ type Provider struct {
 	// Data is the fully evaluated CUE value for the provider,
 	// including the transformer registry (#transformers) and all declared resources/traits.
 	Data cue.Value
+
+	// Context is the CUE context that owns Data. The render pipeline reuses it
+	// when constructing values that must combine with Data (rather than
+	// re-deriving it from Data, which the CUE API now deprecates).
+	Context *cue.Context
 }
 
 // ProviderMetadata holds identity metadata for a provider.

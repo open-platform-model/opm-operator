@@ -1,12 +1,12 @@
 # Operator → Library Kernel Migration — Exploration Notes
 
 > **Status:** temporary working document (explore-phase capture, not a design spec).
-> **Date:** 2026-05-30
+> **Date:** 2026-05-30 — library status refreshed 2026-06-06 (see §0).
 > **Scope:** what it takes to rewrite `opm-operator` to run 100% on the
 > `open-platform-model/library` kernel and nothing else.
 >
-> Delete or promote into an enhancement slice once the Platform-source decision
-> (see §5.0) is made.
+> The Platform-source decision (§5.0) is **resolved** — see §8. Remaining purpose
+> of this note: fold into the operator's enhancement slice(s) under 0001.
 
 ## TL;DR
 
@@ -23,6 +23,37 @@ registry loaded from a static "catalog composition module" at startup) is the
 subscriptions resolved against OCI at `Materialize` time.
 
 So this is an architecture migration, not a method-by-method swap.
+
+## 0. Library status since this note (updated 2026-06-06)
+
+This note was first captured 2026-05-30. Four library OpenSpec changes have since
+landed (all archived under `library/openspec/changes/archive/`); the body below
+is annotated where they change a conclusion, but the headline deltas are:
+
+- **`add-platform-synth`** (2026-06-06) — `synth.Platform(ctx, PlatformInput)` +
+  `Kernel.SynthesizePlatform(ctx, PlatformInput) (*platform.Platform, error)`
+  now build a validated `#Platform` from **typed in-memory inputs**, stopping
+  before `Materialize`. This is the first-class library answer to the "operator
+  has no source for a `#Platform`" gap (§3): the operator maps its `Platform`
+  CRD spec → `synth.PlatformInput` → `SynthesizePlatform` → `Materialize`, with
+  no hand-rolled CUE text. The §8.2 `NewPlatformFromValue(spec → cue.Value)`
+  step is superseded by this typed path.
+- **`concurrent-render-recontract`** + **`enable-concurrent-render-v017`**
+  (2026-05-31 / 2026-06-01) — concurrency is **shipped**, the library is pinned
+  to CUE `v0.17.0-alpha.1`, and one materialized platform is safe to share
+  read-only across per-goroutine Kernels. The operator no longer needs the
+  interim render mutex. See §9 (rewritten).
+- **`remove-library-catalog`** (2026-05-31) — the OPM core catalog source and
+  its publish pipeline are **deleted from the library**; the catalog lives in the
+  `catalog_opm` repo (`opmodel.dev/catalogs/opm@v0`, latest `v0.4.0` on GHCR).
+  The library only *consumes* the published catalog in test fixtures. The
+  operator likewise resolves catalogs from the registry at `Materialize` time —
+  there is no library-vendored catalog to depend on.
+
+Net: **no library blocker remains for the operator rewrite.** Every kernel
+primitive the operator needs — platform construction, materialize, concurrent
+render — is shipped. What's left (§8) is operator-side: the `Platform` CRD +
+reconciler and the render-core swap.
 
 ## 1. Current operator architecture (pre-0001)
 
@@ -87,10 +118,13 @@ For the render pipeline: **yes, essentially complete.** Mapping:
 | `pkg/errors` | `opm/errors` (alias `oerrors`) | covered |
 | caching | `opm/materialize/cache` (LRU + `Key`) | available; wire to CR generation |
 
-**The one genuine gap is not a missing method** — it's that the operator has **no
-source for a `#Platform`**. Today it loads a provider composition from a flag.
-Post-0001 the kernel needs a `*platform.Platform` to `Materialize`. That's a
-design decision (§5.0), not a library shortfall.
+**The one genuine gap is not a missing method** — and as of `add-platform-synth`
+(2026-06-06) it is **no longer a library gap at all**. The operator still has
+**no *source* for a `#Platform`** (today it loads a provider composition from a
+flag), but the library now ships `Kernel.SynthesizePlatform(ctx, PlatformInput)`
+to turn typed inputs into a validated `*platform.Platform` ready to `Materialize`
+(see §0). What remains is purely operator-side: where the typed input comes from
+— resolved as the `Platform` CRD in §8, not §5.0.
 
 ## 4. What stays operator-side (correctly outside the kernel)
 
@@ -118,8 +152,9 @@ already exist there.
 ### 5.1 Add library dep + long-lived Kernel
 `cmd/main.go`: construct one `*kernel.Kernel` (`WithRegistry`/`WithLogger`/
 `WithSchemaLoader`), keep it alive. Replace startup `catalog.LoadProvider` →
-provider injection with `Kernel.Materialize(platform)` → `*MaterializedPlatform`
-(+ `materialize/cache` keyed on platform/CR generation).
+provider injection with `Kernel.SynthesizePlatform(platformSpec)` →
+`Kernel.Materialize(platform)` → `*MaterializedPlatform` (+ `materialize/cache`
+keyed on platform/CR generation).
 
 ### 5.2 Replace render core
 Delete `pkg/{provider,render,module,loader,validate}` + `internal/{catalog,synthesis}`.
@@ -127,6 +162,13 @@ Rewire `internal/render` to `Kernel.SynthesizeRelease/ProcessModuleRelease →
 Match → Compile`. **Stage this** (synthesis+process → match/compile →
 materialize); the library constitution has a hard small-batch gate and this is a
 5-package deletion + rewire.
+
+This deletion also clears the two pre-existing `staticcheck` SA1019
+(`cue.Value.Context()` deprecation) findings at `pkg/render/module_renderer.go:85`
+and `pkg/render/process_modulerelease.go:26`. They were left untouched by the
+`wire-library-kernel` slice (out of scope — that slice does not modify the legacy
+fork; `//nolint` rejected per the events-api migration precedent) and are resolved
+by removing the file, not by migrating soon-to-be-deleted code.
 
 ### 5.3 Adapt output
 Repoint `pkg/core/convert.go` to consume the library's `*core.Compiled`,
@@ -213,7 +255,7 @@ no Platform CR in cluster
         PlatformNotReady, requeue. NOTHING applied to the cluster.
 
 Platform CR `cluster` applied (platform-admin RBAC)
-   └─▶ PlatformReconciler: NewPlatformFromValue(spec → cue.Value)
+   └─▶ PlatformReconciler: Kernel.SynthesizePlatform(spec → *platform.Platform)
         → Kernel.Materialize → cache slot (keyed on .metadata.generation)
         → status: Materialized=True | MaterializeError surfaced on the CR
    └─▶ all releases re-enqueued → Kernel.Compile against materialized platform → apply
@@ -248,15 +290,36 @@ uninstall. Teardown remains owned by deleting the individual `ModuleRelease`.
   platform); the **render-core rewrite sits on top** (consumes the materialized
   platform). Author the rewrite change assuming the CRD exists.
 
-## 9. Kernel concurrency (spike DONE → see dossier)
+## 9. Kernel concurrency — LANDED (was: spike DONE)
 
 The library-side concurrency question (can renders run concurrently against one
-shared materialized platform?) was spiked and **decided: adopt the CUE v0.17
-per-goroutine-Kernel + shared-read-only-platform model.** Full results, exact
-numbers, the recontract plan, and reproduction code are in
-[`KERNEL-CONCURRENCY-SPIKE-RESULTS.md`](./KERNEL-CONCURRENCY-SPIKE-RESULTS.md).
+shared materialized platform?) is **resolved and shipped**, not just spiked. Two
+OpenSpec changes landed it after this note was first written:
 
-Bearing on the operator: **none on the critical path.** The operator ships on CUE
-v0.16 with a render-path **mutex** (a ~10-line reversible concession), and drops
-it only when the library recontract lands. v0.17 adoption is blocked on a stable
-v0.17 release + re-published catalogs, so do not couple the operator rewrite to it.
+- **`concurrent-render-recontract`** (archived 2026-05-31; ADR-002 →
+  Accepted) — the v0.16-safe half: the compile pipeline now threads the **caller
+  Kernel's** `*cue.Context` through Finalize/Execute and reads the
+  `*MaterializedPlatform` as read-only input, instead of funnelling every render
+  through the platform's one context. `compile.NewModule` gained a leading
+  `*cue.Context` param (kernel-internal caller only; the operator goes through
+  `Kernel`, so it is unaffected).
+- **`enable-concurrent-render-v017`** (archived 2026-06-01) — the enablement
+  half: the library is now pinned to **`cuelang.org/go v0.17.0-alpha.1`**, the
+  republished `core` / `catalogs/opm` parse under it, and a permanent concurrent
+  `-race` regression test proves that one `*MaterializedPlatform`, materialized
+  **once**, is safe to be read concurrently by N per-goroutine Kernels' `Compile`
+  calls. The **Goroutine Safety Contract** + **MaterializedPlatform Output
+  Shape** specs now assert this guarantee.
+
+Bearing on the operator — **the interim render mutex is no longer needed.** The
+earlier plan ("operator ships on CUE v0.16 with a render-path mutex, drop it when
+the recontract lands") is overtaken: the recontract has landed. The operator's
+materialize-once / render-many model (§8.3) can render concurrently against one
+shared `*MaterializedPlatform` with **no render-path mutex from day one** —
+provided it builds on the same CUE v0.17.x line as the library.
+
+One caveat survives: the guarantee rests on an **alpha** CUE pin
+(`v0.17.0-alpha.1`), not a stable release. The operator inherits that pin
+transitively, and a future bump to a stable v0.17 is a shared maintenance event
+across library + operator + cli. Full spike numbers and reproduction remain in
+[`KERNEL-CONCURRENCY-SPIKE-RESULTS.md`](./KERNEL-CONCURRENCY-SPIKE-RESULTS.md).

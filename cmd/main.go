@@ -295,15 +295,20 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.ReleaseReconciler{
-		Client:                mgr.GetClient(),
-		APIReader:             mgr.GetAPIReader(),
-		Scheme:                mgr.GetScheme(),
-		RestConfig:            restConfig,
-		Provider:              opmProvider,
-		ResourceManager:       resourceManager,
-		EventRecorder:         mgr.GetEventRecorder("opm-controller"),
-		Fetcher:               &source.ArtifactFetcher{},
-		Renderer:              render.PackageReleaseRenderer{},
+		Client:          mgr.GetClient(),
+		APIReader:       mgr.GetAPIReader(),
+		Scheme:          mgr.GetScheme(),
+		RestConfig:      restConfig,
+		Provider:        opmProvider,
+		ResourceManager: resourceManager,
+		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
+		Fetcher:         &source.ArtifactFetcher{},
+		Renderer: &render.KernelReleaseRenderer{
+			Kernel:      k,
+			Store:       platformStore,
+			Registry:    registry,
+			RuntimeName: core.LabelManagedByControllerValue,
+		},
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {

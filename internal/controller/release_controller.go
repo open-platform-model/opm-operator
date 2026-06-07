@@ -80,6 +80,7 @@ type ReleaseReconciler struct {
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=releases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=releases.opmodel.dev,resources=releases/finalizers,verbs=update
+// +kubebuilder:rbac:groups=releases.opmodel.dev,resources=platforms,verbs=get;list;watch
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=ocirepositories,verbs=get;list;watch
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=gitrepositories,verbs=get;list;watch
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets,verbs=get;list;watch
@@ -109,9 +110,19 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 //   - Release CRs (primary, generation-change predicate)
 //   - OCIRepository, GitRepository, Bucket (artifact-change predicate, mapped to
 //     referencing Releases)
+//   - Platform (cluster singleton) — every change re-enqueues all Releases via
+//     mapPlatformToReleases so releases blocked on PlatformNotReady recover
+//     promptly when the platform materializes. The generation predicate lives on
+//     For() (not as a global filter) so it does not suppress the Platform watch,
+//     whose trigger (materialization) is a status update that does not bump
+//     generation.
 func (r *ReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.Release{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(
+			&releasesv1alpha1.Platform{},
+			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToReleases),
+		).
 		Watches(
 			&sourcev1.OCIRepository{},
 			handler.EnqueueRequestsFromMapFunc(r.mapSourceToReleases(opmsource.SourceKindOCIRepository)),
@@ -169,6 +180,27 @@ func (r *ReleaseReconciler) mapSourceToReleases(kind string) handler.MapFunc {
 		}
 		return reqs
 	}
+}
+
+// mapPlatformToReleases enqueues every Release in the cluster when the
+// (singleton) Platform changes. This unblocks releases sitting in
+// PlatformNotReady the moment the platform materializes, rather than waiting for
+// the interval requeue. List-all is cheap: the Platform is a cluster singleton,
+// its changes are rare, and the release count is bounded.
+func (r *ReleaseReconciler) mapPlatformToReleases(ctx context.Context, _ client.Object) []reconcile.Request {
+	var list releasesv1alpha1.ReleaseList
+	if err := r.List(ctx, &list); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list Releases for Platform-triggered re-enqueue")
+		return nil
+	}
+	reqs := make([]reconcile.Request, 0, len(list.Items))
+	for i := range list.Items {
+		rel := &list.Items[i]
+		reqs = append(reqs, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: rel.Name, Namespace: rel.Namespace},
+		})
+	}
+	return reqs
 }
 
 // sourceArtifactChanged triggers reconciliation only when a source object's

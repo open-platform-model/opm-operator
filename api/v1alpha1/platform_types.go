@@ -75,9 +75,10 @@ type PlatformStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// conditions represent the current state of the Platform resource.
-	// A later reconciler sets a Materialized condition here; this type defines
-	// the field shape only and sets no conditions.
+	// conditions represent the current state of the Platform resource. The
+	// PlatformReconciler summarizes materialization on the Ready condition:
+	// Ready=True (reason Materialized) on success, Ready=False (reason
+	// MaterializeFailed) on a MaterializeError.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -89,8 +90,8 @@ type PlatformStatus struct {
 // +kubebuilder:resource:scope=Cluster,shortName=plat
 // +kubebuilder:validation:XValidation:rule="self.metadata.name == 'cluster'",message="Platform is a cluster singleton; the only permitted name is 'cluster'"
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
-// +kubebuilder:printcolumn:name="Materialized",type=string,JSONPath=".status.conditions[?(@.type=='Materialized')].status"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].reason"
 
 // Platform is the Schema for the platforms API. It is a cluster-scoped
 // singleton (the only permitted name is "cluster") whose spec projects the

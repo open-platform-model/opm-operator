@@ -44,6 +44,7 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/catalog"
 	"github.com/open-platform-model/opm-operator/internal/controller"
 	_ "github.com/open-platform-model/opm-operator/internal/metrics"
+	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/source"
 	// +kubebuilder:scaffold:imports
@@ -258,6 +259,11 @@ func main() {
 	}
 	setupLog.Info("OPM core schema resolved", "version", version)
 
+	// Single-slot, generation-keyed holder for the materialized cluster
+	// Platform. Constructed once and shared with the PlatformReconciler (writer)
+	// and, in a later slice, the render path (readers).
+	platformStore := platformstore.NewStore()
+
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
 	if err := (&controller.ModuleReleaseReconciler{
@@ -296,6 +302,16 @@ func main() {
 		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Release")
+		os.Exit(1)
+	}
+	if err := (&controller.PlatformReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: mgr.GetEventRecorder("opm-controller"),
+		Kernel:        k,
+		Store:         platformStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "Platform")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

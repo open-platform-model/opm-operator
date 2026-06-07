@@ -20,11 +20,11 @@ spec:
     - jsonPath: .spec.type
       name: Type
       type: string
-    - jsonPath: .status.conditions[?(@.type=='Materialized')].status
-      name: Materialized
-      type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
       type: string
     name: v1alpha1
     schema:
@@ -106,9 +106,10 @@ spec:
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the Platform resource.
-                  A later reconciler sets a Materialized condition here; this type defines
-                  the field shape only and sets no conditions.
+                  conditions represent the current state of the Platform resource. The
+                  PlatformReconciler summarizes materialization on the Ready condition:
+                  Ready=True (reason Materialized) on success, Ready=False (reason
+                  MaterializeFailed) on a MaterializeError.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

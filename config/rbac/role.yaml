@@ -60,11 +60,20 @@ rules:
   resources:
   - bundlereleases/status
   - modulereleases/status
+  - platforms/status
   - releases/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - releases.opmodel.dev
+  resources:
+  - platforms
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - source.toolkit.fluxcd.io
   resources:

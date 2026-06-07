@@ -31,11 +31,11 @@ import (
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
-// These tests exercise KernelModuleRenderer directly (it is built but not wired
-// into any reconciler this slice). The happy path requires the fixture module
-// published to a local OCI registry plus a resolvable catalog to materialize
-// the platform against; it is skipped automatically when either is unavailable.
-// Run with: task dev:test:local
+// These tests exercise KernelModuleRenderer directly (the ModuleRelease
+// reconciler now wires it in production). The happy path requires the fixture
+// module published to a local OCI registry plus a resolvable catalog to
+// materialize the platform against; it is skipped automatically when either is
+// unavailable. Run with: task dev:test:local
 
 var _ = Describe("KernelModuleRenderer Integration", func() {
 	Context("when the platform store is empty", func() {

@@ -39,6 +39,7 @@ const (
 	ReleaseFileNotFoundReason  = "ReleaseFileNotFound"
 	UnsupportedKindReason      = "UnsupportedKind"
 	DependenciesNotReadyReason = "DependenciesNotReady"
+	PlatformNotReadyReason     = "PlatformNotReady"
 
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"

@@ -47,6 +47,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/source"
+	"github.com/open-platform-model/opm-operator/pkg/core"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -267,14 +268,19 @@ func main() {
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
 	if err := (&controller.ModuleReleaseReconciler{
-		Client:                mgr.GetClient(),
-		APIReader:             mgr.GetAPIReader(),
-		Scheme:                mgr.GetScheme(),
-		RestConfig:            restConfig,
-		Provider:              opmProvider,
-		ResourceManager:       resourceManager,
-		EventRecorder:         mgr.GetEventRecorder("opm-controller"),
-		Renderer:              &render.RegistryRenderer{},
+		Client:          mgr.GetClient(),
+		APIReader:       mgr.GetAPIReader(),
+		Scheme:          mgr.GetScheme(),
+		RestConfig:      restConfig,
+		Provider:        opmProvider,
+		ResourceManager: resourceManager,
+		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
+		Renderer: &render.KernelModuleRenderer{
+			Kernel:      k,
+			Store:       platformStore,
+			Registry:    registry,
+			RuntimeName: core.LabelManagedByControllerValue,
+		},
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {

@@ -20,6 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"time"
 
 	"github.com/fluxcd/pkg/runtime/patch"
 	oerrors "github.com/open-platform-model/library/opm/errors"
@@ -27,6 +30,8 @@ import (
 	"github.com/open-platform-model/library/opm/kernel"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -37,6 +42,7 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
@@ -44,6 +50,13 @@ import (
 // Platform singleton. The CRD enforces this via a CEL rule; the reconciler
 // guards on it again as defense-in-depth (enhancement 0001 §8.1).
 const platformSingletonName = "cluster"
+
+// transientRecheckInterval is the fast retry cadence for clearly-transient
+// materialize failures (network/timeout). Kept conservative (a minute, not
+// seconds) so a transient registry blip self-heals quickly without hammering
+// the singleton's registry; non-transient and unclassifiable failures fall
+// back to the long reconcile.StalledRecheckInterval.
+const transientRecheckInterval = time.Minute
 
 // PlatformReconciler reconciles the singleton Platform CR into a materialized
 // platform held in a process-local, generation-keyed store. On reconcile it
@@ -112,27 +125,22 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	p, err := r.Kernel.SynthesizePlatform(ctx, in)
 	if err != nil {
 		// Synthesis failures (schema/registry access, malformed spec) are not
-		// MaterializeErrors. Surface as stalled and do not requeue endlessly;
-		// a spec change re-triggers via the generation predicate.
-		status.MarkStalled(&plat, status.MaterializeFailedReason, "synthesizing platform: %v", err)
-		r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeWarning, status.MaterializeFailedReason, "Materialize", "Synthesizing platform: %v", err)
-		return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
+		// MaterializeErrors but, like materialize, resolve against external
+		// state that can recover without a spec change — so requeue on a
+		// bounded interval rather than waiting for the generation predicate.
+		return r.failMaterialize(ctx, patcher, &plat, err, fmt.Sprintf("synthesizing platform: %v", err))
 	}
 
 	mp, err := r.Kernel.Materialize(ctx, p)
 	if err != nil {
+		msg := fmt.Sprintf("materializing platform: %v", err)
 		if me, ok := errors.AsType[*oerrors.MaterializeError](err); ok {
-			msg := fmt.Sprintf("materialize failed: kind=%s subscription=%q version=%q: %v",
+			msg = fmt.Sprintf("materialize failed: kind=%s subscription=%q version=%q: %v",
 				me.Kind, me.Subscription, me.Version, me.Cause)
-			status.MarkStalled(&plat, status.MaterializeFailedReason, "%s", msg)
-			r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeWarning, status.MaterializeFailedReason, "Materialize", "%s", msg)
-		} else {
-			status.MarkStalled(&plat, status.MaterializeFailedReason, "materializing platform: %v", err)
-			r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeWarning, status.MaterializeFailedReason, "Materialize", "Materializing platform: %v", err)
 		}
-		// Do NOT touch the store: a transient failure must not blank the
-		// platform the cluster is running on (§8.4 freeze posture).
-		return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
+		// failMaterialize leaves the store untouched: a transient failure must
+		// not blank the platform the cluster is running on (§8.4 freeze posture).
+		return r.failMaterialize(ctx, patcher, &plat, err, msg)
 	}
 
 	// Success: hold the materialized platform under the generation key and
@@ -144,6 +152,63 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.Info("Platform materialized", "name", plat.Name, "generation", plat.Generation)
 	return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
+}
+
+// failMaterialize records a synth/materialize failure on plat and returns the
+// requeue result. Materialize resolves against a mutable external registry, so
+// no failure is terminal: it sets Ready=False/MaterializeFailed with msg,
+// records observedGeneration (so a stalled Platform reflects the generation it
+// observed rather than reading as un-reconciled), and requeues on a bounded
+// interval — short for clearly-transient causes (classified best-effort from
+// classifyErr), the long stalled recheck otherwise. The warning event is
+// emitted only when the failure is newly entered or its message changes, so
+// periodic rechecks of an unchanged failure do not spam events. The store is
+// left untouched, preserving any last-good materialized platform.
+func (r *PlatformReconciler) failMaterialize(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	plat *releasesv1alpha1.Platform,
+	classifyErr error,
+	msg string,
+) (ctrl.Result, error) {
+	// Capture the pre-mutation Ready condition to gate the event on transition.
+	prior := apimeta.FindStatusCondition(plat.Status.Conditions, status.ReadyCondition)
+	transition := prior == nil ||
+		prior.Status != metav1.ConditionFalse ||
+		prior.Reason != status.MaterializeFailedReason ||
+		prior.Message != msg
+
+	plat.Status.ObservedGeneration = plat.Generation
+	status.MarkStalled(plat, status.MaterializeFailedReason, "%s", msg)
+
+	if transition {
+		r.EventRecorder.Eventf(plat, nil, corev1.EventTypeWarning, status.MaterializeFailedReason, "Materialize", "%s", msg)
+	}
+
+	interval := opmreconcile.StalledRecheckInterval
+	if isTransientMaterialize(classifyErr) {
+		interval = transientRecheckInterval
+	}
+	return ctrl.Result{RequeueAfter: interval}, r.patchStatus(ctx, patcher, plat)
+}
+
+// isTransientMaterialize reports whether err (or any error it wraps) is a
+// clearly-transient network/timeout failure worth a fast retry. It is
+// best-effort: unrecognized causes return false so the caller falls back to the
+// long recheck interval, making a misclassification never worse than a slow
+// recheck. errors.As/errors.Is unwrap through MaterializeError.Cause to reach
+// the underlying network error.
+func isTransientMaterialize(err error) bool {
+	if err == nil {
+		return false
+	}
+	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
+		return true
+	}
+	if _, ok := errors.AsType[*url.Error](err); ok {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // patchStatus commits the Platform status via the serial patcher, declaring the

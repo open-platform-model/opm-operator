@@ -74,30 +74,6 @@ Precedence (highest first):
 - **WHEN** both `--registry` is explicitly empty and `OPM_REGISTRY` is unset
 - **THEN** CUE's built-in default resolution is used
 
-### Requirement: Release synthesis
-
-On reconcile, the controller MUST synthesize a temporary CUE module containing:
-
-- A `cue.mod/module.cue` declaring dependencies on the target module and the catalog.
-- A `release.cue` that imports `#ModuleRelease` from the catalog and the target module,
-  binds `#module:` to the imported module, and sets `metadata.name` and
-  `metadata.namespace` from the CR.
-
-The controller MUST clean up the temporary directory after evaluation completes,
-regardless of whether evaluation succeeded or failed.
-
-#### Scenario: Temporary module synthesized
-- **WHEN** the controller begins reconciling a valid `ModuleRelease` CR
-- **THEN** a temporary CUE module with `cue.mod/module.cue` and `release.cue` is created with the target module and catalog imports bound and `metadata.name`/`metadata.namespace` set from the CR
-
-#### Scenario: Temporary directory cleaned up on success
-- **WHEN** CUE evaluation completes successfully
-- **THEN** the temporary directory is removed
-
-#### Scenario: Temporary directory cleaned up on failure
-- **WHEN** CUE evaluation fails
-- **THEN** the temporary directory is still removed
-
 ### Requirement: Reconcile behavior
 
 The controller MUST synthesize a `#ModuleRelease` CUE package from the CR fields

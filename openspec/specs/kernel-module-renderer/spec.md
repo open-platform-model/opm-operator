@@ -5,7 +5,7 @@ interface and renders a `ModuleRelease` entirely through the library kernel. It
 reads the current materialized platform from the platform store, acquires the
 target module, synthesizes and compiles the release, and adapts the compiled
 output into operator resources. The renderer is gated on a materialized platform
-and is built but not yet wired into the reconcilers.
+and is wired into the reconcilers in production (see `platform-gated-rendering`).
 
 ## Requirements
 
@@ -44,13 +44,3 @@ The operator SHALL provide `core.ResourceFromCompiled` converting a library `*co
 - **WHEN** a library `Compiled` with a value and provenance is adapted
 - **THEN** the resulting `core.Resource` carries the same value, release, component, and transformer
 - **AND** an inventory entry can be built from it via the existing `ToUnstructured` path
-
-### Requirement: Renderer is built but not wired
-
-This slice SHALL NOT change which renderer the reconcilers use. `cmd/main.go` SHALL continue to wire `RegistryRenderer`, and reconcile behavior SHALL be unchanged. `KernelModuleRenderer` SHALL be exercised directly by tests.
-
-#### Scenario: Reconcile behavior unchanged
-
-- **WHEN** the operator runs with this slice applied
-- **THEN** the ModuleRelease reconciler still uses the legacy renderer
-- **AND** `KernelModuleRenderer` is reachable only through direct construction in tests

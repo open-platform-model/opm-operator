@@ -51,8 +51,8 @@ type ReleaseParams struct {
 	Fetcher opmsource.Fetcher
 
 	// Renderer loads and renders a CUE release package from a local directory.
-	// Production wires render.KernelReleaseRenderer; tests inject a stub. A nil
-	// Renderer falls back to render.PackageReleaseRenderer.
+	// Production wires render.KernelReleaseRenderer; tests inject a stub. It is
+	// required — a nil Renderer is a programming error.
 	Renderer render.ReleaseRenderer
 
 	// DefaultServiceAccount is the fallback SA name used when a Release has
@@ -363,11 +363,7 @@ func renderReleasePackage(
 	packageDir string,
 	interval time.Duration,
 ) (*render.RenderResult, *phaseFail) {
-	renderer := params.Renderer
-	if renderer == nil {
-		renderer = render.PackageReleaseRenderer{}
-	}
-	kind, result, err := renderer.Render(ctx, packageDir, params.Provider)
+	kind, result, err := params.Renderer.Render(ctx, packageDir, params.Provider)
 	if err != nil {
 		// PlatformNotReady is a blocked-on-dependency state, not a stall: the
 		// store holds no materialized platform yet. Mark Ready=False/

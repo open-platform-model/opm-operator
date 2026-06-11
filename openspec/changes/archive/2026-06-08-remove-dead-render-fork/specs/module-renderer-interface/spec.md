@@ -1,12 +1,4 @@
-## Purpose
-
-Define the dependency-injection boundary for module rendering inside the
-reconcile loop. The `ModuleRenderer` interface lets production code use the
-kernel-backed renderer (`KernelModuleRenderer`) while tests inject a stub that
-returns pre-built `*RenderResult` values, so downstream phases (apply, prune,
-drift, impersonation) can be exercised without a live OCI registry.
-
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: ModuleRenderer interface
 The `internal/render` package MUST export a `ModuleRenderer` interface whose
@@ -44,27 +36,9 @@ The `Renderer` field MUST NOT be nil — all callers are required to set it.
 - **WHEN** a test supplies a stub `Renderer` returning a fixed `*RenderResult`
 - **THEN** the reconcile loop consumes that result and executes apply, prune, drift, and impersonation phases normally without OCI access
 
-### Requirement: Renderer in controller struct
-`ModuleReleaseReconciler` in `internal/controller` MUST include a `Renderer`
-field of type `render.ModuleRenderer` and pass it through to
-`ModuleReleaseParams` when constructing the params for each reconcile.
+## REMOVED Requirements
 
-#### Scenario: Controller threads renderer into params
-- **WHEN** the reconciler builds `ModuleReleaseParams` for a reconcile call
-- **THEN** `params.Renderer` is set to `r.Renderer` rather than constructed inline
+### Requirement: Production wiring
 
-## Scenarios
-
-### Production reconcile
-
-1. Controller creates `ModuleReleaseParams` with `Renderer: &KernelModuleRenderer{...}`
-2. Reconcile loop calls `params.Renderer.RenderModule(...)`
-3. `KernelModuleRenderer` renders through the library kernel against the materialized platform (see `platform-gated-rendering`)
-4. The reconcile loop consumes the resulting `*RenderResult` for apply, prune, drift, and impersonation
-
-### Test with stub renderer
-
-1. Test creates params with a stub returning a fixed `*RenderResult`
-2. Reconcile loop calls `params.Renderer.RenderModule(...)`
-3. Stub returns the pre-built result without OCI registry access
-4. Downstream phases (apply, prune, drift, impersonation) execute normally
+**Reason**: This requirement mandated `cmd/main.go` set `Renderer: &render.RegistryRenderer{}`, which is no longer true (the manager wires `KernelModuleRenderer`) and whose type is deleted in this slice. The production-wiring contract is superseded by the `platform-gated-rendering` requirement that the manager wires the kernel-backed renderer.
+**Migration**: See `platform-gated-rendering` ("ModuleRelease renders through the kernel against the materialized platform"), which specifies the production renderer wiring. The `ModuleRenderer`/`ReleaseRenderer` interfaces and the reconcile-params/controller-struct requirements of this capability are preserved.

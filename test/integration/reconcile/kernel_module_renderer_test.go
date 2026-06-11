@@ -119,11 +119,22 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				"the fixture module must compile to at least one resource")
 
 			// Every rendered resource carries release/component/transformer
-			// provenance copied from the kernel's Compiled output.
+			// provenance copied from the kernel's Compiled output, plus the
+			// runtime-identity labels that lock the Go/CUE contract between
+			// core.LabelManagedByControllerValue and the catalog's #runtimeName.
 			for _, r := range res.Resources {
 				Expect(r.Release).NotTo(BeEmpty(), "resource %s missing release provenance", r)
 				Expect(r.Component).NotTo(BeEmpty(), "resource %s missing component provenance", r)
 				Expect(r.Transformer).NotTo(BeEmpty(), "resource %s missing transformer provenance", r)
+
+				u, err := r.ToUnstructured()
+				Expect(err).NotTo(HaveOccurred())
+				labels := u.GetLabels()
+				Expect(labels).NotTo(BeNil(), "rendered resource %s must carry labels", u.GetName())
+				Expect(labels[core.LabelManagedBy]).To(Equal(core.LabelManagedByControllerValue),
+					"managed-by must be opm-controller (Go/CUE contract)")
+				Expect(labels[core.LabelModuleReleaseUUID]).NotTo(BeEmpty(),
+					"module-release uuid must be non-empty (catalog ownership labels must continue to flow)")
 			}
 
 			// One inventory entry per rendered resource, built via the existing

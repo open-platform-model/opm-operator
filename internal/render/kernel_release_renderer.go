@@ -14,16 +14,14 @@ import (
 )
 
 // KernelReleaseRenderer renders a Flux-fetched Release package through the
-// library kernel. It is the kernel-backed peer of PackageReleaseRenderer behind
-// the ReleaseRenderer seam: for a kind: ModuleRelease package it loads the
-// release in the kernel's *cue.Context, reads the materialized platform from the
-// store, compiles the release against it, and adapts the compiled output to
-// operator resources plus inventory entries. A kind: BundleRelease package is
-// rejected with ErrUnsupportedKind, unchanged from the fork.
+// library kernel behind the ReleaseRenderer seam: for a kind: ModuleRelease
+// package it loads the release in the kernel's *cue.Context, reads the
+// materialized platform from the store, compiles the release against it, and
+// adapts the compiled output to operator resources plus inventory entries. A
+// kind: BundleRelease package is rejected with ErrUnsupportedKind.
 //
 // No values are injected: a Release package is an authored #ModuleRelease that
-// already carries its own values, mirroring RenderLoadedModuleRelease's
-// nil-values behavior — there is no SynthesizeRelease step.
+// already carries its own values — there is no SynthesizeRelease step.
 type KernelReleaseRenderer struct {
 	// Kernel is the shared, long-lived library Kernel (one per process).
 	Kernel *kernel.Kernel
@@ -65,7 +63,7 @@ func (r *KernelReleaseRenderer) Render(
 	if err != nil {
 		if errors.Is(err, loaderfile.ErrWrongKind) {
 			// BundleRelease is the only other release kind the controller emits;
-			// surface it as unsupported, unchanged from PackageReleaseRenderer.
+			// surface it as unsupported.
 			return KindBundleRelease, nil, fmt.Errorf("%w: BundleRelease rendering is not yet implemented", ErrUnsupportedKind)
 		}
 		return KindModuleRelease, nil, fmt.Errorf("loading release package: %w", err)

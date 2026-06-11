@@ -24,14 +24,9 @@ import (
 var ErrPlatformNotReady = errors.New("platform not ready: no materialized platform")
 
 // KernelModuleRenderer renders a ModuleRelease entirely through the library
-// kernel. It is the kernel-backed peer of RegistryRenderer behind the same
-// ModuleRenderer seam: it reads the materialized platform from the store,
-// acquires the target module from the registry, synthesizes the release, and
-// compiles it against the platform.
-//
-// This slice builds but does not wire the renderer — cmd/main.go keeps using
-// RegistryRenderer — so reconcile behavior is unchanged until a later slice
-// flips the wiring and adds platform-readiness gating.
+// kernel behind the ModuleRenderer seam: it reads the materialized platform
+// from the store, acquires the target module from the registry, synthesizes
+// the release, and compiles it against the platform.
 type KernelModuleRenderer struct {
 	// Kernel is the shared, long-lived library Kernel (one per process).
 	Kernel *kernel.Kernel

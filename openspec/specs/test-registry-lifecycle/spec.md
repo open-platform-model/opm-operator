@@ -1,16 +1,16 @@
 ## Purpose
 
 Define the local OCI registry lifecycle used by integration and e2e tests that
-exercise the real `RegistryRenderer`. This keeps CUE-native module resolution
-testable in developer and CI environments without depending on the public
-`ghcr.io/open-platform-model` registry, while letting stub-based specs run in
-minimal environments that lack a container runtime.
+exercise the real `KernelModuleRenderer`. This keeps CUE-native module
+resolution testable in developer and CI environments without depending on the
+public `ghcr.io/open-platform-model` registry, while letting stub-based specs
+run in minimal environments that lack a container runtime.
 
 ## ADDED Requirements
 
 ### Requirement: Local OCI registry for e2e tests
 A local OCI registry MUST be available for e2e tests that exercise the real
-`RegistryRenderer`. The registry MUST be a `registry:2` container published on
+`KernelModuleRenderer`. The registry MUST be a `registry:2` container published on
 `localhost:$(REGISTRY_PORT)` (default `5000`). Lifecycle is operator-driven via
 the Taskfile (`.tasks/registry.yaml`) rather than in-process auto-start,
 keeping the integration suite runnable in environments without a container
@@ -80,20 +80,23 @@ mapping.
 - **THEN** it continues to use `opmodel.dev/core/v1alpha1@v1` and `opmodel.dev/opm/v1alpha1@v1`, which resolve via the local registry mapping
 
 ### Requirement: End-to-end integration tests
-At least one integration test MUST use `render.RegistryRenderer` with the real
-catalog provider loaded from `catalog/` (the workspace composition module) to
-validate the full pipeline: synthesis → OCI resolution → render → SSA apply.
-The e2e test MUST reference `catalog/` by relative path rather than copying it
-into `test/fixtures/`, so the test tracks the production composition
-automatically.
+At least one integration test MUST exercise the real renderer
+(`render.KernelModuleRenderer`) against the local OCI registry, materializing a
+platform from the real catalog, to validate the registry-backed render pipeline:
+module acquisition → kernel `SynthesizeRelease` → `Compile` → rendered resources
+with inventory entries. The test MUST resolve the catalog from the materialized
+platform (the same path the `PlatformReconciler` uses) rather than copying
+catalog sources into `test/fixtures/`, so it tracks production composition
+automatically. Full apply → `Ready=True` on a live cluster is covered by the
+Kind-backed `test/e2e` suite, not this integration-tier test.
 
-#### Scenario: Full pipeline validated with real renderer
-- **WHEN** the e2e test runs with the local registry available
-- **THEN** it constructs `render.RegistryRenderer`, loads the real `kubernetes` provider via `catalog.LoadProvider("../../../catalog", "kubernetes")`, applies a ModuleRelease, and reaches `Ready=True` with inventory populated
+#### Scenario: Real-renderer pipeline validated against the registry
+- **WHEN** the integration test runs with the local registry available
+- **THEN** it constructs `render.KernelModuleRenderer` with a kernel-materialized platform, renders a ModuleRelease, and the rendered resources carry inventory entries and the runtime-identity labels (`managed-by = opm-controller`, non-empty release uuid)
 
-#### Scenario: Catalog referenced by relative path
-- **WHEN** the e2e test loads the catalog provider
-- **THEN** it uses a relative path into `catalog/` rather than a copy under `test/fixtures/`, so the test automatically tracks production composition
+#### Scenario: Catalog resolved from the materialized platform
+- **WHEN** the integration test materializes the platform
+- **THEN** the catalog is resolved from the registry via the kernel rather than a copy under `test/fixtures/`, so the test automatically tracks production composition
 
 ### Requirement: Skip when registry unavailable
 Registry-dependent tests MUST skip gracefully (via Ginkgo's `Skip()`) when any
@@ -112,19 +115,21 @@ environments.
 
 ## Scenarios
 
-### Happy path e2e
+### Happy path integration
 
 1. Operator runs `task registry:start && task registry:publish-test-module` before
    invoking `go test`
 2. Test invokes `skipIfNoTestRegistry()` and proceeds (registry reachable)
-3. Test loads the real `kubernetes` provider via
-   `catalog.LoadProvider("../../../catalog", "kubernetes")`
-4. Test creates ModuleRelease CR with `testing.opmodel.dev/modules/hello@v0`
-5. Reconcile uses `RegistryRenderer` + real catalog provider
-6. CUE resolves both `testing.opmodel.dev` and `opmodel.dev` from the local
+3. Test materializes a platform from the real catalog via the kernel
+   (`SynthesizePlatform` → `Materialize`) and seeds the platform store
+4. Test constructs `render.KernelModuleRenderer` and renders
+   `testing.opmodel.dev/modules/hello@v0`
+5. CUE resolves both `testing.opmodel.dev` and `opmodel.dev` from the local
    registry
-7. Resources rendered and applied via SSA into the envtest API server
-8. `Ready=True`, inventory populated
+6. Rendered resources carry inventory entries and runtime-identity labels
+   (`managed-by = opm-controller`, non-empty release uuid)
+7. Full apply → `Ready=True` on a live cluster is covered by the Kind-backed
+   `test/e2e` suite
 
 ### No registry available
 

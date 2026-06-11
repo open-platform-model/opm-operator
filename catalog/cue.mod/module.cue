@@ -14,36 +14,36 @@ deps: {
 		default: true
 	}
 	"opmodel.dev/cert_manager/v1alpha1@v1": {
-		v: "v1.3.2"
+		v: "v1.3.3"
 	}
 	"opmodel.dev/ch_vmm/v1alpha1@v1": {
-		v: "v1.0.1"
-	}
-	"opmodel.dev/clickhouse_operator/v1alpha1@v1": {
-		v: "v1.0.0"
-	}
-	"opmodel.dev/core/v1alpha1@v1": {
-		v: "v1.3.9"
-	}
-	"opmodel.dev/gateway_api/v1alpha1@v1": {
-		v: "v1.3.5"
-	}
-	"opmodel.dev/istio/v1alpha1@v1": {
-		v: "v1.0.1"
-	}
-	"opmodel.dev/k8up/v1alpha1@v1": {
 		v: "v1.0.2"
 	}
-	"opmodel.dev/kubernetes/v1@v1": {
+	"opmodel.dev/clickhouse_operator/v1alpha1@v1": {
 		v: "v1.0.1"
 	}
+	"opmodel.dev/core/v1alpha1@v1": {
+		v: "v1.3.10"
+	}
+	"opmodel.dev/gateway_api/v1alpha1@v1": {
+		v: "v1.3.6"
+	}
+	"opmodel.dev/istio/v1alpha1@v1": {
+		v: "v1.0.2"
+	}
+	"opmodel.dev/k8up/v1alpha1@v1": {
+		v: "v1.0.3"
+	}
+	"opmodel.dev/kubernetes/v1@v1": {
+		v: "v1.0.2"
+	}
 	"opmodel.dev/mongodb_operator/v1alpha1@v1": {
-		v: "v1.0.0"
+		v: "v1.0.1"
 	}
 	"opmodel.dev/opm/v1alpha1@v1": {
-		v: "v1.5.8"
+		v: "v1.5.9"
 	}
 	"opmodel.dev/otel_collector/v1alpha1@v1": {
-		v: "v1.0.0"
+		v: "v1.0.1"
 	}
 }

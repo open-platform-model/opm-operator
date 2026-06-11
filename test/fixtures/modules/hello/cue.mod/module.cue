@@ -7,9 +7,9 @@ source: {
 }
 deps: {
 	"opmodel.dev/core/v1alpha1@v1": {
-		v: "v1.3.9"
+		v: "v1.3.10"
 	}
 	"opmodel.dev/opm/v1alpha1@v1": {
-		v: "v1.5.8"
+		v: "v1.5.9"
 	}
 }

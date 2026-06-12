@@ -1,8 +1,6 @@
-## Purpose
+# release-kind-detection — delta
 
-Defines how the Release reconciler inspects the evaluated CUE `kind` field at runtime and dispatches to the appropriate render pipeline.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Runtime kind detection
 After CUE evaluation, the Release reconciler MUST inspect the `kind` field of the evaluated CUE value. Only `ModuleRelease` is a renderable kind; any other kind value MUST be rejected without applying anything.

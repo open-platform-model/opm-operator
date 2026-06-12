@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. `ModuleRelease` remains the primary detailed reconciliation unit. The `BundleRelease` orchestration layer referenced below was never built and its scaffolding has since been removed (see ADR-007 and change `remove-bundlerelease-scaffolding`); references to it here are historical context for why a *primary* unit was chosen, not a description of current CRDs.
 
 ## Context
 

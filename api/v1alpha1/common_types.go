@@ -29,7 +29,7 @@ import (
 const AnnotationForceDeleteOrphan = "opm.dev/force-delete-orphan"
 
 // SourceReference points to a Flux source object.
-// Used by BundleRelease; ModuleRelease uses CUE-native module resolution instead.
+// Used by Release; ModuleRelease uses CUE-native module resolution instead.
 type SourceReference = fluxmeta.NamespacedObjectKindReference
 
 // ModuleReference identifies the CUE module to evaluate from an OCI registry.
@@ -159,28 +159,6 @@ type HistoryEntry struct {
 
 	// +optional
 	Message string `json:"message,omitempty"`
-}
-
-// ModuleStatusSummary reports a child module status summary for bundles.
-type ModuleStatusSummary struct {
-	Name string `json:"name"`
-
-	ReleaseRef fluxmeta.NamespacedObjectReference `json:"releaseRef"`
-
-	// +optional
-	Ready bool `json:"ready,omitempty"`
-
-	// +optional
-	SourceDigest string `json:"sourceDigest,omitempty"`
-
-	// +optional
-	ConfigDigest string `json:"configDigest,omitempty"`
-
-	// +optional
-	RenderDigest string `json:"renderDigest,omitempty"`
-
-	// +optional
-	InventoryCount int64 `json:"inventoryCount,omitempty"`
 }
 
 // RawValues stores arbitrary CUE/JSON-compatible values.

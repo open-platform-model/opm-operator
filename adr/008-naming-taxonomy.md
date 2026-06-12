@@ -22,7 +22,7 @@ Each naming layer has distinct semantics and consumers. They need clear boundari
 The controller ecosystem uses four distinct naming layers with explicit rules:
 
 **1. Kubernetes API groups** — for CRDs only.
-- `releases.opmodel.dev` is the API group for `ModuleRelease` and `BundleRelease`.
+- `releases.opmodel.dev` is the API group for the controller's CRDs (`ModuleRelease`, `Release`, `Platform`).
 - This namespace is not used as a workload label prefix.
 
 **2. Resource labels and annotations** — split into families by purpose:

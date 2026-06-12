@@ -36,7 +36,6 @@ rules:
 - apiGroups:
   - releases.opmodel.dev
   resources:
-  - bundlereleases
   - modulereleases
   - releases
   verbs:
@@ -50,7 +49,6 @@ rules:
 - apiGroups:
   - releases.opmodel.dev
   resources:
-  - bundlereleases/finalizers
   - modulereleases/finalizers
   - releases/finalizers
   verbs:
@@ -58,7 +56,6 @@ rules:
 - apiGroups:
   - releases.opmodel.dev
   resources:
-  - bundlereleases/status
   - modulereleases/status
   - platforms/status
   - releases/status

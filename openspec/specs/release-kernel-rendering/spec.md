@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `Release` reconciler renders its Flux-fetched release package through the kernel-backed `KernelReleaseRenderer` against the materialized platform: `ModuleRelease` packages are loaded, constructed, and compiled in the kernel's context with no injected values; rendering blocks inertly when no platform is materialized, retries promptly when the platform becomes ready, and `BundleRelease` packages remain unsupported.
+The `Release` reconciler renders its Flux-fetched release package through the kernel-backed `KernelReleaseRenderer` against the materialized platform: `ModuleRelease` packages are loaded, constructed, and compiled in the kernel's context with no injected values; rendering blocks inertly when no platform is materialized, retries promptly when the platform becomes ready, and non-`ModuleRelease` packages are rejected.
 
 ## Requirements
 
@@ -36,12 +36,12 @@ The `Release` reconciler SHALL watch the `Platform` resource and re-enqueue all 
 - **THEN** the reconciler re-enqueues the `Release`
 - **AND** on the next reconcile it renders and applies against the materialized platform
 
-### Requirement: BundleRelease remains unsupported
+### Requirement: Non-ModuleRelease packages are rejected
 
-For a fetched package whose `kind` is `BundleRelease`, the renderer SHALL return `ErrUnsupportedKind` and the reconciler SHALL surface `UnsupportedKind`, unchanged from current behavior. BundleRelease rendering is not implemented in this slice.
+For a fetched package whose `kind` is anything other than `ModuleRelease`, the renderer SHALL return `ErrUnsupportedKind` and the reconciler SHALL surface `Ready=False` with reason `UnsupportedKind` and `Stalled=True`. The rejection SHALL NOT name speculative kinds: the kernel's `#ModuleRelease` load gate (`loaderfile.ErrWrongKind`) is the detection mechanism, and the resulting error is generic.
 
-#### Scenario: BundleRelease package is rejected
+#### Scenario: Wrong-kind package is rejected
 
-- **WHEN** a `Release` whose fetched package has `kind: BundleRelease` is reconciled
+- **WHEN** a `Release` whose fetched package has a `kind` other than `ModuleRelease` is reconciled
 - **THEN** rendering returns an unsupported-kind error
 - **AND** the status reflects `UnsupportedKind` and nothing is applied

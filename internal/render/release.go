@@ -4,14 +4,11 @@ import (
 	"errors"
 )
 
-// Kind constants surface the CUE `kind` field so the reconciler can dispatch
-// to the appropriate pipeline without re-evaluating the value.
-const (
-	KindModuleRelease = "ModuleRelease"
-	KindBundleRelease = "BundleRelease"
-)
+// KindModuleRelease surfaces the CUE `kind` field for the only renderable
+// release kind, so the reconciler can record it without re-evaluating the value.
+const KindModuleRelease = "ModuleRelease"
 
 // ErrUnsupportedKind indicates the loaded CUE value has a `kind` field that
-// this controller cannot render (e.g., BundleRelease, which is not yet
-// implemented).
+// this controller cannot render. Only #ModuleRelease is renderable; any other
+// kind is rejected with this error.
 var ErrUnsupportedKind = errors.New("unsupported release kind")

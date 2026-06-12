@@ -123,37 +123,6 @@ The `status.conditions` MUST report:
 - **WHEN** CUE evaluation or rendering fails
 - **THEN** `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True` when user input must change to resolve the failure
 
-### Requirement: BundleRelease does not depend on Flux source types
-
-The `bundlerelease_controller` MUST NOT import
-`github.com/fluxcd/source-controller/api/v1`, MUST NOT declare RBAC markers for
-`source.toolkit.fluxcd.io/ocirepositories`, and MUST NOT retain a
-`sourcev1.OCIRepository{}` import-keeper in its reconcile body.
-
-BundleRelease is not yet implemented. When it is implemented it will resolve its
-sources via CUE-native module resolution consistent with `ModuleRelease`, not
-via Flux source-controller.
-
-The `internal/source/` package remains unchanged and retains its `sourcev1`
-dependency. It is not wired into any controller today and is kept available for
-potential future use.
-
-The `BundleRelease.spec.sourceRef` API field remains in
-`api/v1alpha1/bundlerelease_types.go`. Removing the field is a separate future
-API change.
-
-#### Scenario: No Flux imports in BundleRelease controller
-- **WHEN** inspecting `bundlerelease_controller.go`
-- **THEN** no import of `github.com/fluxcd/source-controller/api/v1` is present
-
-#### Scenario: No Flux RBAC markers
-- **WHEN** inspecting RBAC kubebuilder markers on the BundleRelease reconciler
-- **THEN** no marker for `source.toolkit.fluxcd.io/ocirepositories` is present
-
-#### Scenario: No sourcev1 import-keeper
-- **WHEN** inspecting the reconcile body
-- **THEN** no `sourcev1.OCIRepository{}` import-keeper expression is present
-
 ### Requirement: End-to-end release scenarios
 
 The synthesis flow MUST behave predictably across the common user-facing scenarios.

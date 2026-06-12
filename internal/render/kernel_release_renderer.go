@@ -16,8 +16,8 @@ import (
 // library kernel behind the ReleaseRenderer seam: for a kind: ModuleRelease
 // package it loads the release in the kernel's *cue.Context, reads the
 // materialized platform from the store, compiles the release against it, and
-// adapts the compiled output to operator resources plus inventory entries. A
-// kind: BundleRelease package is rejected with ErrUnsupportedKind.
+// adapts the compiled output to operator resources plus inventory entries. Any
+// package whose kind is not #ModuleRelease is rejected with ErrUnsupportedKind.
 //
 // No values are injected: a Release package is an authored #ModuleRelease that
 // already carries its own values — there is no SynthesizeRelease step.
@@ -42,7 +42,7 @@ var _ ReleaseRenderer = (*KernelReleaseRenderer)(nil)
 // Render loads, kind-detects, and renders the release package at packageDir.
 //
 // Kind detection rides on the loader's shape gate: Kernel.LoadReleasePackage
-// gates to the #ModuleRelease kind, so a BundleRelease package fails with
+// gates to the #ModuleRelease kind, so any other kind fails with
 // loaderfile.ErrWrongKind — the library's documented signal for frontends to
 // branch on the failure class via errors.Is. That resolves kind detection in
 // the kernel's context without a separate non-gated peek or re-coupling to the
@@ -59,9 +59,8 @@ func (r *KernelReleaseRenderer) Render(
 	raw, err := r.Kernel.LoadReleasePackage(ctx, packageDir, loaderfile.LoadOptions{Registry: r.Registry})
 	if err != nil {
 		if errors.Is(err, loaderfile.ErrWrongKind) {
-			// BundleRelease is the only other release kind the controller emits;
-			// surface it as unsupported.
-			return KindBundleRelease, nil, fmt.Errorf("%w: BundleRelease rendering is not yet implemented", ErrUnsupportedKind)
+			// Only #ModuleRelease is renderable; any other kind is unsupported.
+			return "", nil, fmt.Errorf("%w: %w", ErrUnsupportedKind, err)
 		}
 		return KindModuleRelease, nil, fmt.Errorf("loading release package: %w", err)
 	}
@@ -73,7 +72,7 @@ func (r *KernelReleaseRenderer) Render(
 
 	// Gate on platform readiness ahead of Compile so a release with no
 	// materialized platform applies and prunes nothing. Kind is already known,
-	// so a BundleRelease is still rejected above even when no platform exists.
+	// so an unsupported kind is still rejected above even when no platform exists.
 	mp, ok := r.Store.Get()
 	if !ok {
 		return KindModuleRelease, nil, ErrPlatformNotReady

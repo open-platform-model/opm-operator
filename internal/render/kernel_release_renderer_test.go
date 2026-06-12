@@ -36,10 +36,11 @@ func writeReleasePackage(t *testing.T, kind string) string {
 	return dir
 }
 
-// A BundleRelease package is rejected with ErrUnsupportedKind. Detection rides
-// on the loader's shape gate (ErrWrongKind), so no separate kind peek is needed.
-func TestKernelReleaseRenderer_BundleReleaseUnsupported(t *testing.T) {
-	dir := writeReleasePackage(t, KindBundleRelease)
+// A package whose kind is not #ModuleRelease is rejected with
+// ErrUnsupportedKind. Detection rides on the loader's shape gate (ErrWrongKind),
+// so no separate kind peek is needed.
+func TestKernelReleaseRenderer_UnsupportedKind(t *testing.T) {
+	dir := writeReleasePackage(t, "SomeOtherKind")
 
 	r := &KernelReleaseRenderer{
 		Kernel:      kernel.New(),
@@ -50,7 +51,7 @@ func TestKernelReleaseRenderer_BundleReleaseUnsupported(t *testing.T) {
 	kind, result, err := r.Render(context.Background(), dir)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrUnsupportedKind)
-	assert.Equal(t, KindBundleRelease, kind)
+	assert.Empty(t, kind)
 	assert.Nil(t, result)
 }
 

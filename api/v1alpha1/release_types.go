@@ -24,8 +24,8 @@ import (
 // ReleaseSpec defines the desired state of Release.
 // A Release points to a Flux source artifact containing a CUE release
 // package. The controller fetches the artifact, navigates to spec.path,
-// loads release.cue, detects whether it evaluates to #ModuleRelease or
-// #BundleRelease, and dispatches to the appropriate render pipeline.
+// loads release.cue, and renders it when it evaluates to #ModuleRelease;
+// any other kind is rejected as unsupported.
 type ReleaseSpec struct {
 	// SourceRef references a Flux source (OCIRepository, GitRepository, or Bucket)
 	// that provides the artifact containing the CUE release package.

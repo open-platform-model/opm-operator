@@ -3,7 +3,7 @@
 ## Purpose
 
 - Kubebuilder-based K8s controller, Go.
-- Defines/reconciles `ModuleRelease` + `BundleRelease` CRDs in `api/v1alpha1`.
+- Defines/reconciles `ModuleRelease`, `Release`, and `Platform` CRDs in `api/v1alpha1`.
 - Preserve controller-runtime patterns, Kubebuilder markers, generated-file boundaries.
 
 ## Repository Rules
@@ -79,7 +79,7 @@
 - Reuse envtest binaries:
   `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers`.
 - Focus Ginkgo suite:
-  `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers -ginkgo.focus="BundleRelease Controller"`.
+  `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers -ginkgo.focus="Release Controller"`.
 - Focus single spec:
   `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers -ginkgo.focus="should successfully reconcile the resource"`.
 - E2E only: `go test -tags=e2e ./test/e2e -v -ginkgo.v`.

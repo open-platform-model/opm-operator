@@ -42,7 +42,7 @@ The project is renamed from `poc-controller` to `opm-operator` across all identi
 
 - The CRD API group `releases.opmodel.dev`. This is the stable public API surface.
 - The SSA field manager `opm-controller` and the `app.kubernetes.io/managed-by: opm-controller` label applied to rendered user resources. These were decoupled from the project name in ADR-010 and already carry the ecosystem-level identifier, not the repo identifier.
-- User-applied `ModuleRelease` and `BundleRelease` resources.
+- User-applied release resources (`ModuleRelease`, `Release`).
 - Archived artifacts: git tags `v0.4.x`, `CHANGELOG.md` entries, everything under `openspec/changes/archive/`.
 
 **Alternatives considered and rejected:**

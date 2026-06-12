@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded — the `BundleRelease` CRD, controller, and config scaffolding were removed (see change `remove-bundlerelease-scaffolding`). The scaffolding described a contract with no source of truth: no `#BundleRelease` schema exists in `core/`/`library/`, the controller was an empty stub, and no `BundleRelease` resource existed anywhere in the workspace. Bundle orchestration is deferred until it is designed against a real schema. This ADR is retained as the record of the original thinking.
+
+The key open question this ADR does **not** settle, and which a future bundle design must: whether bundles are an **orchestrator** that creates child `ModuleRelease`/`Release` objects (this ADR's decision) or are **rendered inline** by the existing `Release` kind-detection path. The removed scaffolding encoded both futures at once; neither is now committed.
 
 ## Context
 

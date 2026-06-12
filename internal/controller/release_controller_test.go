@@ -323,7 +323,7 @@ var _ = Describe("Release Controller", func() {
 			createRelease(ctx, name, "releases/app", false, nil)
 
 			fetcher := &stubFetcher{pathInArtifact: "releases/app"}
-			renderer := &stubReleaseRenderer{err: fmt.Errorf("%w: BundleRelease rendering is not yet implemented", render.ErrUnsupportedKind)}
+			renderer := &stubReleaseRenderer{err: fmt.Errorf("%w: kind \"SomeOtherKind\"", render.ErrUnsupportedKind)}
 			r := buildReconciler(fetcher, renderer)
 			nn := types.NamespacedName{Name: name, Namespace: namespace}
 			_ = reconcileTwice(ctx, r, nn)

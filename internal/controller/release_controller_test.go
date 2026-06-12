@@ -39,7 +39,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // stubFetcher creates a placeholder release.cue at dir/<path>/release.cue so
@@ -72,7 +71,7 @@ type stubReleaseRenderer struct {
 	err    error
 }
 
-func (s *stubReleaseRenderer) Render(_ context.Context, _ string, _ *provider.Provider) (string, *render.RenderResult, error) {
+func (s *stubReleaseRenderer) Render(_ context.Context, _ string) (string, *render.RenderResult, error) {
 	if s.err != nil {
 		return s.kind, nil, s.err
 	}
@@ -135,7 +134,6 @@ var _ = Describe("Release Controller", func() {
 		return &ReleaseReconciler{
 			Client:          k8sClient,
 			Scheme:          k8sClient.Scheme(),
-			Provider:        testProvider(),
 			ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 			EventRecorder:   events.NewFakeRecorder(10),
 			Fetcher:         fetcher,

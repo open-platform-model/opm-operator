@@ -74,7 +74,6 @@ var _ = Describe("ModuleRelease platform-gated rendering", func() {
 			reconciler := &ModuleReleaseReconciler{
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
-				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},
@@ -117,7 +116,6 @@ var _ = Describe("ModuleRelease platform-gated rendering", func() {
 			reconciler := &ModuleReleaseReconciler{
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
-				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   recorder,
 				Renderer: &render.KernelModuleRenderer{

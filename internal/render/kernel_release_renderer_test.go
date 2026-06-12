@@ -47,7 +47,7 @@ func TestKernelReleaseRenderer_BundleReleaseUnsupported(t *testing.T) {
 		RuntimeName: "opm-controller",
 	}
 
-	kind, result, err := r.Render(context.Background(), dir, nil)
+	kind, result, err := r.Render(context.Background(), dir)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrUnsupportedKind)
 	assert.Equal(t, KindBundleRelease, kind)
@@ -65,7 +65,7 @@ func TestKernelReleaseRenderer_PlatformNotReady(t *testing.T) {
 		RuntimeName: "opm-controller",
 	}
 
-	kind, result, err := r.Render(context.Background(), dir, nil)
+	kind, result, err := r.Render(context.Background(), dir)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPlatformNotReady)
 	assert.Equal(t, KindModuleRelease, kind)

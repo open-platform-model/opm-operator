@@ -29,7 +29,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 const (
@@ -45,7 +44,6 @@ type ModuleReleaseParams struct {
 	// existence checks for impersonation) that should not provision a cache informer.
 	APIReader       client.Reader
 	RestConfig      *rest.Config
-	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   events.EventRecorder
 	// Renderer produces the render result for a ModuleRelease. Must be non-nil;
@@ -261,7 +259,6 @@ func ReconcileModuleRelease(
 		mr.Name, mr.Namespace,
 		mr.Spec.Module.Path, mr.Spec.Module.Version,
 		mr.Spec.Values,
-		params.Provider,
 	)
 	if err != nil {
 		outcome, errMsg = classifyRenderError(&mr, params.EventRecorder, err)

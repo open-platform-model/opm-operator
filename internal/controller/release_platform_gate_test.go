@@ -102,7 +102,6 @@ var _ = Describe("Release platform-gated rendering", func() {
 			reconciler := &ReleaseReconciler{
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
-				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   events.NewFakeRecorder(10),
 				Fetcher:         &stubFetcher{pathInArtifact: "releases/app"},
@@ -147,7 +146,6 @@ var _ = Describe("Release platform-gated rendering", func() {
 			reconciler := &ReleaseReconciler{
 				Client:          k8sClient,
 				Scheme:          k8sClient.Scheme(),
-				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 				EventRecorder:   recorder,
 				Fetcher:         &stubFetcher{pathInArtifact: "releases/app"},

@@ -14,7 +14,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/moduleacquire"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/pkg/core"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // ErrPlatformNotReady is returned by KernelModuleRenderer.RenderModule when the
@@ -53,14 +52,11 @@ var _ ModuleRenderer = (*KernelModuleRenderer)(nil)
 // release, compiles it against the platform, and adapts the compiled output to
 // operator resources plus inventory entries.
 //
-// The legacy *provider.Provider parameter is ignored — it is retained only so
-// the ModuleRenderer interface is unchanged this slice; the platform comes from
-// the injected store, not the parameter.
+// The platform comes from the injected store.
 func (r *KernelModuleRenderer) RenderModule(
 	ctx context.Context,
 	name, namespace, modulePath, moduleVersion string,
 	values *releasesv1alpha1.RawValues,
-	_ *provider.Provider,
 ) (*RenderResult, error) {
 	// Gate before any registry I/O: nothing can be rendered without a platform.
 	mp, ok := r.Store.Get()

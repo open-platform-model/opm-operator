@@ -54,7 +54,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			res, err := renderer.RenderModule(ctx,
 				"hello", "default",
 				"testing.opmodel.dev/modules/does-not-exist@v0", "v9.9.9",
-				nil, nil)
+				nil)
 
 			Expect(res).To(BeNil())
 			Expect(err).To(MatchError(render.ErrPlatformNotReady))
@@ -111,7 +111,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			res, err := renderer.RenderModule(ctx,
 				"kernel-hello", "default",
 				"testing.opmodel.dev/modules/hello@v0", "v0.0.1",
-				values, nil)
+				values)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(res).NotTo(BeNil())

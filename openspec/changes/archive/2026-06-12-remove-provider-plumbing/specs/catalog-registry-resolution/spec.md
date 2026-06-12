@@ -1,4 +1,16 @@
-## ADDED Requirements
+## REMOVED Requirements
+
+### Requirement: CUE composition module for provider unification
+
+**Reason**: The `catalog/` composition module that imported and unified provider transformers is deleted. There is no composed provider — transformers come from the materialized platform's registry subscriptions.
+**Migration**: See `platform-reconciler` — subscriptions on the `Platform` CR's `registry` replace the composition module's imports.
+
+### Requirement: Dockerfile copies composition module
+
+**Reason**: With the `catalog/` composition module deleted, the `COPY catalog/ /catalog/` and the `.dockerignore` `!catalog/**` allow-rule are removed from the image build.
+**Migration**: None — the image no longer ships a composition module.
+
+## MODIFIED Requirements
 
 ### Requirement: Registry resolution at startup
 
@@ -13,17 +25,3 @@ The controller MUST resolve a CUE registry mapping at startup from the `--regist
 
 - **WHEN** no `--registry` flag and no `OPM_REGISTRY` value are provided
 - **THEN** the controller uses its built-in default registry mapping
-
-### Requirement: CUE cache directory configuration
-
-The controller MUST set `CUE_CACHE_DIR` to a writable directory before loading modules. The location MUST be configurable via `--cue-cache-dir` flag.
-
-#### Scenario: Default cache directory
-
-- **WHEN** no `--cue-cache-dir` flag is provided
-- **THEN** `CUE_CACHE_DIR` is set to `/tmp/cue-cache`
-
-#### Scenario: Custom cache directory
-
-- **WHEN** `--cue-cache-dir=/var/cache/cue` is provided
-- **THEN** `CUE_CACHE_DIR` is set to `/var/cache/cue`

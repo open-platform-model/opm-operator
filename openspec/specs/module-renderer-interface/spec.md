@@ -10,21 +10,21 @@ drift, impersonation) can be exercised without a live OCI registry.
 
 ### Requirement: ModuleRenderer interface
 The `internal/render` package MUST export a `ModuleRenderer` interface whose
-sole method renders a module given its identifying coordinates, a values
-document, and a catalog provider:
+sole method renders a module given its identifying coordinates and a values
+document:
 
 ```go
 type ModuleRenderer interface {
     RenderModule(ctx context.Context, name, namespace, modulePath, moduleVersion string,
-        values *releasesv1alpha1.RawValues, prov *provider.Provider) (*RenderResult, error)
+        values *releasesv1alpha1.RawValues) (*RenderResult, error)
 }
 ```
 
 Production wires `KernelModuleRenderer` (see `platform-gated-rendering`); tests
 inject a stub that returns a pre-built `*RenderResult` without contacting an OCI
-registry. The package no longer exports a registry-backed renderer struct — the
-fork implementation (`RegistryRenderer` delegating to `RenderModuleFromRegistry`)
-is deleted.
+registry. The package exports no registry-backed renderer struct and no longer
+references a catalog provider — transformers come from the materialized platform
+via the kernel.
 
 #### Scenario: Stub renderer returns pre-built result
 - **WHEN** a test stub implementing `ModuleRenderer` is invoked with any coordinates
@@ -38,7 +38,7 @@ The `Renderer` field MUST NOT be nil — all callers are required to set it.
 
 #### Scenario: Reconcile invokes injected renderer
 - **WHEN** `ReconcileModuleRelease` executes the render phase
-- **THEN** it calls `params.Renderer.RenderModule(...)` with the release's module coordinates, values, and provider
+- **THEN** it calls `params.Renderer.RenderModule(...)` with the release's module coordinates and values
 
 #### Scenario: Stub renderer drives downstream phases
 - **WHEN** a test supplies a stub `Renderer` returning a fixed `*RenderResult`

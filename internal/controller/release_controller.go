@@ -43,7 +43,6 @@ import (
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // ReleaseReconciler reconciles a Release object.
@@ -54,7 +53,6 @@ type ReleaseReconciler struct {
 	APIReader       client.Reader
 	Scheme          *runtime.Scheme
 	RestConfig      *rest.Config
-	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   events.EventRecorder
 
@@ -96,7 +94,6 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		Client:                r.Client,
 		APIReader:             r.APIReader,
 		RestConfig:            r.RestConfig,
-		Provider:              r.Provider,
 		ResourceManager:       r.ResourceManager,
 		EventRecorder:         r.EventRecorder,
 		Fetcher:               r.Fetcher,

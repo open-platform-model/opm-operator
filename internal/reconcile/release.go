@@ -28,7 +28,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // DefaultReleaseInterval is the fallback requeue interval when spec.interval
@@ -42,7 +41,6 @@ type ReleaseParams struct {
 	// existence checks for impersonation) that should not provision a cache informer.
 	APIReader       client.Reader
 	RestConfig      *rest.Config
-	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   events.EventRecorder
 
@@ -363,7 +361,7 @@ func renderReleasePackage(
 	packageDir string,
 	interval time.Duration,
 ) (*render.RenderResult, *phaseFail) {
-	kind, result, err := params.Renderer.Render(ctx, packageDir, params.Provider)
+	kind, result, err := params.Renderer.Render(ctx, packageDir)
 	if err != nil {
 		// PlatformNotReady is a blocked-on-dependency state, not a stall: the
 		// store holds no materialized platform yet. Mark Ready=False/

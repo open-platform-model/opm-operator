@@ -27,9 +27,6 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/manager .
 
-# Copy the CUE composition module for registry-based catalog resolution.
-COPY catalog/ /catalog/
-
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]

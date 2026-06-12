@@ -41,7 +41,6 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // platformGatedStubRenderer mirrors KernelModuleRenderer's platform gate without
@@ -57,7 +56,6 @@ func (r *platformGatedStubRenderer) RenderModule(
 	_ context.Context,
 	_, ns, _, _ string,
 	values *releasesv1alpha1.RawValues,
-	_ *provider.Provider,
 ) (*render.RenderResult, error) {
 	if _, ok := r.store.Get(); !ok {
 		return nil, render.ErrPlatformNotReady
@@ -113,7 +111,6 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
 			RestConfig:      cfg,
-			Provider:        testProvider(),
 			ResourceManager: apply.NewResourceManager(mgr.GetClient(), "opm-controller"),
 			EventRecorder:   events.NewFakeRecorder(32),
 			Renderer:        &platformGatedStubRenderer{store: store},

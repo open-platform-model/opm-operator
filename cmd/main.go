@@ -41,7 +41,6 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
-	"github.com/open-platform-model/opm-operator/internal/catalog"
 	"github.com/open-platform-model/opm-operator/internal/controller"
 	_ "github.com/open-platform-model/opm-operator/internal/metrics"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
@@ -65,8 +64,6 @@ func init() {
 
 // nolint:gocyclo
 func main() {
-	var catalogPath string
-	var providerName string
 	var registry string
 	var cueCacheDir string
 	var defaultServiceAccount string
@@ -93,10 +90,6 @@ func main() {
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.StringVar(&catalogPath, "catalog-path", "/catalog",
-		"The directory containing the OPM catalog CUE composition module.")
-	flag.StringVar(&providerName, "provider-name", "kubernetes",
-		"The provider to load from the catalog registry.")
 	flag.StringVar(&registry, "registry",
 		"testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works",
 		"CUE registry mapping for resolving module dependencies. "+
@@ -231,21 +224,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Loading OPM provider from catalog",
-		"catalog-path", catalogPath, "provider", providerName,
-		"registry", registry, "cue-cache-dir", cueCacheDir)
-	opmProvider, err := catalog.LoadProvider(catalogPath, providerName)
-	if err != nil {
-		setupLog.Error(err, "Failed to load OPM provider from catalog")
-		os.Exit(1)
-	}
-	setupLog.Info("OPM provider loaded", "provider", opmProvider.Metadata.Name)
-
 	// Construct the single long-lived library Kernel. Per library/CLAUDE.md a
 	// long-running consumer MUST keep one Kernel (and therefore one schema
 	// *Cache) alive for the process lifetime — never reconstruct it per
-	// reconcile. It is configured from the same registry value already plumbed
-	// to the legacy loader and a logger bridged to controller-runtime's logr.
+	// reconcile. It is configured from the resolved registry value and a logger
+	// bridged to controller-runtime's logr.
 	k := kernel.New(
 		kernel.WithRegistry(registry),
 		kernel.WithLogger(slog.New(logr.ToSlogHandler(ctrl.Log.WithName("kernel")))),
@@ -272,7 +255,6 @@ func main() {
 		APIReader:       mgr.GetAPIReader(),
 		Scheme:          mgr.GetScheme(),
 		RestConfig:      restConfig,
-		Provider:        opmProvider,
 		ResourceManager: resourceManager,
 		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
 		Renderer: &render.KernelModuleRenderer{
@@ -299,7 +281,6 @@ func main() {
 		APIReader:       mgr.GetAPIReader(),
 		Scheme:          mgr.GetScheme(),
 		RestConfig:      restConfig,
-		Provider:        opmProvider,
 		ResourceManager: resourceManager,
 		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
 		Fetcher:         &source.ArtifactFetcher{},

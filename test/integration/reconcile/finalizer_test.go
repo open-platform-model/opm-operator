@@ -64,7 +64,6 @@ var _ = Describe("Finalizer-add requeue (manager-driven)", func() {
 			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
 			RestConfig:      cfg,
-			Provider:        testProvider(),
 			ResourceManager: apply.NewResourceManager(mgr.GetClient(), "opm-controller"),
 			EventRecorder:   events.NewFakeRecorder(32),
 			Renderer:        &stubRenderer{},

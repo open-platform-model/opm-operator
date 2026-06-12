@@ -10,7 +10,6 @@ import (
 
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/pkg/core"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // KernelReleaseRenderer renders a Flux-fetched Release package through the
@@ -52,12 +51,10 @@ var _ ReleaseRenderer = (*KernelReleaseRenderer)(nil)
 // For a ModuleRelease package it builds the release, gates on platform
 // readiness (returning ErrPlatformNotReady before Compile when no platform is
 // materialized so nothing is applied), compiles against the materialized
-// platform, and adapts the output. The legacy *provider.Provider parameter is
-// ignored — the platform comes from the injected store.
+// platform, and adapts the output. The platform comes from the injected store.
 func (r *KernelReleaseRenderer) Render(
 	ctx context.Context,
 	packageDir string,
-	_ *provider.Provider,
 ) (string, *RenderResult, error) {
 	raw, err := r.Kernel.LoadReleasePackage(ctx, packageDir, loaderfile.LoadOptions{Registry: r.Registry})
 	if err != nil {

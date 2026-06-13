@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/open-platform-model/opm-operator/compare/v0.6.4...v0.7.0) (2026-06-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **kernel:** the BundleRelease CRD is removed. Clusters that applied an older install.yaml keep an inert CRD; remove it with `kubectl delete crd bundlereleases.releases.opmodel.dev`.
+
+### Features
+
+* **kernel:** refactor to library and kernel ([#22](https://github.com/open-platform-model/opm-operator/issues/22)) ([475c40c](https://github.com/open-platform-model/opm-operator/commit/475c40cdf2c9ccd57056dd5331f7f2417e41d13a))
+
 ## [0.6.4](https://github.com/open-platform-model/opm-operator/compare/v0.6.3...v0.6.4) (2026-05-25)
 
 

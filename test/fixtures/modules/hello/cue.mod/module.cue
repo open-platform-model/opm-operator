@@ -6,10 +6,10 @@ source: {
 	kind: "self"
 }
 deps: {
-	"opmodel.dev/core/v1alpha1@v1": {
-		v: "v1.3.9"
+	"opmodel.dev/catalogs/opm@v0": {
+		v: "v0.5.1"
 	}
-	"opmodel.dev/opm/v1alpha1@v1": {
-		v: "v1.5.8"
+	"opmodel.dev/core@v0": {
+		v: "v0.4.0"
 	}
 }

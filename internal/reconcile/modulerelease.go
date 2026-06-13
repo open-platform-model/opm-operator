@@ -29,7 +29,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 const (
@@ -45,11 +44,10 @@ type ModuleReleaseParams struct {
 	// existence checks for impersonation) that should not provision a cache informer.
 	APIReader       client.Reader
 	RestConfig      *rest.Config
-	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   events.EventRecorder
 	// Renderer produces the render result for a ModuleRelease. Must be non-nil;
-	// production wires render.RegistryRenderer, tests wire a stub.
+	// production wires render.KernelModuleRenderer, tests wire a stub.
 	Renderer render.ModuleRenderer
 	// DefaultServiceAccount is the fallback SA name used when a
 	// ModuleRelease has an empty spec.serviceAccountName. Empty disables
@@ -261,17 +259,9 @@ func ReconcileModuleRelease(
 		mr.Name, mr.Namespace,
 		mr.Spec.Module.Path, mr.Spec.Module.Version,
 		mr.Spec.Values,
-		params.Provider,
 	)
 	if err != nil {
-		reason := status.RenderFailedReason
-		if isResolutionError(err) {
-			reason = status.ResolutionFailedReason
-		}
-		params.EventRecorder.Eventf(&mr, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
-		status.MarkStalled(&mr, reason, "%s", err)
-		outcome = FailedStalled
-		errMsg = err.Error()
+		outcome, errMsg = classifyRenderError(&mr, params.EventRecorder, err)
 		retryAfter = StalledRecheckInterval
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
@@ -733,6 +723,37 @@ func pruneStaleResources(
 	}
 	log.Info("Pruned stale resources", "deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)
 	return AppliedAndPruned, true, pruneResult.Deleted, nil
+}
+
+// classifyRenderError maps a render error to its status condition and event,
+// returning the reconcile outcome and error message for the deferred status
+// commit. Both classifications requeue on StalledRecheckInterval (set by the
+// caller).
+//
+// render.ErrPlatformNotReady is a blocked-on-dependency state: the platform
+// store holds no materialized platform yet. The release is healthy but waiting
+// for the cluster Platform, so it is marked Ready=False/PlatformNotReady (not
+// Stalled), applies and prunes nothing, and requeues. The Platform watch
+// (mapPlatformToModuleReleases) re-enqueues it promptly when the platform
+// materializes; StalledRecheckInterval is the safety net. All other errors are
+// terminal render/resolution stalls.
+func classifyRenderError(
+	mr *releasesv1alpha1.ModuleRelease,
+	recorder events.EventRecorder,
+	err error,
+) (Outcome, string) {
+	if errors.Is(err, render.ErrPlatformNotReady) {
+		recorder.Eventf(mr, nil, corev1.EventTypeWarning, status.PlatformNotReadyReason, "Render", "%s", err)
+		status.MarkNotReady(mr, status.PlatformNotReadyReason, "%s", err)
+		return FailedTransient, err.Error()
+	}
+	reason := status.RenderFailedReason
+	if isResolutionError(err) {
+		reason = status.ResolutionFailedReason
+	}
+	recorder.Eventf(mr, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
+	status.MarkStalled(mr, reason, "%s", err)
+	return FailedStalled, err.Error()
 }
 
 // isResolutionError returns true if the error indicates a module resolution

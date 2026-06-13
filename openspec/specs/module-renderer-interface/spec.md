@@ -1,31 +1,30 @@
 ## Purpose
 
 Define the dependency-injection boundary for module rendering inside the
-reconcile loop. The `ModuleRenderer` interface lets production code use a
-registry-backed renderer while tests inject a stub that returns pre-built
-`*RenderResult` values, so downstream phases (apply, prune, drift,
-impersonation) can be exercised without a live OCI registry.
+reconcile loop. The `ModuleRenderer` interface lets production code use the
+kernel-backed renderer (`KernelModuleRenderer`) while tests inject a stub that
+returns pre-built `*RenderResult` values, so downstream phases (apply, prune,
+drift, impersonation) can be exercised without a live OCI registry.
 
 ## ADDED Requirements
 
 ### Requirement: ModuleRenderer interface
 The `internal/render` package MUST export a `ModuleRenderer` interface whose
-sole method renders a module given its identifying coordinates, a values
-document, and a catalog provider:
+sole method renders a module given its identifying coordinates and a values
+document:
 
 ```go
 type ModuleRenderer interface {
     RenderModule(ctx context.Context, name, namespace, modulePath, moduleVersion string,
-        values *releasesv1alpha1.RawValues, prov *provider.Provider) (*RenderResult, error)
+        values *releasesv1alpha1.RawValues) (*RenderResult, error)
 }
 ```
 
-The package MUST also export a `RegistryRenderer` struct that implements
-`ModuleRenderer` by delegating to `RenderModuleFromRegistry`.
-
-#### Scenario: Production renderer delegates to registry
-- **WHEN** code calls `(&RegistryRenderer{}).RenderModule(ctx, name, ns, path, version, values, prov)`
-- **THEN** the call is delegated to `render.RenderModuleFromRegistry` with the same arguments and the result/error is returned unchanged
+Production wires `KernelModuleRenderer` (see `platform-gated-rendering`); tests
+inject a stub that returns a pre-built `*RenderResult` without contacting an OCI
+registry. The package exports no registry-backed renderer struct and no longer
+references a catalog provider — transformers come from the materialized platform
+via the kernel.
 
 #### Scenario: Stub renderer returns pre-built result
 - **WHEN** a test stub implementing `ModuleRenderer` is invoked with any coordinates
@@ -33,14 +32,13 @@ The package MUST also export a `RegistryRenderer` struct that implements
 
 ### Requirement: Renderer in reconcile params
 `ModuleReleaseParams` in `internal/reconcile` MUST include a `Renderer` field
-of type `render.ModuleRenderer`. The reconcile loop MUST call
-`params.Renderer.RenderModule(...)` instead of calling
-`render.RenderModuleFromRegistry(...)` directly. The `Renderer` field MUST NOT
-be nil — all callers are required to set it.
+of type `render.ModuleRenderer`, and the reconcile loop MUST render through
+`params.Renderer.RenderModule(...)` rather than constructing a renderer inline.
+The `Renderer` field MUST NOT be nil — all callers are required to set it.
 
 #### Scenario: Reconcile invokes injected renderer
 - **WHEN** `ReconcileModuleRelease` executes the render phase
-- **THEN** it calls `params.Renderer.RenderModule(...)` with the release's module coordinates, values, and provider
+- **THEN** it calls `params.Renderer.RenderModule(...)` with the release's module coordinates and values
 
 #### Scenario: Stub renderer drives downstream phases
 - **WHEN** a test supplies a stub `Renderer` returning a fixed `*RenderResult`
@@ -55,22 +53,14 @@ field of type `render.ModuleRenderer` and pass it through to
 - **WHEN** the reconciler builds `ModuleReleaseParams` for a reconcile call
 - **THEN** `params.Renderer` is set to `r.Renderer` rather than constructed inline
 
-### Requirement: Production wiring
-`cmd/main.go` MUST set `Renderer: &render.RegistryRenderer{}` when constructing
-the `ModuleReleaseReconciler`, preserving current production behavior.
-
-#### Scenario: Manager wires registry renderer
-- **WHEN** the manager constructs `&ModuleReleaseReconciler{...}` in `cmd/main.go`
-- **THEN** the struct literal includes `Renderer: &render.RegistryRenderer{}`
-
 ## Scenarios
 
 ### Production reconcile
 
-1. Controller creates `ModuleReleaseParams` with `Renderer: &RegistryRenderer{}`
+1. Controller creates `ModuleReleaseParams` with `Renderer: &KernelModuleRenderer{...}`
 2. Reconcile loop calls `params.Renderer.RenderModule(...)`
-3. `RegistryRenderer` delegates to `RenderModuleFromRegistry`
-4. Behavior is identical to the current direct call
+3. `KernelModuleRenderer` renders through the library kernel against the materialized platform (see `platform-gated-rendering`)
+4. The reconcile loop consumes the resulting `*RenderResult` for apply, prune, drift, and impersonation
 
 ### Test with stub renderer
 

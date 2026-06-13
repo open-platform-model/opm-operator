@@ -28,7 +28,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 // DefaultReleaseInterval is the fallback requeue interval when spec.interval
@@ -42,7 +41,6 @@ type ReleaseParams struct {
 	// existence checks for impersonation) that should not provision a cache informer.
 	APIReader       client.Reader
 	RestConfig      *rest.Config
-	Provider        *provider.Provider
 	ResourceManager *fluxssa.ResourceManager
 	EventRecorder   events.EventRecorder
 
@@ -51,7 +49,8 @@ type ReleaseParams struct {
 	Fetcher opmsource.Fetcher
 
 	// Renderer loads and renders a CUE release package from a local directory.
-	// Production wires render.PackageReleaseRenderer; tests inject a stub.
+	// Production wires render.KernelReleaseRenderer; tests inject a stub. It is
+	// required — a nil Renderer is a programming error.
 	Renderer render.ReleaseRenderer
 
 	// DefaultServiceAccount is the fallback SA name used when a Release has
@@ -239,7 +238,7 @@ func ReconcileRelease(
 	}
 
 	// Phase 4+5: load CUE, detect kind, render.
-	renderResult, fail := renderReleasePackage(ctx, params, &rel, packageDir)
+	renderResult, fail := renderReleasePackage(ctx, params, &rel, packageDir, interval)
 	if fail != nil {
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -360,13 +359,20 @@ func renderReleasePackage(
 	params *ReleaseParams,
 	rel *releasesv1alpha1.Release,
 	packageDir string,
+	interval time.Duration,
 ) (*render.RenderResult, *phaseFail) {
-	renderer := params.Renderer
-	if renderer == nil {
-		renderer = render.PackageReleaseRenderer{}
-	}
-	kind, result, err := renderer.Render(ctx, packageDir, params.Provider)
+	kind, result, err := params.Renderer.Render(ctx, packageDir)
 	if err != nil {
+		// PlatformNotReady is a blocked-on-dependency state, not a stall: the
+		// store holds no materialized platform yet. Mark Ready=False/
+		// PlatformNotReady (non-stalled), apply and prune nothing, and requeue.
+		// The Platform watch (mapPlatformToReleases) re-enqueues promptly when
+		// the platform materializes; the interval requeue is the safety net.
+		if errors.Is(err, render.ErrPlatformNotReady) {
+			status.MarkNotReady(rel, status.PlatformNotReadyReason, "%s", err)
+			params.EventRecorder.Eventf(rel, nil, corev1.EventTypeWarning, status.PlatformNotReadyReason, "Render", "%s", err)
+			return nil, &phaseFail{FailedTransient, err.Error(), interval}
+		}
 		reason := renderErrorReason(err)
 		status.MarkStalled(rel, reason, "%s", err)
 		params.EventRecorder.Eventf(rel, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)

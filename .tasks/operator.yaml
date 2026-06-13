@@ -13,7 +13,7 @@ tasks:
     env:
       CUE_REGISTRY: '{{.CUE_REGISTRY}}'
     cmds:
-      - go run ./cmd/main.go --catalog-path=$(realpath ./catalog)
+      - go run ./cmd/main.go
 
   installer:
     desc: Build consolidated install manifest

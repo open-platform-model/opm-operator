@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"log/slog"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -26,6 +27,8 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	"github.com/go-logr/logr"
+	"github.com/open-platform-model/library/opm/kernel"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -38,11 +41,12 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
-	"github.com/open-platform-model/opm-operator/internal/catalog"
 	"github.com/open-platform-model/opm-operator/internal/controller"
 	_ "github.com/open-platform-model/opm-operator/internal/metrics"
+	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/source"
+	"github.com/open-platform-model/opm-operator/pkg/core"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -60,8 +64,6 @@ func init() {
 
 // nolint:gocyclo
 func main() {
-	var catalogPath string
-	var providerName string
 	var registry string
 	var cueCacheDir string
 	var defaultServiceAccount string
@@ -88,10 +90,6 @@ func main() {
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.StringVar(&catalogPath, "catalog-path", "/catalog",
-		"The directory containing the OPM catalog CUE composition module.")
-	flag.StringVar(&providerName, "provider-name", "kubernetes",
-		"The provider to load from the catalog registry.")
 	flag.StringVar(&registry, "registry",
 		"testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works",
 		"CUE registry mapping for resolving module dependencies. "+
@@ -226,52 +224,79 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Loading OPM provider from catalog",
-		"catalog-path", catalogPath, "provider", providerName,
-		"registry", registry, "cue-cache-dir", cueCacheDir)
-	opmProvider, err := catalog.LoadProvider(catalogPath, providerName)
+	// Construct the single long-lived library Kernel. Per library/CLAUDE.md a
+	// long-running consumer MUST keep one Kernel (and therefore one schema
+	// *Cache) alive for the process lifetime — never reconstruct it per
+	// reconcile. It is configured from the resolved registry value and a logger
+	// bridged to controller-runtime's logr.
+	k := kernel.New(
+		kernel.WithRegistry(registry),
+		kernel.WithLogger(slog.New(logr.ToSlogHandler(ctrl.Log.WithName("kernel")))),
+	)
+
+	// Smoke-verify core-schema resolution at startup so a misconfigured or
+	// unreachable registry fails fast here instead of at the first reconcile.
+	version, err := verifyCoreSchema(k)
 	if err != nil {
-		setupLog.Error(err, "Failed to load OPM provider from catalog")
+		setupLog.Error(err, "Failed to resolve OPM core schema")
 		os.Exit(1)
 	}
-	setupLog.Info("OPM provider loaded", "provider", opmProvider.Metadata.Name)
+	setupLog.Info("OPM core schema resolved", "version", version)
+
+	// Single-slot, generation-keyed holder for the materialized cluster
+	// Platform. Constructed once and shared with the PlatformReconciler (writer)
+	// and, in a later slice, the render path (readers).
+	platformStore := platformstore.NewStore()
 
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
 	if err := (&controller.ModuleReleaseReconciler{
-		Client:                mgr.GetClient(),
-		APIReader:             mgr.GetAPIReader(),
-		Scheme:                mgr.GetScheme(),
-		RestConfig:            restConfig,
-		Provider:              opmProvider,
-		ResourceManager:       resourceManager,
-		EventRecorder:         mgr.GetEventRecorder("opm-controller"),
-		Renderer:              &render.RegistryRenderer{},
+		Client:          mgr.GetClient(),
+		APIReader:       mgr.GetAPIReader(),
+		Scheme:          mgr.GetScheme(),
+		RestConfig:      restConfig,
+		ResourceManager: resourceManager,
+		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
+		Renderer: &render.KernelModuleRenderer{
+			Kernel:      k,
+			Store:       platformStore,
+			Registry:    registry,
+			RuntimeName: core.LabelManagedByControllerValue,
+		},
 		DefaultServiceAccount: defaultServiceAccount,
+		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleRelease")
 		os.Exit(1)
 	}
-	if err := (&controller.BundleReleaseReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "BundleRelease")
-		os.Exit(1)
-	}
 	if err := (&controller.ReleaseReconciler{
-		Client:                mgr.GetClient(),
-		APIReader:             mgr.GetAPIReader(),
-		Scheme:                mgr.GetScheme(),
-		RestConfig:            restConfig,
-		Provider:              opmProvider,
-		ResourceManager:       resourceManager,
-		EventRecorder:         mgr.GetEventRecorder("opm-controller"),
-		Fetcher:               &source.ArtifactFetcher{},
-		Renderer:              render.PackageReleaseRenderer{},
+		Client:          mgr.GetClient(),
+		APIReader:       mgr.GetAPIReader(),
+		Scheme:          mgr.GetScheme(),
+		RestConfig:      restConfig,
+		ResourceManager: resourceManager,
+		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
+		Fetcher:         &source.ArtifactFetcher{},
+		Renderer: &render.KernelReleaseRenderer{
+			Kernel:      k,
+			Store:       platformStore,
+			Registry:    registry,
+			RuntimeName: core.LabelManagedByControllerValue,
+		},
 		DefaultServiceAccount: defaultServiceAccount,
+		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Release")
+		os.Exit(1)
+	}
+	if err := (&controller.PlatformReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: mgr.GetEventRecorder("opm-controller"),
+		Kernel:        k,
+		Store:         platformStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "Platform")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
@@ -290,6 +315,17 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// verifyCoreSchema forces the kernel's otherwise-lazy core-schema fetch so a
+// misconfigured or unreachable registry fails fast at startup. It returns the
+// resolved schema version on success. Kept separate from main() so the failure
+// path is assertable without os.Exit.
+func verifyCoreSchema(k *kernel.Kernel) (string, error) {
+	if _, err := k.SchemaCache().Get(k.CueContext()); err != nil {
+		return "", err
+	}
+	return k.SchemaCache().ResolvedVersion(), nil
 }
 
 // resolveRegistry picks the effective CUE registry mapping.

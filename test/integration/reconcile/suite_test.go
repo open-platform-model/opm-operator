@@ -40,7 +40,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/pkg/core"
-	"github.com/open-platform-model/opm-operator/pkg/provider"
 )
 
 var (
@@ -125,7 +124,6 @@ func (s *stubRenderer) RenderModule(
 	_ context.Context,
 	_, namespace, _, _ string,
 	values *releasesv1alpha1.RawValues,
-	_ *provider.Provider,
 ) (*render.RenderResult, error) {
 	if s.err != nil {
 		return nil, s.err
@@ -205,49 +203,4 @@ func resolutionErrorRenderer() *stubRenderer {
 // reconcile loop classifies as RenderFailed (not ResolutionFailed).
 func renderErrorRenderer(msg string) *stubRenderer {
 	return &stubRenderer{err: fmt.Errorf("%s", msg)}
-}
-
-// testProvider builds a minimal provider that produces a ConfigMap.
-func testProvider() *provider.Provider {
-	cueCtx := cuecontext.New()
-	data := cueCtx.CompileString(`{
-	metadata: {
-		name:        "kubernetes"
-		description: "Test provider"
-		version:     "0.1.0"
-	}
-	#transformers: {
-		"simple": {
-			#transform: {
-				#component: _
-				#context: _
-				output: {
-					apiVersion: "v1"
-					kind:       "ConfigMap"
-					metadata: {
-						name:      #context.#moduleReleaseMetadata.name
-						namespace: #context.#moduleReleaseMetadata.namespace
-						labels: {
-							"app.kubernetes.io/managed-by":         #context.#runtimeName
-							"module-release.opmodel.dev/namespace": #context.#moduleReleaseMetadata.namespace
-						}
-					}
-					data: {
-						message: #component.data.message
-					}
-				}
-			}
-		}
-	}
-}`)
-	if data.Err() != nil {
-		panic(fmt.Sprintf("compiling test provider: %v", data.Err()))
-	}
-	return &provider.Provider{
-		Metadata: &provider.ProviderMetadata{
-			Name:    "kubernetes",
-			Version: "0.1.0",
-		},
-		Data: data,
-	}
 }

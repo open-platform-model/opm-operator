@@ -28,6 +28,10 @@ const (
 	ReconciliationSucceededReason = "ReconciliationSucceeded"
 	DriftDetectedReason           = "DriftDetected"
 
+	// Platform-specific reasons.
+	MaterializedReason      = "Materialized"      // Ready=True: the Platform materialized successfully.
+	MaterializeFailedReason = "MaterializeFailed" // Ready=False: Materialize returned a MaterializeError.
+
 	// Release-specific reasons.
 	SourceNotReadyReason       = "SourceNotReady"
 	FetchFailedReason          = "FetchFailed"
@@ -35,6 +39,7 @@ const (
 	ReleaseFileNotFoundReason  = "ReleaseFileNotFound"
 	UnsupportedKindReason      = "UnsupportedKind"
 	DependenciesNotReadyReason = "DependenciesNotReady"
+	PlatformNotReadyReason     = "PlatformNotReady"
 
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
@@ -57,9 +62,16 @@ func MarkStalled(obj conditions.Setter, reason, messageFormat string, messageArg
 
 // MarkReady sets Ready=True and removes Reconciling and Stalled conditions.
 func MarkReady(obj conditions.Setter, messageFormat string, messageArgs ...any) {
+	MarkReadyWithReason(obj, ReconciliationSucceededReason, messageFormat, messageArgs...)
+}
+
+// MarkReadyWithReason sets Ready=True with an explicit reason and removes
+// Reconciling and Stalled conditions. Used where the success reason is not the
+// generic ReconciliationSucceeded (e.g. the Platform's Materialized reason).
+func MarkReadyWithReason(obj conditions.Setter, reason, messageFormat string, messageArgs ...any) {
 	conditions.Delete(obj, ReconcilingCondition)
 	conditions.Delete(obj, StalledCondition)
-	conditions.MarkTrue(obj, ReadyCondition, ReconciliationSucceededReason, messageFormat, messageArgs...)
+	conditions.MarkTrue(obj, ReadyCondition, reason, messageFormat, messageArgs...)
 }
 
 // MarkSuspended sets Ready=False with reason Suspended and removes Reconciling and Stalled conditions.

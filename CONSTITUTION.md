@@ -30,8 +30,7 @@ For CUE module acquisition, the controller MUST use CUE's native module system t
 - CUE's module system handles OCI transport and dependency resolution
 - The controller synthesizes release packages, not custom transport
 - OPM owns semantic evaluation and rendering
-- The `internal/source/` package is retained for potential future use
-- BundleRelease continues to use Flux source-controller (separate concern)
+- The `internal/source/` package handles Flux source-controller artifact fetching for the `Release` pipeline (a separate acquisition path from CUE-native module resolution)
 
 ---
 
@@ -41,7 +40,7 @@ The codebase MUST preserve clear package boundaries:
 
 - `internal/controller/` handles reconcile orchestration, watches, and event handling
 - `internal/synthesis/` handles CUE release package generation for module resolution
-- `internal/source/` handles Flux artifact interaction (retained, used by BundleRelease)
+- `internal/source/` handles Flux artifact interaction (used by the `Release` pipeline)
 - `internal/render/` handles CUE evaluation and object generation
 - `internal/apply/` handles server-side apply and prune behavior
 - `internal/inventory/` handles ownership and previously-applied resource tracking

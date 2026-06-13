@@ -25,6 +25,10 @@ go.work
 go.work.sum
 /bin
 
+# Cue
+.cue-cache
+.cue-cache-verify*
+
 # env file
 .env
 

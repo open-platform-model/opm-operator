@@ -3,8 +3,8 @@
 # It should be run by config/default
 resources:
 - bases/releases.opmodel.dev_modulereleases.yaml
-- bases/releases.opmodel.dev_bundlereleases.yaml
 - bases/releases.opmodel.dev_releases.yaml
+- bases/releases.opmodel.dev_platforms.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

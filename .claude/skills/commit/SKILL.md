@@ -23,22 +23,24 @@ Common types: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `style`, `ci`,
 - Scope is optional but encouraged when it clarifies the change.
 - Description must be lowercase, imperative mood, no period at the end.
 - Keep the first line under 72 characters.
-- **Almost never add a body.** The subject line should be sufficient. A body is only warranted for genuinely unusual cases, e.g., a non-obvious breaking change, a subtle reason the diff doesn't speak for itself, or context that would otherwise be lost. Default: no body.
+- The subject line should be sufficient. A body is only warranted for genuinely unusual cases, e.g., a non-obvious breaking change, a subtle reason the diff doesn't speak for itself, or context that would otherwise be lost. Default: no body.
 
 ## Message Content
 
 Focus on **what** is being changed. Be specific but concise.
+Always include a scope and make the scope clear and obvious. Scope is more important than type for future developers.
 
 Good: `feat(backup): add s3 retention policy to k8up schedule`
 Bad: `update backup stuff`
 Bad: a one-line subject followed by a paragraph restating the diff
 
-## Strictly Forbidden
+## Attribution
 
-- **Never** include `Co-Authored-By` lines or any AI/Claude attribution.
-- **Never** mention Claude, AI, or assistants in commit messages.
-- **Never** add trailing signatures or metadata lines.
+- End every commit with the trailer `Co-Authored-By: Claude <noreply@anthropic.com>`
+  as the last line, separated from the body by a blank line.
+- Use exactly that generic identity — do not add a model version.
+- Do not add a "Generated with …" footer or any other AI signature line.
 
 ## Arguments
 
-If `$ARGUMENTS` is provided, use it as a hint for the commit message or scope, but still follow all rules above.
+If `$ARGUMENTS` is provided, use it as a hint for the commit message or scope — but still follow all rules above.

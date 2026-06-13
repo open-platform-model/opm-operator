@@ -58,7 +58,6 @@ func createModuleRelease(name string) {
 func reconcileParams() *opmreconcile.ModuleReleaseParams {
 	return &opmreconcile.ModuleReleaseParams{
 		Client:          k8sClient,
-		Provider:        testProvider(),
 		ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 		EventRecorder:   events.NewFakeRecorder(10),
 		Renderer:        &stubRenderer{},

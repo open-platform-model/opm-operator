@@ -201,7 +201,6 @@ var _ = Describe("Drift Detection", func() {
 
 			failingParams := &opmreconcile.ModuleReleaseParams{
 				Client:          k8sClient,
-				Provider:        testProvider(),
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
 				EventRecorder:   events.NewFakeRecorder(10),
 				Renderer:        &stubRenderer{},

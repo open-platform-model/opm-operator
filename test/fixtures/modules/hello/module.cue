@@ -1,17 +1,21 @@
+// hello — minimal kernel-era (opmodel.dev/core@v0) test module. One component
+// attaches the catalog's ConfigMaps resource, which the catalog's
+// configmap-transformer matches without any workload-type label
+// (requiredLabels: {}). Renders a single ConfigMap. Consumed by the operator's
+// registry-backed integration tests.
 package hello
 
 import (
-	m "opmodel.dev/core/v1alpha1/module@v1"
+	m "opmodel.dev/core@v0"
 )
 
 m.#Module
 
 metadata: {
-	modulePath:       "opmodel.dev/test"
-	name:             "hello"
-	version:          "0.0.1"
-	description:      "Minimal test module — renders a single ConfigMap"
-	defaultNamespace: "default"
+	modulePath:  "testing.opmodel.dev/modules"
+	name:        "hello"
+	version:     "0.0.2"
+	description: "Minimal test module — renders a single ConfigMap"
 }
 
 #config: {

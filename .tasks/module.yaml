@@ -4,6 +4,14 @@ version: '3'
 #
 # Prerequisites:
 #   - Local registry running: `task registry:start`
+#   - Kernel-era deps published to the local registry (the fixture imports
+#     `opmodel.dev/core@v0` and `opmodel.dev/catalogs/opm@v0`, and the kernel
+#     enumerates catalog versions from the registry at materialize time):
+#       * core@v0:    from the `core/` repo —        `CUE_REGISTRY='opmodel.dev=localhost:5000+insecure' task publish VERSION=v0.4.0`
+#       * catalog@v0: from the `catalog_opm/` repo —  `CUE_REGISTRY='opmodel.dev=localhost:5000+insecure' task publish VERSION=v0.5.0`
+#     (versions must match the pins in `test/fixtures/modules/hello/cue.mod/module.cue`).
+#     Requires a `cue` CLI at the kernel's CUE language version (v0.17.x) — the
+#     catalog declares `language: v0.17.0` and older CLIs refuse to read it.
 #   - Registry connected to kind network: `task registry:connect`
 #   - Controller running (or deployed): `task build:run` / `task deploy:controller`
 #
@@ -12,7 +20,7 @@ version: '3'
 
 vars:
   MODULE_DIR: '{{.MODULE_DIR | default "test/fixtures/modules/hello"}}'
-  MODULE_VERSION: '{{.MODULE_VERSION | default "v0.0.1"}}'
+  MODULE_VERSION: '{{.MODULE_VERSION | default "v0.0.2"}}'
   # Force the mapping used for `cue mod publish` regardless of shell env.
   # A shell-exported CUE_REGISTRY without `testing.opmodel.dev=localhost:...`
   # otherwise falls through to registry.cue.works and fails with 401.

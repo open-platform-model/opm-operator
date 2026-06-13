@@ -26,6 +26,13 @@ import (
 // Requirements:
 //   - CUE_REGISTRY env var with a testing.opmodel.dev mapping pointing at
 //     localhost (see `task registry:start && task module:publish`)
+//   - the kernel-era deps published to the same local registry: the fixture
+//     imports opmodel.dev/core@v0 and opmodel.dev/catalogs/opm@v0, and the
+//     kernel enumerates catalog versions from the registry at materialize time.
+//     Publish them from the core/ and catalog_opm/ repos at the versions pinned
+//     in test/fixtures/modules/hello/cue.mod/module.cue (see the prerequisites
+//     block in .tasks/module.yaml). Requires a cue CLI at the kernel's CUE
+//     language version (v0.17.x).
 //   - a container tool (docker or podman) on PATH
 //
 // When running against ghcr (CI default via `task dev:test`) these tests skip

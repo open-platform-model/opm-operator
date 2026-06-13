@@ -1,17 +1,14 @@
 package hello
 
 import (
-	resources_config "opmodel.dev/opm/v1alpha1/resources/config@v1"
+	res "opmodel.dev/catalogs/opm/resources"
 )
 
 #components: {
 	hello: {
-		resources_config.#ConfigMaps
+		res.#ConfigMaps
 
-		metadata: {
-			name: "hello"
-			labels: "core.opmodel.dev/workload-type": "config"
-		}
+		metadata: name: "hello"
 
 		spec: configMaps: {
 			"hello": {

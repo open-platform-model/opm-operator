@@ -32,8 +32,9 @@ import (
 // They are skipped automatically in CI (ghcr has no fixture module).
 // Run with: task dev:test:local
 
-// countAcquireTempDirs reports how many shim temp dirs (opm-acquire-*) exist
-// under the system temp root. Acquire must leave none behind.
+// countAcquireTempDirs reports how many opm-acquire-* temp dirs exist under
+// the system temp root. The old wrapper-shim path created these; Acquire now
+// loads in memory via the kernel and must leave none behind.
 func countAcquireTempDirs() int {
 	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "opm-acquire-*"))
 	Expect(err).NotTo(HaveOccurred())
@@ -55,14 +56,21 @@ var _ = Describe("Module Acquisition Integration", func() {
 			before := countAcquireTempDirs()
 
 			mod, err := moduleacquire.Acquire(ctx, k,
-				"testing.opmodel.dev/modules/hello@v0", "v0.0.1", registry)
+				"testing.opmodel.dev/modules/hello@v0", "v0.0.2", registry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mod).NotTo(BeNil())
 			Expect(mod.Metadata).NotTo(BeNil())
 			Expect(mod.Metadata.Name).To(Equal("hello"))
-			Expect(mod.Metadata.Version).To(Equal("0.0.1"))
+			Expect(mod.Metadata.Version).To(Equal("0.0.2"))
+			// modulePath is the author-set field that regressed: the old
+			// wrapper shim re-embedded the module and collapsed core@v0's
+			// self-referential metadata. Acquire now delegates to
+			// Kernel.LoadModuleFromRegistry, which loads the module as the main
+			// module and preserves it; this pins that fix.
+			Expect(mod.Metadata.ModulePath).To(Equal("testing.opmodel.dev/modules"))
 
-			// No shim temp dir survives a successful acquisition.
+			// Acquisition no longer stages a temp dir (the library loads the
+			// module in memory); assert none appears, as a guard.
 			Expect(countAcquireTempDirs()).To(Equal(before))
 		})
 	})

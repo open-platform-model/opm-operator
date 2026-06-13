@@ -1,13 +1,6 @@
-## Purpose
+# Delta: module-acquisition
 
-Define how the operator acquires a `ModuleRelease`'s target module from the OCI
-registry as a library `*module.Module`. Acquisition delegates to the shared
-`*kernel.Kernel`'s registry module loader (`Kernel.LoadModuleFromRegistry`),
-which fetches the published module and loads it as the main module, then decodes
-it via `Kernel.NewModuleFromValue` — without synthesizing a wrapper package,
-writing a temporary directory, or mutating process-global state.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Acquire a module from the registry as a library Module
 
@@ -37,7 +30,7 @@ Delegating to the library is load-bearing: the wrapper approach re-embedded core
 
 #### Scenario: Acquisition delegates to the kernel, not a wrapper package
 
-- **WHEN** the `internal/moduleacquire` package is inspected
+- **WHEN** the `internal/moduleacquire` package is inspected after this change
 - **THEN** `Acquire` calls `Kernel.LoadModuleFromRegistry` and there is no generated wrapper package, no `writeShim`, and no temporary-directory staging
 
 ### Requirement: Acquisition is registry-config driven, not process-global
@@ -49,3 +42,9 @@ Acquisition SHALL drive registry resolution from the shared kernel's configured 
 - **WHEN** acquisition is invoked through the shared kernel
 - **THEN** the kernel's configured registry mapping is used for the fetch and load
 - **AND** the process environment (`os.Environ`) is not modified
+
+## REMOVED Requirements
+
+### Requirement: Acquisition carries no catalog pin
+
+**Reason:** This requirement described the deleted acquisition shim ("the shim depends only on the target module… SHALL NOT declare a catalog dependency… catalog transformers SHALL NOT be required to acquire a module"). Acquisition no longer synthesizes a shim — it delegates to `Kernel.LoadModuleFromRegistry`, which loads the module as the main module. The module's own `cue.mod/module.cue` declares its catalog/core dependencies, and catalog resolution **is** required to acquire a module whose components attach catalog resources. The requirement is obsolete and contradicts the modified "Acquire" requirement.

@@ -1,0 +1,53 @@
+---
+# Per-release applier ServiceAccount the operator impersonates when applying
+# web-app's rendered resources. Mirrors the hello fixture's applier pattern, but
+# scoped to every kind the web_app module renders: Deployment (apps), Service +
+# ConfigMaps (core), and HTTPRoute (gateway.networking.k8s.io).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: web-app-applier
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: web-app-applier
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: web-app-applier
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: web-app-applier
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: web-app-applier
+---
+apiVersion: releases.opmodel.dev/v1alpha1
+kind: ModuleRelease
+metadata:
+  name: web-app
+  namespace: default
+spec:
+  module:
+    path: opmodel.dev/library/testdata/modules/web-app@v1
+    version: v1.0.10
+  serviceAccountName: web-app-applier
+  values: {}   # module defaults: nginx:1.27, port 8080, replicas 2
+  prune: true

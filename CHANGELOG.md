@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/open-platform-model/opm-operator/compare/v0.7.0...v0.7.1) (2026-06-15)
+
+
+### Miscellaneous Chores
+
+* force 0.7.1 release for library v0.5.1 materialize fix ([2d96a46](https://github.com/open-platform-model/opm-operator/commit/2d96a46347b6ddf7ef065d512354de5bb8ad1920))
+
 ## [0.7.0](https://github.com/open-platform-model/opm-operator/compare/v0.6.4...v0.7.0) (2026-06-13)
 
 

@@ -1,7 +1,22 @@
 # Release vs ModuleRelease: render-path divergence and the imported-module closedness failure
 
-Status: Known issue / investigation (2026-06-16). Affects `Release` CRs whose
-`release.cue` imports a published `#Module`. Does **not** affect `ModuleRelease`.
+Status: Partially resolved (updated 2026-06-17). This doc covers two distinct
+problems with different resolution timing:
+
+- **Imported-module closedness failure** — **RESOLVED**, shipped in
+  `core@v0.5.0` (commit `68e4520`, *feat(module): make #Module identity
+  author-supplied*). The `#Module.metadata` self-cycle that made an imported
+  `release.cue` abort with `field not allowed` is gone; on `core@v0` ≥ `v0.5.0`
+  the `Release` path loads imported modules concretely. See
+  [`library/docs/design/release-cr-imported-module-closedness.md`](../../../library/docs/design/release-cr-imported-module-closedness.md).
+- **Render-path divergence** — **OPEN**, tracked in the library OpenSpec change
+  `simplify-render-single-build`, which converges the two construction
+  mechanisms (Go-synthesized `ModuleRelease` vs. CUE-loaded `Release`) onto a
+  single single-build CUE evaluation (ADR-003) and adds the missing
+  imported-module test coverage.
+
+Affects `Release` CRs whose `release.cue` imports a published `#Module`. Does
+**not** affect `ModuleRelease`.
 
 ## Summary
 
@@ -12,10 +27,10 @@ The operator has two independent entry points into the same render pipeline:
 - **`Release`** — points Flux at a CUE package whose `release.cue` is an
   **author-written** `#ModuleRelease`; the controller loads and compiles it.
 
-Both work for trivial cases, but the `Release` path **fails to load any
-`release.cue` that imports a published module** the way the documented pattern
-intends (`#module: <registry import>`). On `opmodel.dev/core@v0` the load aborts
-with:
+Both work for trivial cases, but on `core@v0` ≤ `v0.4.0` the `Release` path
+**failed to load any `release.cue` that imports a published module** the way the
+documented pattern intends (`#module: <registry import>`). The load aborted
+with (fixed in `core@v0.5.0` — see Status above):
 
 ```
 #module.metadata.modulePath: field not allowed

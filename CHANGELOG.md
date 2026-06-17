@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/open-platform-model/opm-operator/compare/v0.7.2...v0.7.3) (2026-06-17)
+
+
+### Miscellaneous Chores
+
+* **openspec:** add add-example-test-modules change ([5165207](https://github.com/open-platform-model/opm-operator/commit/5165207f625b03f7a4d909795d4a464dbdfd1bd3))
+
 ## [0.7.2](https://github.com/open-platform-model/opm-operator/compare/v0.7.1...v0.7.2) (2026-06-17)
 
 

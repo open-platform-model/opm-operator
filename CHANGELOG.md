@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.2](https://github.com/open-platform-model/opm-operator/compare/v0.7.1...v0.7.2) (2026-06-17)
+
+
+### Miscellaneous Chores
+
+* **deps:** bump library to v0.5.2 ([f3714f8](https://github.com/open-platform-model/opm-operator/commit/f3714f812695108e9ff4812dbf63ec591443b59c))
+* **test:** release render regression core v0.5.0 ([#27](https://github.com/open-platform-model/opm-operator/issues/27)) ([27e9729](https://github.com/open-platform-model/opm-operator/commit/27e9729b463bdac6ab94557a4d21b80438e0c126))
+
 ## [0.7.1](https://github.com/open-platform-model/opm-operator/compare/v0.7.0...v0.7.1) (2026-06-15)
 
 

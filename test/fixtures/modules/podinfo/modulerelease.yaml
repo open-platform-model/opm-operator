@@ -1,0 +1,47 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: podinfo-applier
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: podinfo-applier
+  namespace: default
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: podinfo-applier
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: podinfo-applier
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: podinfo-applier
+---
+apiVersion: releases.opmodel.dev/v1alpha1
+kind: ModuleRelease
+metadata:
+  name: podinfo
+  namespace: default
+spec:
+  module:
+    path: opmodel.dev/modules/test/podinfo@v0
+    version: v0.1.0
+  serviceAccountName: podinfo-applier
+  values:
+    replicas: 2
+  prune: true

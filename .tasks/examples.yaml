@@ -38,14 +38,16 @@ tasks:
       - grep -oP '^\s*version:\s*"\K[0-9][^"]*' {{.MODULE_DIR}}/module.cue | head -1
 
   publish:
-    desc: 'Publish each example module at its declared version if absent (idempotent). SINCE=<git-ref> limits to modules changed since that ref.'
+    desc: 'Publish each example module at its declared version if absent (idempotent). SINCE=<git-ref> limits to modules changed since that ref. PRERELEASE=<id> appends a SemVer pre-release segment (e.g. e2e.gabc1234) so the tag never claims the real release version.'
     vars:
       PUBLISH_REGISTRY: '{{.CUE_REGISTRY | default .GHCR_CUE_REGISTRY}}'
+      PRERELEASE: '{{.PRERELEASE | default ""}}'
     cmds:
       - |
         set -euo pipefail
         export CUE_REGISTRY='{{.PUBLISH_REGISTRY}}'
         since='{{.SINCE}}'
+        prerelease='{{.PRERELEASE}}'
         rc=0
         for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
           name=$(basename "$dir")
@@ -64,6 +66,12 @@ tasks:
             continue
           fi
           tag="v${ver}"
+          # Pre-release publishes (PR e2e) tag as v<ver>-<prerelease> so they
+          # are valid SemVer that sorts BELOW the eventual release version and
+          # never collides with the immutable v<ver> cut on release.
+          if [ -n "$prerelease" ]; then
+            tag="${tag}-${prerelease}"
+          fi
           echo "==> publishing ${name} @ ${tag}"
           if out=$(cd "$dir" && cue mod publish "$tag" 2>&1); then
             echo "$out"
@@ -80,6 +88,35 @@ tasks:
           fi
         done
         exit $rc
+
+  pin:
+    desc: 'Rewrite each example modulerelease.yaml spec.module.version to the module''s declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>). Used by PR e2e to point fixtures at the just-published pre-release tag.'
+    vars:
+      PRERELEASE: '{{.PRERELEASE | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+        prerelease='{{.PRERELEASE}}'
+        for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
+          name=$(basename "$dir")
+          mr="$dir/modulerelease.yaml"
+          [ -f "$mr" ] || continue
+          ver=$(grep -oP '^\s*version:\s*"\K[0-9][^"]*' "$dir/module.cue" | head -1 || true)
+          if [ -z "$ver" ]; then
+            echo "skip ${name}: no metadata.version in module.cue" >&2
+            continue
+          fi
+          tag="v${ver}"
+          if [ -n "$prerelease" ]; then
+            tag="${tag}-${prerelease}"
+          fi
+          # Replace only the indented `version:` line (the module pin); the
+          # apiVersion lines above are untouched (they have no leading space
+          # before `version`). The pin always resets to v<ver>[-<prerelease>],
+          # so re-running with a different PRERELEASE is idempotent.
+          sed -i -E "s|^([[:space:]]+version:[[:space:]]+).*$|\1${tag}|" "$mr"
+          echo "pinned ${name} modulerelease -> ${tag}"
+        done
 
   bundle:
     desc: Bundle example ModuleRelease/Release manifests into release assets under dist/

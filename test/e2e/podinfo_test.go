@@ -54,6 +54,16 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 	var projectDir string
 
 	BeforeAll(func() {
+		// This spec resolves the podinfo example module from a registry the
+		// controller can reach. That requires either the in-cluster registry
+		// override (LOCAL_REGISTRY, set by `task dev:e2e:local`) or GHCR pull
+		// credentials (OPERATOR_DOCKER_CONFIG, set by the PR e2e workflow after
+		// publishing the modules under a pre-release tag). Without one of these
+		// the module cannot be pulled, so skip rather than time out.
+		if os.Getenv("LOCAL_REGISTRY") == "" && os.Getenv("OPERATOR_DOCKER_CONFIG") == "" {
+			Skip("example modules unresolvable: set LOCAL_REGISTRY (local) or OPERATOR_DOCKER_CONFIG (CI GHCR creds)")
+		}
+
 		var err error
 		projectDir, err = utils.GetProjectDir()
 		Expect(err).NotTo(HaveOccurred())
@@ -79,6 +89,41 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 				"--type=json",
 				fmt.Sprintf(`-p=[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=%s"}]`, localRegistry)))
 			Expect(err).NotTo(HaveOccurred(), "Failed to override controller registry")
+		}
+
+		// CI override: the example modules are published to private GHCR under a
+		// pre-release tag before this suite runs, so the in-cluster controller
+		// needs credentials to resolve them from the ghcr default registry. The
+		// workflow writes a Docker config.json (ghcr.io auth) and points
+		// OPERATOR_DOCKER_CONFIG at it; we mount it and set DOCKER_CONFIG so the
+		// CUE module loader (ociauth) authenticates. No-op for local runs, which
+		// resolve from the unauthenticated in-cluster registry above.
+		if dockerCfg := os.Getenv("OPERATOR_DOCKER_CONFIG"); dockerCfg != "" {
+			By("provisioning GHCR pull credentials for the controller")
+			_, err = utils.Run(exec.Command("kubectl", "-n", namespace, "create", "secret", "generic",
+				"ghcr-auth", "--from-file=config.json="+dockerCfg))
+			Expect(err).NotTo(HaveOccurred(), "Failed to create ghcr-auth secret")
+
+			// Strategic merge so the volume/mount/env are added by name without
+			// clobbering the manager's existing tmp volume or args.
+			patch := `spec:
+  template:
+    spec:
+      volumes:
+        - name: ghcr-auth
+          secret:
+            secretName: ghcr-auth
+            items:
+              - {key: config.json, path: config.json}
+      containers:
+        - name: manager
+          env:
+            - {name: DOCKER_CONFIG, value: /ghcr}
+          volumeMounts:
+            - {name: ghcr-auth, mountPath: /ghcr, readOnly: true}`
+			_, err = utils.Run(exec.Command("kubectl", "-n", namespace, "patch", "deployment",
+				"opm-operator-controller-manager", "--type=strategic", "-p", patch))
+			Expect(err).NotTo(HaveOccurred(), "Failed to mount GHCR credentials")
 		}
 
 		By("waiting for the controller-manager to be Available")

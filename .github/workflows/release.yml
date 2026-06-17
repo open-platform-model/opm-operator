@@ -12,6 +12,9 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: open-platform-model/opm-operator
+  # CUE CLI used to publish the example modules. Matches the language version
+  # the modules + catalog declare (v0.17.x); kept in step with catalog_opm CI.
+  CUE_VERSION: 'v0.17.0-alpha.1'
 
 jobs:
   release-please:
@@ -144,3 +147,59 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           gh release upload "${TAG}" dist/install.yaml --clobber
+
+  publish-examples:
+    name: Publish example modules and manifests
+    # Runs after the image is built, so a failed image release blocks module
+    # publication (design D4). Gated on an actual release cut.
+    needs: [release-please, image-release]
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release upload
+      packages: write # cue mod publish to GHCR
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          # Full history + tags so changed-module detection can diff the example
+          # dirs against the previous release tag.
+          fetch-depth: 0
+
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@a93fa358375740cd8b0078f76355512b9208acb1 # v1.0.1
+        with:
+          version: ${{ env.CUE_VERSION }}
+
+      - name: Install Task
+        uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
+        with:
+          version: 3.x
+
+      - name: Log in to GHCR
+        # cue mod publish authenticates to ghcr via the docker config credentials.
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Publish example modules to GHCR (idempotent)
+        env:
+          # opmodel.dev resolves to ghcr.io/open-platform-model, matching how
+          # core/catalog publish. Each module is published at its OWN declared
+          # version; versions already present are treated as success.
+          CUE_REGISTRY: 'opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          echo "Publishing example modules changed since: ${PREV_TAG:-<none>}"
+          task examples:publish SINCE="${PREV_TAG}"
+
+      - name: Bundle example manifests
+        run: task examples:bundle
+
+      - name: Upload example manifests to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          gh release upload "${TAG}" dist/opm-examples.tar.gz --clobber
+          gh release upload "${TAG}" dist/examples/*.yaml --clobber

@@ -1,12 +1,4 @@
-## Purpose
-
-Define the local OCI registry lifecycle used by integration and e2e tests that
-exercise the real `KernelModuleRenderer`. This keeps CUE-native module
-resolution testable in developer and CI environments without depending on the
-public `ghcr.io/open-platform-model` registry, while letting stub-based specs
-run in minimal environments that lack a container runtime.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Local OCI registry for e2e tests
 A local OCI registry MUST be available for e2e tests that exercise the real
@@ -99,25 +91,6 @@ any workload-type labels, rendering exactly one ConfigMap.
 - **WHEN** `cue eval . --concrete` runs in `test/fixtures/modules/hello/` with the local registry mappings
 - **THEN** the module evaluates with no errors, resolving full `metadata` (including `fqn` and `uuid`) and `debugValues`, confirming the kernel-era authoring is correct
 
-### Requirement: End-to-end integration tests
-At least one integration test MUST exercise the real renderer
-(`render.KernelModuleRenderer`) against the local OCI registry, materializing a
-platform from the real catalog, to validate the registry-backed render pipeline:
-module acquisition → kernel `SynthesizeRelease` → `Compile` → rendered resources
-with inventory entries. The test MUST resolve the catalog from the materialized
-platform (the same path the `PlatformReconciler` uses) rather than copying
-catalog sources into `test/fixtures/`, so it tracks production composition
-automatically. Full apply → `Ready=True` on a live cluster is covered by the
-Kind-backed `test/e2e` suite, not this integration-tier test.
-
-#### Scenario: Real-renderer pipeline validated against the registry
-- **WHEN** the integration test runs with the local registry available
-- **THEN** it constructs `render.KernelModuleRenderer` with a kernel-materialized platform, renders a ModuleRelease, and the rendered resources carry inventory entries and the runtime-identity labels (`managed-by = opm-controller`, non-empty release uuid)
-
-#### Scenario: Catalog resolved from the materialized platform
-- **WHEN** the integration test materializes the platform
-- **THEN** the catalog is resolved from the registry via the kernel rather than a copy under `test/fixtures/`, so the test automatically tracks production composition
-
 ### Requirement: Skip when registry unavailable
 Registry-dependent tests MUST skip gracefully (via Ginkgo's `Skip()`) when any
 of the following is true: `CUE_REGISTRY` is unset; `CUE_REGISTRY` does not
@@ -132,28 +105,3 @@ minimal CI environments.
 #### Scenario: No container runtime on PATH
 - **WHEN** neither `docker` nor `podman` is on `PATH`
 - **THEN** `skipIfNoTestRegistry()` invokes `Skip()` with a clear message and stub-based specs continue to run
-
-## Scenarios
-
-### Happy path integration
-
-1. Operator runs `task registry:start && task module:publish` before
-   invoking `go test`
-2. Test invokes `skipIfNoTestRegistry()` and proceeds (registry reachable)
-3. Test materializes a platform from the real catalog via the kernel
-   (`SynthesizePlatform` → `Materialize`) and seeds the platform store
-4. Test constructs `render.KernelModuleRenderer` and renders
-   `opmodel.dev/modules/test/hello@v0`
-5. CUE resolves `opmodel.dev` (fixture, catalog, and core) from the local
-   registry
-6. Rendered resources carry inventory entries and runtime-identity labels
-   (`managed-by = opm-controller`, non-empty release uuid)
-7. Full apply → `Ready=True` on a live cluster is covered by the Kind-backed
-   `test/e2e` suite
-
-### No registry available
-
-1. `skipIfNoTestRegistry()` observes missing `opmodel.dev=` mapping
-   or absent container tool
-2. Registry-dependent specs skip with a clear message
-3. Stub-based specs continue to run

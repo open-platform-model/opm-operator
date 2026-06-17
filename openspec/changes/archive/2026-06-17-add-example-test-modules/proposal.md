@@ -19,12 +19,15 @@ This change adds two real-world example modules (podinfo, redis), migrates all f
 - `example-module-publishing`: CI publication of the example modules as CUE modules to GHCR on release (independent per-module versioning, idempotent re-publish) and the upload of example ModuleRelease manifests as GitHub Release artifacts.
 
 ### Modified Capabilities
-<!-- No existing spec-level requirements change. The release job is extended additively; existing release-automation / container-image-publish requirements are unaffected. -->
+- `test-registry-lifecycle`: the fixture-path migration (D1) moves the `hello` fixture and the test `CUE_REGISTRY` mapping from `testing.opmodel.dev/modules/hello` to `opmodel.dev/modules/test/hello`. The delta updates the path/mapping references in that capability's requirements; the registry lifecycle and skip-guard behavior are otherwise unchanged.
+
+<!-- Release-automation / container-image-publish requirements are unaffected; the release job is extended additively. -->
 
 ## Impact
 
 - **Fixtures**: `test/fixtures/modules/{podinfo,redis}/` (new), `test/fixtures/modules/{hello,hello-web}/` + `test/fixtures/releases/hello/` (path migration).
 - **CUE module identity**: new public path `opmodel.dev/modules/test/<m>@v0` resolving to `ghcr.io/open-platform-model` — no consumer config change beyond the standard `opmodel.dev` mapping already used for `core`/`catalog`.
 - **CI**: `.github/workflows/release.yml` gains module-publish + manifest-upload steps; new Taskfile targets in `.tasks/module.yaml` (and possibly a new `.tasks/examples.yaml`) for per-module publish + version detection.
+- **Cross-repo catalog dependency**: modelling redis's headless Service required an additive extension to `opmodel.dev/catalogs/opm` (`expose.clusterIP: "None"`), shipped as catalog **`@v0.6.0`** (`catalog_opm` repo). `podinfo` and `redis` pin `@v0.6.0`; it must be released to GHCR before this change's modules resolve there. See design D7.
 - **Tests**: new e2e spec under `test/e2e/`; depends on Kind + the local registry + published `core`/`catalog`/example modules.
 - **No Go API/CRD changes**: `api/v1alpha1` untouched; no `dev:manifests`/`dev:generate` needed. SemVer: MINOR for the operator (new CI capability, additive).

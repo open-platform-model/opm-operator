@@ -23,7 +23,7 @@ kind: ModuleRelease
 metadata: { name: hello-web, namespace: default }
 spec:
   module:
-    path: testing.opmodel.dev/modules/hello-web@v0
+    path: opmodel.dev/modules/test/hello-web@v0
     version: v0.1.0
   serviceAccountName: hello-web-applier
   values: {}            # module defaults: nginx:1.27, replicas 1

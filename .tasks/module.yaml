@@ -22,9 +22,10 @@ vars:
   MODULE_DIR: '{{.MODULE_DIR | default "test/fixtures/modules/hello"}}'
   MODULE_VERSION: '{{.MODULE_VERSION | default "v0.0.2"}}'
   # Force the mapping used for `cue mod publish` regardless of shell env.
-  # A shell-exported CUE_REGISTRY without `testing.opmodel.dev=localhost:...`
-  # otherwise falls through to registry.cue.works and fails with 401.
-  PUBLISH_REGISTRY: 'testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works'
+  # The fixture now lives under `opmodel.dev/modules/test/...`; a shell-exported
+  # CUE_REGISTRY without `opmodel.dev=localhost:...` otherwise falls through to
+  # registry.cue.works and fails with 401.
+  PUBLISH_REGISTRY: 'opmodel.dev=localhost:5000+insecure,registry.cue.works'
 
 tasks:
   publish:

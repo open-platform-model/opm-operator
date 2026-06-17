@@ -11,8 +11,8 @@ version: '3'
 
 vars:
   RELEASE_DIR: '{{.RELEASE_DIR | default "test/fixtures/releases/hello"}}'
-  RELEASE_REPO: '{{.RELEASE_REPO | default "oci://localhost:5000/testing.opmodel.dev/releases/hello"}}'
-  RELEASE_GHCR_REPO: '{{.RELEASE_GHCR_REPO | default "oci://ghcr.io/open-platform-model/testing.opmodel.dev/releases/hello"}}'
+  RELEASE_REPO: '{{.RELEASE_REPO | default "oci://localhost:5000/opmodel.dev/releases/test/hello"}}'
+  RELEASE_GHCR_REPO: '{{.RELEASE_GHCR_REPO | default "oci://ghcr.io/open-platform-model/opmodel.dev/releases/test/hello"}}'
   RELEASE_TAG: '{{.RELEASE_TAG | default "v0.0.1"}}'
 
 tasks:

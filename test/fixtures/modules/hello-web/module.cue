@@ -11,7 +11,7 @@ import (
 m.#Module
 
 metadata: {
-	modulePath:  "testing.opmodel.dev/modules"
+	modulePath:  "opmodel.dev/modules/test"
 	name:        "hello-web"
 	version:     "0.1.0"
 	description: "Minimal container workload — renders one Deployment (kernel hidden-field fix probe)"

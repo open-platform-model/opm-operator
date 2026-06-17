@@ -36,7 +36,7 @@ metadata:
   namespace: default
 spec:
   module:
-    path: testing.opmodel.dev/modules/hello@v0
+    path: opmodel.dev/modules/test/hello@v0
     version: v0.0.2
   serviceAccountName: hello-applier
   values:

@@ -56,7 +56,7 @@ var _ = Describe("Module Acquisition Integration", func() {
 			before := countAcquireTempDirs()
 
 			mod, err := moduleacquire.Acquire(ctx, k,
-				"testing.opmodel.dev/modules/hello@v0", "v0.0.2", registry)
+				"opmodel.dev/modules/test/hello@v0", "v0.0.2", registry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mod).NotTo(BeNil())
 			Expect(mod.Metadata).NotTo(BeNil())
@@ -67,7 +67,7 @@ var _ = Describe("Module Acquisition Integration", func() {
 			// self-referential metadata. Acquire now delegates to
 			// Kernel.LoadModuleFromRegistry, which loads the module as the main
 			// module and preserves it; this pins that fix.
-			Expect(mod.Metadata.ModulePath).To(Equal("testing.opmodel.dev/modules"))
+			Expect(mod.Metadata.ModulePath).To(Equal("opmodel.dev/modules/test"))
 
 			// Acquisition no longer stages a temp dir (the library loads the
 			// module in memory); assert none appears, as a guard.
@@ -80,7 +80,7 @@ var _ = Describe("Module Acquisition Integration", func() {
 			before := countAcquireTempDirs()
 
 			mod, err := moduleacquire.Acquire(ctx, k,
-				"testing.opmodel.dev/modules/does-not-exist@v0", "v9.9.9", registry)
+				"opmodel.dev/modules/test/does-not-exist@v0", "v9.9.9", registry)
 			Expect(err).To(HaveOccurred())
 			Expect(mod).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("acquiring module"))

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.4](https://github.com/open-platform-model/opm-operator/compare/v0.7.3...v0.7.4) (2026-06-17)
+
+
+### Miscellaneous Chores
+
+* **docs:** Update status of release-vs-modulerelease-render-divergence ([d63cf13](https://github.com/open-platform-model/opm-operator/commit/d63cf1375e36d07da28f80f0e442b51ce438b31c))
+
 ## [0.7.3](https://github.com/open-platform-model/opm-operator/compare/v0.7.2...v0.7.3) (2026-06-17)
 
 

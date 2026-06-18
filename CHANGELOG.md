@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/open-platform-model/opm-operator/compare/v0.7.4...v0.7.5) (2026-06-18)
+
+
+### Miscellaneous Chores
+
+* **tests:** Add example test modules ([#31](https://github.com/open-platform-model/opm-operator/issues/31)) ([e2aa3bd](https://github.com/open-platform-model/opm-operator/commit/e2aa3bd336b96ec801b9ba476d6f84e8fe74ca61))
+
 ## [0.7.4](https://github.com/open-platform-model/opm-operator/compare/v0.7.3...v0.7.4) (2026-06-17)
 
 

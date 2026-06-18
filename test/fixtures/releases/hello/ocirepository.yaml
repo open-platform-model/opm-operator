@@ -8,7 +8,7 @@ metadata:
   namespace: default
 spec:
   interval: 1m
-  url: oci://opm-registry:5000/testing.opmodel.dev/releases/hello
+  url: oci://opm-registry:5000/opmodel.dev/releases/test/hello
   ref:
     tag: v0.0.1
   insecure: true

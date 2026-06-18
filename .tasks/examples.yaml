@@ -1,0 +1,145 @@
+version: '3'
+
+# Example test module publishing + manifest bundling.
+#
+# Modules under test/fixtures/modules/<m>/ are published as CUE modules to
+# opmodel.dev/modules/test/<m> at each module's OWN declared version
+# (module.cue metadata.version), independent of the operator's release version.
+# Publishing is idempotent: a version already present in the registry is treated
+# as success (CUE module versions are immutable). On release, CI runs
+# `examples:publish` against GHCR, then `examples:bundle` and uploads the
+# manifests to the GitHub Release.
+#
+# The declared version is read from module.cue with grep rather than
+# `cue export -e metadata.version`: evaluating the full package trips a
+# closedness false-positive in the StatelessWorkload/StatefulWorkload blueprints
+# (harmless — the modules publish and materialize correctly — but it makes
+# `cue export` exit non-zero).
+
+vars:
+  MODULES_DIR: '{{.MODULES_DIR | default "test/fixtures/modules"}}'
+  RELEASES_DIR: '{{.RELEASES_DIR | default "test/fixtures/releases"}}'
+  DIST_DIR: '{{.DIST_DIR | default "dist/examples"}}'
+  # GHCR mapping (matches how core/catalog publish). CI sets CUE_REGISTRY in the
+  # environment; for local publishing pass CUE_REGISTRY=opmodel.dev=localhost:5000+insecure,...
+  GHCR_CUE_REGISTRY: '{{.GHCR_CUE_REGISTRY | default "opmodel.dev=ghcr.io/open-platform-model,registry.cue.works"}}'
+
+tasks:
+  list:
+    desc: List example module directories
+    cmds:
+      - find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort
+
+  version:
+    desc: 'Print a module''s declared semver (MODULE_DIR=test/fixtures/modules/<m>)'
+    requires:
+      vars: [MODULE_DIR]
+    cmds:
+      - grep -oP '^\s*version:\s*"\K[0-9][^"]*' {{.MODULE_DIR}}/module.cue | head -1
+
+  publish:
+    desc: 'Publish each example module at its declared version if absent (idempotent). SINCE=<git-ref> limits to modules changed since that ref. PRERELEASE=<id> appends a SemVer pre-release segment (e.g. e2e.gabc1234) so the tag never claims the real release version.'
+    vars:
+      PUBLISH_REGISTRY: '{{.CUE_REGISTRY | default .GHCR_CUE_REGISTRY}}'
+      PRERELEASE: '{{.PRERELEASE | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+        export CUE_REGISTRY='{{.PUBLISH_REGISTRY}}'
+        since='{{.SINCE}}'
+        prerelease='{{.PRERELEASE}}'
+        rc=0
+        for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
+          name=$(basename "$dir")
+          # Changed-module detection (D3): when SINCE is a valid ref, skip
+          # modules whose dir is unchanged since it. The absent-check below is
+          # the authority that keeps the step idempotent even if SINCE is empty.
+          if [ -n "$since" ] && git rev-parse -q --verify "$since" >/dev/null 2>&1; then
+            if git diff --quiet "$since" -- "$dir"; then
+              echo "skip ${name}: unchanged since ${since}"
+              continue
+            fi
+          fi
+          ver=$(grep -oP '^\s*version:\s*"\K[0-9][^"]*' "$dir/module.cue" | head -1 || true)
+          if [ -z "$ver" ]; then
+            echo "skip ${name}: no metadata.version in module.cue" >&2
+            continue
+          fi
+          tag="v${ver}"
+          # Pre-release publishes (PR e2e) tag as v<ver>-<prerelease> so they
+          # are valid SemVer that sorts BELOW the eventual release version and
+          # never collides with the immutable v<ver> cut on release.
+          if [ -n "$prerelease" ]; then
+            tag="${tag}-${prerelease}"
+          fi
+          echo "==> publishing ${name} @ ${tag}"
+          if out=$(cd "$dir" && cue mod publish "$tag" 2>&1); then
+            echo "$out"
+          # Immutable registries (GHCR) reject re-publishing an existing version;
+          # treat that as success so the step is idempotent across releases. The
+          # patterns cover the common OCI/registry phrasings — this branch is
+          # first exercised against real GHCR (the local registry is mutable and
+          # silently overwrites). Auth/network failures do NOT match and surface.
+          elif printf '%s' "$out" | grep -qiE 'already exists|already present|409|conflict|immutable|cannot be (over[- ]?writt?en|modified|replaced)|tag .*(exists|immutable)'; then
+            echo "skip ${name} @ ${tag}: already present (idempotent)"
+          else
+            echo "$out" >&2
+            rc=1
+          fi
+        done
+        exit $rc
+
+  pin:
+    desc: 'Rewrite each example modulerelease.yaml spec.module.version to the module''s declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>). Used by PR e2e to point fixtures at the just-published pre-release tag.'
+    vars:
+      PRERELEASE: '{{.PRERELEASE | default ""}}'
+    cmds:
+      - |
+        set -euo pipefail
+        prerelease='{{.PRERELEASE}}'
+        for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
+          name=$(basename "$dir")
+          mr="$dir/modulerelease.yaml"
+          [ -f "$mr" ] || continue
+          ver=$(grep -oP '^\s*version:\s*"\K[0-9][^"]*' "$dir/module.cue" | head -1 || true)
+          if [ -z "$ver" ]; then
+            echo "skip ${name}: no metadata.version in module.cue" >&2
+            continue
+          fi
+          tag="v${ver}"
+          if [ -n "$prerelease" ]; then
+            tag="${tag}-${prerelease}"
+          fi
+          # Replace only the indented `version:` line (the module pin); the
+          # apiVersion lines above are untouched (they have no leading space
+          # before `version`). The pin always resets to v<ver>[-<prerelease>],
+          # so re-running with a different PRERELEASE is idempotent.
+          sed -i -E "s|^([[:space:]]+version:[[:space:]]+).*$|\1${tag}|" "$mr"
+          echo "pinned ${name} modulerelease -> ${tag}"
+        done
+
+  bundle:
+    desc: Bundle example ModuleRelease/Release manifests into release assets under dist/
+    cmds:
+      - |
+        set -euo pipefail
+        rm -rf {{.DIST_DIR}}
+        mkdir -p {{.DIST_DIR}}
+        # Per-module ModuleRelease manifests.
+        for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
+          name=$(basename "$dir")
+          if [ -f "$dir/modulerelease.yaml" ]; then
+            cp "$dir/modulerelease.yaml" "{{.DIST_DIR}}/${name}-modulerelease.yaml"
+          fi
+        done
+        # Release/OCIRepository fixtures, where present.
+        if [ -d "{{.RELEASES_DIR}}" ]; then
+          for dir in $(find {{.RELEASES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
+            name=$(basename "$dir")
+            for f in "$dir"/release.yaml "$dir"/ocirepository.yaml; do
+              [ -f "$f" ] && cp "$f" "{{.DIST_DIR}}/release-${name}-$(basename "$f")"
+            done
+          done
+        fi
+        tar -czf dist/opm-examples.tar.gz -C {{.DIST_DIR}} .
+        echo "bundled manifests:"; ls -1 {{.DIST_DIR}}; echo "tarball: dist/opm-examples.tar.gz"

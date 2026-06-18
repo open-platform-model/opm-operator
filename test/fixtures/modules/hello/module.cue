@@ -12,7 +12,7 @@ import (
 m.#Module
 
 metadata: {
-	modulePath:  "testing.opmodel.dev/modules"
+	modulePath:  "opmodel.dev/modules/test"
 	name:        "hello"
 	version:     "0.0.2"
 	description: "Minimal test module — renders a single ConfigMap"

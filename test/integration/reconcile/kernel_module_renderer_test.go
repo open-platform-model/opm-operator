@@ -47,13 +47,13 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			renderer := &render.KernelModuleRenderer{
 				Kernel:      kernel.New(),
 				Store:       platformstore.NewStore(),
-				Registry:    "testing.opmodel.dev=localhost:5000+insecure",
+				Registry:    "opmodel.dev=localhost:5000+insecure",
 				RuntimeName: core.LabelManagedByControllerValue,
 			}
 
 			res, err := renderer.RenderModule(ctx,
 				"hello", "default",
-				"testing.opmodel.dev/modules/does-not-exist@v0", "v9.9.9",
+				"opmodel.dev/modules/test/does-not-exist@v0", "v9.9.9",
 				nil)
 
 			Expect(res).To(BeNil())
@@ -110,7 +110,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			values.Raw = []byte(`{"message": "kernel hello"}`)
 			res, err := renderer.RenderModule(ctx,
 				"kernel-hello", "default",
-				"testing.opmodel.dev/modules/hello@v0", "v0.0.2",
+				"opmodel.dev/modules/test/hello@v0", "v0.0.2",
 				values)
 
 			Expect(err).NotTo(HaveOccurred())

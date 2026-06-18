@@ -1,4 +1,4 @@
-module: "opmodel.dev/modules/test/hello-web@v0"
+module: "opmodel.dev/modules/test/redis@v0"
 language: {
 	version: "v0.17.0"
 }

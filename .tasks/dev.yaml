@@ -69,7 +69,10 @@ tasks:
       KIND_CLUSTER: '{{.KIND_CLUSTER}}'
     cmds:
       - defer: '{{.KIND}} delete cluster --name {{.KIND_CLUSTER}}'
-      - go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+      # Explicit -timeout (Go default is 10m): the suite now deploys podinfo and
+      # exercises real reconcile + finalizer-drained teardown, which can exceed
+      # the default on a cold Kind cluster.
+      - go test -tags=e2e -timeout 25m ./test/e2e/ -v -ginkgo.v
 
   e2e:local:
     desc: Run e2e against local Kind w/ opm-registry override (workspace modules must already be published to localhost:5000 — see modules/ task publish)
@@ -79,4 +82,7 @@ tasks:
       KIND_CLUSTER: '{{.KIND_CLUSTER}}'
       LOCAL_REGISTRY: '{{.KIND_CUE_REGISTRY}}'
     cmds:
-      - go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+      # Explicit -timeout (Go default is 10m): the suite now deploys podinfo and
+      # exercises real reconcile + finalizer-drained teardown, which can exceed
+      # the default on a cold Kind cluster.
+      - go test -tags=e2e -timeout 25m ./test/e2e/ -v -ginkgo.v

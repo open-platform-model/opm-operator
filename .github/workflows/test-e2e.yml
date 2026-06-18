@@ -5,10 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  REGISTRY: ghcr.io
+  # opmodel.dev resolves to ghcr.io/open-platform-model, matching how
+  # core/catalog/examples publish and how the controller resolves by default.
+  CUE_REGISTRY: 'opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+  # CUE CLI used to publish the example modules. Matches release.yml.
+  CUE_VERSION: 'v0.17.0-alpha.1'
+
 jobs:
   test-e2e:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # cue mod publish of pre-release example modules to GHCR
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -17,6 +28,11 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
+
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@a93fa358375740cd8b0078f76355512b9208acb1 # v1.0.1
+        with:
+          version: ${{ env.CUE_VERSION }}
 
       - name: Install Task
         uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
@@ -31,6 +47,49 @@ jobs:
 
       - name: Verify kind installation
         run: kind version
+
+      # Same-repo PRs (and pushes) can write packages with GITHUB_TOKEN; fork PRs
+      # get a read-only token and cannot publish. Gate the publish/credential
+      # steps accordingly — when skipped, the podinfo example spec self-skips
+      # (no resolvable module), keeping fork CI green.
+      - name: Determine publish capability
+        id: cap
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || \
+             [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+            echo "can_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Fork PR: skipping GHCR module publish; the podinfo example e2e spec will be skipped."
+          fi
+
+      - name: Prepare GHCR credentials
+        if: steps.cap.outputs.can_publish == 'true'
+        run: |
+          # Write an explicit docker config.json (inline auth, no cred helper) so
+          # both `cue mod publish` and the in-cluster controller authenticate to
+          # ghcr.io. The controller mounts this exact file (OPERATOR_DOCKER_CONFIG).
+          mkdir -p "$RUNNER_TEMP/ghcr"
+          auth=$(printf '%s' "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" | base64 -w0)
+          printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$auth" > "$RUNNER_TEMP/ghcr/config.json"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/ghcr" >> "$GITHUB_ENV"
+          echo "OPERATOR_DOCKER_CONFIG=$RUNNER_TEMP/ghcr/config.json" >> "$GITHUB_ENV"
+
+      - name: Publish example modules to GHCR (pre-release tags)
+        if: steps.cap.outputs.can_publish == 'true'
+        run: |
+          # Per-commit SemVer pre-release segment: e2e.g<short-sha>. The leading
+          # `g` keeps the identifier alphanumeric so an all-digit short SHA can
+          # never form an invalid (leading-zero) numeric pre-release identifier.
+          # The tag (e.g. v0.1.0-e2e.gabc1234) sorts below the real v0.1.0 cut
+          # on release and never collides with it. Publishing is idempotent.
+          PRERELEASE="e2e.g${GITHUB_SHA::7}"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
+          task examples:publish PRERELEASE="$PRERELEASE"
+
+      - name: Pin example fixtures to the published pre-release
+        if: steps.cap.outputs.can_publish == 'true'
+        run: task examples:pin PRERELEASE="$PRERELEASE"
 
       - name: Running Test e2e
         run: |

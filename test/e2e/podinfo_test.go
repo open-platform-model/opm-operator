@@ -191,6 +191,26 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		_, _ = utils.Run(exec.Command("make", "uninstall"))
 	})
 
+	AfterEach(func() {
+		// On failure (e.g. the render wait times out), dump the ModuleRelease
+		// status and controller logs while they still exist — AfterEach runs
+		// before the AfterAll teardown. Module resolution/apply errors surface
+		// in the CR conditions and controller log, which are otherwise invisible
+		// in CI and make a flaky pull undiagnosable.
+		if !CurrentSpecReport().Failed() {
+			return
+		}
+		By("dumping diagnostics for the failed spec")
+		if out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "modulerelease", "podinfo",
+			"-o", "yaml")); err == nil {
+			fmt.Fprintf(GinkgoWriter, "--- ModuleRelease default/podinfo ---\n%s\n", out)
+		}
+		if out, err := utils.Run(exec.Command("kubectl", "-n", namespace, "logs",
+			"-l", "control-plane=controller-manager", "--tail=300")); err == nil {
+			fmt.Fprintf(GinkgoWriter, "--- controller-manager logs ---\n%s\n", out)
+		}
+	})
+
 	It("deploys podinfo and its pods become Ready (proving liveness + readiness pass)", func() {
 		By("applying the podinfo ModuleRelease")
 		_, err := utils.Run(exec.Command("kubectl", "apply", "-f",
@@ -198,10 +218,13 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to apply the podinfo ModuleRelease")
 
 		By("waiting for the controller to render the podinfo Deployment")
+		// Render normally completes in seconds; the generous window lets the
+		// controller's reconcile backoff absorb a transient registry pull error
+		// (cold GHCR fetch in CI) rather than flaking the suite.
 		Eventually(func(g Gomega) {
 			_, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "deploy", deploymentName))
 			g.Expect(err).NotTo(HaveOccurred(), "podinfo Deployment not created yet")
-		}, 3*time.Minute, 3*time.Second).Should(Succeed())
+		}, 5*time.Minute, 3*time.Second).Should(Succeed())
 
 		By("waiting for the podinfo Deployment's pods to become Ready")
 		// modulerelease.yaml requests replicas: 2; both must pass their probes.

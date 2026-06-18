@@ -149,15 +149,38 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		// Use --wait=false on the CR deletes: the controller prunes managed
-		// resources and clears finalizers asynchronously, so a blocking delete
-		// would stall teardown (and a controller restart could stall it
-		// indefinitely). The CRD uninstall below removes any lingering CRs.
+		// Teardown order matters. The ModuleRelease carries the
+		// `releases.opmodel.dev/cleanup` finalizer and, with spec.prune=true,
+		// prunes its managed resources by IMPERSONATING the podinfo-applier
+		// ServiceAccount. The fixture bundles that SA/RBAC and the CR in one
+		// file, so deleting the file wholesale removes the SA out from under the
+		// prune — the controller then stalls with DeletionSAMissing, the
+		// finalizer never clears, and the CRD deletion in `make undeploy`
+		// (config/default includes ../crd) blocks until the test binary times
+		// out. So delete the CR first, let it drain while the SA still exists,
+		// and only then remove the RBAC.
 		By("removing the podinfo ModuleRelease")
+		_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "modulerelease", "podinfo",
+			"--ignore-not-found", "--wait=false"))
+
+		By("waiting for the ModuleRelease finalizer to clear")
+		// Bounded wait for the controller to finish pruning and clear the
+		// finalizer; if it stalls anyway, strip the finalizer so teardown cannot
+		// wedge the CRD deletion below.
+		if _, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "wait", "--for=delete",
+			"modulerelease/podinfo", "--timeout=2m")); err != nil {
+			_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "modulerelease", "podinfo",
+				"--type=merge", "-p", `{"metadata":{"finalizers":null}}`))
+		}
+
+		By("removing the podinfo applier RBAC")
+		// The CR is gone; this clears the ServiceAccount/Role/RoleBinding (and is
+		// a no-op for the already-deleted ModuleRelease).
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "--ignore-not-found", "--wait=false", "-f",
 			filepath.Join(projectDir, "test/fixtures/modules/podinfo/modulerelease.yaml")))
 
 		By("removing the cluster Platform")
+		// The Platform has no finalizer, so a non-blocking delete is sufficient.
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "--ignore-not-found", "--wait=false", "-f",
 			filepath.Join(projectDir, "config/samples/releases_v1alpha1_platform.yaml")))
 

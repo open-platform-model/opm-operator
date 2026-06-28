@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-alpha](https://github.com/open-platform-model/opm-operator/compare/v0.7.5...v1.0.0-alpha) (2026-06-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** the ModuleRelease and gitops Release CRDs and the releases.opmodel.dev API group are renamed; existing manifests must be migrated to ModuleInstance/ModulePackage under opmodel.dev.
+
+### Code Refactoring
+
+* **api:** adopt library v1 - rename Release→ModuleInstance & gitops Release→ModulePackage ([#37](https://github.com/open-platform-model/opm-operator/issues/37)) ([280f7a1](https://github.com/open-platform-model/opm-operator/commit/280f7a16c78689ff734e175b1ad40b109c026702))
+
+
+### Miscellaneous Chores
+
+* configure release-please for the v1 alpha prerelease line ([#39](https://github.com/open-platform-model/opm-operator/issues/39)) ([dc1c253](https://github.com/open-platform-model/opm-operator/commit/dc1c2534fa24b5c7f422c27179dd34bcd5315517))
+
 ## [0.7.5](https://github.com/open-platform-model/opm-operator/compare/v0.7.4...v0.7.5) (2026-06-18)
 
 

@@ -34,10 +34,10 @@ rules:
   - patch
   - update
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases
-  - releases
+  - moduleinstances
+  - modulepackages
   verbs:
   - create
   - delete
@@ -47,24 +47,24 @@ rules:
   - update
   - watch
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases/finalizers
-  - releases/finalizers
+  - moduleinstances/finalizers
+  - modulepackages/finalizers
   verbs:
   - update
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases/status
+  - moduleinstances/status
+  - modulepackages/status
   - platforms/status
-  - releases/status
   verbs:
   - get
   - patch
   - update
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
   - platforms
   verbs:

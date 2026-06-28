@@ -6,23 +6,27 @@ type Outcome int
 
 const (
 	// NoOp — all four digests match last applied. Ready=True, Reconciling=False.
-	// Requeue: none (watch-driven only).
+	// Requeue: watch-driven, plus the controller's periodic interval where one
+	// applies (ModulePackage requeues on spec.interval; ModuleInstance and
+	// Platform are watch-only on the happy path today).
 	NoOp Outcome = iota
 
 	// Applied — resources applied successfully (no prune needed or prune disabled).
-	// Ready=True, Reconciling=False. Requeue: none.
+	// Ready=True, Reconciling=False. Requeue: same as NoOp (interval where the
+	// controller defines one, otherwise watch-driven).
 	Applied
 
 	// AppliedAndPruned — resources applied and stale resources pruned.
-	// Ready=True, Reconciling=False. Requeue: none.
+	// Ready=True, Reconciling=False. Requeue: same as Applied.
 	AppliedAndPruned
 
 	// FailedTransient — temporary failure (network, API server).
-	// Ready=False, Reconciling=True. Requeue: exponential backoff.
+	// Ready=False, Reconciling=True. Requeue: exponential backoff (ComputeBackoff).
 	FailedTransient
 
-	// FailedStalled — permanent failure (invalid config, invalid module).
-	// Ready=False, Stalled=True. Requeue: none (wait for spec change).
+	// FailedStalled — needs a spec or source change to resolve (invalid config,
+	// invalid module). Ready=False, Stalled=True. Requeue: StalledRecheckInterval
+	// (a long safety recheck guarding against misclassification), not none.
 	FailedStalled
 )
 

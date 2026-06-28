@@ -20,12 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GetConditions returns the status conditions of the ModuleRelease.
-func (in *ModuleRelease) GetConditions() []metav1.Condition {
+// GetConditions returns the status conditions of the ModuleInstance.
+func (in *ModuleInstance) GetConditions() []metav1.Condition {
 	return in.Status.Conditions
 }
 
-// SetConditions sets the status conditions on the ModuleRelease.
-func (in *ModuleRelease) SetConditions(conditions []metav1.Condition) {
+// SetConditions sets the status conditions on the ModuleInstance.
+func (in *ModuleInstance) SetConditions(conditions []metav1.Condition) {
 	in.Status.Conditions = conditions
 }

@@ -1,0 +1,141 @@
+## ADDED Requirements
+
+<!-- Renamed from `module-release-synthesis` (0002 D10): the `module-release-synthesis/` spec dir is `git mv`'d to `module-instance-synthesis/` at archive. Requirements reproduced in `ModuleInstance` vocabulary; `Registry configuration` is unchanged. -->
+
+### Requirement: ModuleInstance CR spec shape
+
+The `ModuleInstance` CR MUST use CUE module import paths for resolution rather
+than a Flux source reference.
+
+- `spec.module.path` MUST be a CUE module import path (e.g.
+  `opmodel.dev/modules/cert_manager@v0`).
+- `spec.module.version` MUST be a pinned CUE module version (e.g. `v0.2.1`).
+- `spec.sourceRef` MUST NOT be present.
+
+The controller MUST reject a `ModuleInstance` CR that has an empty
+`spec.module.path` or an empty `spec.module.version`.
+
+#### Scenario: Valid spec accepted
+- **WHEN** a `ModuleInstance` CR is submitted with a non-empty `spec.module.path` and `spec.module.version`
+- **THEN** the controller accepts the CR and proceeds with synthesis
+
+#### Scenario: Missing module path rejected
+- **WHEN** a `ModuleInstance` CR has an empty `spec.module.path`
+- **THEN** the controller rejects the CR and reports the failure via status conditions
+
+#### Scenario: Missing module version rejected
+- **WHEN** a `ModuleInstance` CR has an empty `spec.module.version`
+- **THEN** the controller rejects the CR and reports the failure via status conditions
+
+### Requirement: Registry configuration
+
+The controller MUST accept a `--registry` flag for CUE registry configuration.
+
+The controller MUST read the `OPM_REGISTRY` environment variable as a fallback
+when the `--registry` flag value is empty.
+
+The controller MUST set `CUE_REGISTRY` and `OPM_REGISTRY` to the resolved
+registry value before any CUE module evaluation.
+
+The controller ships a built-in default `--registry` value routing
+`opmodel.dev/*` and `testing.opmodel.dev/*` to `ghcr.io/open-platform-model`
+with `registry.cue.works` as a fallback mirror. Operators override by passing
+an explicit `--registry=<mapping>`, or disable the built-in default by passing
+`--registry=""` (which then falls through to `OPM_REGISTRY`).
+
+Precedence (highest first):
+
+1. `--registry` flag value (including the built-in default when the operator
+   does not pass the flag).
+2. `OPM_REGISTRY` environment variable (reached only when `--registry` is
+   explicitly empty).
+3. CUE's built-in default resolution (reached only when both `--registry` and
+   `OPM_REGISTRY` are empty).
+
+#### Scenario: Flag value wins
+- **WHEN** the controller is started with an explicit `--registry=<mapping>`
+- **THEN** `CUE_REGISTRY` and `OPM_REGISTRY` are set to that mapping before CUE evaluation
+
+#### Scenario: Env fallback when flag empty
+- **WHEN** the controller is started with `--registry=""` and `OPM_REGISTRY` is set
+- **THEN** `CUE_REGISTRY` and `OPM_REGISTRY` are set to the `OPM_REGISTRY` value
+
+#### Scenario: Built-in default applied
+- **WHEN** the controller is started without passing the `--registry` flag
+- **THEN** the built-in default mapping is used, routing `opmodel.dev/*` and `testing.opmodel.dev/*` to `ghcr.io/open-platform-model` with `registry.cue.works` as a fallback
+
+#### Scenario: CUE default resolution
+- **WHEN** both `--registry` is explicitly empty and `OPM_REGISTRY` is unset
+- **THEN** CUE's built-in default resolution is used
+
+### Requirement: Reconcile behavior
+
+The controller MUST synthesize a `#ModuleInstance` CUE package from the CR fields
+on reconcile, rely on CUE's module system to resolve the target module from the
+OCI registry, load the synthesized package, fill values, and pass the resulting
+`#ModuleInstance` value to the existing render pipeline.
+
+The controller MUST reconcile when the `ModuleInstance` CR is created or updated.
+The controller MUST NOT poll the OCI registry for new module versions.
+
+#### Scenario: Create triggers reconcile
+- **WHEN** a new `ModuleInstance` CR is created
+- **THEN** the controller synthesizes and resolves the module and renders resources
+
+#### Scenario: Update triggers reconcile
+- **WHEN** an existing `ModuleInstance` CR is updated (including a `spec.module.version` change)
+- **THEN** the controller re-synthesizes, re-resolves, and re-renders
+
+#### Scenario: No registry polling
+- **WHEN** no `ModuleInstance` CR change occurs
+- **THEN** the controller does not poll the OCI registry for new module versions
+
+### Requirement: Status reporting
+
+The controller MUST report module resolution and render outcome for the
+`ModuleInstance` through its status.
+
+The `status.source` field MAY be updated to reflect:
+
+- The CUE module path and version (from `spec.module`).
+- Whether module resolution from the registry succeeded.
+
+The `status.conditions` MUST report:
+
+- `Ready=True` when the module is successfully resolved, rendered, and applied.
+- `Ready=False` with reason `ResolutionFailed` when CUE cannot resolve the module
+  from the registry.
+- `Ready=False` with reason `RenderFailed` when CUE evaluation or rendering fails.
+- `Stalled=True` when the failure is not transient (e.g. module path does not exist).
+
+#### Scenario: Success reported
+- **WHEN** the module resolves, renders, and applies successfully
+- **THEN** `status.conditions` reports `Ready=True`
+
+#### Scenario: Resolution failure reported
+- **WHEN** CUE cannot resolve the module from the registry
+- **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True` when the failure is not transient
+
+#### Scenario: Render failure reported
+- **WHEN** CUE evaluation or rendering fails
+- **THEN** `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True` when user input must change to resolve the failure
+
+### Requirement: End-to-end instance scenarios
+
+The synthesis flow MUST behave predictably across the common user-facing scenarios.
+
+#### Scenario: Happy path
+- **WHEN** a user creates a `ModuleInstance` CR with valid `spec.module.path` and `spec.module.version`
+- **THEN** the controller synthesizes the `#ModuleInstance` CUE package, CUE resolves the module from the OCI registry, evaluation produces concrete `components`, the render pipeline generates Kubernetes resources, resources are applied via SSA, and `status.conditions` reports `Ready=True`
+
+#### Scenario: Module not found in registry
+- **WHEN** a user creates a `ModuleInstance` CR with a `spec.module.path` that does not exist in the registry
+- **THEN** the controller synthesizes the package, CUE fails to resolve the module, and `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True`
+
+#### Scenario: Invalid values
+- **WHEN** a user creates a `ModuleInstance` CR with values that do not satisfy `#config`
+- **THEN** the controller synthesizes the package and CUE resolves the module, value validation fails in `ParseModuleInstance`, and `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True`
+
+#### Scenario: Version upgrade
+- **WHEN** a user updates `spec.module.version` on an existing `ModuleInstance` CR
+- **THEN** the controller detects the CR change, re-synthesizes the package with the new version, CUE resolves the new version from the registry, new resources are rendered and applied, and previous resources no longer in the inventory are pruned when `prune: true`

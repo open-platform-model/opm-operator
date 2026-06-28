@@ -40,10 +40,14 @@ import (
 // automatically in CI (the example modules + the catalog version they pin live
 // on the local registry); run with `task dev:test:local`.
 //
-// The example modules pin opmodel.dev/catalogs/opm@v0.6.0 (the first catalog
-// release with headless-Service support), so the platform subscription is
-// filtered to the v0.x range that resolves it — matching the cluster Platform
-// sample and avoiding catalog-version skew.
+// The example modules are core@v1 and pin opmodel.dev/catalogs/opm@v1
+// (v1.0.0-alpha.1, the first catalog line on core@v1 vocabulary), so the
+// platform subscription is filtered to the v1 range that resolves it — matching
+// the cluster Platform sample and avoiding catalog-version skew. Resource and
+// transformer FQNs embed the catalog version, so the platform MUST materialize
+// the same catalog version the modules carry; a v0 range (v0.6.0, core@v0)
+// yields "no matching transformer". The lower bound is prerelease-inclusive
+// because plain ">=1.0.0" excludes -alpha tags.
 var _ = Describe("Example module rendering", func() {
 	var (
 		k        *kernel.Kernel
@@ -61,7 +65,7 @@ var _ = Describe("Example module rendering", func() {
 			Type: "kubernetes",
 			Subscriptions: map[string]synth.SubscriptionSpec{
 				"opmodel.dev/catalogs/opm": {
-					Filter: &synth.FilterSpec{Range: ">=0.1.0 <1.0.0"},
+					Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha.1"},
 				},
 			},
 		})
@@ -88,7 +92,7 @@ var _ = Describe("Example module rendering", func() {
 		values.Raw = []byte(`{}`)
 		res, err := renderer.RenderModule(ctx,
 			"redis", "default",
-			"opmodel.dev/modules/test/redis@v0", "v0.1.0",
+			"opmodel.dev/modules/test/redis@v0", "v0.1.6",
 			values)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res).NotTo(BeNil())

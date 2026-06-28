@@ -11,11 +11,11 @@ import (
 )
 
 // Compile-time interface compliance checks.
-var _ conditions.Getter = (*releasesv1alpha1.ModuleRelease)(nil)
-var _ conditions.Setter = (*releasesv1alpha1.ModuleRelease)(nil)
+var _ conditions.Getter = (*releasesv1alpha1.ModuleInstance)(nil)
+var _ conditions.Setter = (*releasesv1alpha1.ModuleInstance)(nil)
 
-func newModuleRelease() *releasesv1alpha1.ModuleRelease {
-	return &releasesv1alpha1.ModuleRelease{
+func newModuleInstance() *releasesv1alpha1.ModuleInstance {
+	return &releasesv1alpha1.ModuleInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test",
 			Namespace:  "default",
@@ -25,7 +25,7 @@ func newModuleRelease() *releasesv1alpha1.ModuleRelease {
 }
 
 func TestMarkReconciling(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	MarkReconciling(obj, SuspendedReason, "starting reconciliation")
 
 	assert.True(t, conditions.IsTrue(obj, ReconcilingCondition))
@@ -34,7 +34,7 @@ func TestMarkReconciling(t *testing.T) {
 }
 
 func TestMarkReconciling_RemovesStalled(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	MarkStalled(obj, RenderFailedReason, "render error")
 	assert.True(t, conditions.Has(obj, StalledCondition))
 
@@ -44,7 +44,7 @@ func TestMarkReconciling_RemovesStalled(t *testing.T) {
 }
 
 func TestMarkStalled(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	MarkStalled(obj, RenderFailedReason, "render error")
 
 	assert.True(t, conditions.IsTrue(obj, StalledCondition))
@@ -53,7 +53,7 @@ func TestMarkStalled(t *testing.T) {
 }
 
 func TestMarkStalled_RemovesReconciling(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	MarkReconciling(obj, SuspendedReason, "working")
 	assert.True(t, conditions.Has(obj, ReconcilingCondition))
 
@@ -63,7 +63,7 @@ func TestMarkStalled_RemovesReconciling(t *testing.T) {
 }
 
 func TestMarkReady(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	// Set up pre-existing conditions that should be cleared.
 	MarkReconciling(obj, SuspendedReason, "working")
 
@@ -76,7 +76,7 @@ func TestMarkReady(t *testing.T) {
 }
 
 func TestMarkSuspended(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	// Set up pre-existing conditions that should be cleared.
 	MarkReconciling(obj, "Progressing", "working")
 	MarkStalled(obj, RenderFailedReason, "render error")
@@ -91,7 +91,7 @@ func TestMarkSuspended(t *testing.T) {
 }
 
 func TestMarkNotReady(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	MarkNotReady(obj, RenderFailedReason, "render failed: invalid values")
 
 	assert.True(t, conditions.IsFalse(obj, ReadyCondition))
@@ -100,7 +100,7 @@ func TestMarkNotReady(t *testing.T) {
 }
 
 func TestMarkModuleResolved(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	MarkModuleResolved(obj, "opmodel.dev/modules/hello@v0@v0.1.0")
 
 	assert.True(t, conditions.IsTrue(obj, ModuleResolvedCondition))
@@ -108,7 +108,7 @@ func TestMarkModuleResolved(t *testing.T) {
 }
 
 func TestMarkModuleResolved_Overwrite(t *testing.T) {
-	obj := newModuleRelease()
+	obj := newModuleInstance()
 	// Manually set a False condition to verify overwrite.
 	conditions.MarkFalse(obj, ModuleResolvedCondition, "Failed", "initial failure")
 	assert.True(t, conditions.IsFalse(obj, ModuleResolvedCondition))

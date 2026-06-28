@@ -1,4 +1,4 @@
-// redis — stateful example module (opmodel.dev/core@v0). Renders a StatefulSet,
+// redis — stateful example module (opmodel.dev/core@v1). Renders a StatefulSet,
 // a headless governing Service (clusterIP: None) for stable per-pod network
 // identity, and a PersistentVolumeClaim for /data, with an exec readiness probe
 // (`redis-cli ping`). Exercises the catalog's stateful transformer path and the
@@ -7,7 +7,7 @@
 package redis
 
 import (
-	m "opmodel.dev/core@v0"
+	m "opmodel.dev/core@v1"
 	res "opmodel.dev/catalogs/opm/resources"
 )
 
@@ -16,7 +16,7 @@ m.#Module
 metadata: {
 	modulePath:  "opmodel.dev/modules/test"
 	name:        "redis"
-	version:     "0.1.0"
+	version:     "0.1.6"
 	description: "Stateful example — StatefulSet + headless Service + PVC with a redis-cli exec readiness probe"
 }
 

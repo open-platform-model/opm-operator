@@ -80,7 +80,7 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 	}
 }`, namespace,
 		core.LabelManagedBy, core.LabelManagedByControllerValue,
-		core.LabelModuleReleaseNamespace, namespace,
+		core.LabelModuleInstanceNamespace, namespace,
 		message))
 	if cm.Err() != nil {
 		panic(fmt.Sprintf("compiling stub ConfigMap: %v", cm.Err()))
@@ -88,7 +88,7 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 
 	resource := &core.Resource{
 		Value:       cm,
-		Release:     "test-module",
+		Instance:    "test-module",
 		Component:   "hello",
 		Transformer: "kubernetes#simple",
 	}

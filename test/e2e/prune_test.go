@@ -25,11 +25,11 @@ import (
 
 var _ = Describe("Prune", func() {
 	// TODO: Validates that stale resources are pruned during a full reconcile cycle.
-	// Requires: ModuleRelease fixture → initial reconcile populating inventory →
+	// Requires: ModuleInstance fixture → initial reconcile populating inventory →
 	// update removing a resource from the desired set → re-reconcile → verify
 	// the removed resource is deleted from the cluster.
 	It("should prune stale resources after module release update", func() {
-		Skip("TODO: requires ModuleRelease reconcile cycle with inventory tracking")
+		Skip("TODO: requires ModuleInstance reconcile cycle with inventory tracking")
 	})
 
 	// TODO: Validates the Namespace safety exclusion during a real reconcile.
@@ -55,10 +55,10 @@ var _ = Describe("Prune", func() {
 	})
 
 	// TODO: Validates that spec.prune=false prevents pruning entirely.
-	// Requires: a ModuleRelease with spec.prune=false, an update removing
+	// Requires: a ModuleInstance with spec.prune=false, an update removing
 	// a resource from the desired set, re-reconcile, and verify the stale
 	// resource is retained in the cluster.
 	It("should skip pruning when spec.prune is false", func() {
-		Skip("TODO: requires ModuleRelease with spec.prune=false")
+		Skip("TODO: requires ModuleInstance with spec.prune=false")
 	})
 })

@@ -26,9 +26,9 @@ import (
 var _ = Describe("Lifecycle", func() {
 	// TODO (design 5.1): Validates full create → Ready → update → delete flow
 	// against a deployed controller. Requires: deployed controller in Kind,
-	// create OCIRepository + ModuleRelease → Eventually Ready=True → managed
+	// create OCIRepository + ModuleInstance → Eventually Ready=True → managed
 	// resources exist → patch spec.values → Eventually resources reflect new
-	// values → delete ModuleRelease → Eventually managed resources cleaned up,
+	// values → delete ModuleInstance → Eventually managed resources cleaned up,
 	// finalizer removed, CR gone.
 	It("should complete create, update, and delete lifecycle", func() {
 		Skip("TODO: requires deployed controller and end-to-end fixture wiring")
@@ -36,7 +36,7 @@ var _ = Describe("Lifecycle", func() {
 
 	// TODO (design 5.2): Validates the real OCI fetch pipeline against a live
 	// artifact server. Requires: push OCI artifact to the Kind-local registry →
-	// OCIRepository pointing at it → ModuleRelease → Eventually controller
+	// OCIRepository pointing at it → ModuleInstance → Eventually controller
 	// performs HTTP fetch, digest verification, zip extraction, CUE validation
 	// → Ready=True, managed resources reflect artifact contents.
 	It("should fetch and render a real OCI artifact", func() {

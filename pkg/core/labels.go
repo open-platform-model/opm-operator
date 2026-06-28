@@ -29,14 +29,17 @@ const (
 	// Used by inventory to track provenance for component-rename safety checks.
 	LabelComponentName = "component.opmodel.dev/name"
 
-	// LabelModuleReleaseName is the release name label.
-	LabelModuleReleaseName = "module-release.opmodel.dev/name"
+	// LabelModuleInstanceName is the instance name label.
+	// Was: LabelModuleReleaseName = "module-release.opmodel.dev/name" (enhancement 0002 D4).
+	LabelModuleInstanceName = "module-instance.opmodel.dev/name"
 
-	// LabelModuleReleaseNamespace is the release namespace label.
-	LabelModuleReleaseNamespace = "module-release.opmodel.dev/namespace"
+	// LabelModuleInstanceNamespace is the instance namespace label.
+	// Was: LabelModuleReleaseNamespace = "module-release.opmodel.dev/namespace" (enhancement 0002 D4).
+	LabelModuleInstanceNamespace = "module-instance.opmodel.dev/namespace"
 
-	// LabelModuleReleaseUUID is the release identity UUID label for resource discovery.
-	LabelModuleReleaseUUID = "module-release.opmodel.dev/uuid"
+	// LabelModuleInstanceUUID is the instance identity UUID label for resource discovery.
+	// Was: LabelModuleReleaseUUID = "module-release.opmodel.dev/uuid" (enhancement 0002 D4).
+	LabelModuleInstanceUUID = "module-instance.opmodel.dev/uuid"
 )
 
 // IsOPMManagedBy reports whether a managed-by label value identifies any OPM

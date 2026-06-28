@@ -85,6 +85,20 @@ var _ = Describe("Manager", Ordered, func() {
 				fmt.Sprintf(`-p=[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=%s"}]`, localRegistry))
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to override controller registry")
+
+			// Wait for the registry-override rollout to fully settle before any
+			// spec runs. The patch triggers a new ReplicaSet; without this wait
+			// the specs race the rollout and can hit a mid-test leader handoff
+			// (empty in-memory platform store) plus a cold catalog cache on the
+			// new pod's first synth, which escalates the reconcile backoff past
+			// the spec timeout. Settling first gives a single stable leader that
+			// materializes the Platform (warming the catalog cache) before the
+			// ModuleInstance specs apply their CRs.
+			By("waiting for the registry-override rollout to settle")
+			cmd = exec.Command("kubectl", "-n", namespace, "rollout", "status",
+				"deployment/opm-operator-controller-manager", "--timeout=120s")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "registry-override rollout did not settle")
 		}
 	})
 
@@ -93,6 +107,14 @@ var _ = Describe("Manager", Ordered, func() {
 	AfterAll(func() {
 		By("cleaning up the curl pod for metrics")
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
+		_, _ = utils.Run(cmd)
+
+		By("removing the metrics ClusterRoleBinding")
+		// The metrics spec creates this cluster-scoped binding but it is not tied
+		// to the namespace deleted below, so it must be removed explicitly. On a
+		// reused Kind cluster a leftover binding makes the next run's
+		// `kubectl create clusterrolebinding` fail with AlreadyExists.
+		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
 		By("undeploying the controller-manager")

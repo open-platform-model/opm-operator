@@ -59,7 +59,7 @@ var _ = Describe("Finalizer-add requeue (manager-driven)", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		reconciler := &opmcontroller.ModuleReleaseReconciler{
+		reconciler := &opmcontroller.ModuleInstanceReconciler{
 			Client:          mgr.GetClient(),
 			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
@@ -76,12 +76,12 @@ var _ = Describe("Finalizer-add requeue (manager-driven)", func() {
 		}()
 
 		mrName := "finalizer-requeue-mr"
-		mr := &releasesv1alpha1.ModuleRelease{
+		mr := &releasesv1alpha1.ModuleInstance{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      mrName,
 				Namespace: namespace,
 			},
-			Spec: releasesv1alpha1.ModuleReleaseSpec{
+			Spec: releasesv1alpha1.ModuleInstanceSpec{
 				Module: releasesv1alpha1.ModuleReference{
 					Path:    "opmodel.dev/test/module",
 					Version: "v0.1.0",
@@ -95,7 +95,7 @@ var _ = Describe("Finalizer-add requeue (manager-driven)", func() {
 
 		nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 		Eventually(func(g Gomega) {
-			var current releasesv1alpha1.ModuleRelease
+			var current releasesv1alpha1.ModuleInstance
 			g.Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
 
 			g.Expect(current.Finalizers).To(ContainElement(opmreconcile.FinalizerName),
@@ -123,11 +123,11 @@ var _ = Describe("Finalizer-add requeue (manager-driven)", func() {
 
 		// Cleanup: delete the MR (finalizer removed by handleDeletion once the
 		// reconciler processes the deletion event).
-		Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+		Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 			ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 		})).To(Succeed())
 		Eventually(func() bool {
-			var current releasesv1alpha1.ModuleRelease
+			var current releasesv1alpha1.ModuleInstance
 			err := k8sClient.Get(ctx, nn, &current)
 			return err != nil
 		}).WithTimeout(10 * time.Second).WithPolling(250 * time.Millisecond).Should(BeTrue())

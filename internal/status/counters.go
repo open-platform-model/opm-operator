@@ -14,12 +14,13 @@ const (
 
 // EnsureCounters initializes status.FailureCounters if nil and returns the pointer.
 // Callers can safely use the returned pointer without nil checks.
-func EnsureCounters(status *releasesv1alpha1.ModuleReleaseStatus) *releasesv1alpha1.FailureCounters {
+func EnsureCounters(status *releasesv1alpha1.ModuleInstanceStatus) *releasesv1alpha1.FailureCounters {
 	return ensureCountersField(&status.FailureCounters)
 }
 
-// EnsureReleaseCounters is the Release equivalent of EnsureCounters.
-func EnsureReleaseCounters(status *releasesv1alpha1.ReleaseStatus) *releasesv1alpha1.FailureCounters {
+// Was: EnsureReleaseCounters
+// EnsureModulePackageCounters is the ModulePackage equivalent of EnsureCounters.
+func EnsureModulePackageCounters(status *releasesv1alpha1.ModulePackageStatus) *releasesv1alpha1.FailureCounters {
 	return ensureCountersField(&status.FailureCounters)
 }
 

@@ -6,7 +6,7 @@ import (
 
 // ResourceFromCompiled adapts a library *core.Compiled — the kernel's terminal
 // per-transformer output — into the operator's *Resource. The two types carry
-// identical fields (CUE value plus release/component/transformer provenance),
+// identical fields (CUE value plus instance/component/transformer provenance),
 // so the adapter is a field copy; it exists so the kernel-backed render path
 // can hand its compiled output to the operator's existing inventory and apply
 // pipeline unchanged.
@@ -18,7 +18,7 @@ func ResourceFromCompiled(c *librarycore.Compiled) *Resource {
 	}
 	return &Resource{
 		Value:       c.Value,
-		Release:     c.Release,
+		Instance:    c.Instance,
 		Component:   c.Component,
 		Transformer: c.Transformer,
 	}

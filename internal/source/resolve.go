@@ -32,14 +32,14 @@ type fluxSource interface {
 // Resolve looks up the Flux source referenced by sourceRef, validates its
 // readiness, and extracts artifact metadata. Supports OCIRepository,
 // GitRepository, and Bucket source kinds. The source is looked up in
-// releaseNamespace unless sourceRef.Namespace is set.
+// objectNamespace unless sourceRef.Namespace is set.
 func Resolve(
 	ctx context.Context,
 	c client.Client,
 	sourceRef releasesv1alpha1.SourceReference,
-	releaseNamespace string,
+	objectNamespace string,
 ) (*ArtifactRef, error) {
-	ns := releaseNamespace
+	ns := objectNamespace
 	if sourceRef.Namespace != "" {
 		ns = sourceRef.Namespace
 	}

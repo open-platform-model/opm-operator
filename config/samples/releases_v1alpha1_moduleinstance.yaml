@@ -1,0 +1,15 @@
+apiVersion: opmodel.dev/v1alpha1
+kind: ModuleInstance
+metadata:
+  labels:
+    app.kubernetes.io/name: opm-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: moduleinstance-sample
+  namespace: default
+spec:
+  module:
+    path: opmodel.dev/modules/test/hello@v0
+    version: v0.0.2
+  values:
+    message: "hello from local dev"
+  prune: true

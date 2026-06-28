@@ -63,7 +63,7 @@ func (r *platformGatedStubRenderer) RenderModule(
 	return stubRenderResult(ns, values), nil
 }
 
-// This is the end-to-end counterpart to the unit-level mapPlatformToModuleReleases
+// This is the end-to-end counterpart to the unit-level mapPlatformToModuleInstances
 // test: it runs a real manager so the Platform watch (and the generation
 // predicate that now lives on For(), not as a global event filter) actually
 // fire, proving a release blocked on PlatformNotReady recovers on a Platform
@@ -91,7 +91,7 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		}))).To(Succeed())
 
 		// A sibling spec also runs a manager wiring a controller named
-		// "modulerelease"; controller-runtime enforces process-global name
+		// "moduleinstance"; controller-runtime enforces process-global name
 		// uniqueness, so skip that check for this test-only manager.
 		skipNameValidation := true
 		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
@@ -106,7 +106,7 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		// Empty store → renderer gates with ErrPlatformNotReady until we Set it.
 		store := platformstore.NewStore()
 
-		reconciler := &opmcontroller.ModuleReleaseReconciler{
+		reconciler := &opmcontroller.ModuleInstanceReconciler{
 			Client:          mgr.GetClient(),
 			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
@@ -124,9 +124,9 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 
 		nn := types.NamespacedName{Name: mrName, Namespace: gateNamespace}
 		cmName := types.NamespacedName{Name: "test-module", Namespace: gateNamespace}
-		mr := &releasesv1alpha1.ModuleRelease{
+		mr := &releasesv1alpha1.ModuleInstance{
 			ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: gateNamespace},
-			Spec: releasesv1alpha1.ModuleReleaseSpec{
+			Spec: releasesv1alpha1.ModuleInstanceSpec{
 				Module: releasesv1alpha1.ModuleReference{
 					Path:    "opmodel.dev/test/module",
 					Version: "v0.1.0",
@@ -142,7 +142,7 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		// stalled-recheck, so anything that unblocks it within the test window
 		// must come from the Platform watch.
 		Eventually(func(g Gomega) {
-			var current releasesv1alpha1.ModuleRelease
+			var current releasesv1alpha1.ModuleInstance
 			g.Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
 			ready := meta.FindStatusCondition(current.Status.Conditions, status.ReadyCondition)
 			g.Expect(ready).NotTo(BeNil())
@@ -155,7 +155,7 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 			To(MatchError(ContainSubstring("not found")))
 
 		// Phase 2: materialize the platform in the store, then apply the Platform
-		// CR. The CR change triggers the watch → mapPlatformToModuleReleases
+		// CR. The CR change triggers the watch → mapPlatformToModuleInstances
 		// re-enqueues the blocked release; the store is now populated, so the
 		// renderer succeeds and the resources are applied. The watch enqueues
 		// every release on any Platform change, independent of the Platform's
@@ -168,7 +168,7 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		Expect(k8sClient.Create(ctx, platform)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			var current releasesv1alpha1.ModuleRelease
+			var current releasesv1alpha1.ModuleInstance
 			g.Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
 			ready := meta.FindStatusCondition(current.Status.Conditions, status.ReadyCondition)
 			g.Expect(ready).NotTo(BeNil())
@@ -182,11 +182,11 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		}).WithTimeout(10 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
 
 		// Cleanup.
-		Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+		Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 			ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: gateNamespace},
 		})).To(Succeed())
 		Eventually(func() bool {
-			var current releasesv1alpha1.ModuleRelease
+			var current releasesv1alpha1.ModuleInstance
 			return k8sClient.Get(ctx, nn, &current) != nil
 		}).WithTimeout(10 * time.Second).WithPolling(250 * time.Millisecond).Should(BeTrue())
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.ConfigMap{

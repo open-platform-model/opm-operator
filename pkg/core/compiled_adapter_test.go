@@ -18,7 +18,7 @@ func TestResourceFromCompiled_CopiesFields(t *testing.T) {
 
 	compiled := &librarycore.Compiled{
 		Value:       v,
-		Release:     "test-release",
+		Instance:    "test-instance",
 		Component:   "web",
 		Transformer: "transformers/deployment-transformer@v0.1.0",
 	}
@@ -26,7 +26,7 @@ func TestResourceFromCompiled_CopiesFields(t *testing.T) {
 	got := core.ResourceFromCompiled(compiled)
 	require.NotNil(t, got)
 
-	assert.Equal(t, compiled.Release, got.Release)
+	assert.Equal(t, compiled.Instance, got.Instance)
 	assert.Equal(t, compiled.Component, got.Component)
 	assert.Equal(t, compiled.Transformer, got.Transformer)
 

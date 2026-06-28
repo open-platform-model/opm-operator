@@ -41,8 +41,8 @@ const testOwnerUUID = "00000000-0000-0000-0000-0000000000aa"
 // testOwnerUUID.
 func ownedLabels() map[string]string {
 	return map[string]string{
-		core.LabelManagedBy:         core.LabelManagedByControllerValue,
-		core.LabelModuleReleaseUUID: testOwnerUUID,
+		core.LabelManagedBy:          core.LabelManagedByControllerValue,
+		core.LabelModuleInstanceUUID: testOwnerUUID,
 	}
 }
 
@@ -305,8 +305,8 @@ var _ = Describe("Prune", func() {
 					Name:      "prune-cross-mr-cm",
 					Namespace: "default",
 					Labels: map[string]string{
-						core.LabelManagedBy:         core.LabelManagedByControllerValue,
-						core.LabelModuleReleaseUUID: otherUUID,
+						core.LabelManagedBy:          core.LabelManagedByControllerValue,
+						core.LabelModuleInstanceUUID: otherUUID,
 					},
 				},
 				Data: map[string]string{"key": "cross"},

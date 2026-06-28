@@ -22,7 +22,7 @@ import (
 // branch on it via errors.Is without string matching.
 var ErrPlatformNotReady = errors.New("platform not ready: no materialized platform")
 
-// KernelModuleRenderer renders a ModuleRelease entirely through the library
+// KernelModuleRenderer renders a ModuleInstance entirely through the library
 // kernel behind the ModuleRenderer seam: it reads the materialized platform
 // from the store, acquires the target module from the registry, synthesizes
 // the release, and compiles it against the platform.
@@ -70,7 +70,7 @@ func (r *KernelModuleRenderer) RenderModule(
 	}
 
 	// Convert CRD values to a cue.Value. The zero cue.Value signals "no values
-	// supplied" to SynthesizeRelease, which then relies on the module's #config
+	// supplied" to SynthesizeInstance, which then relies on the module's #config
 	// defaults for concreteness — mirroring the legacy path's behavior.
 	var cueValues cue.Value
 	if values != nil && values.Raw != nil {
@@ -81,7 +81,7 @@ func (r *KernelModuleRenderer) RenderModule(
 		cueValues = compiled
 	}
 
-	rel, err := r.Kernel.SynthesizeRelease(ctx, synth.ReleaseInput{
+	rel, err := r.Kernel.SynthesizeInstance(ctx, synth.InstanceInput{
 		Module:    mod,
 		Name:      name,
 		Namespace: namespace,
@@ -92,9 +92,9 @@ func (r *KernelModuleRenderer) RenderModule(
 	}
 
 	out, err := r.Kernel.Compile(ctx, kernel.CompileInput{
-		ModuleRelease: rel,
-		Platform:      mp,
-		RuntimeName:   r.RuntimeName,
+		ModuleInstance: rel,
+		Platform:       mp,
+		RuntimeName:    r.RuntimeName,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compiling module release: %w", err)

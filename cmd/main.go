@@ -98,8 +98,8 @@ func main() {
 	flag.StringVar(&cueCacheDir, "cue-cache-dir", "/tmp/cue-cache",
 		"Directory for CUE module download cache.")
 	flag.StringVar(&defaultServiceAccount, "default-service-account", "",
-		"Name of the ServiceAccount to impersonate when a ModuleRelease or Release has an empty "+
-			"spec.serviceAccountName. The SA is resolved in the release's own namespace (not the "+
+		"Name of the ServiceAccount to impersonate when a ModuleInstance or ModulePackage has an empty "+
+			"spec.serviceAccountName. The SA is resolved in the resource's own namespace (not the "+
 			"controller's); it must exist in each tenant namespace or the reconcile stalls with "+
 			"ImpersonationFailed. Empty (default) preserves today's behavior: fall back to the "+
 			"controller's own identity. See docs/TENANCY.md for the recommended per-namespace SA pattern.")
@@ -250,7 +250,7 @@ func main() {
 
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
-	if err := (&controller.ModuleReleaseReconciler{
+	if err := (&controller.ModuleInstanceReconciler{
 		Client:          mgr.GetClient(),
 		APIReader:       mgr.GetAPIReader(),
 		Scheme:          mgr.GetScheme(),
@@ -266,10 +266,10 @@ func main() {
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "ModuleRelease")
+		setupLog.Error(err, "Failed to create controller", "controller", "ModuleInstance")
 		os.Exit(1)
 	}
-	if err := (&controller.ReleaseReconciler{
+	if err := (&controller.ModulePackageReconciler{
 		Client:          mgr.GetClient(),
 		APIReader:       mgr.GetAPIReader(),
 		Scheme:          mgr.GetScheme(),
@@ -277,7 +277,7 @@ func main() {
 		ResourceManager: resourceManager,
 		EventRecorder:   mgr.GetEventRecorder("opm-controller"),
 		Fetcher:         &source.ArtifactFetcher{},
-		Renderer: &render.KernelReleaseRenderer{
+		Renderer: &render.KernelPackageRenderer{
 			Kernel:      k,
 			Store:       platformStore,
 			Registry:    registry,
@@ -286,7 +286,7 @@ func main() {
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "Release")
+		setupLog.Error(err, "Failed to create controller", "controller", "ModulePackage")
 		os.Exit(1)
 	}
 	if err := (&controller.PlatformReconciler{

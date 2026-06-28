@@ -18,7 +18,7 @@ subjects:
   - { kind: ServiceAccount, name: hello-web-applier, namespace: default }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: hello-web-applier }
 ---
-apiVersion: releases.opmodel.dev/v1alpha1
+apiVersion: opmodel.dev/v1alpha1
 kind: ModuleRelease
 metadata: { name: hello-web, namespace: default }
 spec:

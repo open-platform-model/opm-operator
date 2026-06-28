@@ -29,20 +29,20 @@ type FetchOptions struct {
 
 	// SkipRootCUEModuleValidation skips the post-extraction check that
 	// cue.mod/module.cue exists at the destination root. Callers that place
-	// the CUE module at a subdirectory (Release CR) should enable this.
+	// the CUE module at a subdirectory (ModulePackage CR) should enable this.
 	SkipRootCUEModuleValidation bool
 }
 
 // FormatForKind returns the archive format used by the given Flux source kind
-// when consumed by the Release reconciler.
+// when consumed by the ModulePackage reconciler.
 //
 // All three kinds produce tar.gz: GitRepository/Bucket bundle the repo tree as
-// tar.gz natively, and OCIRepository artifacts for Release are expected to be
+// tar.gz natively, and OCIRepository artifacts for ModulePackage are expected to be
 // published via `flux push artifact`, which emits
 // `application/vnd.cncf.flux.content.v1.tar+gzip`.
 //
 // The legacy zip format (used by `cue mod publish`) belongs to the
-// ModuleRelease cue-native path and does NOT flow through this fetcher.
+// ModuleInstance cue-native path and does NOT flow through this fetcher.
 func FormatForKind(_ string) ArchiveFormat {
 	return ArchiveFormatTarGz
 }

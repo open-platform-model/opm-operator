@@ -36,13 +36,13 @@ import (
 
 const namespace = "default"
 
-func createModuleRelease(name string) {
-	mr := &releasesv1alpha1.ModuleRelease{
+func createModuleInstance(name string) {
+	mr := &releasesv1alpha1.ModuleInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: releasesv1alpha1.ModuleReleaseSpec{
+		Spec: releasesv1alpha1.ModuleInstanceSpec{
 			Module: releasesv1alpha1.ModuleReference{
 				Path:    "opmodel.dev/test/module",
 				Version: "v0.1.0",
@@ -55,8 +55,8 @@ func createModuleRelease(name string) {
 	Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 }
 
-func reconcileParams() *opmreconcile.ModuleReleaseParams {
-	return &opmreconcile.ModuleReleaseParams{
+func reconcileParams() *opmreconcile.ModuleInstanceParams {
+	return &opmreconcile.ModuleInstanceParams{
 		Client:          k8sClient,
 		ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 		EventRecorder:   events.NewFakeRecorder(10),
@@ -66,8 +66,8 @@ func reconcileParams() *opmreconcile.ModuleReleaseParams {
 
 // ensureFinalizer runs one reconcile to register the finalizer, then verifies it was added.
 // Call this before the "real" test reconcile for any test that expects to reach Phase 1+.
-func ensureFinalizer(params *opmreconcile.ModuleReleaseParams, nn types.NamespacedName) {
-	result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+func ensureFinalizer(params *opmreconcile.ModuleInstanceParams, nn types.NamespacedName) {
+	result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 		NamespacedName: nn,
 	})
 	Expect(err).NotTo(HaveOccurred())
@@ -79,7 +79,7 @@ func ensureFinalizer(params *opmreconcile.ModuleReleaseParams, nn types.Namespac
 var _ = Describe("Reconcile Error Paths", func() {
 	Context("Render failure", func() {
 		It("should set Stalled with RenderFailed when module has no components", func() {
-			createModuleRelease("render-fail-mr")
+			createModuleInstance("render-fail-mr")
 
 			// Inject a render failure (not classified as resolution error).
 			params := reconcileParams()
@@ -88,7 +88,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			nn := types.NamespacedName{Name: "render-fail-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name: "render-fail-mr", Namespace: namespace,
 				},
@@ -96,7 +96,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(err).NotTo(HaveOccurred(), "stalled errors return nil")
 			Expect(result.RequeueAfter).To(Equal(30*time.Minute), "stalled requeues with safety interval")
 
-			var mr releasesv1alpha1.ModuleRelease
+			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: "render-fail-mr", Namespace: namespace,
 			}, &mr)).To(Succeed())
@@ -120,7 +120,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(mr.Status.History[0].Message).To(ContainSubstring("no resources rendered"))
 
 			// Cleanup
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "render-fail-mr", Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -129,12 +129,12 @@ var _ = Describe("Reconcile Error Paths", func() {
 	Context("Source not found (stalled)", func() {
 		It("should set Stalled when source does not exist", func() {
 			// Create MR referencing a module that does not exist.
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "stalled-mr",
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test",
 						Version: "v0.1.0",
@@ -149,13 +149,13 @@ var _ = Describe("Reconcile Error Paths", func() {
 			nn := types.NamespacedName{Name: "stalled-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred(), "stalled returns nil error")
 			Expect(result.RequeueAfter).To(Equal(30*time.Minute), "stalled requeues with safety interval")
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: "stalled-mr", Namespace: namespace,
 			}, &updated)).To(Succeed())
@@ -177,7 +177,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 
 	Context("Status updated on failure", func() {
 		It("should populate lastAttempted fields even when reconcile fails", func() {
-			createModuleRelease("status-fail-mr")
+			createModuleInstance("status-fail-mr")
 
 			params := reconcileParams()
 			params.Renderer = renderErrorRenderer("network timeout")
@@ -185,11 +185,11 @@ var _ = Describe("Reconcile Error Paths", func() {
 			nn := types.NamespacedName{Name: "status-fail-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			_, _ = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			_, _ = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 
-			var mr releasesv1alpha1.ModuleRelease
+			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: "status-fail-mr", Namespace: namespace,
 			}, &mr)).To(Succeed())
@@ -211,7 +211,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(mr.Status.History[0].Message).To(ContainSubstring("network timeout"))
 
 			// Cleanup
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "status-fail-mr", Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -219,12 +219,12 @@ var _ = Describe("Reconcile Error Paths", func() {
 
 	Context("nextRetryAt status field", func() {
 		It("should set nextRetryAt on stalled failure", func() {
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "retry-stalled-mr",
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/nonexistent",
 						Version: "v0.1.0",
@@ -238,13 +238,13 @@ var _ = Describe("Reconcile Error Paths", func() {
 			nn := types.NamespacedName{Name: "retry-stalled-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(30 * time.Minute))
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 			Expect(updated.Status.NextRetryAt).NotTo(BeNil(), "nextRetryAt should be set on stalled failure")
 
@@ -254,31 +254,31 @@ var _ = Describe("Reconcile Error Paths", func() {
 
 	})
 
-	Context("Status.ReleaseUUID persistence", func() {
-		It("populates Status.ReleaseUUID after a successful render", func() {
+	Context("Status.InstanceUUID persistence", func() {
+		It("populates Status.InstanceUUID after a successful render", func() {
 			mrName := "uuid-persist-mr"
-			createModuleRelease(mrName)
+			createModuleInstance(mrName)
 
 			params := reconcileParams()
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
-			Expect(updated.Status.ReleaseUUID).To(Equal(stubReleaseUUID),
-				"Status.ReleaseUUID must be set from the rendered resources' UUID label")
+			Expect(updated.Status.InstanceUUID).To(Equal(stubInstanceUUID),
+				"Status.InstanceUUID must be set from the rendered resources' UUID label")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -287,12 +287,12 @@ var _ = Describe("Reconcile Error Paths", func() {
 	Context("Partial failure preserves inventory", func() {
 		It("should keep previous inventory when prune fails after successful apply", func() {
 			// Create MR with prune=true.
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "partial-fail-mr",
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -311,13 +311,13 @@ var _ = Describe("Reconcile Error Paths", func() {
 			ensureFinalizer(params, nn)
 
 			// Second reconcile — succeeds, populates inventory.
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
-			var firstMR releasesv1alpha1.ModuleRelease
+			var firstMR releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &firstMR)).To(Succeed())
 			Expect(firstMR.Status.Inventory).NotTo(BeNil())
 			firstRevision := firstMR.Status.Inventory.Revision
@@ -327,7 +327,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			// Inject a fake stale inventory entry AND change the source digest
 			// so the second reconcile proceeds past no-op detection.
 			Eventually(func() error {
-				var latest releasesv1alpha1.ModuleRelease
+				var latest releasesv1alpha1.ModuleInstance
 				if err := k8sClient.Get(ctx, nn, &latest); err != nil {
 					return err
 				}
@@ -348,14 +348,14 @@ var _ = Describe("Reconcile Error Paths", func() {
 
 			// Second reconcile — apply succeeds (unchanged), prune should fail
 			// on the fake GVK entry.
-			result, err = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred(), "transient failure returns nil error with backoff")
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "transient failure requeues with backoff")
 
 			// Verify inventory was NOT updated (preserved from first reconcile).
-			var secondMR releasesv1alpha1.ModuleRelease
+			var secondMR releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &secondMR)).To(Succeed())
 			Expect(secondMR.Status.Inventory).NotTo(BeNil())
 			// The inventory should still show the version from the first reconcile
@@ -374,7 +374,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "partial-fail-mr", Namespace: namespace},
 			})).To(Succeed())
 		})

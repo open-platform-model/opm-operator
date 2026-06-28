@@ -38,7 +38,7 @@ func newTestResource(t *testing.T, cueSrc string) *core.Resource {
 	require.NoError(t, v.Err())
 	return &core.Resource{
 		Value:       v,
-		Release:     "test-release",
+		Instance:    "test-instance",
 		Component:   "test-component",
 		Transformer: "kubernetes#deployment",
 	}

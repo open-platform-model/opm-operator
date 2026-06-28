@@ -31,7 +31,7 @@ import (
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
-// These tests exercise KernelModuleRenderer directly (the ModuleRelease
+// These tests exercise KernelModuleRenderer directly (the ModuleInstance
 // reconciler now wires it in production). The happy path requires the fixture
 // module published to a local OCI registry plus a resolvable catalog to
 // materialize the platform against; it is skipped automatically when either is
@@ -80,11 +80,17 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			if catalogPath == "" {
 				catalogPath = "opmodel.dev/catalogs/opm"
 			}
+			// The fixture (hello) is core@v1 and pins catalogs/opm@v1
+			// (v1.0.0-alpha.1). Resource/transformer FQNs embed the catalog
+			// version, so the platform must materialize that same v1 catalog. An
+			// unfiltered subscription resolves the highest *stable* release and
+			// excludes the -alpha prerelease — yielding the core@v0 v0.6.0 catalog
+			// and "no matching transformer". Pin the prerelease-inclusive v1 range.
 			plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
 				Name: "cluster",
 				Type: "kubernetes",
 				Subscriptions: map[string]synth.SubscriptionSpec{
-					catalogPath: {},
+					catalogPath: {Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha.1"}},
 				},
 			})
 			if err != nil {
@@ -110,7 +116,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			values.Raw = []byte(`{"message": "kernel hello"}`)
 			res, err := renderer.RenderModule(ctx,
 				"kernel-hello", "default",
-				"opmodel.dev/modules/test/hello@v0", "v0.0.2",
+				"opmodel.dev/modules/test/hello@v0", "v0.0.4",
 				values)
 
 			Expect(err).NotTo(HaveOccurred())
@@ -123,7 +129,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			// runtime-identity labels that lock the Go/CUE contract between
 			// core.LabelManagedByControllerValue and the catalog's #runtimeName.
 			for _, r := range res.Resources {
-				Expect(r.Release).NotTo(BeEmpty(), "resource %s missing release provenance", r)
+				Expect(r.Instance).NotTo(BeEmpty(), "resource %s missing instance provenance", r)
 				Expect(r.Component).NotTo(BeEmpty(), "resource %s missing component provenance", r)
 				Expect(r.Transformer).NotTo(BeEmpty(), "resource %s missing transformer provenance", r)
 
@@ -133,7 +139,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Expect(labels).NotTo(BeNil(), "rendered resource %s must carry labels", u.GetName())
 				Expect(labels[core.LabelManagedBy]).To(Equal(core.LabelManagedByControllerValue),
 					"managed-by must be opm-controller (Go/CUE contract)")
-				Expect(labels[core.LabelModuleReleaseUUID]).NotTo(BeEmpty(),
+				Expect(labels[core.LabelModuleInstanceUUID]).NotTo(BeEmpty(),
 					"module-release uuid must be non-empty (catalog ownership labels must continue to flow)")
 			}
 

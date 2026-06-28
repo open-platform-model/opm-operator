@@ -13,4 +13,4 @@ const KindModuleInstance = "ModuleInstance"
 // ErrUnsupportedKind indicates the loaded CUE value has a `kind` field that
 // this controller cannot render. Only #ModuleInstance is renderable; any other
 // kind is rejected with this error.
-var ErrUnsupportedKind = errors.New("unsupported release kind")
+var ErrUnsupportedKind = errors.New("unsupported instance kind")

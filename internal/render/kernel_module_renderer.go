@@ -25,7 +25,7 @@ var ErrPlatformNotReady = errors.New("platform not ready: no materialized platfo
 // KernelModuleRenderer renders a ModuleInstance entirely through the library
 // kernel behind the ModuleRenderer seam: it reads the materialized platform
 // from the store, acquires the target module from the registry, synthesizes
-// the release, and compiles it against the platform.
+// the instance, and compiles it against the platform.
 type KernelModuleRenderer struct {
 	// Kernel is the shared, long-lived library Kernel (one per process).
 	Kernel *kernel.Kernel
@@ -49,7 +49,7 @@ var _ ModuleRenderer = (*KernelModuleRenderer)(nil)
 // store (returning ErrPlatformNotReady before any I/O when absent), acquires
 // the module, compiles supplied values to a cue.Value (the zero value when none
 // are supplied, letting the module's #config defaults apply), synthesizes the
-// release, compiles it against the platform, and adapts the compiled output to
+// instance, compiles it against the platform, and adapts the compiled output to
 // operator resources plus inventory entries.
 //
 // The platform comes from the injected store.

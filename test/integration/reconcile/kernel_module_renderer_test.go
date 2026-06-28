@@ -81,7 +81,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				catalogPath = "opmodel.dev/catalogs/opm"
 			}
 			// The fixture (hello) is core@v1 and pins catalogs/opm@v1
-			// (v1.0.0-alpha.1). Resource/transformer FQNs embed the catalog
+			// (v1.0.0-alpha). Resource/transformer FQNs embed the catalog
 			// version, so the platform must materialize that same v1 catalog. An
 			// unfiltered subscription resolves the highest *stable* release and
 			// excludes the -alpha prerelease — yielding the core@v0 v0.6.0 catalog
@@ -90,7 +90,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Name: "cluster",
 				Type: "kubernetes",
 				Subscriptions: map[string]synth.SubscriptionSpec{
-					catalogPath: {Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha.1"}},
+					catalogPath: {Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha"}},
 				},
 			})
 			if err != nil {

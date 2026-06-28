@@ -89,14 +89,14 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 			}
 			// Pin the catalog subscription to the version the authored package
 			// targets (test/fixtures/modulepackages/hello is core@v1 and pins
-			// catalogs/opm@v1 = v1.0.0-alpha.1). Resource/transformer FQNs are
+			// catalogs/opm@v1 = v1.0.0-alpha). Resource/transformer FQNs are
 			// version-qualified, so a subscription that resolves a different
 			// catalog version would leave the component unmatched — independent of
 			// the render-path fix. The lower bound is prerelease-inclusive because
 			// plain ">=1.0.0" excludes -alpha tags.
 			catalogRange := os.Getenv("OPM_TEST_CATALOG_RANGE")
 			if catalogRange == "" {
-				catalogRange = ">=1.0.0-alpha.1"
+				catalogRange = ">=1.0.0-alpha"
 			}
 			plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
 				Name: "cluster",

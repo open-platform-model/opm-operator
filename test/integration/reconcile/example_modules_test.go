@@ -41,7 +41,7 @@ import (
 // on the local registry); run with `task dev:test:local`.
 //
 // The example modules are core@v1 and pin opmodel.dev/catalogs/opm@v1
-// (v1.0.0-alpha.1, the first catalog line on core@v1 vocabulary), so the
+// (v1.0.0-alpha, the first catalog line on core@v1 vocabulary), so the
 // platform subscription is filtered to the v1 range that resolves it — matching
 // the cluster Platform sample and avoiding catalog-version skew. Resource and
 // transformer FQNs embed the catalog version, so the platform MUST materialize
@@ -65,7 +65,7 @@ var _ = Describe("Example module rendering", func() {
 			Type: "kubernetes",
 			Subscriptions: map[string]synth.SubscriptionSpec{
 				"opmodel.dev/catalogs/opm": {
-					Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha.1"},
+					Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha"},
 				},
 			},
 		})

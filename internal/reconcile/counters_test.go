@@ -9,7 +9,7 @@ import (
 )
 
 func TestUpdateFailureCounters_IndependentReset(t *testing.T) {
-	mrStatus := &releasesv1alpha1.ModuleReleaseStatus{
+	mrStatus := &releasesv1alpha1.ModuleInstanceStatus{
 		FailureCounters: &releasesv1alpha1.FailureCounters{
 			Apply: 3,
 			Prune: 2,
@@ -32,7 +32,7 @@ func TestUpdateFailureCounters_IndependentReset(t *testing.T) {
 }
 
 func TestUpdateFailureCounters_SuccessResetsAll(t *testing.T) {
-	mrStatus := &releasesv1alpha1.ModuleReleaseStatus{
+	mrStatus := &releasesv1alpha1.ModuleInstanceStatus{
 		FailureCounters: &releasesv1alpha1.FailureCounters{
 			Reconcile: 5,
 			Apply:     3,
@@ -56,7 +56,7 @@ func TestUpdateFailureCounters_SuccessResetsAll(t *testing.T) {
 }
 
 func TestUpdateFailureCounters_NoPhaseRan(t *testing.T) {
-	mrStatus := &releasesv1alpha1.ModuleReleaseStatus{
+	mrStatus := &releasesv1alpha1.ModuleInstanceStatus{
 		FailureCounters: &releasesv1alpha1.FailureCounters{
 			Apply: 3,
 			Prune: 2,
@@ -77,7 +77,7 @@ func TestUpdateFailureCounters_NoPhaseRan(t *testing.T) {
 }
 
 func TestUpdateFailureCounters_NilCountersInitialized(t *testing.T) {
-	mrStatus := &releasesv1alpha1.ModuleReleaseStatus{}
+	mrStatus := &releasesv1alpha1.ModuleInstanceStatus{}
 
 	phases := phaseOutcomes{driftRan: true}
 

@@ -1,4 +1,4 @@
-// podinfo — stateless web example module (opmodel.dev/core@v0). Renders a
+// podinfo — stateless web example module (opmodel.dev/core@v1). Renders a
 // Deployment + Service via the catalog's deployment- and service-transformers,
 // with an HTTP livenessProbe (/healthz) and readinessProbe (/readyz) on the
 // podinfo HTTP port (9898). Serves as a real-world "getting started" example a
@@ -6,7 +6,7 @@
 package podinfo
 
 import (
-	m "opmodel.dev/core@v0"
+	m "opmodel.dev/core@v1"
 	res "opmodel.dev/catalogs/opm/resources"
 )
 
@@ -15,7 +15,7 @@ m.#Module
 metadata: {
 	modulePath:  "opmodel.dev/modules/test"
 	name:        "podinfo"
-	version:     "0.1.0"
+	version:     "0.1.2"
 	description: "Stateless web example — Deployment + Service with HTTP liveness/readiness probes"
 }
 

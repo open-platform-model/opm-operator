@@ -1,4 +1,4 @@
-apiVersion: releases.opmodel.dev/v1alpha1
+apiVersion: opmodel.dev/v1alpha1
 kind: Platform
 metadata:
   labels:
@@ -11,4 +11,10 @@ spec:
   registry:
     opmodel.dev/catalogs/opm:
       filter:
-        range: ">=0.1.0 <1.0.0"
+        # The example/fixture modules are core@v1 and pin catalogs/opm@v1
+        # (v1.0.0-alpha, the first catalog line on core@v1 vocabulary).
+        # Resource/transformer FQNs embed the catalog version, so the platform
+        # MUST materialize the same v1 catalog the modules carry — a v0 range
+        # (v0.6.0, core@v0) produces "no matching transformer". The lower bound
+        # is prerelease-inclusive because plain ">=1.0.0" excludes -alpha tags.
+        range: ">=1.0.0-alpha"

@@ -105,7 +105,7 @@ var _ = AfterSuite(func() {
 
 // findSourceControllerCRDs returns the path to the Flux source-controller
 // CRD bases within the Go module cache so envtest can install GitRepository,
-// OCIRepository, and Bucket CRDs for Release reconciler tests.
+// OCIRepository, and Bucket CRDs for ModulePackage reconciler tests.
 //
 // The repo only depends on github.com/fluxcd/source-controller/api (a sub-module
 // without CRDs). The parent source-controller module ships the CRDs and must be

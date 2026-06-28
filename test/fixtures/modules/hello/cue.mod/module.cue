@@ -1,15 +1,15 @@
 module: "opmodel.dev/modules/test/hello@v0"
 language: {
-	version: "v0.16.1"
+	version: "v0.17.0"
 }
 source: {
 	kind: "self"
 }
 deps: {
-	"opmodel.dev/catalogs/opm@v0": {
-		v: "v0.6.0"
+	"opmodel.dev/catalogs/opm@v1": {
+		v: "v1.0.0-alpha"
 	}
-	"opmodel.dev/core@v0": {
-		v: "v0.5.0"
+	"opmodel.dev/core@v1": {
+		v: "v1.0.0-alpha.1"
 	}
 }

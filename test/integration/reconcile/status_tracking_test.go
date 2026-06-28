@@ -22,7 +22,7 @@ import (
 
 var _ = Describe("Reconcile Status Tracking", func() {
 	// TODO (design 4.1): Validates Status.ObservedGeneration increments across
-	// spec changes. Requires: create ModuleRelease (generation=1) → reconcile →
+	// spec changes. Requires: create ModuleInstance (generation=1) → reconcile →
 	// assert ObservedGeneration=1 → patch spec.values (generation=2) → reconcile
 	// → assert ObservedGeneration=2.
 	It("should update ObservedGeneration across spec changes", func() {
@@ -51,7 +51,7 @@ var _ = Describe("Reconcile Status Tracking", func() {
 
 	// TODO (design 4.4): Validates cross-namespace sourceRef resolution.
 	// Requires: create OCIRepository in namespace "sources" with a ready
-	// artifact → create ModuleRelease in "default" with sourceRef.namespace=
+	// artifact → create ModuleInstance in "default" with sourceRef.namespace=
 	// "sources" → reconcile → assert source resolved from the referenced
 	// namespace, resources applied in "default", no "source not found" errors.
 	It("should resolve sourceRef across namespaces", func() {

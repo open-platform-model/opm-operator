@@ -64,15 +64,16 @@ func NewFailureEntry(
 // Does not record periodic no-ops (caller responsibility — design doc explicitly
 // excludes recording every periodic no-op).
 func RecordHistory(
-	status *releasesv1alpha1.ModuleReleaseStatus,
+	status *releasesv1alpha1.ModuleInstanceStatus,
 	entry releasesv1alpha1.HistoryEntry,
 ) {
 	recordHistoryEntry(&status.History, entry)
 }
 
-// RecordReleaseHistory is the Release equivalent of RecordHistory.
-func RecordReleaseHistory(
-	status *releasesv1alpha1.ReleaseStatus,
+// Was: RecordReleaseHistory
+// RecordModulePackageHistory is the ModulePackage equivalent of RecordHistory.
+func RecordModulePackageHistory(
+	status *releasesv1alpha1.ModulePackageStatus,
 	entry releasesv1alpha1.HistoryEntry,
 ) {
 	recordHistoryEntry(&status.History, entry)

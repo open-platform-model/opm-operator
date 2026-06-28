@@ -39,7 +39,7 @@ roleRef:
   kind: Role
   name: web-app-applier
 ---
-apiVersion: releases.opmodel.dev/v1alpha1
+apiVersion: opmodel.dev/v1alpha1
 kind: ModuleRelease
 metadata:
   name: web-app

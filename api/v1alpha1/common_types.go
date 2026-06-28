@@ -29,7 +29,7 @@ import (
 const AnnotationForceDeleteOrphan = "opm.dev/force-delete-orphan"
 
 // SourceReference points to a Flux source object.
-// Used by Release; ModuleRelease uses CUE-native module resolution instead.
+// Used by Release; ModuleInstance uses CUE-native module resolution instead.
 type SourceReference = fluxmeta.NamespacedObjectKindReference
 
 // ModuleReference identifies the CUE module to evaluate from an OCI registry.

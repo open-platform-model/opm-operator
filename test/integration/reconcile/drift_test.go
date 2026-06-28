@@ -41,7 +41,7 @@ import (
 var _ = Describe("Drift Detection", func() {
 	Context("When drift is detected during reconcile", func() {
 		It("should set Drifted=True condition on first apply", func() {
-			createModuleRelease("drift-detect-mr")
+			createModuleInstance("drift-detect-mr")
 
 			params := reconcileParams()
 
@@ -49,14 +49,14 @@ var _ = Describe("Drift Detection", func() {
 			ensureFinalizer(params, nn)
 
 			// First reconcile — applies resources.
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
 			// Verify Ready=True and no drift.
-			var mr releasesv1alpha1.ModuleRelease
+			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &mr)).To(Succeed())
 			ready := apimeta.FindStatusCondition(mr.Status.Conditions, status.ReadyCondition)
 			Expect(ready).NotTo(BeNil())
@@ -75,7 +75,7 @@ var _ = Describe("Drift Detection", func() {
 
 			// Change the source digest to force a non-no-op reconcile.
 			Eventually(func() error {
-				var latest releasesv1alpha1.ModuleRelease
+				var latest releasesv1alpha1.ModuleInstance
 				if err := k8sClient.Get(ctx, nn, &latest); err != nil {
 					return err
 				}
@@ -84,7 +84,7 @@ var _ = Describe("Drift Detection", func() {
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
 			// Second reconcile — detects drift, then applies (clearing it).
-			result, err = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -102,7 +102,7 @@ var _ = Describe("Drift Detection", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "drift-detect-mr", Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -110,7 +110,7 @@ var _ = Describe("Drift Detection", func() {
 
 	Context("When drift is detected on no-op reconcile", func() {
 		It("should set Drifted=True and preserve Ready=True", func() {
-			createModuleRelease("drift-noop-mr")
+			createModuleInstance("drift-noop-mr")
 
 			params := reconcileParams()
 
@@ -118,14 +118,14 @@ var _ = Describe("Drift Detection", func() {
 			ensureFinalizer(params, nn)
 
 			// First reconcile — applies resources.
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
 			// Verify initial state is Ready=True.
-			var mr releasesv1alpha1.ModuleRelease
+			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &mr)).To(Succeed())
 			ready := apimeta.FindStatusCondition(mr.Status.Conditions, status.ReadyCondition)
 			Expect(ready).NotTo(BeNil())
@@ -141,7 +141,7 @@ var _ = Describe("Drift Detection", func() {
 
 			// Second reconcile — digests unchanged, so this is a no-op.
 			// But drift detection should still run.
-			result, err = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -163,7 +163,7 @@ var _ = Describe("Drift Detection", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "drift-noop-mr", Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -171,7 +171,7 @@ var _ = Describe("Drift Detection", func() {
 
 	Context("When drift detection itself fails", func() {
 		It("should increment failureCounters.drift and not set Drifted condition", func() {
-			createModuleRelease("drift-fail-mr")
+			createModuleInstance("drift-fail-mr")
 
 			params := reconcileParams()
 
@@ -179,12 +179,12 @@ var _ = Describe("Drift Detection", func() {
 			ensureFinalizer(params, nn)
 
 			// First reconcile — applies resources normally.
-			_, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			var mr releasesv1alpha1.ModuleRelease
+			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &mr)).To(Succeed())
 			Expect(mr.Status.FailureCounters).NotTo(BeNil())
 			Expect(mr.Status.FailureCounters.Drift).To(Equal(int64(0)))
@@ -199,7 +199,7 @@ var _ = Describe("Drift Detection", func() {
 				},
 			})
 
-			failingParams := &opmreconcile.ModuleReleaseParams{
+			failingParams := &opmreconcile.ModuleInstanceParams{
 				Client:          k8sClient,
 				ResourceManager: apply.NewResourceManager(failingClient, "opm-controller"),
 				EventRecorder:   events.NewFakeRecorder(10),
@@ -207,7 +207,7 @@ var _ = Describe("Drift Detection", func() {
 			}
 
 			// Second reconcile — drift detection fails, but reconcile continues as no-op.
-			_, err = opmreconcile.ReconcileModuleRelease(ctx, failingParams, ctrl.Request{
+			_, err = opmreconcile.ReconcileModuleInstance(ctx, failingParams, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred(), "drift failure is non-blocking")
@@ -231,7 +231,7 @@ var _ = Describe("Drift Detection", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "drift-fail-mr", Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -239,7 +239,7 @@ var _ = Describe("Drift Detection", func() {
 
 	Context("When apply resolves drift", func() {
 		It("should clear Drifted condition after successful apply", func() {
-			createModuleRelease("drift-clear-mr")
+			createModuleInstance("drift-clear-mr")
 
 			params := reconcileParams()
 
@@ -247,7 +247,7 @@ var _ = Describe("Drift Detection", func() {
 			ensureFinalizer(params, nn)
 
 			// First reconcile — applies resources.
-			_, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -261,19 +261,19 @@ var _ = Describe("Drift Detection", func() {
 			Expect(k8sClient.Update(ctx, cm)).To(Succeed())
 
 			// No-op reconcile — detects drift, sets condition.
-			_, err = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			var mr releasesv1alpha1.ModuleRelease
+			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &mr)).To(Succeed())
 			drifted := apimeta.FindStatusCondition(mr.Status.Conditions, status.DriftedCondition)
 			Expect(drifted).NotTo(BeNil(), "drift should be detected")
 
 			// Change the source digest to force a real apply.
 			Eventually(func() error {
-				var latest releasesv1alpha1.ModuleRelease
+				var latest releasesv1alpha1.ModuleInstance
 				if err := k8sClient.Get(ctx, nn, &latest); err != nil {
 					return err
 				}
@@ -282,7 +282,7 @@ var _ = Describe("Drift Detection", func() {
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
 			// Apply reconcile — should clear drift.
-			_, err = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -295,7 +295,7 @@ var _ = Describe("Drift Detection", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "drift-clear-mr", Namespace: namespace},
 			})).To(Succeed())
 		})

@@ -10,7 +10,7 @@ import (
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
-// DigestSet holds the four reconcile digests tracked in ModuleRelease.status.
+// DigestSet holds the four reconcile digests tracked in ModuleInstance.status.
 // Uses named fields rather than a map for type safety (design decision 3).
 //
 // Maps to status fields:

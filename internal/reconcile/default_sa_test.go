@@ -75,22 +75,22 @@ func saFixture(namespace, name string) *corev1.ServiceAccount {
 	}
 }
 
-func mrFixture(namespace, specSA string) *releasesv1alpha1.ModuleRelease {
-	return &releasesv1alpha1.ModuleRelease{
+func mrFixture(namespace, specSA string) *releasesv1alpha1.ModuleInstance {
+	return &releasesv1alpha1.ModuleInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "mr", Namespace: namespace},
-		Spec: releasesv1alpha1.ModuleReleaseSpec{
+		Spec: releasesv1alpha1.ModuleInstanceSpec{
 			ServiceAccountName: specSA,
 		},
 	}
 }
 
-// paramsForBuildApplyClient wires the minimal ModuleReleaseParams needed to
+// paramsForBuildApplyClient wires the minimal ModuleInstanceParams needed to
 // exercise buildApplyClient: a fake client/reader for SA existence checks
 // and a placeholder RestConfig + ResourceManager so the non-impersonated
 // branch has distinct pointer identity for assertions.
-func paramsForBuildApplyClient(c client.Client, defaultSA string) (*ModuleReleaseParams, *fluxssa.ResourceManager) {
+func paramsForBuildApplyClient(c client.Client, defaultSA string) (*ModuleInstanceParams, *fluxssa.ResourceManager) {
 	rm := apply.NewResourceManager(c, "opm-controller")
-	return &ModuleReleaseParams{
+	return &ModuleInstanceParams{
 		Client:                c,
 		APIReader:             c,
 		RestConfig:            &rest.Config{Host: "https://localhost:6443"},
@@ -196,7 +196,7 @@ func TestBuildApplyClient_SpecWinsOverDefault(t *testing.T) {
 }
 
 // TestDeletion_FlagResolution documents the deletion cleanup contract:
-// handleDeletion / handleReleaseDeletion resolve the effective SA by passing
+// handleDeletion / handleModulePackageDeletion resolve the effective SA by passing
 // (spec.ServiceAccountName, params.DefaultServiceAccount) through
 // resolveEffectiveSA — the same call shape used in apply/prune. An empty spec
 // combined with a non-empty flag must yield the flag value so deletion
@@ -204,7 +204,7 @@ func TestBuildApplyClient_SpecWinsOverDefault(t *testing.T) {
 // on impersonation failure is covered by the deletion integration paths.
 func TestDeletion_FlagResolution(t *testing.T) {
 	mr := mrFixture("team-a", "")
-	params := &ModuleReleaseParams{DefaultServiceAccount: "opm-deployer"}
+	params := &ModuleInstanceParams{DefaultServiceAccount: "opm-deployer"}
 
 	gotSA, gotSource := resolveEffectiveSA(mr.Spec.ServiceAccountName, params.DefaultServiceAccount)
 	if gotSA != "opm-deployer" {
@@ -221,7 +221,7 @@ func TestDeletion_FlagResolution(t *testing.T) {
 // satisfy the lookup and the reconcile stalls.
 func TestBuildApplyClient_DefaultSANotCrossNamespace(t *testing.T) {
 	scheme := saTestScheme(t)
-	// SA exists in "opm-system" only. Release lives in "team-b".
+	// SA exists in "opm-system" only. ModulePackage lives in "team-b".
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(saFixture("opm-system", "opm-deployer")).

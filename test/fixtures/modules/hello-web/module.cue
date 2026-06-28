@@ -4,7 +4,7 @@
 package hello_web
 
 import (
-	m "opmodel.dev/core@v0"
+	m "opmodel.dev/core@v1"
 	res "opmodel.dev/catalogs/opm/resources"
 )
 
@@ -13,7 +13,7 @@ m.#Module
 metadata: {
 	modulePath:  "opmodel.dev/modules/test"
 	name:        "hello-web"
-	version:     "0.1.0"
+	version:     "0.1.2"
 	description: "Minimal container workload — renders one Deployment (kernel hidden-field fix probe)"
 }
 

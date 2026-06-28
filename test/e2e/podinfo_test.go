@@ -34,7 +34,7 @@ import (
 
 // This spec validates the podinfo example module end-to-end: it deploys the
 // controller, materializes the cluster Platform, applies the podinfo
-// ModuleRelease, and asserts the rendered Deployment's pods reach Ready — which
+// ModuleInstance, and asserts the rendered Deployment's pods reach Ready — which
 // is only possible if the modelled HTTP liveness (/healthz) and readiness
 // (/readyz) probes pass against the running podinfo container. It then inspects
 // the deployed container to confirm the probe contract matches the module.
@@ -149,8 +149,8 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		// Teardown order matters. The ModuleRelease carries the
-		// `releases.opmodel.dev/cleanup` finalizer and, with spec.prune=true,
+		// Teardown order matters. The ModuleInstance carries the
+		// `opmodel.dev/cleanup` finalizer and, with spec.prune=true,
 		// prunes its managed resources by IMPERSONATING the podinfo-applier
 		// ServiceAccount. The fixture bundles that SA/RBAC and the CR in one
 		// file, so deleting the file wholesale removes the SA out from under the
@@ -159,25 +159,25 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		// (config/default includes ../crd) blocks until the test binary times
 		// out. So delete the CR first, let it drain while the SA still exists,
 		// and only then remove the RBAC.
-		By("removing the podinfo ModuleRelease")
-		_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "modulerelease", "podinfo",
+		By("removing the podinfo ModuleInstance")
+		_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "moduleinstance", "podinfo",
 			"--ignore-not-found", "--wait=false"))
 
-		By("waiting for the ModuleRelease finalizer to clear")
+		By("waiting for the ModuleInstance finalizer to clear")
 		// Bounded wait for the controller to finish pruning and clear the
 		// finalizer; if it stalls anyway, strip the finalizer so teardown cannot
 		// wedge the CRD deletion below.
 		if _, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "wait", "--for=delete",
-			"modulerelease/podinfo", "--timeout=2m")); err != nil {
-			_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "modulerelease", "podinfo",
+			"moduleinstance/podinfo", "--timeout=2m")); err != nil {
+			_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "podinfo",
 				"--type=merge", "-p", `{"metadata":{"finalizers":null}}`))
 		}
 
 		By("removing the podinfo applier RBAC")
 		// The CR is gone; this clears the ServiceAccount/Role/RoleBinding (and is
-		// a no-op for the already-deleted ModuleRelease).
+		// a no-op for the already-deleted ModuleInstance).
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "--ignore-not-found", "--wait=false", "-f",
-			filepath.Join(projectDir, "test/fixtures/modules/podinfo/modulerelease.yaml")))
+			filepath.Join(projectDir, "test/fixtures/modules/podinfo/moduleinstance.yaml")))
 
 		By("removing the cluster Platform")
 		// The Platform has no finalizer, so a non-blocking delete is sufficient.
@@ -192,7 +192,7 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 	})
 
 	AfterEach(func() {
-		// On failure (e.g. the render wait times out), dump the ModuleRelease
+		// On failure (e.g. the render wait times out), dump the ModuleInstance
 		// status and controller logs while they still exist — AfterEach runs
 		// before the AfterAll teardown. Module resolution/apply errors surface
 		// in the CR conditions and controller log, which are otherwise invisible
@@ -201,9 +201,9 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			return
 		}
 		By("dumping diagnostics for the failed spec")
-		if out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "modulerelease", "podinfo",
+		if out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "podinfo",
 			"-o", "yaml")); err == nil {
-			fmt.Fprintf(GinkgoWriter, "--- ModuleRelease default/podinfo ---\n%s\n", out)
+			fmt.Fprintf(GinkgoWriter, "--- ModuleInstance default/podinfo ---\n%s\n", out)
 		}
 		if out, err := utils.Run(exec.Command("kubectl", "-n", namespace, "logs",
 			"-l", "control-plane=controller-manager", "--tail=300")); err == nil {
@@ -212,10 +212,10 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 	})
 
 	It("deploys podinfo and its pods become Ready (proving liveness + readiness pass)", func() {
-		By("applying the podinfo ModuleRelease")
+		By("applying the podinfo ModuleInstance")
 		_, err := utils.Run(exec.Command("kubectl", "apply", "-f",
-			filepath.Join(projectDir, "test/fixtures/modules/podinfo/modulerelease.yaml")))
-		Expect(err).NotTo(HaveOccurred(), "Failed to apply the podinfo ModuleRelease")
+			filepath.Join(projectDir, "test/fixtures/modules/podinfo/moduleinstance.yaml")))
+		Expect(err).NotTo(HaveOccurred(), "Failed to apply the podinfo ModuleInstance")
 
 		By("waiting for the controller to render the podinfo Deployment")
 		// Render normally completes in seconds; the generous window lets the
@@ -227,7 +227,7 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		}, 5*time.Minute, 3*time.Second).Should(Succeed())
 
 		By("waiting for the podinfo Deployment's pods to become Ready")
-		// modulerelease.yaml requests replicas: 2; both must pass their probes.
+		// moduleinstance.yaml requests replicas: 2; both must pass their probes.
 		Eventually(func(g Gomega) {
 			out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "deploy", deploymentName,
 				"-o", "jsonpath={.status.readyReplicas}"))

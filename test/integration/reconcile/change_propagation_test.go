@@ -23,7 +23,7 @@ import (
 var _ = Describe("Reconcile Change Propagation", func() {
 	// TODO (design 1.1): Validates Phase 4 no-op path when spec.values change.
 	// Requires: initial reconcile creating the managed ConfigMap → patch
-	// ModuleRelease spec.values → second reconcile → assert config digest differs,
+	// ModuleInstance spec.values → second reconcile → assert config digest differs,
 	// Phase 3 re-renders, Phase 5 re-applies, ConfigMap data.message reflects the
 	// new value, inventory revision bumps, history records two success entries.
 	It("should re-apply when spec.values changes", func() {

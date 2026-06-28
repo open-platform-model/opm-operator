@@ -78,8 +78,8 @@ type PlatformReconciler struct {
 	Store *platformstore.Store
 }
 
-// +kubebuilder:rbac:groups=releases.opmodel.dev,resources=platforms,verbs=get;list;watch
-// +kubebuilder:rbac:groups=releases.opmodel.dev,resources=platforms/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=opmodel.dev,resources=platforms,verbs=get;list;watch
+// +kubebuilder:rbac:groups=opmodel.dev,resources=platforms/status,verbs=get;update;patch
 
 // Reconcile materializes the cluster-singleton Platform and records the
 // outcome on its status. It reconciles only the object named "cluster";

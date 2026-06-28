@@ -36,11 +36,11 @@ type PruneResult struct {
 // Live-state ownership guard (defense-in-depth): before each delete, Prune
 // GETs the live object and skips the delete if the live object is not
 // OPM-managed (missing/unrecognized app.kubernetes.io/managed-by label) or
-// carries a module-release.opmodel.dev/uuid label that disagrees with
+// carries a module-instance.opmodel.dev/uuid label that disagrees with
 // ownerUUID. An empty live UUID label is tolerated (legacy resources predate
 // UUID stamping). An empty ownerUUID disables the UUID comparison — callers
-// that cannot supply a UUID (e.g. the Release reconciler, or a freshly-created
-// ModuleRelease whose Status.ReleaseUUID is not yet persisted) fall back to
+// that cannot supply a UUID (e.g. the ModulePackage reconciler, or a freshly-created
+// ModuleInstance whose Status.InstanceUUID is not yet persisted) fall back to
 // the managed-by check alone.
 //
 // Skipped resources are logged as warnings and counted in PruneResult.Skipped.
@@ -55,7 +55,7 @@ type PruneResult struct {
 //   - Checking spec.prune before calling this function
 //   - Ensuring apply succeeded before calling prune
 //   - Supplying ownerUUID from the freshly-rendered resources or
-//     ModuleReleaseStatus.ReleaseUUID
+//     ModuleInstanceStatus.InstanceUUID
 func Prune(
 	ctx context.Context,
 	c client.Client,
@@ -104,9 +104,9 @@ func Prune(
 			continue
 		}
 
-		liveUUID := liveLabels[core.LabelModuleReleaseUUID]
+		liveUUID := liveLabels[core.LabelModuleInstanceUUID]
 		if ownerUUID != "" && liveUUID != "" && liveUUID != ownerUUID {
-			log.Info("Skipping prune: live resource release UUID does not match owner",
+			log.Info("Skipping prune: live resource instance UUID does not match owner",
 				"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name,
 				"ownerUUID", ownerUUID, "liveUUID", liveUUID)
 			result.Skipped++

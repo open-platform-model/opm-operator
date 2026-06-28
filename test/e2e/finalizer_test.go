@@ -25,34 +25,34 @@ import (
 
 var _ = Describe("Finalizer and Deletion", func() {
 	// TODO: Validates that the controller adds the finalizer to a newly created
-	// ModuleRelease during a real reconcile cycle on a Kind cluster.
-	// Requires: deploy controller → create ModuleRelease CR → verify
-	// metadata.finalizers contains "releases.opmodel.dev/cleanup".
-	It("should register finalizer on a new ModuleRelease", func() {
+	// ModuleInstance during a real reconcile cycle on a Kind cluster.
+	// Requires: deploy controller → create ModuleInstance CR → verify
+	// metadata.finalizers contains "opmodel.dev/cleanup".
+	It("should register finalizer on a new ModuleInstance", func() {
 		Skip("TODO: requires deployed controller with real reconcile loop")
 	})
 
 	// TODO: Validates full deletion cleanup with a deployed controller.
-	// Requires: deploy controller → create ModuleRelease with spec.prune=true →
+	// Requires: deploy controller → create ModuleInstance with spec.prune=true →
 	// reconcile until Ready → verify managed resources exist → delete the
-	// ModuleRelease → verify managed resources are deleted from the cluster
-	// and the ModuleRelease object is fully removed (finalizer cleared).
+	// ModuleInstance → verify managed resources are deleted from the cluster
+	// and the ModuleInstance object is fully removed (finalizer cleared).
 	It("should delete managed resources and complete CR deletion when prune is true", func() {
 		Skip("TODO: requires deployed controller with full reconcile + deletion cycle")
 	})
 
 	// TODO: Validates that deletion with prune disabled orphans resources.
-	// Requires: deploy controller → create ModuleRelease with spec.prune=false →
+	// Requires: deploy controller → create ModuleInstance with spec.prune=false →
 	// reconcile until Ready → verify managed resources exist → delete the
-	// ModuleRelease → verify managed resources are still present on the cluster
-	// (orphaned) and the ModuleRelease object is fully removed.
+	// ModuleInstance → verify managed resources are still present on the cluster
+	// (orphaned) and the ModuleInstance object is fully removed.
 	It("should orphan managed resources when prune is false and CR is deleted", func() {
 		Skip("TODO: requires deployed controller with spec.prune=false deletion cycle")
 	})
 
-	// TODO: Validates that a suspended ModuleRelease still performs deletion cleanup.
-	// Requires: deploy controller → create ModuleRelease → reconcile until Ready →
-	// set spec.suspend=true → delete the ModuleRelease → verify managed resources
+	// TODO: Validates that a suspended ModuleInstance still performs deletion cleanup.
+	// Requires: deploy controller → create ModuleInstance → reconcile until Ready →
+	// set spec.suspend=true → delete the ModuleInstance → verify managed resources
 	// are deleted and CR is fully removed despite suspend being enabled.
 	// This confirms suspend only gates normal reconciliation, not object lifecycle.
 	It("should perform deletion cleanup even when suspend is true", func() {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestEnsureCounters_InitializesNil(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 	assert.Nil(t, status.FailureCounters)
 
 	counters := EnsureCounters(status)
@@ -22,7 +22,7 @@ func TestEnsureCounters_InitializesNil(t *testing.T) {
 }
 
 func TestEnsureCounters_PreservesExisting(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{
+	status := &releasesv1alpha1.ModuleInstanceStatus{
 		FailureCounters: &releasesv1alpha1.FailureCounters{
 			Reconcile: 3,
 			Apply:     1,

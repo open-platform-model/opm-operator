@@ -32,11 +32,12 @@ const (
 	MaterializedReason      = "Materialized"      // Ready=True: the Platform materialized successfully.
 	MaterializeFailedReason = "MaterializeFailed" // Ready=False: Materialize returned a MaterializeError.
 
-	// Release-specific reasons.
-	SourceNotReadyReason       = "SourceNotReady"
-	FetchFailedReason          = "FetchFailed"
-	PathNotFoundReason         = "PathNotFound"
-	ReleaseFileNotFoundReason  = "ReleaseFileNotFound"
+	// ModulePackage-specific reasons.
+	SourceNotReadyReason = "SourceNotReady"
+	FetchFailedReason    = "FetchFailed"
+	PathNotFoundReason   = "PathNotFound"
+	// Was: ReleaseFileNotFoundReason = "ReleaseFileNotFound"
+	InstanceFileNotFoundReason = "InstanceFileNotFound"
 	UnsupportedKindReason      = "UnsupportedKind"
 	DependenciesNotReadyReason = "DependenciesNotReady"
 	PlatformNotReadyReason     = "PlatformNotReady"

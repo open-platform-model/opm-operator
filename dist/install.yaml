@@ -12,16 +12,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: modulereleases.releases.opmodel.dev
+  name: moduleinstances.opmodel.dev
 spec:
-  group: releases.opmodel.dev
+  group: opmodel.dev
   names:
-    kind: ModuleRelease
-    listKind: ModuleReleaseList
-    plural: modulereleases
+    kind: ModuleInstance
+    listKind: ModuleInstanceList
+    plural: moduleinstances
     shortNames:
-    - mr
-    singular: modulerelease
+    - mi
+    singular: moduleinstance
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -41,7 +41,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ModuleRelease is the Schema for the modulereleases API
+        description: |-
+          ModuleInstance is the Schema for the moduleinstances API
+
+          Was: ModuleRelease
         properties:
           apiVersion:
             description: |-
@@ -61,7 +64,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of ModuleRelease
+            description: spec defines the desired state of ModuleInstance
             properties:
               module:
                 description: Module identifies the CUE module to evaluate from the
@@ -109,11 +112,11 @@ spec:
             - module
             type: object
           status:
-            description: status defines the observed state of ModuleRelease
+            description: status defines the observed state of ModuleInstance
             properties:
               conditions:
                 description: |-
-                  conditions represent the current state of the ModuleRelease resource.
+                  conditions represent the current state of the ModuleInstance resource.
                   Each condition has a unique type and reflects the status of a specific aspect of the resource.
 
                   Standard condition types include:
@@ -229,6 +232,13 @@ spec:
                       type: string
                   type: object
                 type: array
+              instanceUUID:
+                description: |-
+                  InstanceUUID is the globally-unique identity of the rendered ModuleInstance,
+                  read from the `module-instance.opmodel.dev/uuid` label on rendered resources.
+                  Populated on the first successful render; consumed by the prune ownership
+                  guard (including the deletion path where a fresh render is not available).
+                type: string
               inventory:
                 description: Inventory stores the current set of owned resources.
                 properties:
@@ -294,13 +304,6 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
-              releaseUUID:
-                description: |-
-                  ReleaseUUID is the globally-unique identity of the rendered ModuleRelease,
-                  read from the `module-release.opmodel.dev/uuid` label on rendered resources.
-                  Populated on the first successful render; consumed by the prune ownership
-                  guard (including the deletion path where a fresh render is not available).
-                type: string
             type: object
         required:
         - spec
@@ -315,200 +318,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: platforms.releases.opmodel.dev
+  name: modulepackages.opmodel.dev
 spec:
-  group: releases.opmodel.dev
+  group: opmodel.dev
   names:
-    kind: Platform
-    listKind: PlatformList
-    plural: platforms
+    kind: ModulePackage
+    listKind: ModulePackageList
+    plural: modulepackages
     shortNames:
-    - plat
-    singular: platform
-  scope: Cluster
-  versions:
-  - additionalPrinterColumns:
-    - jsonPath: .spec.type
-      name: Type
-      type: string
-    - jsonPath: .status.conditions[?(@.type=='Ready')].status
-      name: Ready
-      type: string
-    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
-      name: Reason
-      type: string
-    name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: |-
-          Platform is the Schema for the platforms API. It is a cluster-scoped
-          singleton (the only permitted name is "cluster") whose spec projects the
-          core #Platform author surface.
-        properties:
-          apiVersion:
-            description: |-
-              APIVersion defines the versioned schema of this representation of an object.
-              Servers should convert recognized schemas to the latest internal value, and
-              may reject unrecognized values.
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
-            type: string
-          kind:
-            description: |-
-              Kind is a string value representing the REST resource this object represents.
-              Servers may infer this from the endpoint the client submits requests to.
-              Cannot be updated.
-              In CamelCase.
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: spec defines the desired state of Platform
-            properties:
-              registry:
-                additionalProperties:
-                  description: |-
-                    Subscription is a single catalog registry subscription, projecting core
-                    #Subscription. It maps onto synth.SubscriptionSpec.
-                  properties:
-                    enable:
-                      description: |-
-                        Enable toggles the subscription. A pointer so that an omitted value
-                        defers to the schema default (true) rather than serializing as an
-                        explicit false; matches synth.SubscriptionSpec.Enable.
-                      type: boolean
-                    filter:
-                      description: |-
-                        Filter optionally constrains the subscribed versions by SemVer range
-                        and explicit allow/deny lists.
-                      properties:
-                        allow:
-                          description: Allow is an explicit allowlist of versions.
-                          items:
-                            type: string
-                          type: array
-                        deny:
-                          description: Deny is an explicit denylist of versions.
-                          items:
-                            type: string
-                          type: array
-                        range:
-                          description: Range is a SemVer constraint (e.g. ">=1.2.0
-                            <2.0.0").
-                          type: string
-                      type: object
-                  type: object
-                description: |-
-                  Registry is the set of catalog subscriptions keyed by catalog CUE module
-                  path (e.g. "opmodel.dev/catalogs/opm"), projecting core #Platform.#registry.
-                type: object
-              type:
-                description: |-
-                  Type is the informational discriminator for the platform (core
-                  #Platform.type). It does not affect matching; it labels the platform
-                  flavor for operators and downstream tooling.
-                minLength: 1
-                type: string
-            required:
-            - type
-            type: object
-          status:
-            description: status defines the observed state of Platform
-            properties:
-              conditions:
-                description: |-
-                  conditions represent the current state of the Platform resource. The
-                  PlatformReconciler summarizes materialization on the Ready condition:
-                  Ready=True (reason Materialized) on success, Ready=False (reason
-                  MaterializeFailed) on a MaterializeError.
-                items:
-                  description: Condition contains details for one aspect of the current
-                    state of this API Resource.
-                  properties:
-                    lastTransitionTime:
-                      description: |-
-                        lastTransitionTime is the last time the condition transitioned from one status to another.
-                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
-                      format: date-time
-                      type: string
-                    message:
-                      description: |-
-                        message is a human readable message indicating details about the transition.
-                        This may be an empty string.
-                      maxLength: 32768
-                      type: string
-                    observedGeneration:
-                      description: |-
-                        observedGeneration represents the .metadata.generation that the condition was set based upon.
-                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
-                        with respect to the current state of the instance.
-                      format: int64
-                      minimum: 0
-                      type: integer
-                    reason:
-                      description: |-
-                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
-                        Producers of specific condition types may define expected values and meanings for this field,
-                        and whether the values are considered a guaranteed API.
-                        The value should be a CamelCase string.
-                        This field may not be empty.
-                      maxLength: 1024
-                      minLength: 1
-                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                      type: string
-                    status:
-                      description: status of the condition, one of True, False, Unknown.
-                      enum:
-                      - "True"
-                      - "False"
-                      - Unknown
-                      type: string
-                    type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                      maxLength: 316
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                      type: string
-                  required:
-                  - lastTransitionTime
-                  - message
-                  - reason
-                  - status
-                  - type
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
-              observedGeneration:
-                format: int64
-                type: integer
-            type: object
-        required:
-        - spec
-        type: object
-        x-kubernetes-validations:
-        - message: Platform is a cluster singleton; the only permitted name is 'cluster'
-          rule: self.metadata.name == 'cluster'
-    served: true
-    storage: true
-    subresources:
-      status: {}
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  annotations:
-    controller-gen.kubebuilder.io/version: v0.20.1
-  name: releases.releases.opmodel.dev
-spec:
-  group: releases.opmodel.dev
-  names:
-    kind: Release
-    listKind: ReleaseList
-    plural: releases
-    shortNames:
-    - rel
-    singular: release
+    - mpkg
+    singular: modulepackage
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -532,7 +351,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Release is the Schema for the releases API.
+        description: |-
+          Was: Release
+          ModulePackage is the Schema for the modulepackages API.
         properties:
           apiVersion:
             description: |-
@@ -552,12 +373,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of Release
+            description: spec defines the desired state of ModulePackage
             properties:
               dependsOn:
                 description: |-
-                  DependsOn references other Release CRs that must be Ready=True before
-                  this Release is reconciled. References are same-namespace only.
+                  DependsOn references other ModulePackage CRs that must be Ready=True before
+                  this ModulePackage is reconciled. References are same-namespace only.
                 items:
                   description: |-
                     NamespacedObjectReference contains enough information to locate the referenced Kubernetes resource object in any
@@ -576,19 +397,19 @@ spec:
                 type: array
               interval:
                 description: |-
-                  Interval at which the reconciler re-evaluates the release to detect drift
+                  Interval at which the reconciler re-evaluates the package to detect drift
                   and re-apply. Also the requeue interval after transient failures.
                 type: string
               path:
                 description: |-
-                  Path is the directory within the artifact containing release.cue.
+                  Path is the directory within the artifact containing instance.cue.
                   Example: "releases/prod/minecraft".
                 minLength: 1
                 type: string
               prune:
                 description: |-
                   Prune enables deletion of stale resources on reconcile and of all owned
-                  resources on Release deletion.
+                  resources on ModulePackage deletion.
                 type: boolean
               rollout:
                 description: Rollout configures apply behavior.
@@ -610,7 +431,7 @@ spec:
               sourceRef:
                 description: |-
                   SourceRef references a Flux source (OCIRepository, GitRepository, or Bucket)
-                  that provides the artifact containing the CUE release package.
+                  that provides the artifact containing the CUE package.
                 properties:
                   apiVersion:
                     description: API version of the referent, if not specified the
@@ -638,10 +459,10 @@ spec:
             - sourceRef
             type: object
           status:
-            description: status defines the observed state of Release
+            description: status defines the observed state of ModulePackage
             properties:
               conditions:
-                description: conditions represent the current state of the Release
+                description: conditions represent the current state of the ModulePackage
                   resource.
                 items:
                   description: Condition contains details for one aspect of the current
@@ -861,6 +682,190 @@ spec:
     subresources:
       status: {}
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: platforms.opmodel.dev
+spec:
+  group: opmodel.dev
+  names:
+    kind: Platform
+    listKind: PlatformList
+    plural: platforms
+    shortNames:
+    - plat
+    singular: platform
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Platform is the Schema for the platforms API. It is a cluster-scoped
+          singleton (the only permitted name is "cluster") whose spec projects the
+          core #Platform author surface.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of Platform
+            properties:
+              registry:
+                additionalProperties:
+                  description: |-
+                    Subscription is a single catalog registry subscription, projecting core
+                    #Subscription. It maps onto synth.SubscriptionSpec.
+                  properties:
+                    enable:
+                      description: |-
+                        Enable toggles the subscription. A pointer so that an omitted value
+                        defers to the schema default (true) rather than serializing as an
+                        explicit false; matches synth.SubscriptionSpec.Enable.
+                      type: boolean
+                    filter:
+                      description: |-
+                        Filter optionally constrains the subscribed versions by SemVer range
+                        and explicit allow/deny lists.
+                      properties:
+                        allow:
+                          description: Allow is an explicit allowlist of versions.
+                          items:
+                            type: string
+                          type: array
+                        deny:
+                          description: Deny is an explicit denylist of versions.
+                          items:
+                            type: string
+                          type: array
+                        range:
+                          description: Range is a SemVer constraint (e.g. ">=1.2.0
+                            <2.0.0").
+                          type: string
+                      type: object
+                  type: object
+                description: |-
+                  Registry is the set of catalog subscriptions keyed by catalog CUE module
+                  path (e.g. "opmodel.dev/catalogs/opm"), projecting core #Platform.#registry.
+                type: object
+              type:
+                description: |-
+                  Type is the informational discriminator for the platform (core
+                  #Platform.type). It does not affect matching; it labels the platform
+                  flavor for operators and downstream tooling.
+                minLength: 1
+                type: string
+            required:
+            - type
+            type: object
+          status:
+            description: status defines the observed state of Platform
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the Platform resource. The
+                  PlatformReconciler summarizes materialization on the Ready condition:
+                  Ready=True (reason Materialized) on success, Ready=False (reason
+                  MaterializeFailed) on a MaterializeError.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: Platform is a cluster singleton; the only permitted name is 'cluster'
+          rule: self.metadata.name == 'cluster'
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -946,10 +951,10 @@ rules:
   - patch
   - update
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases
-  - releases
+  - moduleinstances
+  - modulepackages
   verbs:
   - create
   - delete
@@ -959,24 +964,24 @@ rules:
   - update
   - watch
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases/finalizers
-  - releases/finalizers
+  - moduleinstances/finalizers
+  - modulepackages/finalizers
   verbs:
   - update
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases/status
+  - moduleinstances/status
+  - modulepackages/status
   - platforms/status
-  - releases/status
   verbs:
   - get
   - patch
   - update
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
   - platforms
   verbs:
@@ -1028,18 +1033,18 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: opm-operator
-  name: opm-operator-modulerelease-admin-role
+  name: opm-operator-moduleinstance-admin-role
 rules:
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases
+  - moduleinstances
   verbs:
   - '*'
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases/status
+  - moduleinstances/status
   verbs:
   - get
 ---
@@ -1049,12 +1054,12 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: opm-operator
-  name: opm-operator-modulerelease-editor-role
+  name: opm-operator-moduleinstance-editor-role
 rules:
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases
+  - moduleinstances
   verbs:
   - create
   - delete
@@ -1064,9 +1069,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases/status
+  - moduleinstances/status
   verbs:
   - get
 ---
@@ -1076,20 +1081,20 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: opm-operator
-  name: opm-operator-modulerelease-viewer-role
+  name: opm-operator-moduleinstance-viewer-role
 rules:
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases
+  - moduleinstances
   verbs:
   - get
   - list
   - watch
 - apiGroups:
-  - releases.opmodel.dev
+  - opmodel.dev
   resources:
-  - modulereleases/status
+  - moduleinstances/status
   verbs:
   - get
 ---

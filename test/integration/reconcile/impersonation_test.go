@@ -62,8 +62,8 @@ func countBufferedEvents(rec *events.FakeRecorder, reason string) int {
 	}
 }
 
-func reconcileParamsWithConfig() *opmreconcile.ModuleReleaseParams {
-	return &opmreconcile.ModuleReleaseParams{
+func reconcileParamsWithConfig() *opmreconcile.ModuleInstanceParams {
+	return &opmreconcile.ModuleInstanceParams{
 		Client:          k8sClient,
 		APIReader:       k8sClient,
 		RestConfig:      cfg,
@@ -118,12 +118,12 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 
 			// Create MR with serviceAccountName.
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mrName,
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -142,13 +142,13 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 
 			// Reconcile — should succeed using impersonated client.
 			// envtest admin user can impersonate any SA.
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			// Ready=True
@@ -164,7 +164,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &corev1.ServiceAccount{
@@ -224,12 +224,12 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			}
 			Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mrName,
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -246,13 +246,13 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			ready := apimeta.FindStatusCondition(updated.Status.Conditions, status.ReadyCondition)
@@ -264,7 +264,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &corev1.ServiceAccount{
@@ -284,12 +284,12 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			mrName := "imp-missing-mr"
 
 			// Create MR with nonexistent SA.
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mrName,
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -306,13 +306,13 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred(), "stalled errors return nil")
 			Expect(result.RequeueAfter).To(Equal(30*time.Minute), "stalled requeues with safety interval")
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			// Stalled=True with ImpersonationFailed
@@ -330,7 +330,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(stalled.Message).To(ContainSubstring("nonexistent-sa"))
 
 			// Cleanup
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -386,12 +386,12 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			}
 			Expect(k8sClient.Create(ctx, restrictedBinding)).To(Succeed())
 
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mrName,
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -406,7 +406,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 
 			// Use restricted user's config as RestConfig — impersonation will be denied.
 			restrictedCfg := restrictedUser.Config()
-			params := &opmreconcile.ModuleReleaseParams{
+			params := &opmreconcile.ModuleInstanceParams{
 				Client:          k8sClient,
 				APIReader:       k8sClient,
 				RestConfig:      restrictedCfg,
@@ -418,13 +418,13 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, reconcileErr := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, reconcileErr := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(reconcileErr).NotTo(HaveOccurred(), "stalled errors return nil")
 			Expect(result.RequeueAfter).To(Equal(30*time.Minute), "stalled requeues with safety interval")
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			// Stalled=True with ImpersonationFailed
@@ -442,7 +442,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(stalled.Message).To(ContainSubstring("Forbidden"))
 
 			// Cleanup
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &corev1.ServiceAccount{
@@ -501,12 +501,12 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 
 			// MR leaves spec.serviceAccountName empty so the flag default wins.
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mrName,
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -523,13 +523,13 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			ready := apimeta.FindStatusCondition(updated.Status.Conditions, status.ReadyCondition)
@@ -543,7 +543,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &corev1.ServiceAccount{
@@ -560,12 +560,12 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 		It("should stall with ImpersonationFailed when the flag-defaulted SA is missing", func() {
 			mrName := "imp-default-missing-mr"
 
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mrName,
 					Namespace: namespace,
 				},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -583,13 +583,13 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred(), "stalled errors return nil")
 			Expect(result.RequeueAfter).To(Equal(30*time.Minute), "stalled requeues with safety interval")
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			stalled := apimeta.FindStatusCondition(updated.Status.Conditions, status.StalledCondition)
@@ -598,7 +598,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(stalled.Reason).To(Equal(status.ImpersonationFailedReason))
 			Expect(stalled.Message).To(ContainSubstring("missing"))
 
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 		})
@@ -641,9 +641,9 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			}
 			Expect(k8sClient.Create(ctx, binding)).To(Succeed())
 
-			mr := &releasesv1alpha1.ModuleRelease{
+			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
-				Spec: releasesv1alpha1.ModuleReleaseSpec{
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
 						Path:    "opmodel.dev/test/module",
 						Version: "v0.1.0",
@@ -661,9 +661,9 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			ensureFinalizer(params, nn)
 
 			// Apply the release so it has a populated inventory to prune.
-			_, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{NamespacedName: nn})
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			var applied releasesv1alpha1.ModuleRelease
+			var applied releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &applied)).To(Succeed())
 			Expect(applied.Status.Inventory).NotTo(BeNil())
 			Expect(applied.Status.Inventory.Count).To(BeNumerically(">", 0))
@@ -678,16 +678,16 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 
 			// Request deletion of the MR — apiserver sets DeletionTimestamp
 			// but retains the object while the finalizer is present.
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 
 			// First reconcile post-delete: must stall with DeletionSAMissing.
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{NamespacedName: nn})
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(30 * time.Minute))
 
-			var stalledMR releasesv1alpha1.ModuleRelease
+			var stalledMR releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &stalledMR)).To(Succeed())
 			ready := apimeta.FindStatusCondition(stalledMR.Status.Conditions, status.ReadyCondition)
 			Expect(ready).NotTo(BeNil())
@@ -705,7 +705,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			fakeRec, ok := params.EventRecorder.(*events.FakeRecorder)
 			Expect(ok).To(BeTrue())
 			priorDeletionEvents := countBufferedEvents(fakeRec, status.DeletionSAMissingReason)
-			_, err = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{NamespacedName: nn})
+			_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 			postDeletionEvents := countBufferedEvents(fakeRec, status.DeletionSAMissingReason)
 			Expect(postDeletionEvents).To(Equal(priorDeletionEvents),
@@ -721,12 +721,12 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(k8sClient.Update(ctx, &stalledMR)).To(Succeed())
 
 			// Next reconcile: orphan-exit removes finalizer and emits event.
-			_, err = opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{NamespacedName: nn})
+			_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
 			// MR should now be gone (apiserver GCs after last finalizer drops).
 			Eventually(func(g Gomega) {
-				var check releasesv1alpha1.ModuleRelease
+				var check releasesv1alpha1.ModuleInstance
 				err := k8sClient.Get(ctx, nn, &check)
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
@@ -750,20 +750,20 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 		It("should use controller client when SA is not specified", func() {
 			mrName := "imp-nosa-mr"
 
-			createModuleRelease(mrName)
+			createModuleInstance(mrName)
 
 			// Use params with RestConfig set but no SA on the MR.
 			params := reconcileParamsWithConfig()
 			nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 			ensureFinalizer(params, nn)
 
-			result, err := opmreconcile.ReconcileModuleRelease(ctx, params, ctrl.Request{
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{
 				NamespacedName: nn,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
-			var updated releasesv1alpha1.ModuleRelease
+			var updated releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
 
 			// Ready=True — normal reconcile without impersonation.
@@ -779,7 +779,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
 			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleRelease{
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 		})

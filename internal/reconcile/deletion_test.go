@@ -32,8 +32,8 @@ import (
 )
 
 // deletionTestScheme registers types needed by handleDeletion and
-// handleReleaseDeletion tests. Kept narrow to the resources the fake client
-// actually serves (ModuleRelease, Release, ServiceAccount).
+// handleModulePackageDeletion tests. Kept narrow to the resources the fake client
+// actually serves (ModuleInstance, ModulePackage, ServiceAccount).
 func deletionTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	s := runtime.NewScheme()
@@ -48,25 +48,25 @@ func deletionTestScheme(t *testing.T) *runtime.Scheme {
 
 const deletionTestNamespace = "team-a"
 
-// deletingMR returns a ModuleRelease fixture with finalizer + DeletionTimestamp
+// deletingMR returns a ModuleInstance fixture with finalizer + DeletionTimestamp
 // set so handleDeletion exercises the deletion branch. Optional SA name,
 // annotation value, and an inventory with a single entry simulate a release
 // stuck on cleanup. Name + namespace are fixed because tests look up the
 // object by them.
-func deletingMR(saName, orphanAnnotation string) *releasesv1alpha1.ModuleRelease {
+func deletingMR(saName, orphanAnnotation string) *releasesv1alpha1.ModuleInstance {
 	now := metav1.Now()
-	mr := &releasesv1alpha1.ModuleRelease{
+	mr := &releasesv1alpha1.ModuleInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "mr",
 			Namespace:         deletionTestNamespace,
 			Finalizers:        []string{FinalizerName},
 			DeletionTimestamp: &now,
 		},
-		Spec: releasesv1alpha1.ModuleReleaseSpec{
+		Spec: releasesv1alpha1.ModuleInstanceSpec{
 			Prune:              true,
 			ServiceAccountName: saName,
 		},
-		Status: releasesv1alpha1.ModuleReleaseStatus{
+		Status: releasesv1alpha1.ModuleInstanceStatus{
 			Inventory: &releasesv1alpha1.Inventory{
 				Revision: 1,
 				Count:    1,
@@ -82,20 +82,20 @@ func deletingMR(saName, orphanAnnotation string) *releasesv1alpha1.ModuleRelease
 	return mr
 }
 
-func deletingRelease(saName, orphanAnnotation string) *releasesv1alpha1.Release {
+func deletingModulePackage(saName, orphanAnnotation string) *releasesv1alpha1.ModulePackage {
 	now := metav1.Now()
-	rel := &releasesv1alpha1.Release{
+	rel := &releasesv1alpha1.ModulePackage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "rel",
 			Namespace:         deletionTestNamespace,
 			Finalizers:        []string{FinalizerName},
 			DeletionTimestamp: &now,
 		},
-		Spec: releasesv1alpha1.ReleaseSpec{
+		Spec: releasesv1alpha1.ModulePackageSpec{
 			Prune:              true,
 			ServiceAccountName: saName,
 		},
-		Status: releasesv1alpha1.ReleaseStatus{
+		Status: releasesv1alpha1.ModulePackageStatus{
 			Inventory: &releasesv1alpha1.Inventory{
 				Revision: 1,
 				Count:    1,
@@ -146,11 +146,11 @@ func TestHandleDeletion_SAMissing_NoAnnotation(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(mr).
-		WithStatusSubresource(&releasesv1alpha1.ModuleRelease{}).
+		WithStatusSubresource(&releasesv1alpha1.ModuleInstance{}).
 		Build()
 	rec := events.NewFakeRecorder(4)
 
-	params := &ModuleReleaseParams{
+	params := &ModuleInstanceParams{
 		Client:        c,
 		APIReader:     c,
 		RestConfig:    &rest.Config{Host: "https://localhost:6443"},
@@ -165,7 +165,7 @@ func TestHandleDeletion_SAMissing_NoAnnotation(t *testing.T) {
 		t.Fatalf("RequeueAfter = %v, want %v", result.RequeueAfter, StalledRecheckInterval)
 	}
 
-	var updated releasesv1alpha1.ModuleRelease
+	var updated releasesv1alpha1.ModuleInstance
 	if err := c.Get(context.Background(), types.NamespacedName{Name: "mr", Namespace: "team-a"}, &updated); err != nil {
 		t.Fatalf("get MR: %v", err)
 	}
@@ -210,11 +210,11 @@ func TestHandleDeletion_SAMissing_OrphanAnnotation(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(mr).
-		WithStatusSubresource(&releasesv1alpha1.ModuleRelease{}).
+		WithStatusSubresource(&releasesv1alpha1.ModuleInstance{}).
 		Build()
 	rec := events.NewFakeRecorder(4)
 
-	params := &ModuleReleaseParams{
+	params := &ModuleInstanceParams{
 		Client:        c,
 		APIReader:     c,
 		RestConfig:    &rest.Config{Host: "https://localhost:6443"},
@@ -232,7 +232,7 @@ func TestHandleDeletion_SAMissing_OrphanAnnotation(t *testing.T) {
 	// Fake client garbage-collects a resource once the last finalizer is
 	// dropped while DeletionTimestamp is set. A NotFound here confirms the
 	// finalizer was actually removed, which is the observable behavior.
-	var updated releasesv1alpha1.ModuleRelease
+	var updated releasesv1alpha1.ModuleInstance
 	err = c.Get(context.Background(), types.NamespacedName{Name: "mr", Namespace: "team-a"}, &updated)
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("expected MR to be gone after orphan-exit, got err=%v, updated=%+v", err, updated)
@@ -264,11 +264,11 @@ func TestHandleDeletion_SAMissing_AnnotationNotTrue(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(mr).
-		WithStatusSubresource(&releasesv1alpha1.ModuleRelease{}).
+		WithStatusSubresource(&releasesv1alpha1.ModuleInstance{}).
 		Build()
 	rec := events.NewFakeRecorder(4)
 
-	params := &ModuleReleaseParams{
+	params := &ModuleInstanceParams{
 		Client:        c,
 		APIReader:     c,
 		RestConfig:    &rest.Config{Host: "https://localhost:6443"},
@@ -283,7 +283,7 @@ func TestHandleDeletion_SAMissing_AnnotationNotTrue(t *testing.T) {
 		t.Fatalf("RequeueAfter = %v, want %v (must stall with non-literal annotation)", result.RequeueAfter, StalledRecheckInterval)
 	}
 
-	var updated releasesv1alpha1.ModuleRelease
+	var updated releasesv1alpha1.ModuleInstance
 	if err := c.Get(context.Background(), types.NamespacedName{Name: "mr", Namespace: "team-a"}, &updated); err != nil {
 		t.Fatalf("get MR: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestHandleDeletion_SAPresent_PruneSucceeds(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(mr, sa).
-		WithStatusSubresource(&releasesv1alpha1.ModuleRelease{}).
+		WithStatusSubresource(&releasesv1alpha1.ModuleInstance{}).
 		Build()
 	rec := events.NewFakeRecorder(4)
 
@@ -314,7 +314,7 @@ func TestHandleDeletion_SAPresent_PruneSucceeds(t *testing.T) {
 	// client and goes straight to the controller-client prune path. This
 	// keeps the unit test focused on the deletion flow without exercising
 	// client.New(*rest.Config) which fails on a stub URL.
-	params := &ModuleReleaseParams{
+	params := &ModuleInstanceParams{
 		Client:        c,
 		APIReader:     c,
 		RestConfig:    nil,
@@ -329,7 +329,7 @@ func TestHandleDeletion_SAPresent_PruneSucceeds(t *testing.T) {
 		t.Fatalf("RequeueAfter = %v, want 0 (clean deletion)", result.RequeueAfter)
 	}
 
-	var updated releasesv1alpha1.ModuleRelease
+	var updated releasesv1alpha1.ModuleInstance
 	err = c.Get(context.Background(), types.NamespacedName{Name: "mr", Namespace: "team-a"}, &updated)
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("expected MR to be gone after clean prune, got err=%v, updated=%+v", err, updated)
@@ -352,7 +352,7 @@ func TestHandleDeletion_SAPresent_PruneForbidden(t *testing.T) {
 	base := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(mr, sa).
-		WithStatusSubresource(&releasesv1alpha1.ModuleRelease{}).
+		WithStatusSubresource(&releasesv1alpha1.ModuleInstance{}).
 		Build()
 	// Intercept Get for ConfigMaps (the inventory entry kind) with a
 	// Forbidden status error so apply.Prune returns a wrapped Forbidden —
@@ -377,7 +377,7 @@ func TestHandleDeletion_SAPresent_PruneForbidden(t *testing.T) {
 	// as the prune client; otherwise NewImpersonatedClient would try to
 	// contact the stub host. The Forbidden still arrives via the
 	// interceptor, exercising the same error classification.
-	params := &ModuleReleaseParams{
+	params := &ModuleInstanceParams{
 		Client:        denied,
 		APIReader:     denied,
 		RestConfig:    nil,
@@ -392,7 +392,7 @@ func TestHandleDeletion_SAPresent_PruneForbidden(t *testing.T) {
 		t.Fatalf("RequeueAfter = %v, want %v", result.RequeueAfter, StalledRecheckInterval)
 	}
 
-	var updated releasesv1alpha1.ModuleRelease
+	var updated releasesv1alpha1.ModuleInstance
 	if err := denied.Get(context.Background(), types.NamespacedName{Name: "mr", Namespace: "team-a"}, &updated); err != nil {
 		t.Fatalf("get MR: %v", err)
 	}
@@ -418,11 +418,11 @@ func TestHandleDeletion_EventDedup(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(mr).
-		WithStatusSubresource(&releasesv1alpha1.ModuleRelease{}).
+		WithStatusSubresource(&releasesv1alpha1.ModuleInstance{}).
 		Build()
 	rec := events.NewFakeRecorder(8)
 
-	params := &ModuleReleaseParams{
+	params := &ModuleInstanceParams{
 		Client:        c,
 		APIReader:     c,
 		RestConfig:    &rest.Config{Host: "https://localhost:6443"},
@@ -430,7 +430,7 @@ func TestHandleDeletion_EventDedup(t *testing.T) {
 	}
 
 	for i := range 3 {
-		var current releasesv1alpha1.ModuleRelease
+		var current releasesv1alpha1.ModuleInstance
 		if err := c.Get(context.Background(), types.NamespacedName{Name: "mr", Namespace: "team-a"}, &current); err != nil {
 			t.Fatalf("get MR (iter %d): %v", i, err)
 		}
@@ -445,44 +445,44 @@ func TestHandleDeletion_EventDedup(t *testing.T) {
 	}
 }
 
-// TestHandleReleaseDeletion_SAMissing_NoAnnotation covers Task 5.6 for the
-// Release CR. Deletion-path stall behavior must be symmetric between
-// ModuleRelease and Release.
-func TestHandleReleaseDeletion_SAMissing_NoAnnotation(t *testing.T) {
+// TestHandleModulePackageDeletion_SAMissing_NoAnnotation covers Task 5.6 for the
+// ModulePackage CR. Deletion-path stall behavior must be symmetric between
+// ModuleInstance and ModulePackage.
+func TestHandleModulePackageDeletion_SAMissing_NoAnnotation(t *testing.T) {
 	scheme := deletionTestScheme(t)
-	rel := deletingRelease("missing-sa", "")
+	rel := deletingModulePackage("missing-sa", "")
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(rel).
-		WithStatusSubresource(&releasesv1alpha1.Release{}).
+		WithStatusSubresource(&releasesv1alpha1.ModulePackage{}).
 		Build()
 	rec := events.NewFakeRecorder(4)
 
-	params := &ReleaseParams{
+	params := &ModulePackageParams{
 		Client:        c,
 		APIReader:     c,
 		RestConfig:    &rest.Config{Host: "https://localhost:6443"},
 		EventRecorder: rec,
 	}
 
-	result, err := handleReleaseDeletion(context.Background(), params, rel)
+	result, err := handleModulePackageDeletion(context.Background(), params, rel)
 	if err != nil {
-		t.Fatalf("handleReleaseDeletion returned error: %v", err)
+		t.Fatalf("handleModulePackageDeletion returned error: %v", err)
 	}
 	if result.RequeueAfter != StalledRecheckInterval {
 		t.Fatalf("RequeueAfter = %v, want %v", result.RequeueAfter, StalledRecheckInterval)
 	}
 
-	var updated releasesv1alpha1.Release
+	var updated releasesv1alpha1.ModulePackage
 	if err := c.Get(context.Background(), types.NamespacedName{Name: "rel", Namespace: "team-a"}, &updated); err != nil {
-		t.Fatalf("get Release: %v", err)
+		t.Fatalf("get ModulePackage: %v", err)
 	}
 	ready := apimeta.FindStatusCondition(updated.Status.Conditions, status.ReadyCondition)
 	if ready == nil || ready.Reason != status.DeletionSAMissingReason {
 		t.Fatalf("Ready = %v, want reason %q", ready, status.DeletionSAMissingReason)
 	}
 	if !hasCleanupFinalizer(updated.Finalizers) {
-		t.Fatal("finalizer must be retained on Release stalled with DeletionSAMissing")
+		t.Fatal("finalizer must be retained on ModulePackage stalled with DeletionSAMissing")
 	}
 	evs := drainEvents(rec)
 	if got := countEventsWithReason(evs, status.DeletionSAMissingReason); got != 1 {
@@ -490,36 +490,36 @@ func TestHandleReleaseDeletion_SAMissing_NoAnnotation(t *testing.T) {
 	}
 }
 
-// TestHandleReleaseDeletion_SAMissing_OrphanAnnotation covers Task 5.6 for
-// the orphan-exit path on Release, mirroring the ModuleRelease assertions.
-func TestHandleReleaseDeletion_SAMissing_OrphanAnnotation(t *testing.T) {
+// TestHandleModulePackageDeletion_SAMissing_OrphanAnnotation covers Task 5.6 for
+// the orphan-exit path on ModulePackage, mirroring the ModuleInstance assertions.
+func TestHandleModulePackageDeletion_SAMissing_OrphanAnnotation(t *testing.T) {
 	scheme := deletionTestScheme(t)
-	rel := deletingRelease("missing-sa", "true")
+	rel := deletingModulePackage("missing-sa", "true")
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(rel).
-		WithStatusSubresource(&releasesv1alpha1.Release{}).
+		WithStatusSubresource(&releasesv1alpha1.ModulePackage{}).
 		Build()
 	rec := events.NewFakeRecorder(4)
 
-	params := &ReleaseParams{
+	params := &ModulePackageParams{
 		Client:        c,
 		APIReader:     c,
 		RestConfig:    &rest.Config{Host: "https://localhost:6443"},
 		EventRecorder: rec,
 	}
 
-	if _, err := handleReleaseDeletion(context.Background(), params, rel); err != nil {
-		t.Fatalf("handleReleaseDeletion returned error: %v", err)
+	if _, err := handleModulePackageDeletion(context.Background(), params, rel); err != nil {
+		t.Fatalf("handleModulePackageDeletion returned error: %v", err)
 	}
 
-	var updated releasesv1alpha1.Release
+	var updated releasesv1alpha1.ModulePackage
 	err := c.Get(context.Background(), types.NamespacedName{Name: "rel", Namespace: "team-a"}, &updated)
 	if !apierrors.IsNotFound(err) {
-		t.Fatalf("expected Release to be gone after orphan-exit, got err=%v, updated=%+v", err, updated)
+		t.Fatalf("expected ModulePackage to be gone after orphan-exit, got err=%v, updated=%+v", err, updated)
 	}
 	if rel.Status.Inventory != nil {
-		t.Fatalf("Release inventory must be cleared on orphan-exit, got %+v", rel.Status.Inventory)
+		t.Fatalf("ModulePackage inventory must be cleared on orphan-exit, got %+v", rel.Status.Inventory)
 	}
 	evs := drainEvents(rec)
 	if got := countEventsWithReason(evs, status.OrphanedOnDeletionReason); got != 1 {

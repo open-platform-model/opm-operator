@@ -13,7 +13,7 @@ import (
 // --- RecordHistory tests (task 3.1) ---
 
 func TestRecordHistory_AppendToEmpty(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 	entry := releasesv1alpha1.HistoryEntry{Action: "apply"}
 
 	RecordHistory(status, entry)
@@ -23,7 +23,7 @@ func TestRecordHistory_AppendToEmpty(t *testing.T) {
 }
 
 func TestRecordHistory_TrimAtBoundary(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 	// Fill to MaxHistoryEntries.
 	for i := range MaxHistoryEntries {
 		RecordHistory(status, releasesv1alpha1.HistoryEntry{Action: "apply", Sequence: int64(i + 1)})
@@ -38,7 +38,7 @@ func TestRecordHistory_TrimAtBoundary(t *testing.T) {
 }
 
 func TestRecordHistory_NewestFirst(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 
 	RecordHistory(status, releasesv1alpha1.HistoryEntry{Action: "first"})
 	RecordHistory(status, releasesv1alpha1.HistoryEntry{Action: "second"})
@@ -53,7 +53,7 @@ func TestRecordHistory_NewestFirst(t *testing.T) {
 // --- Sequence tests (task 3.2) ---
 
 func TestRecordHistory_SequenceMonotonicity(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 
 	for i := range 5 {
 		RecordHistory(status, releasesv1alpha1.HistoryEntry{Action: "apply"})
@@ -63,7 +63,7 @@ func TestRecordHistory_SequenceMonotonicity(t *testing.T) {
 }
 
 func TestRecordHistory_SequenceMonotonicAfterTrim(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 	for range MaxHistoryEntries + 3 {
 		RecordHistory(status, releasesv1alpha1.HistoryEntry{Action: "apply"})
 	}
@@ -160,7 +160,7 @@ func TestNewSuccessEntry_PruneAction(t *testing.T) {
 // --- Integration: RecordHistory sets sequence on constructed entries ---
 
 func TestRecordHistory_SetsSequenceOnEntry(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 	entry := NewSuccessEntry("apply", "succeeded", DigestSet{}, 5)
 
 	// Entry starts with sequence 0 (zero value).
@@ -173,7 +173,7 @@ func TestRecordHistory_SetsSequenceOnEntry(t *testing.T) {
 }
 
 func TestRecordHistory_PreservesTimestamps(t *testing.T) {
-	status := &releasesv1alpha1.ModuleReleaseStatus{}
+	status := &releasesv1alpha1.ModuleInstanceStatus{}
 	now := metav1.Now()
 	entry := releasesv1alpha1.HistoryEntry{
 		Action:    "apply",

@@ -22,7 +22,7 @@ The reconcile loop classifies outcomes into three failure categories plus three 
 
 **Transient failure**: the operation might succeed later without spec changes. Examples include network failures, temporary Kubernetes API errors, and temporary SSA conflicts. The controller records the failed attempt, preserves the previous successful inventory, and requeues with backoff.
 
-**Stalled failure**: repeating the same reconcile without changing source or spec will not help. Examples include invalid source references, unsupported artifact content, CUE render failures from invalid inputs, and immutable field errors. The controller sets `Stalled=True`, avoids hot retries, and waits for a spec or source change.
+**Stalled failure**: repeating the same reconcile without changing source or spec will not help. Examples include invalid source references, unsupported artifact content, CUE render failures from invalid inputs, and immutable field errors. The controller sets `Stalled=True`, avoids hot retries, and waits for a spec or source change — but still requeues on a long safety recheck (`StalledRecheckInterval`, 30 minutes) so a failure misclassified as stalled, or one whose external cause has since healed, eventually self-corrects rather than waiting indefinitely.
 
 The three success categories are:
 
@@ -61,6 +61,6 @@ Key invariants:
 
 **Negative:** Requires careful classification of each failure type per reconcile phase. Misclassifying a transient failure as stalled (or vice versa) degrades the operator experience. The classification rules are explicit defaults that may need tuning as real-world failure modes are encountered.
 
-**Trade-off:** Stalled failures wait indefinitely for spec/source changes. If a transient issue is misclassified as stalled, the controller will not retry until the user acts. This is accepted as safer than the reverse (treating permanent failures as transient and retrying endlessly).
+**Trade-off:** Stalled failures wait for spec/source changes, bounded by the 30-minute `StalledRecheckInterval` safety recheck. If a transient issue is misclassified as stalled, the controller retries slowly (every 30 minutes) rather than on the fast backoff until the user acts. This is accepted as safer than the reverse (treating permanent failures as transient and retrying endlessly).
 
 Related: [module-release-reconcile-loop.md](../docs/design/module-release-reconcile-loop.md)

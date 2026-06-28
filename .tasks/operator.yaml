@@ -62,9 +62,9 @@ tasks:
   samples:apply:
     desc: Apply sample CRs to the cluster
     cmds:
-      - '{{.KUBECTL}} apply -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml'
+      - '{{.KUBECTL}} apply -f config/samples/releases_v1alpha1_moduleinstance.yaml -f config/samples/releases_v1alpha1_moduleinstance_jellyfin.yaml'
 
   samples:delete:
     desc: Delete sample CRs from the cluster
     cmds:
-      - '{{.KUBECTL}} delete -f config/samples/releases_v1alpha1_modulerelease.yaml -f config/samples/releases_v1alpha1_modulerelease_jellyfin.yaml'
+      - '{{.KUBECTL}} delete -f config/samples/releases_v1alpha1_moduleinstance.yaml -f config/samples/releases_v1alpha1_moduleinstance_jellyfin.yaml'

@@ -24,17 +24,17 @@ import (
 )
 
 var _ = Describe("Concurrent Reconciliation", func() {
-	// TODO (design 6.1): Validates multiple ModuleReleases against a shared
+	// TODO (design 6.1): Validates multiple ModuleInstances against a shared
 	// source reconcile correctly under concurrency. Requires: deployed
-	// controller, shared OCIRepository, create 3 ModuleReleases referencing it
+	// controller, shared OCIRepository, create 3 ModuleInstances referencing it
 	// → Eventually all report Ready=True → assert each has its own distinct
 	// managed resources and no cross-release contamination in inventories.
-	It("should reconcile multiple ModuleReleases from a shared source", func() {
-		Skip("TODO: requires concurrent reconcile fixture across parallel ModuleReleases")
+	It("should reconcile multiple ModuleInstances from a shared source", func() {
+		Skip("TODO: requires concurrent reconcile fixture across parallel ModuleInstances")
 	})
 
 	// TODO (design 6.2): Validates idempotency when the controller restarts
-	// mid-reconcile. Requires: create ModuleRelease → wait for reconcile to
+	// mid-reconcile. Requires: create ModuleInstance → wait for reconcile to
 	// start → delete controller pod (kubectl delete pod -l ...) → Eventually
 	// pod restarts and Ready=True → assert no duplicate resources, inventory
 	// matches render output, no orphaned resources.

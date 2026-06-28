@@ -21,17 +21,18 @@ import (
 // (YAML, JSON, *unstructured.Unstructured, etc.) only when needed via the
 // conversion methods below.
 //
-// Release, Component, and Transformer record provenance for inventory tracking
+// Instance, Component, and Transformer record provenance for inventory tracking
 // and display.
 type Resource struct {
 	// Value is the CUE value of the rendered resource (e.g. a Kubernetes manifest).
 	// Concrete and fully evaluated — safe to encode directly to YAML or JSON.
 	Value cue.Value
 
-	// Release is the name of the ModuleRelease that produced this resource.
-	Release string
+	// Instance is the name of the ModuleInstance that produced this resource.
+	// Was: Release (enhancement 0002 D10/D12).
+	Instance string
 
-	// Component is the source component name within the release.
+	// Component is the source component name within the instance.
 	Component string
 
 	// Transformer is the FQN of the transformer that produced this resource.

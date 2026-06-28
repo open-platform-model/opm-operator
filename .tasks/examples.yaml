@@ -90,7 +90,7 @@ tasks:
         exit $rc
 
   pin:
-    desc: 'Rewrite each example modulerelease.yaml spec.module.version to the module''s declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>). Used by PR e2e to point fixtures at the just-published pre-release tag.'
+    desc: 'Rewrite each example moduleinstance.yaml spec.module.version to the module''s declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>). Used by PR e2e to point fixtures at the just-published pre-release tag.'
     vars:
       PRERELEASE: '{{.PRERELEASE | default ""}}'
     cmds:
@@ -99,7 +99,7 @@ tasks:
         prerelease='{{.PRERELEASE}}'
         for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
           name=$(basename "$dir")
-          mr="$dir/modulerelease.yaml"
+          mr="$dir/moduleinstance.yaml"
           [ -f "$mr" ] || continue
           ver=$(grep -oP '^\s*version:\s*"\K[0-9][^"]*' "$dir/module.cue" | head -1 || true)
           if [ -z "$ver" ]; then
@@ -115,21 +115,21 @@ tasks:
           # before `version`). The pin always resets to v<ver>[-<prerelease>],
           # so re-running with a different PRERELEASE is idempotent.
           sed -i -E "s|^([[:space:]]+version:[[:space:]]+).*$|\1${tag}|" "$mr"
-          echo "pinned ${name} modulerelease -> ${tag}"
+          echo "pinned ${name} moduleinstance -> ${tag}"
         done
 
   bundle:
-    desc: Bundle example ModuleRelease/Release manifests into release assets under dist/
+    desc: Bundle example ModuleInstance manifests into release assets under dist/
     cmds:
       - |
         set -euo pipefail
         rm -rf {{.DIST_DIR}}
         mkdir -p {{.DIST_DIR}}
-        # Per-module ModuleRelease manifests.
+        # Per-module ModuleInstance manifests.
         for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
           name=$(basename "$dir")
-          if [ -f "$dir/modulerelease.yaml" ]; then
-            cp "$dir/modulerelease.yaml" "{{.DIST_DIR}}/${name}-modulerelease.yaml"
+          if [ -f "$dir/moduleinstance.yaml" ]; then
+            cp "$dir/moduleinstance.yaml" "{{.DIST_DIR}}/${name}-moduleinstance.yaml"
           fi
         done
         # Release/OCIRepository fixtures, where present.

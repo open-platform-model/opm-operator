@@ -47,9 +47,9 @@ tasks:
   apply:
     desc: Apply the hello ModuleRelease manifest
     cmds:
-      - '{{.KUBECTL}} apply -f {{.MODULE_DIR}}/modulerelease.yaml'
+      - '{{.KUBECTL}} apply -f {{.MODULE_DIR}}/moduleinstance.yaml'
 
   delete:
     desc: Remove the hello ModuleRelease CR
     cmds:
-      - '{{.KUBECTL}} delete --ignore-not-found -f {{.MODULE_DIR}}/modulerelease.yaml'
+      - '{{.KUBECTL}} delete --ignore-not-found -f {{.MODULE_DIR}}/moduleinstance.yaml'

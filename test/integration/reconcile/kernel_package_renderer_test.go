@@ -152,7 +152,7 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 				Expect(labels[core.LabelManagedBy]).To(Equal(core.LabelManagedByControllerValue),
 					"managed-by must be opm-controller (Go/CUE contract)")
 				Expect(labels[core.LabelModuleInstanceUUID]).NotTo(BeEmpty(),
-					"module-release uuid must be non-empty (catalog ownership labels must flow)")
+					"module-instance uuid must be non-empty (catalog ownership labels must flow)")
 			}
 
 			Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))

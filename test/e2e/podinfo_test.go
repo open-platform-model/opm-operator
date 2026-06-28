@@ -136,7 +136,7 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 
 		By("applying the cluster Platform")
 		_, err = utils.Run(exec.Command("kubectl", "apply", "-f",
-			filepath.Join(projectDir, "config/samples/releases_v1alpha1_platform.yaml")))
+			filepath.Join(projectDir, "config/samples/opmodel.dev_v1alpha1_platform.yaml")))
 		Expect(err).NotTo(HaveOccurred(), "Failed to apply the Platform")
 
 		By("waiting for the Platform to become Ready")
@@ -182,7 +182,7 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		By("removing the cluster Platform")
 		// The Platform has no finalizer, so a non-blocking delete is sufficient.
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "--ignore-not-found", "--wait=false", "-f",
-			filepath.Join(projectDir, "config/samples/releases_v1alpha1_platform.yaml")))
+			filepath.Join(projectDir, "config/samples/opmodel.dev_v1alpha1_platform.yaml")))
 
 		By("undeploying the controller-manager")
 		_, _ = utils.Run(exec.Command("make", "undeploy"))

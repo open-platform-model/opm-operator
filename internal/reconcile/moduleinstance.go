@@ -309,7 +309,7 @@ func ReconcileModuleInstance(
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 
-	// Persist the rendered release UUID on Status. All rendered resources
+	// Persist the rendered instance UUID on Status. All rendered resources
 	// carry the same UUID (stamped by the CUE catalog's moduleLabels merge);
 	// reading the first non-empty one is sufficient. Consumed by the prune
 	// ownership guard in both apply→prune and deletion paths.
@@ -519,7 +519,7 @@ func inventoryDigest(inv *releasesv1alpha1.Inventory) string {
 // On success (or prune disabled), the finalizer is removed.
 // On partial failure, the finalizer is retained and the error is returned for requeue.
 //
-// If the impersonation ServiceAccount is missing, the release stalls with
+// If the impersonation ServiceAccount is missing, the instance stalls with
 // DeletionSAMissingReason and the finalizer is retained until either the SA
 // is restored or the orphan annotation
 // (v1alpha1.AnnotationForceDeleteOrphan = "true") is set to release it.
@@ -749,7 +749,7 @@ func pruneStaleResources(
 // caller).
 //
 // render.ErrPlatformNotReady is a blocked-on-dependency state: the platform
-// store holds no materialized platform yet. The release is healthy but waiting
+// store holds no materialized platform yet. The instance is healthy but waiting
 // for the cluster Platform, so it is marked Ready=False/PlatformNotReady (not
 // Stalled), applies and prunes nothing, and requeues. The Platform watch
 // (mapPlatformToModuleInstances) re-enqueues it promptly when the platform
@@ -799,7 +799,7 @@ func isForbidden(err error) bool {
 //  2. params.DefaultServiceAccount (the manager's --default-service-account flag)
 //  3. empty → fall back to the controller's own client
 //
-// The effective SA is always resolved in the release's own namespace; the flag
+// The effective SA is always resolved in the instance's own namespace; the flag
 // never introduces a cross-namespace reference.
 func buildApplyClient(
 	ctx context.Context,

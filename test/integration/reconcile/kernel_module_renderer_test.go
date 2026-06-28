@@ -140,7 +140,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Expect(labels[core.LabelManagedBy]).To(Equal(core.LabelManagedByControllerValue),
 					"managed-by must be opm-controller (Go/CUE contract)")
 				Expect(labels[core.LabelModuleInstanceUUID]).NotTo(BeEmpty(),
-					"module-release uuid must be non-empty (catalog ownership labels must continue to flow)")
+					"module-instance uuid must be non-empty (catalog ownership labels must continue to flow)")
 			}
 
 			// One inventory entry per rendered resource, built via the existing

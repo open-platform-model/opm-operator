@@ -473,7 +473,7 @@ func applyAndPruneModulePackage(
 	phases.pruneRan = true
 	outcome := Applied
 	if pkg.Spec.Prune && len(staleSet) > 0 {
-		// ModulePackage does not persist a release UUID on Status; pass empty and rely
+		// ModulePackage does not persist an instance UUID on Status; pass empty and rely
 		// on the managed-by check in the prune guard.
 		pruneResult, pruneErr := apply.Prune(ctx, applyClient, "", staleSet)
 		if pruneErr != nil {

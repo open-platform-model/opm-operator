@@ -58,7 +58,7 @@ type ModuleInstanceReconciler struct {
 	Renderer        render.ModuleRenderer
 	// DefaultServiceAccount is the fallback SA name used when a
 	// ModuleInstance has an empty spec.serviceAccountName. Resolved in the
-	// release's own namespace. Empty disables the default.
+	// instance's own namespace. Empty disables the default.
 	DefaultServiceAccount string
 	// Kernel is the shared, long-lived library Kernel constructed once at
 	// manager startup. It is the injection seam later enhancement-0001 slices
@@ -125,7 +125,7 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // the (singleton) Platform changes. This unblocks releases sitting in
 // PlatformNotReady the moment the platform materializes, rather than waiting for
 // the stalled-recheck backoff. List-all is cheap: the Platform is a cluster
-// singleton, its changes are rare, and the release count is bounded.
+// singleton, its changes are rare, and the instance count is bounded.
 func (r *ModuleInstanceReconciler) mapPlatformToModuleInstances(ctx context.Context, _ client.Object) []reconcile.Request {
 	var list releasesv1alpha1.ModuleInstanceList
 	if err := r.List(ctx, &list); err != nil {

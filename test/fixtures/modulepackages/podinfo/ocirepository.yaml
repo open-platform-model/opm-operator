@@ -1,0 +1,14 @@
+# OCIRepository pointing at the podinfo release package artifact pushed by
+# `task release:publish PKG=podinfo`. Uses the kind-internal registry hostname so the
+# Flux source-controller pod can reach the local registry.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: podinfo-release
+  namespace: default
+spec:
+  interval: 1m
+  url: oci://opm-registry:5000/opmodel.dev/releases/test/podinfo
+  ref:
+    tag: v0.0.1
+  insecure: true

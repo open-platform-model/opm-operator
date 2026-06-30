@@ -32,11 +32,12 @@ import (
 )
 
 // These tests exercise KernelPackageRenderer — the ModulePackage CR render path —
-// against the hello instance fixture (test/fixtures/modulepackages/hello). That fixture
-// is an author-written #ModuleInstance that imports the published hello module and
-// embeds it via #module. It is the registry-backed sibling of the module-renderer
-// integration test; both render the same ConfigMap, one via Go synthesis
-// (ModuleInstance) and one via an authored instance.cue (ModulePackage).
+// against the modulepackage fixtures (test/fixtures/modulepackages/{hello,hello-web,
+// podinfo,redis}). Each fixture is an author-written #ModuleInstance that imports its
+// published test module and embeds it via #module. They are the registry-backed
+// siblings of the module-renderer integration test, rendering the same resources via
+// an authored instance.cue (ModulePackage) that the ModuleInstance path synthesizes
+// from Go.
 //
 // Embedding a published #Module under #ModuleInstance.#module re-unifies the
 // closed module against #Module. This only loads on a core whose #Module
@@ -116,46 +117,53 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 			store.Set(1, mp)
 		})
 
-		It("loads the authored release fixture (imported #module) and renders its resources", func() {
-			fixtureDir, err := filepath.Abs(filepath.Join("..", "..", "fixtures", "modulepackages", "hello"))
-			Expect(err).NotTo(HaveOccurred())
-
-			renderer := &render.KernelPackageRenderer{
-				Kernel:      k,
-				Store:       store,
-				Registry:    registry,
-				RuntimeName: core.LabelManagedByControllerValue,
-			}
-
-			kind, res, err := renderer.Render(ctx, fixtureDir)
-
-			// The key regression assertion: loading + embedding the imported
-			// #Module must NOT fail with "field not allowed". A self-referential
-			// #Module identity shape would surface that error here.
-			Expect(err).NotTo(HaveOccurred(),
-				"loading the authored release with an imported #Module must not fail "+
-					"(a self-referential #Module identity would fail with 'field not allowed')")
-			Expect(kind).To(Equal(render.KindModuleInstance))
-			Expect(res).NotTo(BeNil())
-			Expect(res.Resources).NotTo(BeEmpty(),
-				"the hello fixture must compile to at least one resource (a ConfigMap)")
-
-			for _, r := range res.Resources {
-				Expect(r.Instance).NotTo(BeEmpty(), "resource %s missing instance provenance", r)
-				Expect(r.Component).NotTo(BeEmpty(), "resource %s missing component provenance", r)
-				Expect(r.Transformer).NotTo(BeEmpty(), "resource %s missing transformer provenance", r)
-
-				u, err := r.ToUnstructured()
+		// Every modulepackage fixture is an author-written #ModuleInstance that
+		// imports its published test module and embeds it via #module. They all
+		// exercise the same load+embed regression guard; the opm catalog pinned
+		// above provides the configmap/deployment/service/statefulset transformers
+		// each module matches, so they render against the one materialized platform.
+		for _, pkg := range []string{"hello", "hello-web", "podinfo", "redis"} {
+			It("loads the authored "+pkg+" release fixture (imported #module) and renders its resources", func() {
+				fixtureDir, err := filepath.Abs(filepath.Join("..", "..", "fixtures", "modulepackages", pkg))
 				Expect(err).NotTo(HaveOccurred())
-				labels := u.GetLabels()
-				Expect(labels).NotTo(BeNil(), "rendered resource %s must carry labels", u.GetName())
-				Expect(labels[core.LabelManagedBy]).To(Equal(core.LabelManagedByControllerValue),
-					"managed-by must be opm-controller (Go/CUE contract)")
-				Expect(labels[core.LabelModuleInstanceUUID]).NotTo(BeEmpty(),
-					"module-instance uuid must be non-empty (catalog ownership labels must flow)")
-			}
 
-			Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))
-		})
+				renderer := &render.KernelPackageRenderer{
+					Kernel:      k,
+					Store:       store,
+					Registry:    registry,
+					RuntimeName: core.LabelManagedByControllerValue,
+				}
+
+				kind, res, err := renderer.Render(ctx, fixtureDir)
+
+				// The key regression assertion: loading + embedding the imported
+				// #Module must NOT fail with "field not allowed". A self-referential
+				// #Module identity shape would surface that error here.
+				Expect(err).NotTo(HaveOccurred(),
+					"loading the authored release with an imported #Module must not fail "+
+						"(a self-referential #Module identity would fail with 'field not allowed')")
+				Expect(kind).To(Equal(render.KindModuleInstance))
+				Expect(res).NotTo(BeNil())
+				Expect(res.Resources).NotTo(BeEmpty(),
+					"the %s fixture must compile to at least one resource", pkg)
+
+				for _, r := range res.Resources {
+					Expect(r.Instance).NotTo(BeEmpty(), "resource %s missing instance provenance", r)
+					Expect(r.Component).NotTo(BeEmpty(), "resource %s missing component provenance", r)
+					Expect(r.Transformer).NotTo(BeEmpty(), "resource %s missing transformer provenance", r)
+
+					u, err := r.ToUnstructured()
+					Expect(err).NotTo(HaveOccurred())
+					labels := u.GetLabels()
+					Expect(labels).NotTo(BeNil(), "rendered resource %s must carry labels", u.GetName())
+					Expect(labels[core.LabelManagedBy]).To(Equal(core.LabelManagedByControllerValue),
+						"managed-by must be opm-controller (Go/CUE contract)")
+					Expect(labels[core.LabelModuleInstanceUUID]).NotTo(BeEmpty(),
+						"module-instance uuid must be non-empty (catalog ownership labels must flow)")
+				}
+
+				Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))
+			})
+		}
 	})
 })

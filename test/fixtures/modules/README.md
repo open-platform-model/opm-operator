@@ -17,7 +17,7 @@ extra registry configuration.
 Each module declares its own semver in `module.cue` (`metadata.version`),
 independent of the operator's release version. On an operator release, CI
 publishes any module whose version is not already present, and attaches the
-`modulerelease.yaml` manifests to the GitHub Release.
+`moduleinstance.yaml` manifests to the GitHub Release.
 
 > **Note:** `podinfo` and `redis` pin `opmodel.dev/catalogs/opm@v0.6.0`, the
 > first catalog release with headless-Service support (`expose.clusterIP:
@@ -31,27 +31,30 @@ Prerequisites: the opm-operator is running in the cluster, a `Platform` named
 resolve `opmodel.dev/*` from a reachable registry.
 
 ```bash
+# Deploy the minimal hello-web example (one Deployment):
+kubectl apply -f test/fixtures/modules/hello-web/moduleinstance.yaml
+
 # Deploy the stateless podinfo example (Deployment + Service + probes):
-kubectl apply -f test/fixtures/modules/podinfo/modulerelease.yaml
+kubectl apply -f test/fixtures/modules/podinfo/moduleinstance.yaml
 
 # Deploy the stateful redis example (StatefulSet + headless Service + PVC):
-kubectl apply -f test/fixtures/modules/redis/modulerelease.yaml
+kubectl apply -f test/fixtures/modules/redis/moduleinstance.yaml
 
-# Watch the ModuleRelease reconcile and the workload come up:
-kubectl get modulerelease -n default
+# Watch the ModuleInstance reconcile and the workload come up:
+kubectl get moduleinstance -n default
 kubectl rollout status deploy/podinfo-podinfo -n default
 kubectl rollout status statefulset/redis-redis -n default
 ```
 
-Each `modulerelease.yaml` bundles a `ServiceAccount` + `Role` + `RoleBinding`
+Each `moduleinstance.yaml` bundles a `ServiceAccount` + `Role` + `RoleBinding`
 granting the applier just the resource kinds that module renders, plus the
-`ModuleRelease` itself. Override module config (image, replicas, persistence,
-…) via the `spec.values` field on the `ModuleRelease`.
+`ModuleInstance` itself. Override module config (image, replicas, persistence,
+…) via the `spec.values` field on the `ModuleInstance`.
 
 To remove an example:
 
 ```bash
-kubectl delete -f test/fixtures/modules/podinfo/modulerelease.yaml
+kubectl delete -f test/fixtures/modules/podinfo/moduleinstance.yaml
 ```
 
 ## Publishing locally

@@ -27,6 +27,7 @@ const (
 	OrphanedOnDeletionReason      = "OrphanedOnDeletion"
 	ReconciliationSucceededReason = "ReconciliationSucceeded"
 	DriftDetectedReason           = "DriftDetected"
+	ManagedExternallyReason       = "ManagedExternally"
 
 	// Platform-specific reasons.
 	MaterializedReason      = "Materialized"      // Ready=True: the Platform materialized successfully.
@@ -80,6 +81,17 @@ func MarkSuspended(obj conditions.Setter) {
 	conditions.Delete(obj, ReconcilingCondition)
 	conditions.Delete(obj, StalledCondition)
 	conditions.MarkFalse(obj, ReadyCondition, SuspendedReason, "Reconciliation is suspended")
+}
+
+// MarkManagedExternally sets Ready=Unknown with reason ManagedExternally and
+// removes Reconciling and Stalled conditions. Used by the owner-skip gate for
+// CLI-owned instances the operator deliberately does not reconcile. The static
+// message keeps the write idempotent: re-acknowledging an already-marked
+// instance produces an empty patch diff.
+func MarkManagedExternally(obj conditions.Setter) {
+	conditions.Delete(obj, ReconcilingCondition)
+	conditions.Delete(obj, StalledCondition)
+	conditions.MarkUnknown(obj, ReadyCondition, ManagedExternallyReason, "ModuleInstance is managed externally by the CLI")
 }
 
 // MarkNotReady sets Ready=False with the given reason and message.

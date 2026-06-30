@@ -76,8 +76,19 @@ func ReconcileModuleInstance(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Owner-skip gate: CLI-owned instances are managed externally. The operator
+	// stays entirely hands-off — no render, apply, prune, deletion cleanup, and
+	// crucially no finalizer. The check sits before finalizer registration so a
+	// CLI-owned CR never carries opmodel.dev/cleanup (whose deletion path would
+	// prune resources the CLI owns). Only an explicit owner == cli skips; absent,
+	// empty, and operator all fall through to the normal operator-managed path.
+	if mi.Spec.Owner == releasesv1alpha1.OwnerCLI {
+		return ctrl.Result{}, handleCLIOwned(ctx, params, &mi)
+	}
+
 	// Track reconcile start time for duration calculation.
-	// Set before suspend/deletion checks so all paths are measured.
+	// Set after the CLI-owned skip (which records no metrics) and before the
+	// suspend/deletion checks so all operator-managed paths are measured.
 	reconcileStart := time.Now()
 
 	// Register finalizer if not present. Finalizer patches don't bump
@@ -103,26 +114,7 @@ func ReconcileModuleInstance(
 
 	// Suspend check — runs before deferred status commit to preserve existing status fields.
 	if mi.Spec.Suspend {
-		log.Info("Reconciliation is suspended")
-		status.MarkSuspended(&mi)
-		mi.Status.ObservedGeneration = mi.Generation
-		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeNormal, status.SuspendedReason, "Suspend", "Reconciliation is suspended")
-		if patchErr := patcher.Patch(ctx, &mi,
-			patch.WithOwnedConditions{
-				Conditions: []string{
-					status.ReadyCondition,
-					status.ReconcilingCondition,
-					status.StalledCondition,
-					status.ModuleResolvedCondition,
-					status.DriftedCondition,
-				},
-			},
-			patch.WithStatusObservedGeneration{},
-		); patchErr != nil {
-			return ctrl.Result{}, patchErr
-		}
-		opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, handleSuspend(ctx, params, patcher, &mi, reconcileStart)
 	}
 
 	// Check for resume from suspend.
@@ -512,6 +504,78 @@ func inventoryDigest(inv *releasesv1alpha1.Inventory) string {
 		return ""
 	}
 	return inv.Digest
+}
+
+// handleCLIOwned implements the owner-skip gate for CLI-owned instances. The
+// operator is hands-off: no render, apply, prune, deletion cleanup, or
+// finalizer. For a deleting instance it returns immediately — no finalizer was
+// ever added, so there is nothing to clean up or unblock. Otherwise it records
+// a single Ready=Unknown/ManagedExternally acknowledgement and nothing else: no
+// observedGeneration (no reconcile happened) and no CLI-written status
+// (inventory, lastApplied*, instanceUUID). The patcher snapshots the object
+// before MarkManagedExternally mutates only the conditions, so CLI-written
+// fields are identical in snapshot and current and are never patched. The
+// static message makes the write idempotent across repeated wake-ups.
+func handleCLIOwned(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	mi *releasesv1alpha1.ModuleInstance,
+) error {
+	log := logf.FromContext(ctx)
+
+	if !mi.DeletionTimestamp.IsZero() {
+		return nil
+	}
+
+	log.Info("ModuleInstance is managed externally by the CLI, skipping reconciliation")
+	patcher := patch.NewSerialPatcher(mi, params.Client)
+	status.MarkManagedExternally(mi)
+	params.EventRecorder.Eventf(mi, nil, corev1.EventTypeNormal, status.ManagedExternallyReason, "Reconcile", "ModuleInstance is managed externally by the CLI")
+	return patcher.Patch(ctx, mi,
+		patch.WithOwnedConditions{
+			Conditions: []string{
+				status.ReadyCondition,
+				status.ReconcilingCondition,
+				status.StalledCondition,
+				status.ModuleResolvedCondition,
+				status.DriftedCondition,
+			},
+		},
+	)
+}
+
+// handleSuspend records the suspended state for an operator-owned instance:
+// Ready=False/Suspended (clearing Reconciling/Stalled), the observed generation,
+// and a Suspend event. It runs before the deferred status commit so the existing
+// status fields (inventory, lastApplied*, history) are preserved untouched.
+func handleSuspend(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	patcher *patch.SerialPatcher,
+	mi *releasesv1alpha1.ModuleInstance,
+	reconcileStart time.Time,
+) error {
+	log := logf.FromContext(ctx)
+	log.Info("Reconciliation is suspended")
+	status.MarkSuspended(mi)
+	mi.Status.ObservedGeneration = mi.Generation
+	params.EventRecorder.Eventf(mi, nil, corev1.EventTypeNormal, status.SuspendedReason, "Suspend", "Reconciliation is suspended")
+	if patchErr := patcher.Patch(ctx, mi,
+		patch.WithOwnedConditions{
+			Conditions: []string{
+				status.ReadyCondition,
+				status.ReconcilingCondition,
+				status.StalledCondition,
+				status.ModuleResolvedCondition,
+				status.DriftedCondition,
+			},
+		},
+		patch.WithStatusObservedGeneration{},
+	); patchErr != nil {
+		return patchErr
+	}
+	opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
+	return nil
 }
 
 // handleDeletion runs the deletion cleanup path.

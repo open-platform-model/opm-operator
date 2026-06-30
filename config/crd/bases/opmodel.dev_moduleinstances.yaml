@@ -78,6 +78,18 @@ spec:
                 - path
                 - version
                 type: object
+              owner:
+                description: |-
+                  Owner identifies which actor manages this instance. An absent, empty, or
+                  "operator" value means operator-managed: the controller reconciles
+                  normally. Only an explicit "cli" makes the operator skip the instance
+                  (no render/apply/prune, no finalizer) and record a single
+                  ManagedExternally acknowledgement. There is no CRD default; the
+                  reconciler carries the operator-managed default semantics.
+                enum:
+                - cli
+                - operator
+                type: string
               prune:
                 type: boolean
               rollout:

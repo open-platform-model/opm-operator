@@ -23,12 +23,35 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// OwnerType identifies which actor manages a ModuleInstance.
+type OwnerType string
+
+const (
+	// OwnerCLI marks an instance as managed externally by the OPM CLI. The
+	// operator stays hands-off: it renders, applies, prunes nothing, adds no
+	// finalizer, and only records a ManagedExternally acknowledgement.
+	OwnerCLI OwnerType = "cli"
+	// OwnerOperator marks an instance as managed by the operator (the default
+	// semantics). The reconciler also treats an absent or empty owner this way.
+	OwnerOperator OwnerType = "operator"
+)
+
 // ModuleInstanceSpec defines the desired state of ModuleInstance
 //
 // Was: ModuleReleaseSpec
 type ModuleInstanceSpec struct {
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
+
+	// Owner identifies which actor manages this instance. An absent, empty, or
+	// "operator" value means operator-managed: the controller reconciles
+	// normally. Only an explicit "cli" makes the operator skip the instance
+	// (no render/apply/prune, no finalizer) and record a single
+	// ManagedExternally acknowledgement. There is no CRD default; the
+	// reconciler carries the operator-managed default semantics.
+	// +kubebuilder:validation:Enum=cli;operator
+	// +optional
+	Owner OwnerType `json:"owner,omitempty"`
 
 	// Module identifies the CUE module to evaluate from the OCI registry.
 	Module ModuleReference `json:"module"`

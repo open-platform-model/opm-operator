@@ -367,6 +367,266 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 		})
 	})
 
+	Context("CLI-owned instance (owner marker)", func() {
+		It("should skip reconciliation, add no finalizer, and acknowledge with ManagedExternally", func() {
+			ctx := context.Background()
+
+			mr := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cli-owned-mr",
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerCLI,
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+					Values: &releasesv1alpha1.RawValues{},
+				},
+			}
+			mr.Spec.Values.Raw = []byte(`{"message": "hello"}`)
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+
+			reconciler := &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   events.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
+			}
+
+			nn := types.NamespacedName{Name: "cli-owned-mr", Namespace: namespace}
+
+			// A single reconcile: no finalizer round-trip, straight to the skip gate.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			var updated releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &updated)).To(Succeed())
+
+			// No finalizer added.
+			Expect(controllerutil.ContainsFinalizer(&updated, opmreconcile.FinalizerName)).To(BeFalse())
+
+			// Ready=Unknown/ManagedExternally; Reconciling and Stalled absent.
+			ready := apimeta.FindStatusCondition(updated.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionUnknown))
+			Expect(ready.Reason).To(Equal(status.ManagedExternallyReason))
+			Expect(apimeta.FindStatusCondition(updated.Status.Conditions, status.ReconcilingCondition)).To(BeNil())
+			Expect(apimeta.FindStatusCondition(updated.Status.Conditions, status.StalledCondition)).To(BeNil())
+
+			// observedGeneration not stamped — no reconcile happened.
+			Expect(updated.Status.ObservedGeneration).To(BeZero())
+
+			// No resources applied.
+			var cm corev1.ConfigMap
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)
+			Expect(err).To(HaveOccurred())
+			Expect(client.IgnoreNotFound(err)).To(Succeed())
+
+			// Cleanup (no finalizer to clear).
+			Expect(k8sClient.Delete(ctx, &updated)).To(Succeed())
+		})
+
+		It("should leave CLI-written status untouched and re-acknowledge idempotently", func() {
+			ctx := context.Background()
+
+			mr := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cli-owned-status-mr",
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerCLI,
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+			nn := types.NamespacedName{Name: "cli-owned-status-mr", Namespace: namespace}
+
+			// Simulate the CLI writing its own inventory + lastApplied* digests.
+			var current releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			current.Status.InstanceUUID = "cli-uuid-123"
+			current.Status.LastAppliedSourceDigest = "sha256:clisource"
+			current.Status.LastAppliedConfigDigest = "sha256:cliconfig"
+			current.Status.LastAppliedRenderDigest = "sha256:clirender"
+			current.Status.Inventory = &releasesv1alpha1.Inventory{
+				Revision: 7,
+				Digest:   "sha256:cliinv",
+				Count:    1,
+				Entries: []releasesv1alpha1.InventoryEntry{
+					{Kind: "ConfigMap", Name: "cli-managed", Namespace: namespace},
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+
+			reconciler := &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   events.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
+			}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// CLI-written status survives untouched (D25 boundary).
+			var afterAck releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &afterAck)).To(Succeed())
+			Expect(afterAck.Status.InstanceUUID).To(Equal("cli-uuid-123"))
+			Expect(afterAck.Status.LastAppliedSourceDigest).To(Equal("sha256:clisource"))
+			Expect(afterAck.Status.LastAppliedConfigDigest).To(Equal("sha256:cliconfig"))
+			Expect(afterAck.Status.LastAppliedRenderDigest).To(Equal("sha256:clirender"))
+			Expect(afterAck.Status.Inventory).NotTo(BeNil())
+			Expect(afterAck.Status.Inventory.Revision).To(Equal(int64(7)))
+			Expect(afterAck.Status.Inventory.Digest).To(Equal("sha256:cliinv"))
+			Expect(afterAck.Status.Inventory.Entries).To(HaveLen(1))
+			Expect(afterAck.Status.Inventory.Entries[0].Name).To(Equal("cli-managed"))
+
+			// Capture the acknowledgement transition time.
+			ackReady := apimeta.FindStatusCondition(afterAck.Status.Conditions, status.ReadyCondition)
+			Expect(ackReady).NotTo(BeNil())
+			Expect(ackReady.Reason).To(Equal(status.ManagedExternallyReason))
+			firstTransition := ackReady.LastTransitionTime
+
+			// Re-reconcile (e.g. a Platform-watch re-enqueue) is a no-op: the
+			// condition does not transition again and CLI status is still intact.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var afterReAck releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &afterReAck)).To(Succeed())
+			reReady := apimeta.FindStatusCondition(afterReAck.Status.Conditions, status.ReadyCondition)
+			Expect(reReady).NotTo(BeNil())
+			Expect(reReady.Reason).To(Equal(status.ManagedExternallyReason))
+			Expect(reReady.LastTransitionTime).To(Equal(firstTransition))
+			Expect(afterReAck.Status.Inventory.Digest).To(Equal("sha256:cliinv"))
+
+			// Cleanup.
+			Expect(k8sClient.Delete(ctx, &afterReAck)).To(Succeed())
+		})
+
+		It("should not block deletion of a CLI-owned instance and should prune nothing", func() {
+			ctx := context.Background()
+
+			mr := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cli-owned-delete-mr",
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerCLI,
+					Prune:  true,
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+			nn := types.NamespacedName{Name: "cli-owned-delete-mr", Namespace: namespace}
+
+			reconciler := &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   events.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
+			}
+
+			// Acknowledge it once (no finalizer added).
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			var acked releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &acked)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&acked, opmreconcile.FinalizerName)).To(BeFalse())
+
+			// Delete: with no finalizer the object is removed immediately.
+			Expect(k8sClient.Delete(ctx, &acked)).To(Succeed())
+
+			// A reconcile of the deleting (now gone) instance is a clean no-op.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			// Object is gone — deletion was never blocked.
+			Eventually(func() bool {
+				var deleted releasesv1alpha1.ModuleInstance
+				return k8sClient.Get(ctx, nn, &deleted) != nil
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+		})
+
+		It("should adopt the instance on handoff when owner flips to operator", func() {
+			ctx := context.Background()
+
+			mr := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cli-handoff-mr",
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerCLI,
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+					Values: &releasesv1alpha1.RawValues{},
+				},
+			}
+			mr.Spec.Values.Raw = []byte(`{"message": "hello"}`)
+			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+			nn := types.NamespacedName{Name: "cli-handoff-mr", Namespace: namespace}
+
+			reconciler := &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   events.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
+			}
+
+			// CLI-owned: acknowledged, no finalizer, no resources.
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			var acked releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &acked)).To(Succeed())
+			ackReady := apimeta.FindStatusCondition(acked.Status.Conditions, status.ReadyCondition)
+			Expect(ackReady).NotTo(BeNil())
+			Expect(ackReady.Reason).To(Equal(status.ManagedExternallyReason))
+			Expect(controllerutil.ContainsFinalizer(&acked, opmreconcile.FinalizerName)).To(BeFalse())
+
+			// Flip owner to operator (the handoff).
+			acked.Spec.Owner = releasesv1alpha1.OwnerOperator
+			Expect(k8sClient.Update(ctx, &acked)).To(Succeed())
+
+			// Next reconcile falls through to the normal path: adds the finalizer.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
+
+			var adopted releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &adopted)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&adopted, opmreconcile.FinalizerName)).To(BeTrue())
+
+			// Full reconcile: renders, applies, overwrites ManagedExternally with the real Ready.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var reconciled releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &reconciled)).To(Succeed())
+			ready := apimeta.FindStatusCondition(reconciled.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+			Expect(ready.Reason).NotTo(Equal(status.ManagedExternallyReason))
+			Expect(reconciled.Status.Inventory).NotTo(BeNil())
+
+			var cm corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)).To(Succeed())
+
+			// Cleanup.
+			Expect(k8sClient.Delete(ctx, &cm)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nn, &reconciled)).To(Succeed())
+			controllerutil.RemoveFinalizer(&reconciled, opmreconcile.FinalizerName)
+			Expect(k8sClient.Update(ctx, &reconciled)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &reconciled)).To(Succeed())
+		})
+	})
+
 	Context("No-op detection", func() {
 		It("should skip apply on second reconcile when digests match", func() {
 			ctx := context.Background()

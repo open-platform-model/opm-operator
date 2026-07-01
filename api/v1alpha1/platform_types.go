@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // PlatformSpec defines the desired state of Platform.
@@ -132,5 +133,8 @@ func (in *Platform) SetConditions(conditions []metav1.Condition) {
 }
 
 func init() {
-	SchemeBuilder.Register(&Platform{}, &PlatformList{})
+	SchemeBuilder.Register(func(scheme *runtime.Scheme) error {
+		scheme.AddKnownTypes(GroupVersion, &Platform{}, &PlatformList{})
+		return nil
+	})
 }

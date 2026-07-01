@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-alpha.2](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.1...v1.0.0-alpha.2) (2026-07-01)
+
+
+### Miscellaneous Chores
+
+* **deps:** bump k8s.io/controller-runtime/flux to CLI's k8s line ([#44](https://github.com/open-platform-model/opm-operator/issues/44)) ([d724ac3](https://github.com/open-platform-model/opm-operator/commit/d724ac3a04fc4d585b8896ccf43a6d3199266472))
+* **openspec:** archive operator-bump-k8s-stable ([cafef96](https://github.com/open-platform-model/opm-operator/commit/cafef969a610240e0bd3c4e472093b9704d458ce))
+
 ## [1.0.0-alpha.1](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha...v1.0.0-alpha.1) (2026-06-30)
 
 

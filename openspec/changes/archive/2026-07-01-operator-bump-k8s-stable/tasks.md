@@ -23,5 +23,5 @@
 
 ## 4. Enhancement Bookkeeping
 
-- [ ] 4.1 Append a `history` event to `enhancements/0006/config.yaml` recording this slice's landing (per the `enhancements` skill's Phase 4 protocol), with `slice: "opm-operator/<archived-change-slug>"`.
-- [ ] 4.2 Update `enhancements/0006/planned-changes.md` A1's status row to `✅ implemented` with the landing date.
+- [x] 4.1 Append a `history` event to `enhancements/0006/config.yaml` recording this slice's landing (per the `enhancements` skill's Phase 4 protocol), with `slice: "opm-operator/<archived-change-slug>"`. Done — `slice: "opm-operator/2026-07-01-operator-bump-k8s-stable"`.
+- [x] 4.2 Update `enhancements/0006/planned-changes.md` A1's status row to `✅ implemented` with the landing date. Done — also unblocked A5's status note and the Wave 0 ordering diagram marker.

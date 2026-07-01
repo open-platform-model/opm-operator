@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.1](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha...v1.0.0-alpha.1) (2026-06-30)
+
+
+### Features
+
+* **moduleinstance:** add spec.owner marker for cli-owned instances ([#42](https://github.com/open-platform-model/opm-operator/issues/42)) ([0636c09](https://github.com/open-platform-model/opm-operator/commit/0636c09089d59fd1eb3110f7cd0b370237b4ae7e))
+
 ## [1.0.0-alpha](https://github.com/open-platform-model/opm-operator/compare/v0.7.5...v1.0.0-alpha) (2026-06-28)
 
 

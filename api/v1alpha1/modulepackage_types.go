@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	fluxmeta "github.com/fluxcd/pkg/apis/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // Was: ReleaseSpec
@@ -175,5 +176,8 @@ func (in *ModulePackage) SetConditions(conditions []metav1.Condition) {
 }
 
 func init() {
-	SchemeBuilder.Register(&ModulePackage{}, &ModulePackageList{})
+	SchemeBuilder.Register(func(scheme *runtime.Scheme) error {
+		scheme.AddKnownTypes(GroupVersion, &ModulePackage{}, &ModulePackageList{})
+		return nil
+	})
 }

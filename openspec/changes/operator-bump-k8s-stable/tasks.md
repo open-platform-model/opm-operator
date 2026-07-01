@@ -1,0 +1,27 @@
+## 1. Dependency Bump
+
+- [x] 1.1 Run `go get k8s.io/api@v0.36.0 k8s.io/apiextensions-apiserver@v0.36.0 k8s.io/apimachinery@v0.36.0 k8s.io/client-go@v0.36.0 sigs.k8s.io/controller-runtime@v0.24.1` in `opm-operator/`. (Done — this alone left `go mod tidy` failing until 1.1a lands; see D-widening note in `design.md`.)
+- [x] 1.1a Run `go get github.com/fluxcd/cli-utils@v1.2.2 github.com/fluxcd/pkg/apis/meta@v1.30.1 github.com/fluxcd/pkg/runtime@v0.110.1 github.com/fluxcd/pkg/ssa@v0.76.1 github.com/fluxcd/source-controller/api@v1.9.1` — the coordinated Flux package set (D4 in `design.md`), required because `k8s.io/api` v0.36.x deleted `scheduling/v1alpha1`/`autoscaling/v2beta2` that the old Flux pins still reference. (MVS naturally resolved `k8s.io/*` to v0.36.2, matching `flux2` v2.9.0's exact pins.)
+- [x] 1.2 Run `go mod tidy` and review the `go.sum`/`go.mod` diff, in particular the indirect deps that shift underneath this bump (`sigs.k8s.io/apiserver-network-proxy/konnectivity-client`, `sigs.k8s.io/kustomize/api`, `sigs.k8s.io/kustomize/kyaml`, `sigs.k8s.io/structured-merge-diff/v6`, `k8s.io/kube-openapi`, `k8s.io/klog/v2`, `k8s.io/utils`, and any new Flux-side indirects such as `go.etcd.io/etcd/*`) — confirm nothing jumps an unexpected major version. (Clean; all versions match `design.md`'s anticipated targets. `go-openapi/swag` split into several subpackages upstream — benign restructuring, not a version concern.)
+- [x] 1.3 Confirm the `go` directive in `go.mod` is left at `1.26.2` (no bump — D2 in `design.md`). Confirmed unchanged.
+- [x] 1.4 Spot-check that `internal/apply/manager.go`'s one `cli-utils` import (`pkg/kstatus/polling`) still resolves and its call sites are unchanged — confirms D5's "scope reduced to kstatus only" finding held in practice, not just on paper. Confirmed: import unchanged, `go build ./...` succeeds cleanly across the whole module.
+
+## 2. Generated Artifacts
+
+- [x] 2.1 Run `task dev:manifests dev:generate`. Ran clean twice (before and after the D8 scheme-builder fix below).
+- [x] 2.2 Diff `config/crd/bases/*.yaml`, `config/rbac/role.yaml`, `api/v1alpha1/zz_generated.deepcopy.go` against their pre-bump state — expect no diff; if there is one, investigate before proceeding (do not blindly accept generated-file churn). CRDs/RBAC/`dist/install.yaml`: zero diff. `zz_generated.deepcopy.go`: one benign 1-line diff after the D8 fix — `controller-gen`'s newer version drops a redundant import alias (`runtime "k8s.io/apimachinery/pkg/runtime"` → `"k8s.io/apimachinery/pkg/runtime"`), semantically identical. Investigated per this task's own instruction, not blindly accepted.
+
+## 3. Verification
+
+- [x] 3.1 Run `task dev:fmt dev:vet` — must pass unchanged. Passed clean, no formatting changes.
+- [x] 3.1a (discovered) Fix `SA1019` staticcheck failure on the deprecated `controller-runtime/pkg/scheme.Builder` (D8 in `design.md`) — migrated `api/v1alpha1/{groupversion_info,moduleinstance_types,modulepackage_types,platform_types}.go` to `k8s.io/apimachinery/pkg/runtime.NewSchemeBuilder`. Behavior-preserving (verified against `scheme.Builder`'s own implementation).
+- [x] 3.2 Run `task dev:lint` — must pass unchanged. Failed once (D8's finding), passes clean after the fix: `0 issues.`
+- [x] 3.3 Run `task dev:test` — envtest-based unit/controller tests must pass unchanged. All packages pass (envtest auto-provisioned Kubernetes 1.36 binaries, matching the bump).
+- [x] 3.4 Run `task dev:e2e`. **Ran 2026-07-01: 2 Passed | 0 Failed | 0 Pending | 15 Skipped.** Only the "Manager" suite (bootstrap + metrics endpoint) executed — `prune_test.go` and `finalizer_test.go` turned out to *also* be pre-existing `Skip()`-stubbed TODOs (D7 in `design.md` corrected after actually checking; the first draft wrongly claimed they ran). `podinfo_test.go` skipped locally because `LOCAL_REGISTRY`/`OPERATOR_DOCKER_CONFIG` weren't set — **this local run provided zero live coverage of the bumped `pkg/ssa`/`cli-utils/pkg/kstatus/polling`.**
+- [ ] 3.4a **New, required before merge:** once this change is a real PR, check `.github/workflows/test-e2e.yml`'s actual e2e run — confirm `podinfo_test.go`'s `BeforeAll` did *not* skip (i.e. `OPERATOR_DOCKER_CONFIG`/example-module publish succeeded) and that `Podinfo example module deploys podinfo and its pods become Ready` passed. That is the one spec in the entire suite that exercises the bumped `pkg/ssa` apply path and `cli-utils/pkg/kstatus/polling` readiness detection — this change is not verified against that surface until this specific spec is confirmed green in CI, not just "e2e passed."
+- [x] 3.5 Grep the diff/build output for any deprecation warnings surfaced by the new `k8s.io`/`controller-runtime`/Flux versions and note any found (even if non-blocking) in the PR description. None remaining after the D8 fix — `go vet`, `task dev:lint`, and a full build are all silent on deprecation warnings. (The one deprecation this bump surfaced, `scheme.Builder`, is D8, already fixed — not merely noted.)
+
+## 4. Enhancement Bookkeeping
+
+- [ ] 4.1 Append a `history` event to `enhancements/0006/config.yaml` recording this slice's landing (per the `enhancements` skill's Phase 4 protocol), with `slice: "opm-operator/<archived-change-slug>"`.
+- [ ] 4.2 Update `enhancements/0006/planned-changes.md` A1's status row to `✅ implemented` with the landing date.

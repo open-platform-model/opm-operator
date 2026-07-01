@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -178,5 +179,8 @@ type ModuleInstanceList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ModuleInstance{}, &ModuleInstanceList{})
+	SchemeBuilder.Register(func(scheme *runtime.Scheme) error {
+		scheme.AddKnownTypes(GroupVersion, &ModuleInstance{}, &ModuleInstanceList{})
+		return nil
+	})
 }

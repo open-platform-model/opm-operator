@@ -9,6 +9,7 @@
       "release-type": "go",
       "package-name": "opm-operator",
       "changelog-path": "CHANGELOG.md",
+      "extra-files": ["internal/version/version.go"],
       "versioning": "prerelease",
       "prerelease": true,
       "prerelease-type": "alpha",

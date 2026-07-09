@@ -26,6 +26,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='Ready')].reason
       name: Reason
       type: string
+    - jsonPath: .status.operatorVersion
+      name: Operator
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -171,6 +174,13 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              operatorVersion:
+                description: |-
+                  operatorVersion is the version of the operator that last patched this
+                  Platform's status, stamped on every reconcile regardless of outcome
+                  (enhancement 0006 D24). The CLI reads it as the version-skew ceiling;
+                  absence means no operator has reconciled the Platform (solo cluster).
+                type: string
             type: object
         required:
         - spec

@@ -46,6 +46,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/source"
+	opmversion "github.com/open-platform-model/opm-operator/internal/version"
 	"github.com/open-platform-model/opm-operator/pkg/core"
 	// +kubebuilder:scaffold:imports
 )
@@ -112,6 +113,8 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	setupLog.Info("Starting opm-operator", "version", opmversion.Full())
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will

@@ -44,6 +44,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/internal/version"
 )
 
 // platformSingletonName is the only permitted name for the cluster-scoped
@@ -147,6 +148,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// mark Ready.
 	r.Store.Set(plat.Generation, mp)
 	plat.Status.ObservedGeneration = plat.Generation
+	plat.Status.OperatorVersion = version.Full()
 	status.MarkReadyWithReason(&plat, status.MaterializedReason, "Platform materialized")
 	r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeNormal, status.MaterializedReason, "Materialize", "Platform materialized for generation %d", plat.Generation)
 
@@ -179,6 +181,7 @@ func (r *PlatformReconciler) failMaterialize(
 		prior.Message != msg
 
 	plat.Status.ObservedGeneration = plat.Generation
+	plat.Status.OperatorVersion = version.Full()
 	status.MarkStalled(plat, status.MaterializeFailedReason, "%s", msg)
 
 	if transition {

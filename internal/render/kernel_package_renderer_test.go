@@ -27,7 +27,7 @@ func writeInstancePackage(t *testing.T, kind string) string {
 	modDir := filepath.Join(dir, "cue.mod")
 	require.NoError(t, os.MkdirAll(modDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "module.cue"),
-		[]byte("module: \"test.example/release@v0\"\nlanguage: version: \"v0.16.1\"\n"), 0o644))
+		[]byte("module: \"test.example/release@v0\"\nlanguage: version: \"v0.17.0\"\n"), 0o644))
 
 	pkg := "package instance\n\nkind: \"" + kind + "\"\n" +
 		"metadata: {\n\tname:      \"test-instance\"\n\tnamespace: \"default\"\n}\n" +

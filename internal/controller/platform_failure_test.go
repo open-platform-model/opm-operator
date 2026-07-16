@@ -34,6 +34,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/internal/version"
 )
 
 // failureReconciler builds a PlatformReconciler with a concrete *FakeRecorder so
@@ -115,6 +116,19 @@ var _ = Describe("Platform Controller failure handling", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), fetched)).To(Succeed())
 		Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
 		Expect(fetched.Status.ObservedGeneration).NotTo(BeZero())
+	})
+
+	It("stamps operatorVersion on the failure path", func() {
+		r, _ := failureReconciler(platformstore.NewStore())
+		plat := createSingleton()
+		patcher := freshPatcher(plat)
+
+		_, err := r.failMaterialize(ctx, patcher, plat, errors.New("boom"), "materialize failed: boom")
+		Expect(err).NotTo(HaveOccurred())
+
+		fetched := &releasesv1alpha1.Platform{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), fetched)).To(Succeed())
+		Expect(fetched.Status.OperatorVersion).To(Equal(version.Full()))
 	})
 
 	It("does not re-emit the warning event across repeated identical failures", func() {

@@ -34,6 +34,7 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/internal/version"
 )
 
 // clusterRequest is the reconcile request for the singleton Platform.
@@ -156,6 +157,7 @@ var _ = Describe("Platform Controller", func() {
 			Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 			Expect(ready.Reason).To(Equal(status.MaterializedReason))
 			Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
+			Expect(fetched.Status.OperatorVersion).To(Equal(version.Full()))
 
 			held, ok := store.Get()
 			Expect(ok).To(BeTrue(), "store should hold the materialized platform")

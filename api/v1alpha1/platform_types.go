@@ -84,6 +84,13 @@ type PlatformStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// operatorVersion is the version of the operator that last patched this
+	// Platform's status, stamped on every reconcile regardless of outcome
+	// (enhancement 0006 D24). The CLI reads it as the version-skew ceiling;
+	// absence means no operator has reconciled the Platform (solo cluster).
+	// +optional
+	OperatorVersion string `json:"operatorVersion,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -93,6 +100,7 @@ type PlatformStatus struct {
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].reason"
+// +kubebuilder:printcolumn:name="Operator",type=string,JSONPath=".status.operatorVersion"
 
 // Platform is the Schema for the platforms API. It is a cluster-scoped
 // singleton (the only permitted name is "cluster") whose spec projects the

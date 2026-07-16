@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.4](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.3...v1.0.0-alpha.4) (2026-07-16)
+
+
+### Miscellaneous Chores
+
+* adopt CUE v0.17.1 toolchain ([#49](https://github.com/open-platform-model/opm-operator/issues/49)) ([543ce77](https://github.com/open-platform-model/opm-operator/commit/543ce77a90f2cc9af860c3c6a2bfe1f55ab1af42))
+
 ## [1.0.0-alpha.3](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.2...v1.0.0-alpha.3) (2026-07-16)
 
 

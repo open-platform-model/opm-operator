@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-alpha.3](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.2...v1.0.0-alpha.3) (2026-07-16)
+
+
+### Features
+
+* **platform:** publish operator version in Platform status ([#47](https://github.com/open-platform-model/opm-operator/issues/47)) ([7940833](https://github.com/open-platform-model/opm-operator/commit/7940833a1a475df868e49d3ba410a91e58998f8f))
+
+
+### Miscellaneous Chores
+
+* **fixtures:** bump catalogs/opm to v1.0.0-alpha.1 in test fixtures ([#46](https://github.com/open-platform-model/opm-operator/issues/46)) ([dff67ff](https://github.com/open-platform-model/opm-operator/commit/dff67ffdd0fca710b26cf634ec7225fd27648307))
+
 ## [1.0.0-alpha.2](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.1...v1.0.0-alpha.2) (2026-07-01)
 
 

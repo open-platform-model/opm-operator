@@ -12,9 +12,10 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: open-platform-model/opm-operator
-  # CUE CLI used to publish the example modules. Matches the language version
-  # the modules + catalog declare (v0.17.x); kept in step with catalog_opm CI.
-  CUE_VERSION: 'v0.17.0-alpha.1'
+  # CUE CLI used to publish the example modules. Must be >= the language version
+  # the modules + catalog declare (v0.17.0), since an older CLI refuses to read
+  # them; kept in step with catalog_opm CI.
+  CUE_VERSION: 'v0.17.1'
 
 jobs:
   release-please:

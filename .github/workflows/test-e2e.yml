@@ -11,7 +11,7 @@ env:
   # core/catalog/examples publish and how the controller resolves by default.
   CUE_REGISTRY: 'opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
   # CUE CLI used to publish the example modules. Matches release.yml.
-  CUE_VERSION: 'v0.17.0-alpha.1'
+  CUE_VERSION: 'v0.17.1'
 
 jobs:
   test-e2e:

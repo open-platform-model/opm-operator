@@ -15,7 +15,7 @@ m.#Module
 metadata: {
 	modulePath:  "opmodel.dev/modules/test"
 	name:        "podinfo"
-	version:     "0.1.2"
+	version:     "0.1.3"
 	description: "Stateless web example — Deployment + Service with HTTP liveness/readiness probes"
 }
 

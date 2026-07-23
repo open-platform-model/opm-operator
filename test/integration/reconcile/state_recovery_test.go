@@ -31,8 +31,8 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
-	"github.com/open-platform-model/opm-operator/internal/render"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )

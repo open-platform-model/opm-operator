@@ -34,16 +34,17 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
-	"github.com/open-platform-model/opm-operator/internal/render"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
-// namedConfigMapRenderResult builds a render result of one ConfigMap per name,
+// namedConfigMapRenderResult builds a render result of one ConfigMap per name
+// in the suite namespace,
 // each carrying the controller manager label and the stub instance UUID so the
 // prune ownership guard treats them as owned by the reconciling instance.
-func namedConfigMapRenderResult(namespace string, names ...string) *render.RenderResult {
+func namedConfigMapRenderResult(names ...string) *render.RenderResult {
 	cueCtx := cuecontext.New()
 	result := &render.RenderResult{}
 	for _, name := range names {
@@ -111,7 +112,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		rec := events.NewFakeRecorder(30)
 		params := reconcileParams()
 		params.EventRecorder = rec
-		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult(namespace, "stale-a", "stale-b")}
+		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult("stale-a", "stale-b")}
 		ensureFinalizer(params, nn)
 
 		By("first reconcile applies A and B")
@@ -129,7 +130,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		Expect(mi.Status.Inventory.Count).To(Equal(int64(2)))
 
 		By("second reconcile renders only A — B moves to the stale set and is pruned")
-		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult(namespace, "stale-a")}
+		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult("stale-a")}
 		result, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeZero())
@@ -181,7 +182,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		rec := events.NewFakeRecorder(30)
 		params := reconcileParams()
 		params.EventRecorder = rec
-		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult(namespace, "noprune-a", "noprune-b")}
+		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult("noprune-a", "noprune-b")}
 		ensureFinalizer(params, nn)
 
 		By("first reconcile applies A and B")
@@ -189,7 +190,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("second reconcile renders only A — B is stale but prune is disabled")
-		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult(namespace, "noprune-a")}
+		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult("noprune-a")}
 		result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeZero())
@@ -228,7 +229,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 
 		params := reconcileParams()
-		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult(namespace, "sel-a", "sel-b", "sel-c")}
+		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult("sel-a", "sel-b", "sel-c")}
 		ensureFinalizer(params, nn)
 
 		By("first reconcile applies A, B, and C")
@@ -236,7 +237,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("second reconcile renders A and C — only B is pruned")
-		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult(namespace, "sel-a", "sel-c")}
+		params.Renderer = &stubRenderer{result: namedConfigMapRenderResult("sel-a", "sel-c")}
 		result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeZero())

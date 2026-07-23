@@ -627,6 +627,82 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 		})
 	})
 
+	Context("Operator-managed default (empty owner)", func() {
+		It("should reconcile normally when spec.owner is absent (no skip, no ManagedExternally)", func() {
+			ctx := context.Background()
+
+			// createModuleInstance sets no spec.owner — the operator-managed
+			// default the 0006 D24 skew model leans on.
+			createModuleInstance(ctx, "empty-owner-mr")
+
+			reconciler := &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   events.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
+			}
+
+			nn := types.NamespacedName{Name: "empty-owner-mr", Namespace: namespace}
+
+			// First reconcile registers the cleanup finalizer — not the
+			// CLI-owned single-pass acknowledgement.
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
+
+			var afterFinalizer releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &afterFinalizer)).To(Succeed())
+			Expect(afterFinalizer.Spec.Owner).To(BeEmpty())
+			Expect(controllerutil.ContainsFinalizer(&afterFinalizer, opmreconcile.FinalizerName)).To(BeTrue())
+
+			// Second reconcile runs the full render/apply pipeline.
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The stub-rendered ConfigMap was applied.
+			var cm corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)).To(Succeed())
+			Expect(cm.Data["message"]).To(Equal("hello"))
+
+			// Ready=True with a real reconcile reason — never ManagedExternally.
+			var reconciled releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &reconciled)).To(Succeed())
+			ready := apimeta.FindStatusCondition(reconciled.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+			Expect(ready.Reason).NotTo(Equal(status.ManagedExternallyReason))
+			Expect(reconciled.Status.ObservedGeneration).To(Equal(reconciled.Generation))
+
+			// Cleanup.
+			Expect(k8sClient.Delete(ctx, &cm)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nn, &reconciled)).To(Succeed())
+			controllerutil.RemoveFinalizer(&reconciled, opmreconcile.FinalizerName)
+			Expect(k8sClient.Update(ctx, &reconciled)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &reconciled)).To(Succeed())
+		})
+
+		It("should reject unknown owner values at the API server (enum validation)", func() {
+			ctx := context.Background()
+
+			mr := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "unknown-owner-mr",
+					Namespace: namespace,
+				},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerType("future-actor"),
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+				},
+			}
+
+			err := k8sClient.Create(ctx, mr)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Unsupported value"))
+			Expect(err.Error()).To(ContainSubstring("future-actor"))
+		})
+	})
+
 	Context("No-op detection", func() {
 		It("should skip apply on second reconcile when digests match", func() {
 			ctx := context.Background()

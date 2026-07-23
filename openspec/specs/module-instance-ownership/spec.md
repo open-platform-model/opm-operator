@@ -20,6 +20,16 @@ Define how the operator treats a `ModuleInstance` it does not own. The `spec.own
 - **THEN** the API server accepts it
 - **AND** the stored object's `spec.owner` remains empty (no value is defaulted in)
 
+#### Scenario: Empty owner is reconciled as operator-managed
+
+- **WHEN** a `ModuleInstance` with no `spec.owner` is reconciled
+- **THEN** the controller SHALL register the cleanup finalizer and perform a normal render/apply reconcile (no owner-skip, no `ManagedExternally` acknowledgement)
+
+#### Scenario: Unknown owner values cannot reach the reconciler
+
+- **WHEN** a client attempts to create a `ModuleInstance` with `spec.owner: "future-actor"`
+- **THEN** the API server SHALL reject it via enum validation, so the controller never observes an unknown owner value
+
 ### Requirement: The operator skips CLI-owned instances before registering a finalizer
 
 When `spec.owner == cli`, the controller MUST return from `Reconcile` without rendering, applying, pruning, or running deletion cleanup, and MUST NOT add the `opmodel.dev/cleanup` finalizer. The owner check MUST occur before finalizer registration so that a CLI-owned instance never carries the operator's finalizer.

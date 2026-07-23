@@ -18,4 +18,4 @@
 
 - [x] 3.1 Regenerate `dist/examples/` (`task examples:bundle`) — retires the stale `*-modulerelease.yaml` filenames
 - [x] 3.2 `task dev:test` + `task dev:lint` green; confirm no Skip/TODO stubs remain in the five files except the cross-namespace one
-- [ ] 3.3 Sync/archive per openspec flow
+- [x] 3.3 Sync/archive per openspec flow

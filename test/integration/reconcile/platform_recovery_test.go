@@ -50,11 +50,11 @@ const recoveryPlatformName = "cluster"
 func liveMaterializeKernelOrSkip() (*kernel.Kernel, string) {
 	reg := os.Getenv("CUE_REGISTRY")
 	if reg == "" {
-		Skip("CUE_REGISTRY not set — platform recovery spec needs a reachable registry with opmodel.dev/core@v0")
+		registrySkip("CUE_REGISTRY not set — platform recovery spec needs a reachable registry with opmodel.dev/core@v0")
 	}
 	catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 	if catalogPath == "" {
-		Skip("OPM_TEST_CATALOG_PATH not set — recovery spec needs a resolvable catalog subscription to materialize")
+		registrySkip("OPM_TEST_CATALOG_PATH not set — recovery spec needs a resolvable catalog subscription to materialize")
 	}
 	k := kernel.New(kernel.WithRegistry(reg))
 	in := synth.PlatformInput{
@@ -64,10 +64,10 @@ func liveMaterializeKernelOrSkip() (*kernel.Kernel, string) {
 	}
 	p, err := k.SynthesizePlatform(ctx, in)
 	if err != nil {
-		Skip("opmodel.dev/core schema not resolvable from CUE_REGISTRY: " + err.Error())
+		registrySkip("opmodel.dev/core schema not resolvable from CUE_REGISTRY: " + err.Error())
 	}
 	if _, err := k.Materialize(ctx, p); err != nil {
-		Skip("catalog subscription did not materialize from CUE_REGISTRY: " + err.Error())
+		registrySkip("catalog subscription did not materialize from CUE_REGISTRY: " + err.Error())
 	}
 	return k, catalogPath
 }

@@ -26,6 +26,6 @@
 ## 5. Verification
 
 - [x] 5.1 Full e2e green locally (kind) with the new specs executing (not skipping) — 2026-07-24: `task dev:e2e:local` on a fresh kind cluster, 11 passed / 0 failed / 2 skipped (only the recorded concurrent stubs); artifact pipeline, redis prune/orphan, and finalizer specs all executed. Negative gating verified both ways (broken `flux` shim): `OPM_E2E_FLUX=1` ⇒ hard BeforeAll failure with explicit message, unset ⇒ skip with notice
-- [ ] 5.2 CI run green with hard-fail gating active — pending: push `test/live-flux-e2e` + PR so `test-e2e.yml` runs with the pinned flux CLI and `OPM_E2E_FLUX=1`
+- [x] 5.2 CI run green with hard-fail gating active — 2026-07-24: PR #54 e2e green (11 passed / 0 failed / 2 skipped, flux CLI v2.9.0 at the pin); the first run also proved the gate live — a broken CLI install hard-failed BeforeAll with the explicit `OPM_E2E_FLUX` message instead of skipping
 - [x] 5.3 Stub census: only concurrent scenarios remain recorded
 - [ ] 5.4 Sync/archive per openspec flow (after CI green)

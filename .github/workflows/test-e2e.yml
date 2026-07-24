@@ -12,6 +12,9 @@ env:
   CUE_REGISTRY: 'opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
   # CUE CLI used to publish the example modules. Matches release.yml.
   CUE_VERSION: 'v0.17.1'
+  # Hard-fail gating for the live-Flux e2e specs: with this marker set, a
+  # missing flux CLI / source-controller fails the suite instead of skipping.
+  OPM_E2E_FLUX: '1'
 
 jobs:
   test-e2e:
@@ -47,6 +50,19 @@ jobs:
 
       - name: Verify kind installation
         run: kind version
+
+      - name: Install Flux CLI (pinned)
+        run: |
+          # Same pin as the e2e source-controller install (.tasks/flux.yaml,
+          # single FLUX_VERSION variable); the flux CLI refuses to install a
+          # toolkit distribution newer than itself, so CLI and distribution
+          # must move together. The suite installs source-controller itself
+          # (task flux:install) once the kind cluster exists.
+          FLUX_VERSION=$(grep -oP 'FLUX_VERSION:\s*v\K[0-9.]+' .tasks/flux.yaml)
+          [ -n "$FLUX_VERSION" ] || { echo "FLUX_VERSION pin not found in .tasks/flux.yaml" >&2; exit 1; }
+          curl -s https://fluxcd.io/install.sh | sudo bash -s "$FLUX_VERSION"
+          echo "flux2 distribution pin: v$FLUX_VERSION"
+          echo "flux CLI: $(flux version --client)"
 
       # Same-repo PRs (and pushes) can write packages with GITHUB_TOKEN; fork PRs
       # get a read-only token and cannot publish. Gate the publish/credential

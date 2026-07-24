@@ -60,7 +60,9 @@ jobs:
           # (task flux:install) once the kind cluster exists.
           FLUX_VERSION=$(grep -oP 'FLUX_VERSION:\s*v\K[0-9.]+' .tasks/flux.yaml)
           [ -n "$FLUX_VERSION" ] || { echo "FLUX_VERSION pin not found in .tasks/flux.yaml" >&2; exit 1; }
-          curl -s https://fluxcd.io/install.sh | sudo bash -s "$FLUX_VERSION"
+          # install.sh reads the version from the FLUX_VERSION env var; its
+          # positional argument is the install DIRECTORY, not the version.
+          curl -s https://fluxcd.io/install.sh | sudo FLUX_VERSION="$FLUX_VERSION" bash
           echo "flux2 distribution pin: v$FLUX_VERSION"
           echo "flux CLI: $(flux version --client)"
 

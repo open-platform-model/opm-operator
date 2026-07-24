@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.6](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.5...v1.0.0-alpha.6) (2026-07-24)
+
+
+### Documentation
+
+* **openspec:** archive operator-platform-status-operator-version ([#57](https://github.com/open-platform-model/opm-operator/issues/57)) ([bde21ae](https://github.com/open-platform-model/opm-operator/commit/bde21aead9e1be2c9ac8ba47793c6fb1329e5cfa))
+
 ## [1.0.0-alpha.5](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.4...v1.0.0-alpha.5) (2026-07-24)
 
 

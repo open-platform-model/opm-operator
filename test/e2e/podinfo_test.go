@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -52,6 +53,10 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 	)
 
 	var projectDir string
+
+	// redisPVCName is resolved from the redis instance's inventory by the
+	// lifecycle Context below; Describe scope so AfterAll can clean it up.
+	var redisPVCName string
 
 	BeforeAll(func() {
 		// This spec resolves the podinfo example module from a registry the
@@ -159,6 +164,28 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		// (config/default includes ../crd) blocks until the test binary times
 		// out. So delete the CR first, let it drain while the SA still exists,
 		// and only then remove the RBAC.
+		// Redis lifecycle cleanup first: the same SA-before-CR ordering applies,
+		// and the prune=false spec deliberately orphans workloads that no CR
+		// deletion will ever clean up — remove them by name.
+		By("removing the redis ModuleInstance")
+		_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "moduleinstance", "redis",
+			"--ignore-not-found", "--wait=false"))
+		if _, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "wait", "--for=delete",
+			"moduleinstance/redis", "--timeout=2m")); err != nil {
+			_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "redis",
+				"--type=merge", "-p", `{"metadata":{"finalizers":null}}`))
+		}
+
+		By("removing orphaned redis workloads and the applier RBAC")
+		_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "--ignore-not-found", "--wait=false",
+			"statefulset/redis-redis", "service/redis-redis"))
+		if redisPVCName != "" {
+			_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "--ignore-not-found", "--wait=false",
+				"pvc/"+redisPVCName))
+		}
+		_, _ = utils.Run(exec.Command("kubectl", "delete", "--ignore-not-found", "--wait=false", "-f",
+			filepath.Join(projectDir, "test/fixtures/modules/redis/moduleinstance.yaml")))
+
 		By("removing the podinfo ModuleInstance")
 		_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "moduleinstance", "podinfo",
 			"--ignore-not-found", "--wait=false"))
@@ -205,6 +232,10 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			"-o", "yaml")); err == nil {
 			fmt.Fprintf(GinkgoWriter, "--- ModuleInstance default/podinfo ---\n%s\n", out)
 		}
+		if out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+			"-o", "yaml")); err == nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "--- ModuleInstance default/redis ---\n%s\n", out)
+		}
 		if out, err := utils.Run(exec.Command("kubectl", "-n", namespace, "logs",
 			"-l", "control-plane=controller-manager", "--tail=300")); err == nil {
 			fmt.Fprintf(GinkgoWriter, "--- controller-manager logs ---\n%s\n", out)
@@ -240,6 +271,14 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "podinfo Service should exist")
 	})
 
+	It("registers the cleanup finalizer on the ModuleInstance", func() {
+		finalizers, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "podinfo",
+			"-o", "jsonpath={.metadata.finalizers}"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(finalizers).To(ContainSubstring("opmodel.dev/cleanup"),
+			"deployed controller should register the cleanup finalizer")
+	})
+
 	It("renders the modelled probe contract onto the running container", func() {
 		container := "{.spec.template.spec.containers[0]."
 
@@ -262,5 +301,119 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			"-o", "jsonpath="+container+"ports[0].containerPort}"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(containerPort).To(Equal("9898"))
+	})
+
+	// Deployed-controller lifecycle: live prune on a values update and
+	// prune=false orphan on delete. Uses the redis example fixture because its
+	// persistence.enabled knob is the suite's only value-gated resource — it
+	// swaps the /data volume between a rendered PVC (enabled, the default) and
+	// an emptyDir (disabled), so flipping it drops the PVC from the render and
+	// the deployed controller must prune the live object. These are the halves
+	// the envtest tier structurally cannot provide: real SSA through the
+	// running manager against a real API server, with impersonated prune.
+	Context("ModuleInstance lifecycle (redis)", Ordered, func() {
+		var initialInventoryCount int
+
+		It("deploys redis and reaches Ready with a PVC in the inventory", func() {
+			By("applying the redis ModuleInstance")
+			_, err := utils.Run(exec.Command("kubectl", "apply", "-f",
+				filepath.Join(projectDir, "test/fixtures/modules/redis/moduleinstance.yaml")))
+			Expect(err).NotTo(HaveOccurred(), "Failed to apply the redis ModuleInstance")
+
+			By("waiting for the ModuleInstance to become Ready")
+			Eventually(func(g Gomega) {
+				out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("True"), "redis ModuleInstance not Ready yet")
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("confirming the cleanup finalizer is registered")
+			finalizers, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+				"-o", "jsonpath={.metadata.finalizers}"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(finalizers).To(ContainSubstring("opmodel.dev/cleanup"))
+
+			By("resolving the rendered PVC from the inventory")
+			redisPVCName, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+				"-o", "jsonpath={.status.inventory.entries[?(@.kind=='PersistentVolumeClaim')].name}"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(redisPVCName).NotTo(BeEmpty(), "inventory should record the rendered PVC")
+
+			count, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+				"-o", "jsonpath={.status.inventory.count}"))
+			Expect(err).NotTo(HaveOccurred())
+			initialInventoryCount, err = strconv.Atoi(count)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("confirming the PVC exists in the cluster")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "pvc", redisPVCName))
+			Expect(err).NotTo(HaveOccurred(), "rendered PVC should exist")
+		})
+
+		It("prunes the live PVC when a values update drops it from the render", func() {
+			By("disabling persistence via a values update")
+			_, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "redis",
+				"--type=merge", "-p", `{"spec":{"values":{"persistence":{"enabled":false}}}}`))
+			Expect(err).NotTo(HaveOccurred(), "Failed to update the redis values")
+
+			// Deterministic status first (design: inventory/status before live
+			// objects): the inventory must drop the PVC entry and shrink.
+			By("waiting for the inventory to drop the PVC entry")
+			Eventually(func(g Gomega) {
+				out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+					"-o", "jsonpath={.status.inventory.entries[?(@.kind=='PersistentVolumeClaim')].name}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(BeEmpty(), "inventory still lists a PVC")
+
+				count, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+					"-o", "jsonpath={.status.inventory.count}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				n, err := strconv.Atoi(count)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(n).To(BeNumerically("<", initialInventoryCount), "inventory did not shrink")
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("waiting for the live PVC to be pruned by the deployed controller")
+			// PVC deletion completes once the StatefulSet rollout replaces the
+			// pod that mounted it (pvc-protection finalizer).
+			Eventually(func(g Gomega) {
+				out, _ := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "pvc", redisPVCName))
+				g.Expect(out).To(ContainSubstring("NotFound"), "pruned PVC still present")
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("confirming the StatefulSet survived the update")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "statefulset", "redis-redis"))
+			Expect(err).NotTo(HaveOccurred(), "redis StatefulSet should still exist")
+		})
+
+		It("orphans live workloads when a prune=false instance is deleted", func() {
+			By("disabling prune on the instance")
+			_, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "redis",
+				"--type=merge", "-p", `{"spec":{"prune":false}}`))
+			Expect(err).NotTo(HaveOccurred(), "Failed to set spec.prune=false")
+
+			By("deleting the ModuleInstance")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "moduleinstance", "redis",
+				"--wait=false"))
+			Expect(err).NotTo(HaveOccurred(), "Failed to delete the redis ModuleInstance")
+
+			By("waiting for the CR to be removed (finalizer released without pruning)")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "wait", "--for=delete",
+				"moduleinstance/redis", "--timeout=2m"))
+			Expect(err).NotTo(HaveOccurred(), "redis ModuleInstance was not removed")
+
+			By("confirming the rendered workloads remain live (orphaned)")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "statefulset", "redis-redis"))
+			Expect(err).NotTo(HaveOccurred(), "orphaned StatefulSet should remain")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "service", "redis-redis"))
+			Expect(err).NotTo(HaveOccurred(), "orphaned Service should remain")
+
+			By("confirming the namespace is intact")
+			phase, err := utils.Run(exec.Command("kubectl", "get", "ns", mrNamespace,
+				"-o", "jsonpath={.status.phase}"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(phase).To(Equal("Active"))
+		})
 	})
 })

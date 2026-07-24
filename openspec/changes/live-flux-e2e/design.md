@@ -22,7 +22,9 @@ Sequence: ensure local registry (existing `.tasks/registry.yaml` machinery) → 
 
 ### LD3: Lifecycle spec extends the proven podinfo pattern rather than a new fixture
 
-`podinfo_test.go` already stands up Platform + ModuleInstance live. The new spec reuses that flow: create→Ready (existing) → mutate values so the render drops a resource → assert live prune by the deployed controller → recreate → `prune=false` + delete → CR gone, workloads remain (orphan), namespace intact; finalizer presence asserted across add/remove. This is the deployed-controller half the envtest tier structurally cannot provide (real SSA against a real API server through the running manager, real requeue timing).
+`podinfo_test.go` already stands up Platform + ModuleInstance live. The new spec reuses that flow: create→Ready (existing) → mutate values so the render drops a resource → assert live prune by the deployed controller → `prune=false` + delete → CR gone, workloads remain (orphan), namespace intact; finalizer presence asserted across add/remove. This is the deployed-controller half the envtest tier structurally cannot provide (real SSA against a real API server through the running manager, real requeue timing).
+
+*Implementation amendment (2026-07-24):* the podinfo module renders its Deployment + Service unconditionally — no values change can drop a resource from its render. The prune/orphan phases therefore ride the existing **redis** example fixture (same live flow, same Describe), whose `persistence.enabled` knob swaps the `/data` volume between a rendered PVC (default) and an emptyDir — flipping it to `false` drops the PVC from the render. Finalizer registration is still asserted on podinfo (and redis); "recreate" collapsed to patching `spec.prune: false` on the live instance, which exercises the same deletion-path decision.
 
 ### LD4: Stub disposition is explicit, per stub
 

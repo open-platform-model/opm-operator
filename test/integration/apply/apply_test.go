@@ -17,6 +17,8 @@ limitations under the License.
 package apply_test
 
 import (
+	"time"
+
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -168,27 +170,78 @@ var _ = Describe("Apply", func() {
 		})
 	})
 
-	// TODO: CRD-before-custom-resource ordering (spec scenario "CRD applied before custom resource")
-	//
-	// This test requires creating a CRD dynamically, waiting for it to be established,
-	// then applying an instance of that CRD — all within a single Apply call to verify
-	// that ApplyAllStaged handles the staged ordering correctly.
-	//
-	// Steps to implement:
-	//   1. Build an unstructured CRD for a test-only GVK (e.g., apiextensions.k8s.io/v1
-	//      CustomResourceDefinition for "widgets.test.example.com").
-	//   2. Build an unstructured custom resource of that CRD's kind ("Widget").
-	//   3. Call Apply() with both resources in a single slice (CR listed before CRD to
-	//      prove that Apply reorders them).
-	//   4. Assert no error — proves the CRD was established before the CR was applied.
-	//   5. Verify the CR exists in the cluster via k8sClient.Get.
-	//   6. Clean up: delete the CR and CRD.
-	//
-	// Blocked on: envtest CRD lifecycle complexity — dynamically registered CRDs need
-	// the API server to acknowledge them before instances can be created. ApplyAllStaged
-	// handles this internally (it calls waitForClusterDefinitions), but the test must
-	// tolerate the async establishment delay. Use Eventually with a short poll interval.
-	//
 	// Spec reference: openspec/changes/08-ssa-apply/specs/ssa-apply/spec.md
 	//   "Scenario: CRD applied before custom resource"
+	Context("When applying a CRD and an instance of it together", func() {
+		It("should apply the CRD before the custom resource regardless of input order", func() {
+			crd := &unstructured.Unstructured{Object: map[string]any{
+				"apiVersion": "apiextensions.k8s.io/v1",
+				"kind":       "CustomResourceDefinition",
+				"metadata": map[string]any{
+					"name": "widgets.test.example.com",
+				},
+				"spec": map[string]any{
+					"group": "test.example.com",
+					"names": map[string]any{
+						"plural":   "widgets",
+						"singular": "widget",
+						"kind":     "Widget",
+						"listKind": "WidgetList",
+					},
+					"scope": "Namespaced",
+					"versions": []any{map[string]any{
+						"name":    "v1",
+						"served":  true,
+						"storage": true,
+						"schema": map[string]any{
+							"openAPIV3Schema": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"spec": map[string]any{
+										"type": "object",
+										"properties": map[string]any{
+											"size": map[string]any{"type": "integer"},
+										},
+									},
+								},
+							},
+						},
+					}},
+				},
+			}}
+
+			widget := &unstructured.Unstructured{}
+			widget.SetGroupVersionKind(schema.GroupVersionKind{
+				Group:   "test.example.com",
+				Version: "v1",
+				Kind:    "Widget",
+			})
+			widget.SetNamespace("default")
+			widget.SetName("apply-order-widget")
+			_ = unstructured.SetNestedField(widget.Object, int64(3), "spec", "size")
+
+			By("applying with the custom resource listed before its CRD")
+			result, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{widget, crd}, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Created).To(Equal(2))
+
+			By("verifying the custom resource exists in the cluster")
+			fetched := &unstructured.Unstructured{}
+			fetched.SetGroupVersionKind(schema.GroupVersionKind{
+				Group:   "test.example.com",
+				Version: "v1",
+				Kind:    "Widget",
+			})
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Namespace: "default",
+					Name:      "apply-order-widget",
+				}, fetched)
+			}, 10*time.Second, 100*time.Millisecond).Should(Succeed())
+
+			By("cleaning up the custom resource and CRD")
+			Expect(k8sClient.Delete(ctx, fetched)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, crd)).To(Succeed())
+		})
+	})
 })

@@ -70,11 +70,11 @@ var _ = Describe("Example module rendering", func() {
 			},
 		})
 		if err != nil {
-			Skip("synthesizing platform failed (registry/schema unreachable): " + err.Error())
+			registrySkip("synthesizing platform failed (registry/schema unreachable): " + err.Error())
 		}
 		mp, err := k.Materialize(ctx, plat)
 		if err != nil {
-			Skip("materializing platform failed (catalog unreachable): " + err.Error())
+			registrySkip("materializing platform failed (catalog unreachable): " + err.Error())
 		}
 		store = platformstore.NewStore()
 		store.Set(1, mp)

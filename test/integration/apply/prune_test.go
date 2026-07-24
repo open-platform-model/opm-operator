@@ -399,4 +399,42 @@ var _ = Describe("Prune", func() {
 			Expect(result.Skipped).To(Equal(0))
 		})
 	})
+
+	Context("When live resource still carries the CLI manager identity", func() {
+		It("should delete the resource (post-handoff window, enhancement 0006 D40)", func() {
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prune-cli-handoff-cm",
+					Namespace: "default",
+					Labels: map[string]string{
+						core.LabelManagedBy:          core.LabelManagedByValue,
+						core.LabelModuleInstanceUUID: testOwnerUUID,
+					},
+				},
+				Data: map[string]string{"key": "cli-handoff"},
+			}
+			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+
+			stale := []releasesv1alpha1.InventoryEntry{{
+				Kind:      "ConfigMap",
+				Version:   "v1",
+				Namespace: "default",
+				Name:      "prune-cli-handoff-cm",
+			}}
+
+			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Deleted).To(Equal(1))
+			Expect(result.Skipped).To(Equal(0))
+
+			By("verifying the CLI-labeled ConfigMap no longer exists")
+			fetched := &corev1.ConfigMap{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: "default",
+				Name:      "prune-cli-handoff-cm",
+			}, fetched)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found"))
+		})
+	})
 })

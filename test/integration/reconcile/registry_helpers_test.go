@@ -18,36 +18,46 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-// skipIfNoTestRegistry skips the current spec when the local OCI registry is
+// registrySkip skips the current spec for a missing registry prerequisite —
+// unless OPM_TEST_REGISTRY_FORCE=1 (set in CI), in which case the missing
+// prerequisite is a hard failure. The knob mirrors the library's
+// OPM_FLOW_TEST_FORCE idiom: registry-seam coverage must not be able to
+// evaporate silently in an environment that promises to provide the registry.
+func registrySkip(msg string) {
+	if os.Getenv("OPM_TEST_REGISTRY_FORCE") == "1" {
+		Fail("OPM_TEST_REGISTRY_FORCE=1 but registry prerequisite missing: " + msg)
+	}
+	Skip(msg)
+}
+
+// skipIfNoTestRegistry skips the current spec when the fixture registry is
 // not available. Tests that load the fixture module (opmodel.dev/modules/test/hello)
-// require a local registry with the module published — the fixture is not
-// available on remote registries like ghcr.
+// require a registry serving the module — the fixture is not published to ghcr.
 //
-// Requirements:
-//   - CUE_REGISTRY env var with an opmodel.dev mapping pointing at
-//     localhost (see `task registry:start && task module:publish`)
-//   - the kernel-era deps published to the same local registry: the fixture
-//     imports opmodel.dev/core@v0 and opmodel.dev/catalogs/opm@v0, and the
-//     kernel enumerates catalog versions from the registry at materialize time.
-//     Publish them from the core/ and catalog_opm/ repos at the versions pinned
-//     in test/fixtures/modules/hello/cue.mod/module.cue (see the prerequisites
-//     block in .tasks/module.yaml). Requires a cue CLI at the kernel's CUE
-//     language version (v0.17.x).
-//   - a container tool (docker or podman) on PATH
+// Two mappings satisfy it:
+//   - full local: `opmodel.dev=localhost:5000+insecure` with the fixture AND
+//     its deps (core, catalogs/opm) all published locally
+//     (`task registry:start && task module:publish` plus the prerequisites
+//     block in .tasks/module.yaml) — the historical `task dev:test:local` flow;
+//   - mixed (CI): `opmodel.dev/modules/test=localhost:5000+insecure` for the
+//     fixture with core/catalogs still resolving from ghcr — only the fixture
+//     itself needs publishing (`task module:publish`), no sibling repos.
 //
-// When running against ghcr (CI default via `task dev:test`) these tests skip
-// automatically; use `task dev:test:local` to run them.
+// Also needs a container tool (docker or podman) on PATH. Under
+// OPM_TEST_REGISTRY_FORCE=1 a missing prerequisite fails instead of skipping.
 func skipIfNoTestRegistry() {
 	reg := os.Getenv("CUE_REGISTRY")
 	if reg == "" {
-		Skip("CUE_REGISTRY not set — run `task registry:start && task module:publish` first")
+		registrySkip("CUE_REGISTRY not set — run `task registry:start && task module:publish` first")
 	}
-	if !strings.Contains(reg, "opmodel.dev=localhost") {
-		Skip("CUE_REGISTRY does not map opmodel.dev to localhost — " +
-			"fixture module only available on local registry (use task dev:test:local)")
+	if !strings.Contains(reg, "opmodel.dev=localhost") &&
+		!strings.Contains(reg, "opmodel.dev/modules/test=localhost") {
+		registrySkip("CUE_REGISTRY maps neither opmodel.dev nor opmodel.dev/modules/test to localhost — " +
+			"fixture module only available on a local registry (use task dev:test:local, " +
+			"or the mixed mapping with `task module:publish`)")
 	}
 	if !containerToolAvailable() {
-		Skip("no container tool (docker/podman) on PATH — cannot validate local registry")
+		registrySkip("no container tool (docker/podman) on PATH — cannot validate local registry")
 	}
 }
 

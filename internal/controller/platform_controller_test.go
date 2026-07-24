@@ -59,24 +59,36 @@ func newPlatformReconciler(store *platformstore.Store, k *kernel.Kernel) *Platfo
 	}
 }
 
+// registrySkip skips the current spec for a missing registry prerequisite —
+// unless OPM_TEST_REGISTRY_FORCE=1 (set in CI), in which case the missing
+// prerequisite is a hard failure so registry-seam coverage cannot evaporate
+// silently in an environment that promises to provide the registry. Mirrors
+// the library's OPM_FLOW_TEST_FORCE idiom.
+func registrySkip(msg string) {
+	if os.Getenv("OPM_TEST_REGISTRY_FORCE") == "1" {
+		Fail("OPM_TEST_REGISTRY_FORCE=1 but registry prerequisite missing: " + msg)
+	}
+	Skip(msg)
+}
+
 // materializeKernelOrSkip builds a Kernel from CUE_REGISTRY and skips the spec
 // unless it can synthesize+materialize a trivial (no-subscription) platform —
-// i.e. the registry is reachable and the matching opmodel.dev/core@v0 schema is
-// resolvable. Materialize itself requires registry I/O, so these specs cannot
-// run in the default CI path (ghcr lacks the local fixtures); run them with a
-// local registry that has core@v0 published.
+// i.e. the registry is reachable and a matching opmodel.dev/core schema is
+// resolvable. Materialize itself requires registry I/O; both the ghcr mapping
+// (`task dev:test`, CI) and a local registry with core published
+// (`task dev:test:local`) satisfy it.
 func materializeKernelOrSkip() *kernel.Kernel {
 	reg := os.Getenv("CUE_REGISTRY")
 	if reg == "" {
-		Skip("CUE_REGISTRY not set — platform materialize specs need a reachable registry with opmodel.dev/core@v0")
+		registrySkip("CUE_REGISTRY not set — platform materialize specs need a reachable registry serving opmodel.dev/core")
 	}
 	k := kernel.New(kernel.WithRegistry(reg))
 	probe, err := k.SynthesizePlatform(ctx, synth.PlatformInput{Name: platformSingletonName, Type: "kubernetes"})
 	if err != nil {
-		Skip("opmodel.dev/core schema not resolvable from CUE_REGISTRY: " + err.Error())
+		registrySkip("opmodel.dev/core schema not resolvable from CUE_REGISTRY: " + err.Error())
 	}
 	if _, err := k.Materialize(ctx, probe); err != nil {
-		Skip("trivial platform did not materialize from CUE_REGISTRY: " + err.Error())
+		registrySkip("trivial platform did not materialize from CUE_REGISTRY: " + err.Error())
 	}
 	return k
 }
@@ -132,7 +144,7 @@ var _ = Describe("Platform Controller", func() {
 			k := materializeKernelOrSkip()
 			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 			if catalogPath == "" {
-				Skip("OPM_TEST_CATALOG_PATH not set — no resolvable catalog subscription fixture available")
+				registrySkip("OPM_TEST_CATALOG_PATH not set — no resolvable catalog subscription fixture available")
 			}
 
 			store := platformstore.NewStore()

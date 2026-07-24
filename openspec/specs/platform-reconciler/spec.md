@@ -44,6 +44,20 @@ The reconciler SHALL record the outcome on the `Platform` status. On success it 
 - **THEN** the store still returns the last-good materialized platform
 - **AND** the failure is reflected only on status
 
+### Requirement: Reconciler stamps status.operatorVersion on every status patch
+
+`PlatformReconciler` SHALL set `status.operatorVersion` to the running operator's version (from `internal/version`) on every status patch it makes — on successful materialization and on materialize failure alike. The field records which operator version is running against the Platform, independent of materialization outcome.
+
+#### Scenario: Stamped on successful materialization
+
+- **WHEN** the singleton Platform reconciles successfully (`Ready=True`, reason `Materialized`)
+- **THEN** `status.operatorVersion` equals the running operator's version string
+
+#### Scenario: Stamped on materialize failure
+
+- **WHEN** materialization fails and the reconciler records `Ready=False` (reason `MaterializeFailed`)
+- **THEN** `status.operatorVersion` is still set to the running operator's version string
+
 ### Requirement: Single-slot generation-keyed store for concurrent read
 
 The store SHALL hold at most one materialized platform and SHALL be keyed on the Platform CR's `metadata.generation`. The store SHALL be safe for concurrent access: a single writer (the reconciler) and many readers (future render paths) under a read/write lock. Reads SHALL return the held `*MaterializedPlatform` and whether one is present.

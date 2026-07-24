@@ -62,16 +62,24 @@ synth input without a translation layer.
 ### Requirement: PlatformStatus carries conditions and observedGeneration
 
 `PlatformStatus` SHALL carry a `conditions []metav1.Condition` list (list-map
-keyed by `type`) and an `observedGeneration` field, following the existing CRD
-status conventions in this repo. The status SHALL accommodate a `Materialized`
-condition that a later reconciler sets; this change defines the field shape only
-and sets no conditions.
+keyed by `type`), an `observedGeneration` field, and an optional
+`operatorVersion` string field the reconciler stamps with the running
+operator's version (enhancement 0006 D24 — read by the CLI's version-skew
+ceiling), following the existing CRD status conventions in this repo. The
+status SHALL accommodate a `Materialized` condition that a later reconciler
+sets. The CRD SHALL expose an `Operator` printcolumn sourced from
+`.status.operatorVersion`.
 
 #### Scenario: Status subresource present
 
 - **WHEN** the CRD is installed
 - **THEN** `Platform` exposes a `/status` subresource
-- **AND** `status.conditions` and `status.observedGeneration` are part of the schema
+- **AND** `status.conditions`, `status.observedGeneration`, and `status.operatorVersion` are part of the schema
+
+#### Scenario: Operator printcolumn
+
+- **WHEN** `kubectl get platform` runs against a reconciled Platform
+- **THEN** the output includes an `Operator` column showing `.status.operatorVersion`
 
 ### Requirement: Platform registered in the scheme without a reconciler
 

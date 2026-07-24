@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Automate versioning and releases with release-please: Release PRs driven by
+Conventional Commits, changelog generation, git tags and GitHub Releases on
+merge, and the source-burned version constant bump.
+
+## Requirements
 
 ### Requirement: Release PR creation on push to main
 The release-please workflow SHALL run on every push to the `main` branch. It SHALL open a Release PR if releasable commits (`feat`, `fix`, `perf`) exist since the last release tag. If a Release PR already exists, it SHALL update the PR with the latest accumulated changes.
@@ -69,3 +75,10 @@ The release-please manifest SHALL set the initial version to `0.1.0`, reflecting
 #### Scenario: First release from empty history
 - **WHEN** no prior release tags exist and releasable commits are present
 - **THEN** the first Release PR SHALL propose version `0.1.0` (or the next increment from it based on commit types)
+
+### Requirement: Release PR bumps the annotated version constant
+The release-please configuration SHALL list `internal/version/version.go` under the root package's `extra-files`, so every Release PR rewrites the `x-release-please-version`-annotated `Version` constant to the proposed version in the same commit the release tag will point at.
+
+#### Scenario: Release PR includes the constant bump
+- **WHEN** release-please opens or updates a Release PR proposing version `X.Y.Z-alpha.N`
+- **THEN** the PR's diff sets `internal/version/version.go`'s `Version` constant to `X.Y.Z-alpha.N`

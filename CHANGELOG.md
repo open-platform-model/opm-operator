@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.5](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.4...v1.0.0-alpha.5) (2026-07-24)
+
+
+### Documentation
+
+* **openspec:** draft envtest-coverage-batch and live-flux-e2e changes ([#52](https://github.com/open-platform-model/opm-operator/issues/52)) ([daf54e6](https://github.com/open-platform-model/opm-operator/commit/daf54e6f5195ac7a493119d141efb70411ec1489))
+
 ## [1.0.0-alpha.4](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.3...v1.0.0-alpha.4) (2026-07-16)
 
 

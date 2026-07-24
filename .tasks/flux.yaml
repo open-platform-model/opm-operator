@@ -1,13 +1,23 @@
 version: '3'
 
+vars:
+  # FLUX_VERSION pins the flux2 distribution installed for e2e. It MUST match
+  # the distribution whose controller libraries go.mod pins (currently
+  # github.com/fluxcd/source-controller/api v1.9.1, shipped by flux2 v2.9.0).
+  # When bumping the fluxcd/* library line (A1/D4 coupled bump), bump this pin
+  # in the same change. CI (.github/workflows/test-e2e.yml) greps this variable
+  # to install the flux CLI at the same version — the CLI refuses to install a
+  # toolkit distribution newer than itself.
+  FLUX_VERSION: v2.9.0
+
 tasks:
   install:
-    desc: Install Flux source-controller
+    desc: Install Flux source-controller at the pinned distribution version ({{.FLUX_VERSION}})
     preconditions:
       - sh: command -v {{.FLUX}} >/dev/null 2>&1
         msg: 'Error: flux CLI not found. Install it from https://fluxcd.io/flux/installation/'
     cmds:
-      - '{{.FLUX}} install --components=source-controller --network-policy=false'
+      - '{{.FLUX}} install --components=source-controller --version={{.FLUX_VERSION}} --network-policy=false'
 
   uninstall:
     desc: Uninstall Flux

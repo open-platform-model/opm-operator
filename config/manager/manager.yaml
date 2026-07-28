@@ -85,12 +85,25 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        # TODO(user): Configure the resources accordingly based on the project requirements.
-        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        # Memory scales with the CATALOG SET, not with the number of workloads.
+        # Platform materialization pulls and indexes EVERY version each
+        # subscription's filter admits and holds them all in memory at once
+        # (library/opm/materialize), and rendering a module evaluates its whole
+        # CUE tree — modules that vendor CRDs carry megabytes of it.
+        #
+        # 1Gi was not enough for a real cluster: a Platform indexing 7 catalog
+        # versions while rendering a module with ~3.4MB of vendored CRDs was
+        # OOMKilled (exit 137) and crashlooped, which gates EVERY ModuleInstance
+        # in the cluster until it recovers. Raised to 4Gi.
+        #
+        # A limit is not a reservation — this costs nothing until it is used, so
+        # the headroom is cheap insurance against a failure mode whose blast
+        # radius is the whole cluster. The request stays small so the operator
+        # still schedules on modest nodes.
         resources:
           limits:
             cpu: "2"
-            memory: 1Gi
+            memory: 4Gi
           requests:
             cpu: 100m
             memory: 256Mi

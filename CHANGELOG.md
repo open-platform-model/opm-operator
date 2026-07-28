@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-alpha.7](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.6...v1.0.0-alpha.7) (2026-07-28)
+
+
+### Bug Fixes
+
+* raise the manager memory limit from 1Gi to 4Gi ([#61](https://github.com/open-platform-model/opm-operator/issues/61)) ([408e6d7](https://github.com/open-platform-model/opm-operator/commit/408e6d7c02f7a871cd34765b2f300998e2e2227a))
+
+
+### Documentation
+
+* forbid AI attribution and session links in commits and PRs ([06eab02](https://github.com/open-platform-model/opm-operator/commit/06eab02b7872b0e506dcc6da8d1479929d81d5de))
+
 ## [1.0.0-alpha.6](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.5...v1.0.0-alpha.6) (2026-07-24)
 
 

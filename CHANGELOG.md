@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.8](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.7...v1.0.0-alpha.8) (2026-08-07)
+
+
+### Documentation
+
+* forbid bare at-sign mentions in GitHub-destined text ([0adc233](https://github.com/open-platform-model/opm-operator/commit/0adc233a703097e46363818d3e416522106ae779))
+
 ## [1.0.0-alpha.7](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.6...v1.0.0-alpha.7) (2026-07-28)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-alpha.9](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.8...v1.0.0-alpha.9) (2026-08-10)
+
+
+### Documentation
+
+* allow plain Claude co-author trailer; keep session-ID ban ([5e149eb](https://github.com/open-platform-model/opm-operator/commit/5e149ebd4f38c128c1f36964721f43920d8b0c0e))
+* **registry:** document ghcr policy, fixture deviation, inert env ([866dbfe](https://github.com/open-platform-model/opm-operator/commit/866dbfe2612333405b69bc4824a41161b96082f1))
+
 ## [1.0.0-alpha.8](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.7...v1.0.0-alpha.8) (2026-08-07)
 
 

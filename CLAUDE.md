@@ -102,6 +102,13 @@ it is permanent, outward-facing, and it reaches a third party who never opted in
 - Preserve `// +kubebuilder:scaffold:*` comments + license headers.
 - API markers/schema/`*_types.go` changed → run `task dev:manifests dev:generate`.
 
+## Registry
+
+Follow the Registry Policy in the root `CLAUDE.md` (reads resolve `opmodel.dev/*` from GHCR), with two repo-specific notes:
+
+- **Known deviation — local dev/e2e fixtures:** `task dev:test:local`, the e2e-local flow, `make run` / `make publish-test-module`, and `.tasks/module.yaml` / `.tasks/release.yaml` publish and resolve `opmodel.dev/modules/test/*` fixtures (e.g. `hello`) via the local registry — those fixtures are deliberately not on GHCR. This stays localhost-mapped until the fixtures move under `testing.opmodel.dev/*`. Local-registry-gated: start `opm-registry` only when running these flows. Plain `task dev:test` and CI use GHCR.
+- **`OPM_REGISTRY` env is inert on the operator binary:** `resolveRegistry` (`cmd/main.go`) returns the `--registry` flag whenever non-empty, and the flag's compiled-in default (GHCR) is always non-empty. Retargeting the operator requires passing `--registry`; setting `OPM_REGISTRY`/`CUE_REGISTRY` as pod env does nothing. Recorded in `enhancements/0010/06-operational.md` — do not burn time on the env vars.
+
 ## Build And Dev Commands
 
 ### Core Commands

@@ -86,24 +86,18 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 			// catalog provides the configmap-transformer the fixture module matches.
 			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 			if catalogPath == "" {
-				catalogPath = "opmodel.dev/catalogs/opm"
+				catalogPath = "opmodel.dev/catalogs/opm@v2"
 			}
-			// Pin the catalog subscription to the version the authored package
-			// targets (test/fixtures/modulepackages/hello is core@v1 and pins
-			// catalogs/opm@v1 = v1.0.0-alpha). Resource/transformer FQNs are
-			// version-qualified, so a subscription that resolves a different
-			// catalog version would leave the component unmatched — independent of
-			// the render-path fix. The lower bound is prerelease-inclusive because
-			// plain ">=1.0.0" excludes -alpha tags.
-			catalogRange := os.Getenv("OPM_TEST_CATALOG_RANGE")
-			if catalogRange == "" {
-				catalogRange = ">=1.0.0-alpha"
-			}
+			// Pin the catalog subscription to the exact build the authored
+			// package targets (0010 D14: one version, no ranges).
+			// Resource/transformer FQNs are version-qualified, so a
+			// subscription materializing a different catalog build would leave
+			// the component unmatched — independent of the render-path fix.
 			plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
 				Name: "cluster",
 				Type: "kubernetes",
 				Subscriptions: map[string]synth.SubscriptionSpec{
-					catalogPath: {Filter: &synth.FilterSpec{Range: catalogRange}},
+					catalogPath: {Version: testCatalogVersion()},
 				},
 			})
 			if err != nil {

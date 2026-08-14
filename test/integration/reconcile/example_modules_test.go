@@ -40,14 +40,11 @@ import (
 // automatically in CI (the example modules + the catalog version they pin live
 // on the local registry); run with `task dev:test:local`.
 //
-// The example modules are core@v1 and pin opmodel.dev/catalogs/opm@v1
-// (v1.0.0-alpha, the first catalog line on core@v1 vocabulary), so the
-// platform subscription is filtered to the v1 range that resolves it — matching
-// the cluster Platform sample and avoiding catalog-version skew. Resource and
-// transformer FQNs embed the catalog version, so the platform MUST materialize
-// the same catalog version the modules carry; a v0 range (v0.6.0, core@v0)
-// yields "no matching transformer". The lower bound is prerelease-inclusive
-// because plain ">=1.0.0" excludes -alpha tags.
+// The platform subscription names exactly one published catalog build (0010
+// D14) — matching the cluster Platform sample and avoiding catalog-version
+// skew. Resource and transformer FQNs embed the catalog version, so the
+// platform MUST materialize the same catalog build the modules pin; any other
+// build yields "no matching transformer".
 var _ = Describe("Example module rendering", func() {
 	var (
 		k        *kernel.Kernel
@@ -64,9 +61,7 @@ var _ = Describe("Example module rendering", func() {
 			Name: "cluster",
 			Type: "kubernetes",
 			Subscriptions: map[string]synth.SubscriptionSpec{
-				"opmodel.dev/catalogs/opm": {
-					Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha"},
-				},
+				"opmodel.dev/catalogs/opm@v2": {Version: testCatalogVersion()},
 			},
 		})
 		if err != nil {

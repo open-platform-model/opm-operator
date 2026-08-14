@@ -9,13 +9,13 @@
 
 ## 2. The flip (one commit)
 
-- [ ] 2.1 `go.mod`: library → `v1.0.0-alpha.13`; `go mod tidy`.
-- [ ] 2.2 `api/v1alpha1/platform_types.go`: delete `SubscriptionFilter` and `Subscription.Filter`; add `Version string` with `MinLength=1` and the marker chosen by 1.1; doc comments state the D14 contract (one published build; key carries the major).
-- [ ] 2.3 `internal/controller/platform_controller.go`: `platformInput` maps `Version`; `FilterSpec` branch deleted.
-- [ ] 2.4 `task dev:manifests dev:generate`; `task operator:installer` to refresh `dist/install.yaml`.
-- [ ] 2.5 `config/samples/opmodel.dev_v1alpha1_platform.yaml`: key `opmodel.dev/catalogs/opm@v2`, `version: "2.0.0-alpha.3"`, load-bearing-pin comment; rewrite the v1-era explanation comment.
-- [ ] 2.6 Compile-fix the test fleet (design § Test inventory): three `synth.FilterSpec` sites, `platform_test.go` literal, two versionless subscriptions, `OPM_TEST_CATALOG_VERSION` knob.
-- [ ] 2.7 `task dev:fmt dev:vet dev:lint dev:test` — unit + envtest green (registry-backed integration specs skip as today).
+- [x] 2.1 `go.mod`: library → `v1.0.0-alpha.13`; `go mod tidy`.
+- [x] 2.2 `api/v1alpha1/platform_types.go`: delete `SubscriptionFilter` and `Subscription.Filter`; add `Version string` with `MinLength=1` and the marker chosen by 1.1; doc comments state the D14 contract (one published build; key carries the major).
+- [x] 2.3 `internal/controller/platform_controller.go`: `platformInput` maps `Version`; `FilterSpec` branch deleted.
+- [x] 2.4 `task dev:manifests dev:generate`; `task operator:installer` to refresh `dist/install.yaml`.
+- [x] 2.5 `config/samples/opmodel.dev_v1alpha1_platform.yaml`: key `opmodel.dev/catalogs/opm@v2`, `version: "2.0.0-alpha.3"`, load-bearing-pin comment; rewrite the v1-era explanation comment.
+- [x] 2.6 Compile-fix the test fleet (design § Test inventory): three `synth.FilterSpec` sites, `platform_test.go` literal, two versionless subscriptions, `OPM_TEST_CATALOG_VERSION` knob.
+- [x] 2.7 `task dev:fmt dev:vet dev:lint dev:test` — unit + envtest green (registry-backed integration specs skip as today).
 
 ## 3. Post-flip greens
 

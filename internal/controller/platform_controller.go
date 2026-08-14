@@ -241,15 +241,10 @@ func platformInput(plat *releasesv1alpha1.Platform) synth.PlatformInput {
 	if len(plat.Spec.Registry) > 0 {
 		in.Subscriptions = make(map[string]synth.SubscriptionSpec, len(plat.Spec.Registry))
 		for path, sub := range plat.Spec.Registry {
-			spec := synth.SubscriptionSpec{Enable: sub.Enable}
-			if sub.Filter != nil {
-				spec.Filter = &synth.FilterSpec{
-					Range: sub.Filter.Range,
-					Allow: sub.Filter.Allow,
-					Deny:  sub.Filter.Deny,
-				}
+			in.Subscriptions[path] = synth.SubscriptionSpec{
+				Enable:  sub.Enable,
+				Version: sub.Version,
 			}
-			in.Subscriptions[path] = spec
 		}
 	}
 	return in

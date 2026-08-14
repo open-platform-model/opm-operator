@@ -71,6 +71,18 @@ func registrySkip(msg string) {
 	Skip(msg)
 }
 
+// testCatalogVersion is the exact catalog build the registry-backed specs
+// subscribe to (enhancement 0010 D14: a subscription names one published
+// build; there is no range vocabulary). Overridable via
+// OPM_TEST_CATALOG_VERSION so a fixture republish does not require a code
+// edit; the default tracks the pin in config/samples.
+func testCatalogVersion() string {
+	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
+		return v
+	}
+	return "2.0.0-alpha.3"
+}
+
 // materializeKernelOrSkip builds a Kernel from CUE_REGISTRY and skips the spec
 // unless it can synthesize+materialize a trivial (no-subscription) platform —
 // i.e. the registry is reachable and a matching opmodel.dev/core schema is
@@ -154,7 +166,7 @@ var _ = Describe("Platform Controller", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type:     "kubernetes",
-					Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {}},
+					Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {Version: testCatalogVersion()}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
@@ -191,7 +203,7 @@ var _ = Describe("Platform Controller", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type:     "kubernetes",
-					Registry: map[string]releasesv1alpha1.Subscription{bogus: {}},
+					Registry: map[string]releasesv1alpha1.Subscription{bogus: {Version: "9.9.9"}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, plat)).To(Succeed())

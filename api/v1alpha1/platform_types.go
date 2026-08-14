@@ -34,8 +34,10 @@ type PlatformSpec struct {
 	// +required
 	Type string `json:"type"`
 
-	// Registry is the set of catalog subscriptions keyed by catalog CUE module
-	// path (e.g. "opmodel.dev/catalogs/opm"), projecting core #Platform.#registry.
+	// Registry is the set of catalog subscriptions keyed by major-suffixed
+	// catalog CUE module path (e.g. "opmodel.dev/catalogs/opm@v2"), projecting
+	// core #Platform.#registry. The key's major must agree with the major of
+	// the subscribed version (enhancement 0010 D14).
 	// +optional
 	Registry map[string]Subscription `json:"registry,omitempty"`
 }
@@ -49,26 +51,17 @@ type Subscription struct {
 	// +optional
 	Enable *bool `json:"enable,omitempty"`
 
-	// Filter optionally constrains the subscribed versions by SemVer range
-	// and explicit allow/deny lists.
-	// +optional
-	Filter *SubscriptionFilter `json:"filter,omitempty"`
-}
-
-// SubscriptionFilter constrains subscribed catalog versions, projecting core
-// #SubscriptionFilter. It maps onto synth.FilterSpec.
-type SubscriptionFilter struct {
-	// Range is a SemVer constraint (e.g. ">=1.2.0 <2.0.0").
-	// +optional
-	Range string `json:"range,omitempty"`
-
-	// Allow is an explicit allowlist of versions.
-	// +optional
-	Allow []string `json:"allow,omitempty"`
-
-	// Deny is an explicit denylist of versions.
-	// +optional
-	Deny []string `json:"deny,omitempty"`
+	// Version names exactly one published catalog build as a bare SemVer
+	// string (e.g. "2.0.0-alpha.3") — the platform file IS the resolution
+	// (enhancement 0010 D14); there is no range or allow/deny vocabulary. The
+	// version's major must agree with the subscription key's `@vN` suffix.
+	// CRD-required is safe against the stored pre-reshape singleton: API
+	// server validation ratcheting keeps status-subresource patches working
+	// against a stored object lacking the field (measured in
+	// test/integration/crdvalidation).
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Version string `json:"version"`
 }
 
 // PlatformStatus defines the observed state of Platform.

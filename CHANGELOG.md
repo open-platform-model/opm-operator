@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-alpha.10](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.9...v1.0.0-alpha.10) (2026-08-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* Platform specs must be re-authored. Each spec.registry key gains its catalog major suffix (for example opmodel.dev/catalogs/opm@v2) and each subscription replaces filter with a required version naming one published catalog build.
+
+### Features
+
+* retarget to the library core-v2 line; subscriptions name one version ([#67](https://github.com/open-platform-model/opm-operator/issues/67)) ([c25f302](https://github.com/open-platform-model/opm-operator/commit/c25f3029240369cf7e06cb812da2b10a9a8fce39))
+
 ## [1.0.0-alpha.9](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.8...v1.0.0-alpha.9) (2026-08-10)
 
 

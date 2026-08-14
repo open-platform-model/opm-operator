@@ -76,7 +76,26 @@ tasks:
             tag="${tag}-${prerelease}"
           fi
           echo "==> publishing ${name} @ ${tag}"
-          if out=$(cd "$dir" && cue mod publish "$tag" 2>&1); then
+          srcdir="$dir"
+          # A pre-release publish must also rewrite the DECLARED version: the
+          # library's acquire-time identity check (enhancement 0010 D11)
+          # requires metadata.version to equal the fetched tag exactly, so
+          # tagging v<ver>-<prerelease> around an artifact that still declares
+          # <ver> produces a module the operator refuses with "module identity
+          # mismatch at version". Stage a copy and rewrite the first version:
+          # literal (the same line the grep contract above reads) to match.
+          if [ -n "$prerelease" ]; then
+            srcdir=$(mktemp -d)
+            cp -R "$dir/." "$srcdir/"
+            sed -i "0,/version:[[:space:]]*\"${ver}\"/s//version: \"${ver}-${prerelease}\"/" "$srcdir/module.cue"
+            if ! grep -q "version:[[:space:]]*\"${ver}-${prerelease}\"" "$srcdir/module.cue"; then
+              echo "prerelease version rewrite failed for ${name}" >&2
+              rm -rf "$srcdir"
+              rc=1
+              continue
+            fi
+          fi
+          if out=$(cd "$srcdir" && cue mod publish "$tag" 2>&1); then
             echo "$out"
           # Immutable registries (GHCR) reject re-publishing an existing version;
           # treat that as success so the step is idempotent across releases. The
@@ -88,6 +107,9 @@ tasks:
           else
             echo "$out" >&2
             rc=1
+          fi
+          if [ "$srcdir" != "$dir" ]; then
+            rm -rf "$srcdir"
           fi
         done
         exit $rc

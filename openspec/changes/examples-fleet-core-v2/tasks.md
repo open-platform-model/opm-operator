@@ -34,6 +34,8 @@
 
 ## 6. Record, publish, release
 
-- [ ] 6.1 Push to main → e2e workflow publishes `-e2e.g<sha>` prerelease tags of the v2 fixtures to GHCR — the end-to-end publish proof before the release.
-- [ ] 6.2 Record in `enhancements/0010/`: slice `operator-library-retarget` → `done`, `openspec_ref` citing both changes; history event covering the CRD absorption, the `hello_web` source-side rename (partial 0011 D17 item 2 delivery), and the fixture version bumps (new podinfo coordinate `v0.1.4` — the value the CLI track pins).
-- [ ] 6.3 Cut the release (with `operator-library-retarget` already in): verify the release publishes `hello v0.0.5` / `hello_web v0.1.3` / `podinfo v0.1.4` / `redis v0.1.7` to GHCR and uploads the v2-CRD `install.yaml` + corrected examples bundle. Notify the CLI track: `operator:sync` target version + the `v0.1.4` pin.
+- [x] 6.1 Push to main → e2e workflow publishes `-e2e.g<sha>` prerelease tags of the v2 fixtures to GHCR — the end-to-end publish proof before the release.
+- [x] 6.2 Record in `enhancements/0010/`: slice `operator-library-retarget` → `done`, `openspec_ref` citing both changes; history event covering the CRD absorption, the `hello_web` source-side rename (partial 0011 D17 item 2 delivery), and the fixture version bumps (new podinfo coordinate `v0.1.4` — the value the CLI track pins).
+- [x] 6.3 Cut the release (with `operator-library-retarget` already in): verify the release publishes `hello v0.0.5` / `hello_web v0.1.3` / `podinfo v0.1.4` / `redis v0.1.7` to GHCR and uploads the v2-CRD `install.yaml` + corrected examples bundle. Notify the CLI track: `operator:sync` target version + the `v0.1.4` pin.
+
+> Completion notes (2026-08-14): 6.1's e2e run proved the GHCR pre-release publish (all four `-e2e.g726b3a1` tags) and surfaced a masked gap — pre-release tags failed the library's acquire-time identity check because the artifact still declared the bare version; fixed in the follow-up that publishes pre-release tags from a staged copy with the version literal rewritten. 6.3's release (v1.0.0-alpha.10) published hello v0.0.5 / hello_web v0.1.3 / podinfo v0.1.4 / redis v0.1.7 to GHCR and uploaded the v2-CRD install.yaml plus the corrected examples bundle (12 manifests, modulepackage manifests included for the first time).

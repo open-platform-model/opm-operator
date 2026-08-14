@@ -32,7 +32,7 @@ import (
 )
 
 // These tests exercise KernelPackageRenderer — the ModulePackage CR render path —
-// against the modulepackage fixtures (test/fixtures/modulepackages/{hello,hello-web,
+// against the modulepackage fixtures (test/fixtures/modulepackages/{hello,hello_web,
 // podinfo,redis}). Each fixture is an author-written #ModuleInstance that imports its
 // published test module and embeds it via #module. They are the registry-backed
 // siblings of the module-renderer integration test, rendering the same resources via
@@ -116,7 +116,7 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 		// exercise the same load+embed regression guard; the opm catalog pinned
 		// above provides the configmap/deployment/service/statefulset transformers
 		// each module matches, so they render against the one materialized platform.
-		for _, pkg := range []string{"hello", "hello-web", "podinfo", "redis"} {
+		for _, pkg := range []string{"hello", "hello_web", "podinfo", "redis"} {
 			It("loads the authored "+pkg+" release fixture (imported #module) and renders its resources", func() {
 				fixtureDir, err := filepath.Abs(filepath.Join("..", "..", "fixtures", "modulepackages", pkg))
 				Expect(err).NotTo(HaveOccurred())

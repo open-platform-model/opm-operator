@@ -17,7 +17,9 @@ limitations under the License.
 package reconcile_test
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -134,7 +136,42 @@ var _ = Describe("Platform materialize recovery (registry-backed)", func() {
 		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: recoveryPlatformName}}
 
 		// Phase 1: registry unreachable → MaterializeFailed, requeued, store empty.
+		//
+		// A dead endpoint alone no longer models an unreachable registry: since
+		// the core-v2 retarget, materialize pulls the exact named build (0010
+		// D14 — no enumeration round-trip), and the CUE module cache satisfies
+		// that pull without touching the endpoint — the gating materialize
+		// above has just warmed it. Point CUE_CACHE_DIR at an empty directory
+		// for this phase only, so the dead endpoint is actually consulted; the
+		// environment is restored before the recovery phase, whose live pull
+		// must see the same process environment the other specs use.
+		origCache, hadCache := os.LookupEnv("CUE_CACHE_DIR")
+		restoreCache := func() {
+			if hadCache {
+				Expect(os.Setenv("CUE_CACHE_DIR", origCache)).To(Succeed())
+			} else {
+				Expect(os.Unsetenv("CUE_CACHE_DIR")).To(Succeed())
+			}
+		}
+		DeferCleanup(restoreCache)
+		// Not GinkgoT().TempDir(): CUE marks extracted cache files read-only,
+		// which breaks Ginkgo's automatic removal. Restore write permission
+		// before removing, best-effort.
+		emptyCache, err := os.MkdirTemp("", "opm-dead-registry-cache-")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			_ = filepath.WalkDir(emptyCache, func(p string, _ fs.DirEntry, walkErr error) error {
+				if walkErr == nil {
+					_ = os.Chmod(p, 0o755)
+				}
+				return nil
+			})
+			_ = os.RemoveAll(emptyCache)
+		})
+		Expect(os.Setenv("CUE_CACHE_DIR", emptyCache)).To(Succeed())
+
 		res, err := r.Reconcile(ctx, req)
+		restoreCache()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0),
 			"a failed materialize must requeue rather than stall indefinitely")

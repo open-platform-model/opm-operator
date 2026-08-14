@@ -1,23 +1,20 @@
 package redis
 
 import (
-	bp "opmodel.dev/catalogs/opm/blueprints/workload"
-	tr "opmodel.dev/catalogs/opm/traits"
+	bp "opmodel.dev/catalogs/opm/blueprints/v1beta1"
+	tr "opmodel.dev/catalogs/opm/traits/v1beta1"
 )
 
 #components: {
 	redis: {
-		// StatefulWorkload gates the statefulset-transformer
-		// (requiredLabels: workload-type=stateful) and adds the Volumes resource
-		// (→ PVC). The Expose trait with clusterIP: "None" gates the
-		// service-transformer to render a headless governing Service.
+		// StatefulWorkload stamps the workload-type=stateful label that selects
+		// the statefulset-transformer and adds the Volumes resource (→ PVC). The
+		// Expose trait with clusterIP: "None" gates the service-transformer to
+		// render a headless governing Service.
 		bp.#StatefulWorkload
 		tr.#Expose
 
-		metadata: {
-			name: "redis"
-			labels: "core.opmodel.dev/workload-type": "stateful"
-		}
+		metadata: name: "redis"
 
 		// "data" volume source: durable PVC by default, ephemeral emptyDir when
 		// persistence is disabled (see #config.persistence). The catalog's

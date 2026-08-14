@@ -6,13 +6,13 @@ source: {
 	kind: "self"
 }
 deps: {
-	"opmodel.dev/catalogs/opm@v1": {
-		v: "v1.0.0-alpha.1"
+	"opmodel.dev/catalogs/opm@v2": {
+		v: "v2.0.0-alpha.3"
 	}
-	"opmodel.dev/core@v1": {
-		v: "v1.0.0-alpha.1"
+	"opmodel.dev/core@v2": {
+		v: "v2.0.0-alpha.4"
 	}
 	"opmodel.dev/modules/test/hello@v0": {
-		v: "v0.0.4"
+		v: "v0.0.5"
 	}
 }

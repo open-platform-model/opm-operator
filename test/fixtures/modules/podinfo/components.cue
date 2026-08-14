@@ -1,23 +1,20 @@
 package podinfo
 
 import (
-	bp "opmodel.dev/catalogs/opm/blueprints/workload"
-	tr "opmodel.dev/catalogs/opm/traits"
+	bp "opmodel.dev/catalogs/opm/blueprints/v1beta1"
+	tr "opmodel.dev/catalogs/opm/traits/v1beta1"
 )
 
 #components: {
 	podinfo: {
-		// StatelessWorkload gates the deployment-transformer
-		// (requiredLabels: workload-type=stateless); the Expose trait gates the
+		// StatelessWorkload stamps the workload-type=stateless label that
+		// selects the deployment-transformer; the Expose trait gates the
 		// service-transformer so a ClusterIP Service is rendered alongside the
 		// Deployment.
 		bp.#StatelessWorkload
 		tr.#Expose
 
-		metadata: {
-			name: "podinfo"
-			labels: "core.opmodel.dev/workload-type": "stateless"
-		}
+		metadata: name: "podinfo"
 
 		spec: {
 			statelessWorkload: {

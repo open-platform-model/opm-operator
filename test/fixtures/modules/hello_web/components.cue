@@ -1,14 +1,12 @@
 package hello_web
 
-import bp "opmodel.dev/catalogs/opm/blueprints/workload"
+import bp "opmodel.dev/catalogs/opm/blueprints/v1beta1"
 
 #components: {
 	web: {
-		metadata: {
-			name: "web"
-			// Gates the deployment-transformer (requiredLabels: workload-type=stateless).
-			labels: "core.opmodel.dev/workload-type": "stateless"
-		}
+		metadata: name: "web"
+		// StatelessWorkload stamps the workload-type=stateless label that
+		// selects the deployment-transformer.
 		bp.#StatelessWorkload
 		spec: statelessWorkload: {
 			container: {

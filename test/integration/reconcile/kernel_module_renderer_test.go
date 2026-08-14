@@ -114,7 +114,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			values.Raw = []byte(`{"message": "kernel hello"}`)
 			res, err := renderer.RenderModule(ctx,
 				"kernel-hello", "default",
-				"opmodel.dev/modules/test/hello@v0", "v0.0.4",
+				"opmodel.dev/modules/test/hello@v0", "v0.0.5",
 				values)
 
 			Expect(err).NotTo(HaveOccurred())

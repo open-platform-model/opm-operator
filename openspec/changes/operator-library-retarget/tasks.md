@@ -19,14 +19,14 @@
 
 ## 3. Post-flip greens
 
-- [ ] 3.1 New test: versionless subscription surfaces as `MaterializeFailed` naming the subscription path (via `ErrSubscriptionMissingVersion` through `failMaterialize`).
-- [ ] 3.2 `internal/render/module.go:21` doc comment: warnings are effectively-optional traits only.
-- [ ] 3.3 `opm-operator/CLAUDE.md`: fix the stale "fixtures are deliberately not on GHCR" note (the release/e2e workflows publish them there; measured in 0010's migration inventory).
-- [ ] 3.4 Spec deltas (this change's `specs/`): `platform-crd`, `platform-reconciler`, `library-kernel-runtime`, `digest-computation`.
+- [x] 3.1 New test: versionless subscription surfaces as `MaterializeFailed` naming the subscription path (via `ErrSubscriptionMissingVersion` through `failMaterialize`).
+- [x] 3.2 `internal/render/module.go:21` doc comment: warnings are effectively-optional traits only.
+- [x] 3.3 `opm-operator/CLAUDE.md`: fix the stale "fixtures are deliberately not on GHCR" note (the release/e2e workflows publish them there; measured in 0010's migration inventory).
+- [x] 3.4 Spec deltas (this change's `specs/`): `platform-crd`, `platform-reconciler`, `library-kernel-runtime`, `digest-computation`.
 
 ## 4. Validation gates
 
-- [ ] 4.1 `task dev:manifests dev:generate` (no drift), `task dev:fmt dev:vet`, `task dev:lint`, `task dev:test`.
+- [x] 4.1 `task dev:manifests dev:generate` (no drift), `task dev:fmt dev:vet`, `task dev:lint`, `task dev:test`.
 - [ ] 4.2 Scan every commit message and the PR body for bare `@` tokens; confirm no attribution footers beyond the plain co-author trailer (optional).
 
 ## 5. Record & release coordination

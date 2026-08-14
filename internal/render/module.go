@@ -18,7 +18,10 @@ type RenderResult struct {
 	// InventoryEntries are the CRD-typed inventory entries built from Resources.
 	InventoryEntries []releasesv1alpha1.InventoryEntry
 
-	// Warnings are non-fatal render warnings (e.g., unhandled traits).
+	// Warnings are non-fatal render warnings. Since the core-v2 library
+	// line, only effectively-optional unhandled traits degrade to warnings;
+	// unresolved demands (undemandable resources, unhandled load-bearing
+	// traits) fail Compile instead of landing here (0010 D28).
 	Warnings []string
 }
 

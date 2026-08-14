@@ -1,7 +1,7 @@
 package hello
 
 import (
-	res "opmodel.dev/catalogs/opm/resources"
+	res "opmodel.dev/catalogs/opm/resources/v1beta1"
 )
 
 #components: {

@@ -11,14 +11,17 @@ version: '3'
 # manifests to the GitHub Release.
 #
 # The declared version is read from module.cue with grep rather than
-# `cue export -e metadata.version`: evaluating the full package trips a
-# closedness false-positive in the StatelessWorkload/StatefulWorkload blueprints
-# (harmless — the modules publish and materialize correctly — but it makes
-# `cue export` exit non-zero).
+# `cue export -e metadata.version` — the grep is the stable contract, chosen
+# when evaluating the v1 catalog's blueprints tripped a closedness
+# false-positive (fixed on the v2 catalog, but the grep stays: it needs no
+# registry access and no evaluation). Contract with the core-v2 metadata shape:
+# the FIRST `version:` string literal in each module's module.cue MUST be the
+# module's own `metadata.version` (a bare SemVer, no `v` prefix); any other
+# version-like field must appear after it.
 
 vars:
   MODULES_DIR: '{{.MODULES_DIR | default "test/fixtures/modules"}}'
-  RELEASES_DIR: '{{.RELEASES_DIR | default "test/fixtures/releases"}}'
+  RELEASES_DIR: '{{.RELEASES_DIR | default "test/fixtures/modulepackages"}}'
   DIST_DIR: '{{.DIST_DIR | default "dist/examples"}}'
   # GHCR mapping (matches how core/catalog publish). CI sets CUE_REGISTRY in the
   # environment; for local publishing pass CUE_REGISTRY=opmodel.dev=localhost:5000+insecure,...
@@ -132,12 +135,12 @@ tasks:
             cp "$dir/moduleinstance.yaml" "{{.DIST_DIR}}/${name}-moduleinstance.yaml"
           fi
         done
-        # Release/OCIRepository fixtures, where present.
+        # ModulePackage/OCIRepository fixtures, where present.
         if [ -d "{{.RELEASES_DIR}}" ]; then
           for dir in $(find {{.RELEASES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
             name=$(basename "$dir")
-            for f in "$dir"/release.yaml "$dir"/ocirepository.yaml; do
-              [ -f "$f" ] && cp "$f" "{{.DIST_DIR}}/release-${name}-$(basename "$f")"
+            for f in "$dir"/modulepackage.yaml "$dir"/ocirepository.yaml; do
+              [ -f "$f" ] && cp "$f" "{{.DIST_DIR}}/modulepackage-${name}-$(basename "$f")"
             done
           done
         fi

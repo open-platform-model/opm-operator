@@ -40,7 +40,7 @@ metadata:
 spec:
   module:
     path: opmodel.dev/modules/test/podinfo@v0
-    version: v0.1.2
+    version: v0.1.4
   serviceAccountName: podinfo-applier
   values:
     replicas: 2

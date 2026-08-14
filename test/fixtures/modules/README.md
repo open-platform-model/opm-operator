@@ -10,7 +10,7 @@ extra registry configuration.
 | Module      | Workload                | Renders                                                        | Demonstrates                                  |
 | ----------- | ----------------------- | ------------------------------------------------------------- | --------------------------------------------- |
 | `hello`     | ConfigMaps              | one ConfigMap                                                  | minimal kernel-probe fixture                  |
-| `hello-web` | `StatelessWorkload`     | one Deployment                                                 | minimal container workload                    |
+| `hello_web` | `StatelessWorkload`     | one Deployment                                                 | minimal container workload                    |
 | `podinfo`   | `StatelessWorkload`     | Deployment + Service, HTTP `livenessProbe` / `readinessProbe` | stateless web app with health probes          |
 | `redis`     | `StatefulWorkload`      | StatefulSet + headless Service + PVC, exec readiness probe    | stateful app with persistence + an exec probe |
 
@@ -31,8 +31,8 @@ Prerequisites: the opm-operator is running in the cluster, a `Platform` named
 resolve `opmodel.dev/*` from a reachable registry.
 
 ```bash
-# Deploy the minimal hello-web example (one Deployment):
-kubectl apply -f test/fixtures/modules/hello-web/moduleinstance.yaml
+# Deploy the minimal hello_web example (one Deployment):
+kubectl apply -f test/fixtures/modules/hello_web/moduleinstance.yaml
 
 # Deploy the stateless podinfo example (Deployment + Service + probes):
 kubectl apply -f test/fixtures/modules/podinfo/moduleinstance.yaml

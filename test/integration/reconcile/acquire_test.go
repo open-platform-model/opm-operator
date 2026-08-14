@@ -56,18 +56,20 @@ var _ = Describe("Module Acquisition Integration", func() {
 			before := countAcquireTempDirs()
 
 			mod, err := moduleacquire.Acquire(ctx, k,
-				"opmodel.dev/modules/test/hello@v0", "v0.0.4", registry)
+				"opmodel.dev/modules/test/hello@v0", "v0.0.5", registry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mod).NotTo(BeNil())
 			Expect(mod.Metadata).NotTo(BeNil())
 			Expect(mod.Metadata.Name).To(Equal("hello"))
-			Expect(mod.Metadata.Version).To(Equal("0.0.4"))
+			Expect(mod.Metadata.Version).To(Equal("0.0.5"))
 			// modulePath is the author-set field that regressed: the old
 			// wrapper shim re-embedded the module and collapsed core@v0's
 			// self-referential metadata. Acquire now delegates to
 			// Kernel.AcquireModuleFromRegistry, which loads the module as the main
 			// module with its staged source and preserves it; this pins that fix.
-			Expect(mod.Metadata.ModulePath).To(Equal("opmodel.dev/modules/test"))
+			// On the core-v2 identity shape modulePath is the full
+			// major-suffixed module address.
+			Expect(mod.Metadata.ModulePath).To(Equal("opmodel.dev/modules/test/hello@v0"))
 
 			// Acquisition no longer stages a temp dir (the library loads the
 			// module in memory); assert none appears, as a guard.

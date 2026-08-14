@@ -1,20 +1,20 @@
-// redis instance — core-v2 (opmodel.dev/core@v2) authored #ModuleInstance that
-// imports the published redis test module and embeds it via #module. Exercises the
+// hello_web instance — core-v2 (opmodel.dev/core@v2) authored #ModuleInstance that
+// imports the published hello_web test module and embeds it via #module. Exercises the
 // ModulePackage CR render path (LoadInstancePackage → Compile) against an imported
 // #Module. Values live in the package (values.cue), matching the ModulePackage CR
 // contract (no values on the CR).
-package redis
+package hello_web
 
 import (
 	core "opmodel.dev/core@v2"
-	redis "opmodel.dev/modules/test/redis@v0"
+	helloweb "opmodel.dev/modules/test/hello_web@v0"
 )
 
 core.#ModuleInstance
 
 metadata: {
-	name:      "redis"
+	name:      "hello-web"
 	namespace: "default"
 }
 
-#module: redis
+#module: helloweb

@@ -1,4 +1,4 @@
-module: "opmodel.dev/releases/test/redis@v0"
+module: "opmodel.dev/modules/test/hello_web@v0"
 language: {
 	version: "v0.17.0"
 }
@@ -11,8 +11,5 @@ deps: {
 	}
 	"opmodel.dev/core@v2": {
 		v: "v2.0.0-alpha.4"
-	}
-	"opmodel.dev/modules/test/redis@v0": {
-		v: "v0.1.7"
 	}
 }

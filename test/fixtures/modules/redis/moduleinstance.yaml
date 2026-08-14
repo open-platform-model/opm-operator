@@ -40,7 +40,7 @@ metadata:
 spec:
   module:
     path: opmodel.dev/modules/test/redis@v0
-    version: v0.1.6
+    version: v0.1.7
   serviceAccountName: redis-applier
   # Defaults: redis:7.4, 1Gi PVC (storageClass "standard"). Set
   # persistence.enabled: false for an ephemeral emptyDir instead.

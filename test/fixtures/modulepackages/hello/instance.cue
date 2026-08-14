@@ -1,4 +1,4 @@
-// hello instance — kernel-era (opmodel.dev/core@v1) authored #ModuleInstance that
+// hello instance — core-v2 (opmodel.dev/core@v2) authored #ModuleInstance that
 // imports the published hello test module and embeds it via #module. Exercises
 // the ModulePackage CR render path (LoadInstancePackage → Compile) against a real
 // imported #Module. Values live in the package (values.cue), matching the
@@ -14,7 +14,7 @@
 package hello
 
 import (
-	core "opmodel.dev/core@v1"
+	core "opmodel.dev/core@v2"
 	hello "opmodel.dev/modules/test/hello@v0"
 )
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.11](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.10...v1.0.0-alpha.11) (2026-08-14)
+
+
+### Features
+
+* declare the pre-release version inside pre-release-tagged fixture publishes ([#71](https://github.com/open-platform-model/opm-operator/issues/71)) ([f35ac3d](https://github.com/open-platform-model/opm-operator/commit/f35ac3d89098beb41f557918966eb31f3d864b96))
+
 ## [1.0.0-alpha.10](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.9...v1.0.0-alpha.10) (2026-08-14)
 
 

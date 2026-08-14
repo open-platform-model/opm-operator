@@ -27,10 +27,10 @@
 ## 4. Validation gates
 
 - [x] 4.1 `task dev:manifests dev:generate` (no drift), `task dev:fmt dev:vet`, `task dev:lint`, `task dev:test`.
-- [ ] 4.2 Scan every commit message and the PR body for bare `@` tokens; confirm no attribution footers beyond the plain co-author trailer (optional).
+- [x] 4.2 Scan every commit message and the PR body for bare `@` tokens; confirm no attribution footers beyond the plain co-author trailer (optional).
 
 ## 5. Record & release coordination
 
-- [ ] 5.1 Record in `enhancements/0010/`: history event noting the CRD work absorbed into this slice per the recorded deviation (the "no feature code" concern text corrected); `plan.yaml` slice stays `in-progress` until `examples-fleet-core-v2` also lands (one slice, two OpenSpec changes — `openspec_ref` cites both).
+- [x] 5.1 Record in `enhancements/0010/`: history event noting the CRD work absorbed into this slice per the recorded deviation (the "no feature code" concern text corrected); `plan.yaml` slice stays `in-progress` until `examples-fleet-core-v2` also lands (one slice, two OpenSpec changes — `openspec_ref` cites both).
 - [ ] 5.2 After BOTH changes merge: cut the release (release-please PR → `v1.0.0-alpha.9`); verify the release asset `install.yaml` carries `spec.registry.*.version`; notify the CLI track (`task operator:sync` target) — this is the slice's graduation gate.
-- [ ] 5.3 Follow-up candidates recorded, not done: typed routing of `IdentityError`/`UnresolvedDemandsError` onto `ResolutionFailedReason`; wiring `OPM_TEST_REGISTRY_FORCE` (or a GHCR-tolerant helper) so the registry-backed integration tier stops silently skipping in CI.
+- [x] 5.3 Follow-up candidates recorded, not done: typed routing of `IdentityError`/`UnresolvedDemandsError` onto `ResolutionFailedReason`; wiring `OPM_TEST_REGISTRY_FORCE` (or a GHCR-tolerant helper) so the registry-backed integration tier stops silently skipping in CI.

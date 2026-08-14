@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -48,10 +49,8 @@ var _ = Describe("Platform CRD", func() {
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type: "kubernetes",
 					Registry: map[string]releasesv1alpha1.Subscription{
-						"opmodel.dev/catalogs/opm": {
-							Filter: &releasesv1alpha1.SubscriptionFilter{
-								Range: ">=0.1.0 <1.0.0",
-							},
+						"opmodel.dev/catalogs/opm@v2": {
+							Version: "2.0.0-alpha.3",
 						},
 					},
 				},
@@ -73,13 +72,13 @@ var _ = Describe("Platform CRD", func() {
 	})
 
 	Context("spec projection of core #Platform", func() {
-		It("accepts a minimal spec with type and a registry entry, no enable or filter", func() {
+		It("accepts a minimal spec with type and a versioned registry entry, no enable", func() {
 			platform := &releasesv1alpha1.Platform{
 				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type: "kubernetes",
 					Registry: map[string]releasesv1alpha1.Subscription{
-						"opmodel.dev/catalogs/opm": {},
+						"opmodel.dev/catalogs/opm@v2": {Version: "2.0.0-alpha.3"},
 					},
 				},
 			}
@@ -88,7 +87,49 @@ var _ = Describe("Platform CRD", func() {
 			// The omitted enable round-trips as nil (deferred to schema default).
 			fetched := &releasesv1alpha1.Platform{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(platform), fetched)).To(Succeed())
-			Expect(fetched.Spec.Registry["opmodel.dev/catalogs/opm"].Enable).To(BeNil())
+			Expect(fetched.Spec.Registry["opmodel.dev/catalogs/opm@v2"].Enable).To(BeNil())
+		})
+
+		It("rejects a registry entry missing the required version at admission", func() {
+			platform := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type: "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{
+						"opmodel.dev/catalogs/opm@v2": {},
+					},
+				},
+			}
+			err := k8sClient.Create(ctx, platform)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("version"))
+		})
+
+		It("prunes a legacy filter field at admission so it never reaches the reconciler", func() {
+			// The reshaped structural schema no longer declares filter, so the
+			// API server prunes it on write. Applied as unstructured because
+			// the Go type cannot express the retired field.
+			platform := &unstructured.Unstructured{}
+			platform.SetGroupVersionKind(releasesv1alpha1.GroupVersion.WithKind("Platform"))
+			platform.SetName("cluster")
+			Expect(unstructured.SetNestedField(platform.Object, "kubernetes", "spec", "type")).To(Succeed())
+			Expect(unstructured.SetNestedMap(platform.Object,
+				map[string]any{
+					"version": "2.0.0-alpha.3",
+					"filter":  map[string]any{"range": ">=1.0.0-alpha"},
+				},
+				"spec", "registry", "opmodel.dev/catalogs/opm@v2")).To(Succeed())
+			Expect(k8sClient.Create(ctx, platform)).To(Succeed())
+
+			fetched := &unstructured.Unstructured{}
+			fetched.SetGroupVersionKind(releasesv1alpha1.GroupVersion.WithKind("Platform"))
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(platform), fetched)).To(Succeed())
+			sub, found, err := unstructured.NestedMap(fetched.Object,
+				"spec", "registry", "opmodel.dev/catalogs/opm@v2")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found).To(BeTrue())
+			Expect(sub).To(HaveKeyWithValue("version", "2.0.0-alpha.3"))
+			Expect(sub).NotTo(HaveKey("filter"), "the structural schema must prune the retired filter field")
 		})
 
 		It("rejects a spec missing the required type", func() {

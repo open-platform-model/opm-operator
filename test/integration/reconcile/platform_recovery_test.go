@@ -50,7 +50,7 @@ const recoveryPlatformName = "cluster"
 func liveMaterializeKernelOrSkip() (*kernel.Kernel, string) {
 	reg := os.Getenv("CUE_REGISTRY")
 	if reg == "" {
-		registrySkip("CUE_REGISTRY not set — platform recovery spec needs a reachable registry with opmodel.dev/core@v0")
+		registrySkip("CUE_REGISTRY not set — platform recovery spec needs a reachable registry with opmodel.dev/core@v2")
 	}
 	catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 	if catalogPath == "" {
@@ -60,7 +60,7 @@ func liveMaterializeKernelOrSkip() (*kernel.Kernel, string) {
 	in := synth.PlatformInput{
 		Name:          recoveryPlatformName,
 		Type:          "kubernetes",
-		Subscriptions: map[string]synth.SubscriptionSpec{catalogPath: {}},
+		Subscriptions: map[string]synth.SubscriptionSpec{catalogPath: {Version: testCatalogVersion()}},
 	}
 	p, err := k.SynthesizePlatform(ctx, in)
 	if err != nil {
@@ -106,7 +106,7 @@ var _ = Describe("Platform materialize recovery (registry-backed)", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: recoveryPlatformName},
 			Spec: releasesv1alpha1.PlatformSpec{
 				Type:     "kubernetes",
-				Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {}},
+				Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {Version: testCatalogVersion()}},
 			},
 		}
 		Expect(k8sClient.Create(ctx, plat)).To(Succeed())

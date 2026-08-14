@@ -764,30 +764,26 @@ spec:
                         defers to the schema default (true) rather than serializing as an
                         explicit false; matches synth.SubscriptionSpec.Enable.
                       type: boolean
-                    filter:
+                    version:
                       description: |-
-                        Filter optionally constrains the subscribed versions by SemVer range
-                        and explicit allow/deny lists.
-                      properties:
-                        allow:
-                          description: Allow is an explicit allowlist of versions.
-                          items:
-                            type: string
-                          type: array
-                        deny:
-                          description: Deny is an explicit denylist of versions.
-                          items:
-                            type: string
-                          type: array
-                        range:
-                          description: Range is a SemVer constraint (e.g. ">=1.2.0
-                            <2.0.0").
-                          type: string
-                      type: object
+                        Version names exactly one published catalog build as a bare SemVer
+                        string (e.g. "2.0.0-alpha.3") — the platform file IS the resolution
+                        (enhancement 0010 D14); there is no range or allow/deny vocabulary. The
+                        version's major must agree with the subscription key's `@vN` suffix.
+                        CRD-required is safe against the stored pre-reshape singleton: API
+                        server validation ratcheting keeps status-subresource patches working
+                        against a stored object lacking the field (measured in
+                        test/integration/crdvalidation).
+                      minLength: 1
+                      type: string
+                  required:
+                  - version
                   type: object
                 description: |-
-                  Registry is the set of catalog subscriptions keyed by catalog CUE module
-                  path (e.g. "opmodel.dev/catalogs/opm"), projecting core #Platform.#registry.
+                  Registry is the set of catalog subscriptions keyed by major-suffixed
+                  catalog CUE module path (e.g. "opmodel.dev/catalogs/opm@v2"), projecting
+                  core #Platform.#registry. The key's major must agree with the major of
+                  the subscribed version (enhancement 0010 D14).
                 type: object
               type:
                 description: |-

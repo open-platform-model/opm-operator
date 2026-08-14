@@ -30,6 +30,18 @@ func registrySkip(msg string) {
 	Skip(msg)
 }
 
+// testCatalogVersion is the exact catalog build the registry-backed specs
+// subscribe to (enhancement 0010 D14: a subscription names one published
+// build; there is no range vocabulary). Overridable via
+// OPM_TEST_CATALOG_VERSION so a fixture republish does not require a code
+// edit; the default tracks the pin in config/samples.
+func testCatalogVersion() string {
+	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
+		return v
+	}
+	return "2.0.0-alpha.3"
+}
+
 // skipIfNoTestRegistry skips the current spec when the fixture registry is
 // not available. Tests that load the fixture module (opmodel.dev/modules/test/hello)
 // require a registry serving the module — the fixture is not published to ghcr.

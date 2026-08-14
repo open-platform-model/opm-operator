@@ -26,6 +26,21 @@ func testResource(t *testing.T, cueSrc string) *core.Resource {
 	return &core.Resource{Value: v}
 }
 
+// --- ModuleSourceDigest tests ---
+
+// TestModuleSourceDigest_GoldenPin freezes the source-digest formula as a
+// cross-repo contract: exactly sha256(modulePath + "@" + moduleVersion)
+// rendered as "sha256:%x". The CLI's sourceDigest (cli
+// internal/workflow/apply) is the byte-identical peer — the two actors'
+// no-op detection depends on the equality, so neither side may change the
+// formula unilaterally. If this pin fails, coordinate with the CLI before
+// touching the formula.
+func TestModuleSourceDigest_GoldenPin(t *testing.T) {
+	d := ModuleSourceDigest("opmodel.dev/modules/test/podinfo@v0", "v0.1.3")
+	assert.Equal(t,
+		"sha256:08e4e4ee0f89463469644b41018405fabe4289b3deef1b8b6fd321cf6569aed5", d)
+}
+
 // --- ConfigDigest tests ---
 
 func TestConfigDigest_Deterministic(t *testing.T) {

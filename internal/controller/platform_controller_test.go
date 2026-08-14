@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
@@ -69,6 +70,18 @@ func registrySkip(msg string) {
 		Fail("OPM_TEST_REGISTRY_FORCE=1 but registry prerequisite missing: " + msg)
 	}
 	Skip(msg)
+}
+
+// testCatalogVersion is the exact catalog build the registry-backed specs
+// subscribe to (enhancement 0010 D14: a subscription names one published
+// build; there is no range vocabulary). Overridable via
+// OPM_TEST_CATALOG_VERSION so a fixture republish does not require a code
+// edit; the default tracks the pin in config/samples.
+func testCatalogVersion() string {
+	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
+		return v
+	}
+	return "2.0.0-alpha.3"
 }
 
 // materializeKernelOrSkip builds a Kernel from CUE_REGISTRY and skips the spec
@@ -154,7 +167,7 @@ var _ = Describe("Platform Controller", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type:     "kubernetes",
-					Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {}},
+					Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {Version: testCatalogVersion()}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
@@ -191,7 +204,7 @@ var _ = Describe("Platform Controller", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type:     "kubernetes",
-					Registry: map[string]releasesv1alpha1.Subscription{bogus: {}},
+					Registry: map[string]releasesv1alpha1.Subscription{bogus: {Version: "9.9.9"}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
@@ -212,6 +225,57 @@ var _ = Describe("Platform Controller", func() {
 			Expect(ok).To(BeTrue())
 			Expect(held).To(BeIdenticalTo(lastGood))
 			Expect(store.Generation()).To(Equal(int64(1)))
+		})
+	})
+
+	Context("stored legacy singleton (versionless subscription)", func() {
+		It("surfaces the missing version as MaterializeFailed naming the subscription path", func() {
+			// A versionless subscription cannot be created through admission —
+			// version is CRD-required — so it exists only as a stored object
+			// predating the filter→version reshape, which validation
+			// ratcheting keeps status-patchable. Seed a fake client with that
+			// stored shape; the library refuses it at synthesis
+			// (synth.ErrSubscriptionMissingVersion) before any registry I/O,
+			// so the Kernel needs no reachable registry.
+			const legacyPath = "opmodel.dev/catalogs/opm"
+			plat := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName, Generation: 3},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type:     "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{legacyPath: {}},
+				},
+			}
+			c := fake.NewClientBuilder().
+				WithScheme(k8sClient.Scheme()).
+				WithStatusSubresource(&releasesv1alpha1.Platform{}).
+				WithObjects(plat).
+				Build()
+
+			store := platformstore.NewStore()
+			r := &PlatformReconciler{
+				Client:        c,
+				Scheme:        k8sClient.Scheme(),
+				EventRecorder: events.NewFakeRecorder(10),
+				Kernel:        kernel.New(),
+				Store:         store,
+			}
+
+			res, err := r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.RequeueAfter).To(BeNumerically(">", 0), "a stalled Platform rechecks on a bounded interval")
+
+			fetched := &releasesv1alpha1.Platform{}
+			Expect(c.Get(ctx, client.ObjectKey{Name: platformSingletonName}, fetched)).To(Succeed())
+			ready := apimeta.FindStatusCondition(fetched.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(status.MaterializeFailedReason))
+			Expect(ready.Message).To(ContainSubstring(legacyPath), "message should name the versionless subscription")
+			Expect(ready.Message).To(ContainSubstring("Version is required"))
+			Expect(fetched.Status.ObservedGeneration).To(Equal(plat.Generation))
+
+			_, held := store.Get()
+			Expect(held).To(BeFalse(), "nothing must materialize for a versionless subscription")
 		})
 	})
 })

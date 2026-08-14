@@ -9,12 +9,12 @@ metadata:
 spec:
   type: kubernetes
   registry:
-    opmodel.dev/catalogs/opm:
-      filter:
-        # The example/fixture modules are core@v1 and pin catalogs/opm@v1
-        # (v1.0.0-alpha, the first catalog line on core@v1 vocabulary).
-        # Resource/transformer FQNs embed the catalog version, so the platform
-        # MUST materialize the same v1 catalog the modules carry — a v0 range
-        # (v0.6.0, core@v0) produces "no matching transformer". The lower bound
-        # is prerelease-inclusive because plain ">=1.0.0" excludes -alpha tags.
-        range: ">=1.0.0-alpha"
+    # Subscription keys carry the catalog's major (enhancement 0010 D14);
+    # `version` names exactly one published build of that major — the
+    # platform file IS the resolution, there is no range/allow/deny filter.
+    opmodel.dev/catalogs/opm@v2:
+      # Load-bearing pin: applied verbatim by the e2e specs, and kept aligned
+      # with the CLI's DefaultPlatformTemplate seed and the library's
+      # opm_platform fixture (three pins, one value). Bump as an ordinary
+      # fixture update when the catalog releases.
+      version: "2.0.0-alpha.3"

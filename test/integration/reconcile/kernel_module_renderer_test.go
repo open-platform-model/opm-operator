@@ -78,19 +78,17 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			// catalog provides the transformers the fixture module matches.
 			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 			if catalogPath == "" {
-				catalogPath = "opmodel.dev/catalogs/opm"
+				catalogPath = "opmodel.dev/catalogs/opm@v2"
 			}
-			// The fixture (hello) is core@v1 and pins catalogs/opm@v1
-			// (v1.0.0-alpha). Resource/transformer FQNs embed the catalog
-			// version, so the platform must materialize that same v1 catalog. An
-			// unfiltered subscription resolves the highest *stable* release and
-			// excludes the -alpha prerelease — yielding the core@v0 v0.6.0 catalog
-			// and "no matching transformer". Pin the prerelease-inclusive v1 range.
+			// The subscription names exactly one published catalog build (0010
+			// D14). Resource/transformer FQNs embed the catalog version, so the
+			// platform must materialize the same build the fixture module
+			// targets or rendering fails with "no matching transformer".
 			plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
 				Name: "cluster",
 				Type: "kubernetes",
 				Subscriptions: map[string]synth.SubscriptionSpec{
-					catalogPath: {Filter: &synth.FilterSpec{Range: ">=1.0.0-alpha"}},
+					catalogPath: {Version: testCatalogVersion()},
 				},
 			})
 			if err != nil {

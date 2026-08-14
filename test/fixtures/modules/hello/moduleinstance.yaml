@@ -37,7 +37,7 @@ metadata:
 spec:
   module:
     path: opmodel.dev/modules/test/hello@v0
-    version: v0.0.4
+    version: v0.0.5
   serviceAccountName: hello-applier
   values:
     message: "hello from ModuleInstance CR"

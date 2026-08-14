@@ -1,5 +1,5 @@
-# OCIRepository pointing at the hello-web release package artifact pushed by
-# `task release:publish PKG=hello-web`. Uses the kind-internal registry hostname so the
+# OCIRepository pointing at the hello_web release package artifact pushed by
+# `task release:publish PKG=hello_web`. Uses the kind-internal registry hostname so the
 # Flux source-controller pod can reach the local registry.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
@@ -8,7 +8,7 @@ metadata:
   namespace: default
 spec:
   interval: 1m
-  url: oci://opm-registry:5000/opmodel.dev/releases/test/hello-web
+  url: oci://opm-registry:5000/opmodel.dev/releases/test/hello_web
   ref:
     tag: v0.0.1
   insecure: true

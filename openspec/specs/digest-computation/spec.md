@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Config digest computation
 The `internal/status` package MUST provide a function that computes a deterministic SHA-256 digest from `v1alpha1.RawValues`.
@@ -47,3 +47,13 @@ The `internal/status` package MUST provide an `IsNoOp` function that compares tw
 #### Scenario: Empty last applied
 - **WHEN** the last applied digest set has empty strings (first reconcile)
 - **THEN** `IsNoOp` returns false
+
+### Requirement: Source digest formula is a frozen cross-repo contract
+
+`ModuleSourceDigest` SHALL remain exactly `sha256(modulePath + "@" + moduleVersion)` rendered as `sha256:%x` over the two `spec.module` strings, byte-identical to the CLI's `sourceDigest` — the two actors' no-op detection depends on the equality and neither side may change the formula unilaterally. The formula SHALL be pinned by a golden test naming the peer implementation.
+
+#### Scenario: Golden pin
+
+- **WHEN** the digest test runs
+- **THEN** `ModuleSourceDigest` over a fixed coordinate equals the recorded literal digest
+- **AND** the test's comment names the CLI peer that must move in lockstep

@@ -35,7 +35,7 @@ The operator SHALL configure the Kernel from inputs the process already accepts:
 the registry mapping from the `--registry` flag (falling back to `OPM_REGISTRY`)
 via `kernel.WithRegistry`, and a logger bridged to the controller's logging
 backend via `kernel.WithLogger`. The Kernel SHALL use the default OCI-backed
-schema loader resolving `opmodel.dev/core@v0`. The operator MUST NOT introduce a
+schema loader resolving `opmodel.dev/core@v2`. The operator MUST NOT introduce a
 new flag or environment variable for Kernel configuration in this change.
 
 #### Scenario: Registry sourced from existing flag
@@ -53,7 +53,7 @@ than deferring the failure to the first reconcile.
 
 #### Scenario: Schema resolves successfully
 
-- **WHEN** the Kernel is constructed against a reachable registry holding `opmodel.dev/core@v0`
+- **WHEN** the Kernel is constructed against a reachable registry holding `opmodel.dev/core@v2`
 - **THEN** startup completes
 - **AND** the operator logs the resolved core schema version
 
@@ -75,3 +75,23 @@ unchanged; reconciliation behavior MUST remain identical to before this change.
 - **WHEN** the reconcilers are registered with the manager
 - **THEN** each render-bearing reconciler holds a reference to the shared Kernel
 - **AND** existing reconcile behavior (synthesis, match, render, apply, prune, status) is unchanged because no render path reads the Kernel yet
+
+### Requirement: Embedded kernel line and compile semantics
+
+The operator SHALL embed the library at the core-v2 line (v1.0.0-alpha.13 or later): the default schema loader resolves `opmodel.dev/core@v2`, module acquisition verifies declared identity against the fetched coordinate (a mismatch is a typed identity error), and compile SHALL fail — not warn — on unresolved demands: undemandable resources and unhandled traits whose effective `optional` is false. Render warnings SHALL carry only effectively-optional unhandled traits.
+
+#### Scenario: Unresolved demand stalls the instance
+
+- **WHEN** a rendered module demands a resource contract the materialized platform does not provide
+- **THEN** compile fails and the ModuleInstance stalls with reason RenderFailed
+- **AND** no partial render is applied
+
+#### Scenario: Identity mismatch at module acquire
+
+- **WHEN** a published module's declared metadata disagrees with the coordinate it was fetched by
+- **THEN** the render fails with the typed identity error naming both values
+
+#### Scenario: Optional trait still degrades to a warning
+
+- **WHEN** an unhandled trait's effective `optional` is true
+- **THEN** the render succeeds and the warning channel carries the trait

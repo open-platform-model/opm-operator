@@ -3,6 +3,7 @@ package reconcile
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"k8s.io/client-go/tools/events"
@@ -111,6 +112,9 @@ func TestClassifyRenderError(t *testing.T) {
 			es := drainEvents(rec)
 			if countEventsWithReason(es, tt.wantReason) != 1 {
 				t.Errorf("events %v carry reason %q %d time(s), want 1", es, tt.wantReason, countEventsWithReason(es, tt.wantReason))
+			}
+			if len(es) != 1 || !strings.Contains(es[0], tt.err.Error()) {
+				t.Errorf("events %v, want exactly one carrying the error message %q", es, tt.err.Error())
 			}
 		})
 	}

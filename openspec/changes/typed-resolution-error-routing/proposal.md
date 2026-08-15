@@ -1,8 +1,8 @@
 # Proposal: typed-resolution-error-routing
 
 > Follow-up to `operator-library-retarget` (recorded there as a follow-up candidate, task 5.3 /
-> design § "New failure classes ride existing routing"). Draft — scaffolded ahead of
-> implementation; work starts after the retarget release ships.
+> design § "New failure classes ride existing routing"). The ordering gate is satisfied:
+> `v1.0.0-alpha.9` is tagged and both prerequisite changes are complete.
 
 ## Why
 
@@ -29,19 +29,19 @@ change is the recorded home for it.
 
 ## What Changes
 
-- **`internal/reconcile/moduleinstance.go`**: `classifyRenderError` gains typed checks
-  (`errors.AsType`) ahead of the string fallback: `oerrors.IdentityError` and
-  `*oerrors.UnresolvedDemandsError` route to `ResolutionFailedReason`. The existing string match
-  stays as the fallback for loader-path errors that carry no type.
-- **`internal/reconcile/modulepackage.go`**: `isResolutionErrorMsg` (the ModulePackage sibling,
-  string-only today) is aligned with the same typed checks, or the divergence is recorded with a
-  reason if the package path cannot see the typed errors.
+- **`internal/reconcile`**: a shared typed helper (design D1) checks
+  `errors.AsType[oerrors.IdentityError]` (value type — no star) and
+  `errors.AsType[*oerrors.UnresolvedDemandsError]`; both `classifyRenderError`
+  (moduleinstance.go) and `renderErrorReason` (modulepackage.go) call it ahead of their string
+  fallbacks, which stay for loader-path errors that carry no type. Both render paths wrap with
+  `%w` end to end, so the types are visible on both; `IdentityError` is unreachable on the
+  package path (no registry acquire) but the shared helper keeps the paths from drifting.
 - **Tests**: unit coverage for both typed classifications (bare `IdentityError`, wrapped/joined
   `UnresolvedDemandsError`) plus a guard that `ErrPlatformNotReady` and plain render errors keep
   their current routing.
-- **Spec delta**: authored against the capability that owns render-error classification (to be
-  identified during implementation — `status-conditions` only defines the constants; the routing
-  behavior lives with the reconcile-loop specs).
+- **Spec deltas**: `module-instance-synthesis` (MODIFIED: Status reporting) and
+  `modulepackage-kernel-rendering` (ADDED requirement) — see design D2 for why the proposal's
+  earlier candidates were wrong.
 
 ## Capabilities
 
@@ -51,9 +51,11 @@ change is the recorded home for it.
 
 ### Modified Capabilities
 
-- to be pinned during implementation: the capability owning `classifyRenderError`'s
-  reason-routing contract (candidates: `reconcile-loop-assembly`, `modulepackage-reconcile-loop`;
-  `status-conditions` is unchanged — no new reason constants).
+- `module-instance-synthesis` — the Status reporting requirement's `ResolutionFailed`
+  boundary widens to cover identity mismatch and unresolved platform demands.
+- `modulepackage-kernel-rendering` — new requirement: unresolved platform demands on the
+  package render path classify as `ResolutionFailed`.
+- (`status-conditions` is unchanged — no new reason constants.)
 
 ## Impact
 
@@ -63,6 +65,7 @@ change is the recorded home for it.
   specifically will see these two classes move.
 - **Ordering**: lands only after the `operator-library-retarget` + `examples-fleet-core-v2`
   release is cut (`v1.0.0-alpha.9`); this change deliberately did not ride that crossing.
+  That gate is now satisfied — `v1.0.0-alpha.9` is tagged.
 - **Not included**: the second retarget follow-up — wiring `OPM_TEST_REGISTRY_FORCE` (or a
   GHCR-tolerant helper) so the registry-backed integration tier stops silently skipping in CI —
   is a test-infrastructure concern with no shared code surface; it gets its own change.

@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	cuelang.org/go v0.17.1
 	github.com/fluxcd/cli-utils v1.2.2
-	github.com/fluxcd/pkg/apis/meta v1.30.1
+	github.com/fluxcd/pkg/apis/meta v1.31.0
 	github.com/fluxcd/pkg/runtime v0.110.1
 	github.com/fluxcd/pkg/ssa v0.76.1
 	github.com/fluxcd/source-controller/api v1.9.1

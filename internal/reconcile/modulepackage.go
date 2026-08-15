@@ -393,7 +393,7 @@ func renderErrorReason(err error) string {
 	switch {
 	case errors.Is(err, render.ErrUnsupportedKind):
 		return status.UnsupportedKindReason
-	case isResolutionErrorMsg(err):
+	case isTypedResolutionError(err), isResolutionErrorMsg(err):
 		return status.ResolutionFailedReason
 	default:
 		return status.RenderFailedReason

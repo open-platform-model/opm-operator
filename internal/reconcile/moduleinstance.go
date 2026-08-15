@@ -830,7 +830,7 @@ func classifyRenderError(
 		return FailedTransient, err.Error()
 	}
 	reason := status.RenderFailedReason
-	if isResolutionError(err) {
+	if isTypedResolutionError(err) || isResolutionError(err) {
 		reason = status.ResolutionFailedReason
 	}
 	recorder.Eventf(mi, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)

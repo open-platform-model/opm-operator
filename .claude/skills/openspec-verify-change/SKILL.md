@@ -61,6 +61,11 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      - Add CRITICAL issue for each incomplete task
      - Recommendation: "Complete task: <description>" or "Mark as done if already implemented"
 
+   **Task Hygiene**:
+   - Flag any task that is a delivery operation rather than implementation or verification: committing, pushing, branching, opening/merging PRs, tagging, cutting releases, commit-message or PR-body hygiene checks
+   - Add WARNING: "Delivery-operation task: <description> — remove it rather than checking it off; delivery happens after implementation under the repo's normal git workflow"
+   - Exception: skip this check when the change's stated deliverable is itself a release or publishing operation — there those steps are the implementation
+
    **Spec Coverage**:
    - If delta specs exist in `openspec/changes/<name>/specs/`:
      - Extract all requirements (marked with "### Requirement:")

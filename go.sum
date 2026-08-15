@@ -49,10 +49,10 @@ github.com/fluxcd/cli-utils v1.2.2 h1:adDOmwE+LSwTzmYUaoEFPblruOuaQEKAg1ZNTmPJOb
 github.com/fluxcd/cli-utils v1.2.2/go.mod h1:FsghNGY+3Sr70c0FOB7I5So0kzoYVdvQ8GTid3XXVWM=
 github.com/fluxcd/pkg/apis/acl v0.10.0 h1:KPfAmELNvtvaz8wixnm/MYXqa+MJf7ntVVMUU93Aenk=
 github.com/fluxcd/pkg/apis/acl v0.10.0/go.mod h1:a87i2A7AlFO5N2J8CxtzaUCCDmuLLWOHwkKu3eJF5fY=
-github.com/fluxcd/pkg/apis/meta v1.30.1 h1:TRqdvb/zo9h9Ig10xHxV7jMilG+e1jOv3djI00GFr9g=
-github.com/fluxcd/pkg/apis/meta v1.30.1/go.mod h1:Gx+YRq26a+mTbCjotSXC7/6kSSyo0zXQ8JnsEXf2vVk=
-github.com/fluxcd/pkg/runtime v0.110.1 h1:O7eVI/R40MQMQpi6cAlWsNka2hZ0YfMXzETmui9D06c=
-github.com/fluxcd/pkg/runtime v0.110.1/go.mod h1:h5HDYgi4RXHGZD/5TCdy/47Vdlplf3/KM6U8aEDcagA=
+github.com/fluxcd/pkg/apis/meta v1.31.0 h1:5niQvTirK0wTE0TfRjnUSdmu6GTSbAFzrdnovtZ9rJ8=
+github.com/fluxcd/pkg/apis/meta v1.31.0/go.mod h1:Gx+YRq26a+mTbCjotSXC7/6kSSyo0zXQ8JnsEXf2vVk=
+github.com/fluxcd/pkg/runtime v0.111.0 h1:nbmFuYstyN2a1SDW0SZU5dG9+9x+yDP4A39kKQKjj2A=
+github.com/fluxcd/pkg/runtime v0.111.0/go.mod h1:YUljTAXVaeWG+GLnXNZopFFMZstUoTxJs7+vl91OV58=
 github.com/fluxcd/pkg/ssa v0.76.1 h1:IckNphuK3LuTRNkdRZlXEri7ZFXPc1Qj39TUHwOspv0=
 github.com/fluxcd/pkg/ssa v0.76.1/go.mod h1:bNImnO/GHtjjgp7BtGXVk181CoZbH9rEVEJfOwg1Xo8=
 github.com/fluxcd/source-controller/api v1.9.1 h1:04Elx6/iFwgNOmrymfetaDfFFBqw5/LfoiTgyeLlrqQ=

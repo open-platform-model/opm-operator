@@ -9,7 +9,7 @@ require (
 	github.com/fluxcd/pkg/runtime v0.111.0
 	github.com/fluxcd/pkg/ssa v0.76.1
 	github.com/fluxcd/source-controller/api v1.9.4
-	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/logr v1.4.4
 	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
 	github.com/open-platform-model/library v1.0.0-alpha.13

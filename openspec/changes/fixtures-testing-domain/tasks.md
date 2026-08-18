@@ -34,6 +34,13 @@ the deliverable**, which it is here. The publish steps below are in scope by tha
 - [x] 4.1 Add the testing domain to `release.yml`, `test-e2e.yml`, `.tasks/module.yaml`; export
       `OPM_REGISTRY` alongside `CUE_REGISTRY`.
 - [x] 4.2 Install the pinned `opm` in both workflows (release.yml also needed a `setup-go` step).
+- [x] 4.3 Add `publish-fixtures.yml` — `workflow_dispatch` plus push-to-main on the fixture paths. The
+      release and e2e workflows cannot bootstrap a NEW coordinate: the release versions do not exist
+      under the new path until a release is cut, and the registry-backed specs resolve from GHCR, so
+      they fail until then. Dispatch is that path. (The cli has the same workflow for the same reason.)
+- [x] 4.4 Retry the publish on GHCR's secondary write rate limit. Observed on the fleet's first publish
+      under new coordinates: two modules published, the third got 403 "exceeded a secondary rate limit"
+      and the fourth failed loading the core schema as a knock-on. Backs off 20/40/60s, up to 4 tries.
 
 ## 5. Test guard
 

@@ -52,6 +52,10 @@ Reachability is *not* the motivation — these have been anonymously pullable fr
   `opm module version set`, which is offline and surgical, so the declared version and the tag agree
   for the acquire-time identity check (0010 D11). `opm module publish --version` cannot serve here: it
   *asserts* a declared version rather than filling one, and ours carries a default.
+- **A dispatchable `publish-fixtures.yml` is added**, mirroring the cli's. Neither the release nor the
+  e2e workflow can bootstrap a new coordinate, and the registry-backed specs resolve from GHCR, so a
+  relocation needs a publish path that does not wait for a release. The publish loop also retries
+  GHCR's secondary write rate limit, which the fleet's first publish under new coordinates hit.
 - **The integration skip gate is fixed.** It tested `strings.Contains(reg, "opmodel.dev=localhost")`,
   which also matches `testing.opmodel.dev=localhost` — so it proved nothing about the fixture's
   namespace — and after the move it would have skipped the registry-backed specs in every CI run

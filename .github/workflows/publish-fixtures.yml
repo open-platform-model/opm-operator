@@ -1,0 +1,68 @@
+name: Publish Fixtures
+
+# Publishes the example test modules to GHCR outside the release train.
+#
+# The release workflow publishes them on release, and the e2e workflow publishes
+# per-commit pre-release tags. Neither can BOOTSTRAP a new coordinate: when the
+# fixtures' module paths change, the release versions do not exist under the new
+# path until a release is cut, and every consumer that pins them — including the
+# registry-backed integration specs, which resolve from GHCR — fails until then.
+#
+# workflow_dispatch is that bootstrap and repair path: dispatch against a branch
+# to publish the release versions before the change merges. Publishing is
+# idempotent (an already-published tag is treated as success), so re-running is
+# safe.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'test/fixtures/modules/**'
+      - '.tasks/examples.yaml'
+      - '.github/workflows/publish-fixtures.yml'
+
+permissions:
+  contents: read
+
+env:
+  CUE_VERSION: 'v0.17.1'
+  # Both domains: the fixtures are on testing.opmodel.dev, their deps on opmodel.dev.
+  CUE_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+  OPM_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+
+jobs:
+  publish:
+    name: Publish fixture modules
+    # Forks have no access to GITHUB_TOKEN with packages:write — skip cleanly.
+    if: github.event.repository.fork == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@a93fa358375740cd8b0078f76355512b9208acb1 # v1.0.1
+        with:
+          version: ${{ env.CUE_VERSION }}
+
+      - name: Install Task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install opm
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.11
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish example modules
+        run: task examples:publish

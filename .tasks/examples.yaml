@@ -121,7 +121,25 @@ tasks:
             fi
           fi
           echo "==> publishing ${name} @ ${tag}"
-          if out=$("$opm" module publish "$srcdir" 2>&1); then
+          # GHCR applies a SECONDARY rate limit to rapid writes, distinct from the
+          # REST quota, and answers 403 "exceeded a secondary rate limit". It is
+          # reached in practice: this loop pushes the whole fleet in seconds, and
+          # creating new packages counts hardest. Back off and retry rather than
+          # failing the release for a throttle. Measured 2026-08-18 on the fleet's
+          # first publish under new coordinates.
+          out=""
+          ok=1
+          for attempt in 1 2 3 4; do
+            if out=$("$opm" module publish "$srcdir" 2>&1); then
+              ok=0
+              break
+            fi
+            printf '%s' "$out" | grep -qiE 'secondary rate limit|429|too many requests' || break
+            delay=$((attempt * 20))
+            echo "    rate-limited by the registry; retrying in ${delay}s (attempt ${attempt}/4)" >&2
+            sleep "$delay"
+          done
+          if [ "$ok" -eq 0 ]; then
             echo "$out"
           # An already-published tag is always a refusal (enhancement 0011 D15);
           # publish never skips, so idempotency across releases is decided here.

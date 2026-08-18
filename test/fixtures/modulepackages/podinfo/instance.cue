@@ -7,7 +7,7 @@ package podinfo
 
 import (
 	core "opmodel.dev/core@v2"
-	podinfo "opmodel.dev/modules/test/podinfo@v0"
+	podinfo "testing.opmodel.dev/modules/operator/podinfo@v0"
 )
 
 core.#ModuleInstance

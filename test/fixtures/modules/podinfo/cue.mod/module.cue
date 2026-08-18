@@ -1,4 +1,4 @@
-module: "opmodel.dev/modules/test/podinfo@v0"
+module: "testing.opmodel.dev/modules/operator/podinfo@v0"
 language: {
 	version: "v0.17.0"
 }

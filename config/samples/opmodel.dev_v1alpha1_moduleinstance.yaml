@@ -8,7 +8,7 @@ metadata:
   namespace: default
 spec:
   module:
-    path: opmodel.dev/modules/test/hello@v0
+    path: testing.opmodel.dev/modules/operator/hello@v0
     version: v0.0.5
   values:
     message: "hello from local dev"

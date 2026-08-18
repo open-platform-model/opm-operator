@@ -182,12 +182,24 @@ jobs:
         # cue mod publish authenticates to ghcr via the docker config credentials.
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
 
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install opm
+        # Fixtures publish through the cli's gated pipeline, so a fixture that
+        # violates a publish gate fails the release instead of shipping.
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.11
+
       - name: Publish example modules to GHCR (idempotent)
         env:
-          # opmodel.dev resolves to ghcr.io/open-platform-model, matching how
-          # core/catalog publish. Each module is published at its OWN declared
-          # version; versions already present are treated as success.
-          CUE_REGISTRY: 'opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+          # Both domains resolve to ghcr.io/open-platform-model: the fixtures live
+          # on testing.opmodel.dev, their deps (core, catalogs) on opmodel.dev.
+          # Each module is published at its OWN declared version (read from its
+          # identity package); versions already present are treated as success.
+          CUE_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+          OPM_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)

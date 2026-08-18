@@ -1,4 +1,4 @@
-module: "opmodel.dev/modules/test/redis@v0"
+module: "testing.opmodel.dev/modules/operator/redis@v0"
 language: {
 	version: "v0.17.0"
 }

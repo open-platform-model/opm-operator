@@ -8,10 +8,11 @@ name: Publish Fixtures
 # path until a release is cut, and every consumer that pins them — including the
 # registry-backed integration specs, which resolve from GHCR — fails until then.
 #
-# workflow_dispatch is that bootstrap and repair path: dispatch against a branch
-# to publish the release versions before the change merges. Publishing is
-# idempotent (an already-published tag is treated as success), so re-running is
-# safe.
+# workflow_dispatch is the repair path — re-publish without waiting for a release.
+# NOTE: GitHub only offers workflow_dispatch for workflows already present on the
+# DEFAULT branch, so it cannot bootstrap the very change that introduces it; the
+# push trigger below covers that case on merge. Publishing is idempotent (an
+# already-published tag is treated as success), so re-running is always safe.
 on:
   workflow_dispatch:
   push:

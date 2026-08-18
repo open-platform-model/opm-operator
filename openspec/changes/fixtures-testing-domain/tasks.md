@@ -64,8 +64,13 @@ the deliverable**, which it is here. The publish steps below are in scope by tha
 - [x] 7.2 Publish all four to a local registry under the new coordinates; re-run is a no-op.
 - [x] 7.3 Prerelease publish: declared version equals the tag on every fixture; working tree unchanged.
 - [x] 7.4 Reconcile integration tier runs with zero registry-mapping skips.
-- [ ] 7.5 Merge → release workflow publishes to GHCR; confirm the manifests resolve.
-- [ ] 7.6 `make test-e2e` against a kind cluster (needs the fixtures on GHCR or a local publish).
+- [x] 7.5 Release versions on GHCR. `workflow_dispatch` cannot bootstrap (the workflow must already
+      exist on the default branch), so the four were published from a developer machine with explicit
+      user approval — the one-time exception; all future publishes are CI's. All four manifests
+      confirmed resolving anonymously (200).
+- [x] 7.6 E2E green in CI against the GHCR fixtures (test-e2e.yml: kind + Flux, pre-release publish,
+      pin, full lifecycle — 7m14s). The registry-backed integration tier also passes in plain CI with
+      no local registry, for the first time.
 
 ## 8. Cleanup — after everything above is green
 

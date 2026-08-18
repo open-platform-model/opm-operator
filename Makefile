@@ -210,6 +210,10 @@ REGISTRY_PORT ?= 5000
 REGISTRY_IMAGE ?= registry:2
 CUE_REGISTRY ?= testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works
 TEST_MODULE_DIR ?= test/fixtures/modules/hello
+# Publishing goes through the cli's gated pipeline; the version is read from the
+# fixture's own identity package, never passed in (the previous hardcoded v0.0.1
+# had drifted from the declared version and failed the acquire-time identity check).
+OPM ?= opm
 
 .PHONY: start-registry
 start-registry: ## Start the local OCI registry container if not running.
@@ -235,7 +239,7 @@ connect-registry: ## Connect the local registry to the Kind Docker network.
 # testing.opmodel.dev cause `cue mod publish` to 401 against a non-local host.
 publish-test-module: PUBLISH_REGISTRY := testing.opmodel.dev=localhost:$(REGISTRY_PORT)+insecure,opmodel.dev=localhost:$(REGISTRY_PORT)+insecure,registry.cue.works
 publish-test-module: ## Publish the test hello module to the local registry.
-	cd $(TEST_MODULE_DIR) && CUE_REGISTRY="$(PUBLISH_REGISTRY)" cue mod tidy && CUE_REGISTRY="$(PUBLISH_REGISTRY)" cue mod publish v0.0.1
+	cd $(TEST_MODULE_DIR) && CUE_REGISTRY="$(PUBLISH_REGISTRY)" cue mod tidy && CUE_REGISTRY="$(PUBLISH_REGISTRY)" OPM_REGISTRY="$(PUBLISH_REGISTRY)" $(OPM) module publish
 
 ##@ Flux
 

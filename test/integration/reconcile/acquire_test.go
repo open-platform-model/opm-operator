@@ -56,7 +56,7 @@ var _ = Describe("Module Acquisition Integration", func() {
 			before := countAcquireTempDirs()
 
 			mod, err := moduleacquire.Acquire(ctx, k,
-				"opmodel.dev/modules/test/hello@v0", "v0.0.5", registry)
+				"testing.opmodel.dev/modules/operator/hello@v0", "v0.0.5", registry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mod).NotTo(BeNil())
 			Expect(mod.Metadata).NotTo(BeNil())
@@ -69,7 +69,7 @@ var _ = Describe("Module Acquisition Integration", func() {
 			// module with its staged source and preserves it; this pins that fix.
 			// On the core-v2 identity shape modulePath is the full
 			// major-suffixed module address.
-			Expect(mod.Metadata.ModulePath).To(Equal("opmodel.dev/modules/test/hello@v0"))
+			Expect(mod.Metadata.ModulePath).To(Equal("testing.opmodel.dev/modules/operator/hello@v0"))
 
 			// Acquisition no longer stages a temp dir (the library loads the
 			// module in memory); assert none appears, as a guard.
@@ -82,7 +82,7 @@ var _ = Describe("Module Acquisition Integration", func() {
 			before := countAcquireTempDirs()
 
 			mod, err := moduleacquire.Acquire(ctx, k,
-				"opmodel.dev/modules/test/does-not-exist@v0", "v9.9.9", registry)
+				"testing.opmodel.dev/modules/operator/does-not-exist@v0", "v9.9.9", registry)
 			Expect(err).To(HaveOccurred())
 			Expect(mod).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("acquiring module"))

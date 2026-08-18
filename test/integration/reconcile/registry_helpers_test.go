@@ -42,34 +42,38 @@ func testCatalogVersion() string {
 	return "2.0.0-alpha.3"
 }
 
-// skipIfNoTestRegistry skips the current spec when the fixture registry is
-// not available. Tests that load the fixture module (opmodel.dev/modules/test/hello)
-// require a registry serving the module — the fixture is not published to ghcr.
+// skipIfNoTestRegistry skips the current spec when no registry is configured to
+// serve the fixture modules (testing.opmodel.dev/modules/operator/*) and their
+// deps (opmodel.dev/core, opmodel.dev/catalogs/opm).
 //
-// Two mappings satisfy it:
-//   - full local: `opmodel.dev=localhost:5000+insecure` with the fixture AND
-//     its deps (core, catalogs/opm) all published locally
-//     (`task registry:start && task module:publish` plus the prerequisites
-//     block in .tasks/module.yaml) — the historical `task dev:test:local` flow;
-//   - mixed (CI): `opmodel.dev/modules/test=localhost:5000+insecure` for the
-//     fixture with core/catalogs still resolving from ghcr — only the fixture
-//     itself needs publishing (`task module:publish`), no sibling repos.
+// The fixtures are published to GHCR, so the ordinary GHCR mapping satisfies
+// this and these specs run in plain CI with no local registry — the local
+// registry is only needed to iterate on an unpublished fixture. The predicate is
+// therefore "is a mapping configured at all", not "does it point at localhost".
 //
-// Also needs a container tool (docker or podman) on PATH. Under
+// It deliberately does NOT test for a localhost mapping any more. The former
+// check was wrong twice over: `strings.Contains(reg, "opmodel.dev=localhost")`
+// also matches `testing.opmodel.dev=localhost`, so it proved nothing about the
+// fixture's own namespace; and once the fixtures moved to a published domain it
+// would have skipped these specs in every CI run while claiming the fixtures
+// were unavailable.
+//
+// A local mapping additionally requires a container tool to be running the
+// registry, so that check is kept but scoped to the local case. Under
 // OPM_TEST_REGISTRY_FORCE=1 a missing prerequisite fails instead of skipping.
 func skipIfNoTestRegistry() {
 	reg := os.Getenv("CUE_REGISTRY")
 	if reg == "" {
-		registrySkip("CUE_REGISTRY not set — run `task registry:start && task module:publish` first")
+		registrySkip("CUE_REGISTRY not set — export the canonical GHCR mapping, " +
+			"or run `task registry:start && task module:publish` for a local fixture")
 	}
-	if !strings.Contains(reg, "opmodel.dev=localhost") &&
-		!strings.Contains(reg, "opmodel.dev/modules/test=localhost") {
-		registrySkip("CUE_REGISTRY maps neither opmodel.dev nor opmodel.dev/modules/test to localhost — " +
-			"fixture module only available on a local registry (use task dev:test:local, " +
-			"or the mixed mapping with `task module:publish`)")
+	if !strings.Contains(reg, "opmodel.dev") {
+		registrySkip("CUE_REGISTRY maps no opmodel.dev domain — cannot resolve the " +
+			"fixture module or its core/catalog deps")
 	}
-	if !containerToolAvailable() {
-		registrySkip("no container tool (docker/podman) on PATH — cannot validate local registry")
+	if strings.Contains(reg, "localhost") && !containerToolAvailable() {
+		registrySkip("CUE_REGISTRY maps a localhost registry but no container tool " +
+			"(docker/podman) is on PATH — cannot validate it")
 	}
 }
 

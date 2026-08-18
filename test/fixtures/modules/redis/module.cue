@@ -7,16 +7,27 @@
 package redis
 
 import (
+	"strings"
+
 	m "opmodel.dev/core@v2"
 	res "opmodel.dev/catalogs/opm/resources/v1beta1"
+
+	id "testing.opmodel.dev/modules/operator/redis/identity"
 )
 
 m.#Module
 
+// Module metadata — modulePath and version are the identity package's values,
+// and name is the path's leaf (enhancements 0010 D8, 0011 D12). Edit
+// identity/identity.cue, not this block.
 metadata: {
-	name:        "redis"
-	modulePath:  "opmodel.dev/modules/test/redis@v0"
-	version:     "0.1.7"
+	_segments:  strings.Split(strings.SplitN(id.ModulePath, "@", 2)[0], "/")
+	name:       _segments[len(_segments)-1]
+	modulePath: id.ModulePath
+	// Interpolated rather than referenced so the value is concrete before
+	// defaults are finalized — the registry loader's shape gate requires a
+	// concrete metadata.version, and id.Version is a defaulted disjunction.
+	version:     "\(id.Version)"
 	description: "Stateful example — StatefulSet + headless Service + PVC with a redis-cli exec readiness probe"
 }
 

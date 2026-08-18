@@ -9,7 +9,8 @@ env:
   REGISTRY: ghcr.io
   # opmodel.dev resolves to ghcr.io/open-platform-model, matching how
   # core/catalog/examples publish and how the controller resolves by default.
-  CUE_REGISTRY: 'opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+  CUE_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+  OPM_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
   # CUE CLI used to publish the example modules. Matches release.yml.
   CUE_VERSION: 'v0.17.1'
   # Hard-fail gating for the live-Flux e2e specs: with this marker set, a
@@ -92,6 +93,9 @@ jobs:
           printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$auth" > "$RUNNER_TEMP/ghcr/config.json"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/ghcr" >> "$GITHUB_ENV"
           echo "OPERATOR_DOCKER_CONFIG=$RUNNER_TEMP/ghcr/config.json" >> "$GITHUB_ENV"
+
+      - name: Install opm
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.11
 
       - name: Publish example modules to GHCR (pre-release tags)
         if: steps.cap.outputs.can_publish == 'true'

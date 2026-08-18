@@ -15,7 +15,7 @@ package hello
 
 import (
 	core "opmodel.dev/core@v2"
-	hello "opmodel.dev/modules/test/hello@v0"
+	hello "testing.opmodel.dev/modules/operator/hello@v0"
 )
 
 core.#ModuleInstance

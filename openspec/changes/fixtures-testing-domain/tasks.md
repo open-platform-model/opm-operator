@@ -74,6 +74,6 @@ the deliverable**, which it is here. The publish steps below are in scope by tha
 
 ## 8. Cleanup — after everything above is green
 
-- [ ] 8.1 Delete the five `opmodel.dev/modules/test/*` GHCR packages (~377 tags, incl. the orphaned
+- [x] 8.1 Delete the five `opmodel.dev/modules/test/*` GHCR packages (~377 tags, incl. the orphaned
       `hello-web`) and the two pre-2026 `testing.opmodel.dev/{modules,releases}/hello` leftovers.
       Org-admin, per-package, **irreversible** — never before 7.5 is confirmed.

@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.0.0-alpha.12](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.11...v1.0.0-alpha.12) (2026-08-19)
+
+
+### Features
+
+* **fixtures:** move test fixtures to testing.opmodel.dev and publish them gated ([#90](https://github.com/open-platform-model/opm-operator/issues/90)) ([fc5c3d0](https://github.com/open-platform-model/opm-operator/commit/fc5c3d020c00ccc68746a6441c1e7bd01d2c4b4a))
+
+
+### Bug Fixes
+
+* **reconcile:** route typed resolution errors to ResolutionFailed ([#84](https://github.com/open-platform-model/opm-operator/issues/84)) ([723d0a3](https://github.com/open-platform-model/opm-operator/commit/723d0a3c9d15740a88ea2df174b99ed433ec2596))
+
+
+### Documentation
+
+* **openspec:** archive library-retarget and examples-fleet changes ([#86](https://github.com/open-platform-model/opm-operator/issues/86)) ([b60636e](https://github.com/open-platform-model/opm-operator/commit/b60636e0850b5e93f9d715606d0f919a46d9f3d1))
+* **openspec:** finish planning typed-resolution-error-routing ([23c8cdb](https://github.com/open-platform-model/opm-operator/commit/23c8cdbfdc8ddc474bb6c565c696a3e5d1625f0a))
+
+
+### Miscellaneous Chores
+
+* **fixtures:** mark the GHCR cleanup task complete ([#91](https://github.com/open-platform-model/opm-operator/issues/91)) ([53751e6](https://github.com/open-platform-model/opm-operator/commit/53751e63a87990fc7ccf82c13e2685ca8091324e))
+* **openspec:** deny delivery-operation tasks in tasks.md ([#85](https://github.com/open-platform-model/opm-operator/issues/85)) ([9a10b7f](https://github.com/open-platform-model/opm-operator/commit/9a10b7fc7852a70be501bea5edfcb5237ddf8667))
+
 ## [1.0.0-alpha.11](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.10...v1.0.0-alpha.11) (2026-08-14)
 
 

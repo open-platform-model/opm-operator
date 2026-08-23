@@ -15,6 +15,11 @@ spec:
     opmodel.dev/catalogs/opm@v2:
       # Load-bearing pin: applied verbatim by the e2e specs, and kept aligned
       # with the CLI's DefaultPlatformTemplate seed and the library's
-      # opm_platform fixture (three pins, one value). Bump as an ordinary
-      # fixture update when the catalog releases.
-      version: "2.0.0-alpha.3"
+      # opm_platform fixture. Bump as an ordinary fixture update when the
+      # catalog releases.
+      version: "2.0.0-alpha.5"
+    opmodel.dev/catalogs/k8s@v1:
+      # Second subscription mirroring the CLI's seeded default (seed-both-
+      # catalogs): the raw passthrough catalog, same commit as the opm@v2
+      # bump above.
+      version: "1.0.0-alpha.1"

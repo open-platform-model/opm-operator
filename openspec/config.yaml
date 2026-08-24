@@ -91,6 +91,7 @@ rules:
     - State whether this is MAJOR/MINOR/PATCH per SemVer.
     - Complexity additions MUST include justification (Principle VII).
     - Scope MUST be small enough to implement in a short session (Principle VIII).
+    - "If this change implements decisions from an enhancement in the sibling enhancements/ repo, create enhancement.yaml in this change directory declaring it (implements: [{enhancement: \"NNNN\", decisions: [D1, ...], resolves: []}]). Write it at creation time, while the enhancement is in context; it is what makes archive-time delivery logging mechanical."
   
   design:
     - "Focus: HOW we'll implement it technically"
@@ -130,3 +131,10 @@ rules:
       happens afterwards under the repo's normal git workflow and needs no spelling out.
       Sole exception: a change whose stated deliverable is itself a release or publishing
       operation; there those steps ARE the implementation."
+
+# Post-archive hook: served to the archiving agent by
+# `openspec instructions archive --change <name> --json` as operationGuidance.
+operations:
+  archive:
+    guidance:
+      - "If this change directory contains enhancement.yaml, finish the archive by logging the landing: from the workspace root run `task enhancements:delivery:log FROM=<archived-change-path> SUMMARY=\"<one line: what landed>\"`. It appends a CUE-validated entry to each declared enhancement's delivery.yaml; confirm it printed 'logged' for every declared enhancement."

@@ -12,7 +12,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
-	github.com/open-platform-model/library v1.0.0-alpha.13
+	github.com/open-platform-model/library v1.0.0-alpha.14
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/time v0.15.0

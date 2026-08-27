@@ -4,35 +4,26 @@ version: '3'
 #
 # Modules under test/fixtures/modules/<m>/ are published as CUE modules to
 # testing.opmodel.dev/modules/operator/<m> at each module's OWN declared version,
-# independent of the operator's release version. Publishing is idempotent: a
-# version already present in the registry is treated as success (CUE module
-# versions are immutable). On release, CI runs `examples:publish` against GHCR,
-# then `examples:bundle` and uploads the manifests to the GitHub Release.
+# independent of the operator's release version. The version lives in
+# identity/identity.cue (core #IdentityPackage; enhancements 0010 D38 / 0011 D12),
+# never in module.cue.
 #
-# THE VERSION LIVES IN identity/identity.cue, NOT module.cue. Each fixture is a
-# publishable artifact whose identity subpackage is the single source of its path
-# and version (core #IdentityPackage; enhancements 0010 D38 / 0011 D12), and whose
-# metadata derives from it. The former contract here — "the FIRST `version:`
-# string literal in module.cue" read with grep — is RETIRED: under a derived
-# metadata block there is no version literal in module.cue at all, and the grep
-# would silently report nothing and publish nothing. Read it with
-# `cue eval ./identity --out text -e Version` instead; that needs no registry
-# access, matching what the grep was chosen for.
-#
-# Publishing goes through `opm module publish`, not `cue mod publish`, so every
-# publish gate runs over the fixtures — the same pipeline the cli's own fixtures
-# and the official templates use. A fixture that violates a gate fails CI instead
-# of shipping. The fixtures live on the testing domain because `gateNamespace`
-# refuses a nested path under opmodel.dev outright.
+# Publishing, seeding and the publish gates live in hack/fixtures.sh (one script,
+# identical in cli and opm-operator); these tasks are thin wrappers plus the
+# operator-only pieces: pinning moduleinstance.yaml / modulepackage / sample
+# manifests and bundling release assets. Publishing is idempotent: a version
+# already present in the registry is treated as success (CUE module versions are
+# immutable). On release, CI runs `examples:publish` against GHCR, then
+# `examples:bundle` and uploads the manifests to the GitHub Release. PR CI seeds a
+# job-local registry from the tree instead (`hack/fixtures.sh seed`).
 
 vars:
   MODULES_DIR: '{{.MODULES_DIR | default "test/fixtures/modules"}}'
   RELEASES_DIR: '{{.RELEASES_DIR | default "test/fixtures/modulepackages"}}'
   DIST_DIR: '{{.DIST_DIR | default "dist/examples"}}'
   # GHCR mapping. Both domains must map: the fixtures are on testing.opmodel.dev,
-  # their deps (core, catalogs) on opmodel.dev. CI sets CUE_REGISTRY in the
-  # environment; for local publishing pass
-  # CUE_REGISTRY=testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,...
+  # their deps (core, catalogs) on opmodel.dev. For a local publish pass the
+  # MIXED_CUE_REGISTRY mapping (root Taskfile.yml) as CUE_REGISTRY.
   GHCR_CUE_REGISTRY: '{{.GHCR_CUE_REGISTRY | default "testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works"}}'
   # `opm` resolves --registry > OPM_REGISTRY > ~/.opm/config.cue and never reads
   # CUE_REGISTRY, so both are exported wherever it runs.
@@ -44,6 +35,11 @@ tasks:
     cmds:
       - find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort
 
+  pins:
+    desc: 'Print each example module''s declared coordinate (<path>=<version>) from its identity package'
+    cmds:
+      - FIXTURES_DIR={{.MODULES_DIR}} hack/fixtures.sh pins
+
   version:
     desc: 'Print a module''s declared semver (MODULE_DIR=test/fixtures/modules/<m>)'
     requires:
@@ -51,139 +47,67 @@ tasks:
     cmds:
       - cue eval {{.MODULE_DIR}}/identity --out text -e Version
 
+  check:
+    desc: 'Run every publish gate over the example modules (dry run against GHCR) and enforce changed-implies-bumped against BASE_REF (default origin/main)'
+    cmds:
+      - FIXTURES_DIR={{.MODULES_DIR}} OPM_BIN={{.OPM}} hack/fixtures.sh check
+
+  seed:
+    desc: 'Publish the tree''s example modules into the LOCAL registry CUE_REGISTRY maps testing.opmodel.dev to (PR CI and local iteration; refuses a ghcr.io mapping)'
+    cmds:
+      - FIXTURES_DIR={{.MODULES_DIR}} OPM_BIN={{.OPM}} CUE_REGISTRY='{{.CUE_REGISTRY}}' hack/fixtures.sh seed
+
   publish:
     desc: 'Publish each example module at its declared version if absent (idempotent). SINCE=<git-ref> limits to modules changed since that ref. PRERELEASE=<id> appends a SemVer pre-release segment (e.g. e2e.gabc1234) so the tag never claims the real release version.'
     vars:
       PUBLISH_REGISTRY: '{{.CUE_REGISTRY | default .GHCR_CUE_REGISTRY}}'
-      PRERELEASE: '{{.PRERELEASE | default ""}}'
     cmds:
-      - |
-        set -euo pipefail
-        # Both are needed and they are read by different things: `cue eval` reads
-        # CUE_REGISTRY, `opm` reads OPM_REGISTRY (--registry > OPM_REGISTRY >
-        # ~/.opm/config.cue — never CUE_REGISTRY). Exporting only the former would
-        # silently leave opm on the caller's personal config.
-        export CUE_REGISTRY='{{.PUBLISH_REGISTRY}}'
-        export OPM_REGISTRY='{{.PUBLISH_REGISTRY}}'
-        opm='{{.OPM}}'
-        command -v "$opm" >/dev/null || { echo "opm not on PATH — install the pinned cli release" >&2; exit 1; }
-        since='{{.SINCE}}'
-        prerelease='{{.PRERELEASE}}'
-        rc=0
-        for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
-          name=$(basename "$dir")
-          # Changed-module detection (D3): when SINCE is a valid ref, skip
-          # modules whose dir is unchanged since it. The absent-check below is
-          # the authority that keeps the step idempotent even if SINCE is empty.
-          if [ -n "$since" ] && git rev-parse -q --verify "$since" >/dev/null 2>&1; then
-            if git diff --quiet "$since" -- "$dir"; then
-              echo "skip ${name}: unchanged since ${since}"
-              continue
-            fi
-          fi
-          # The declared version comes from the identity package, the module's
-          # single source of path and version. A tree without one is not
-          # publishable and is a hard error, never a silent skip — the old
-          # grep contract's `continue` made a broken fixture look like success.
-          if [ ! -d "$dir/identity" ]; then
-            echo "${name}: no identity/ package — not a publishable fixture" >&2
-            rc=1
-            continue
-          fi
-          ver=$(cd "$dir" && cue eval ./identity --out text -e Version)
-          if [ -z "$ver" ]; then
-            echo "${name}: identity package declares no concrete Version" >&2
-            rc=1
-            continue
-          fi
-          tag="v${ver}"
-          srcdir="$dir"
-          # Pre-release publishes (PR e2e) tag as v<ver>-<prerelease> so they
-          # are valid SemVer that sorts BELOW the eventual release version and
-          # never collides with the immutable v<ver> cut on release.
-          #
-          # The DECLARED version has to move with the tag: the library's
-          # acquire-time identity check (enhancement 0010 D11) requires
-          # metadata.version to equal the fetched tag exactly. Stage a copy and
-          # let `opm module version set` do the write — it is offline, surgical,
-          # and preserves the defaulted-disjunction assertion byte-for-byte.
-          # (`opm module publish --version` cannot serve here: it ASSERTS a
-          # declared version rather than filling one, and ours carries a default.)
-          if [ -n "$prerelease" ]; then
-            tag="${tag}-${prerelease}"
-            srcdir=$(mktemp -d)
-            cp -R "$dir/." "$srcdir/"
-            if ! "$opm" module version set "${ver}-${prerelease}" "$srcdir" >/dev/null; then
-              echo "prerelease version set failed for ${name}" >&2
-              rm -rf "$srcdir"
-              rc=1
-              continue
-            fi
-          fi
-          echo "==> publishing ${name} @ ${tag}"
-          # GHCR applies a SECONDARY rate limit to rapid writes, distinct from the
-          # REST quota, and answers 403 "exceeded a secondary rate limit". It is
-          # reached in practice: this loop pushes the whole fleet in seconds, and
-          # creating new packages counts hardest. Back off and retry rather than
-          # failing the release for a throttle. Measured 2026-08-18 on the fleet's
-          # first publish under new coordinates.
-          out=""
-          ok=1
-          for attempt in 1 2 3 4; do
-            if out=$("$opm" module publish "$srcdir" 2>&1); then
-              ok=0
-              break
-            fi
-            printf '%s' "$out" | grep -qiE 'secondary rate limit|429|too many requests' || break
-            delay=$((attempt * 20))
-            echo "    rate-limited by the registry; retrying in ${delay}s (attempt ${attempt}/4)" >&2
-            sleep "$delay"
-          done
-          if [ "$ok" -eq 0 ]; then
-            echo "$out"
-          # An already-published tag is always a refusal (enhancement 0011 D15);
-          # publish never skips, so idempotency across releases is decided here.
-          # Auth/network failures (exit 3) do NOT match and surface.
-          elif printf '%s' "$out" | grep -qiE 'already holds|already exists|already present|409|conflict|immutable'; then
-            echo "skip ${name} @ ${tag}: already present (idempotent)"
-          else
-            echo "$out" >&2
-            rc=1
-          fi
-          if [ "$srcdir" != "$dir" ]; then
-            rm -rf "$srcdir"
-          fi
-        done
-        exit $rc
+      - FIXTURES_DIR={{.MODULES_DIR}} OPM_BIN={{.OPM}} CUE_REGISTRY='{{.PUBLISH_REGISTRY}}' SINCE='{{.SINCE}}' PRERELEASE='{{.PRERELEASE}}' hack/fixtures.sh publish
 
   pin:
-    desc: 'Rewrite each example moduleinstance.yaml spec.module.version to the module''s declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>). Used by PR e2e to point fixtures at the just-published pre-release tag.'
+    desc: 'Re-pin every consumer of an example module''s version to its declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>): the module''s moduleinstance.yaml, its modulepackage fixture''s cue.mod dep, and config/samples. Used by PR e2e to point the fleet at the just-published pre-release tags.'
     vars:
       PRERELEASE: '{{.PRERELEASE | default ""}}'
+      SAMPLE_MI: '{{.SAMPLE_MI | default "config/samples/opmodel.dev_v1alpha1_moduleinstance.yaml"}}'
     cmds:
       - |
         set -euo pipefail
         prerelease='{{.PRERELEASE}}'
         for dir in $(find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort); do
           name=$(basename "$dir")
-          mr="$dir/moduleinstance.yaml"
-          [ -f "$mr" ] || continue
           [ -d "$dir/identity" ] || continue
           ver=$(cd "$dir" && cue eval ./identity --out text -e Version)
-          if [ -z "$ver" ]; then
-            echo "${name}: identity package declares no concrete Version" >&2
+          path=$(cd "$dir" && cue eval ./identity --out text -e ModulePath)
+          if [ -z "$ver" ] || [ -z "$path" ]; then
+            echo "${name}: identity package declares no concrete Version/ModulePath" >&2
             exit 1
           fi
           tag="v${ver}"
           if [ -n "$prerelease" ]; then
             tag="${tag}-${prerelease}"
           fi
-          # Replace only the indented `version:` line (the module pin); the
-          # apiVersion lines above are untouched (they have no leading space
-          # before `version`). The pin always resets to v<ver>[-<prerelease>],
-          # so re-running with a different PRERELEASE is idempotent.
-          sed -i -E "s|^([[:space:]]+version:[[:space:]]+).*$|\1${tag}|" "$mr"
-          echo "pinned ${name} moduleinstance -> ${tag}"
+          # moduleinstance.yaml: replace only the indented `version:` line (the
+          # module pin); the apiVersion lines above have no leading space. The
+          # pin always resets to v<ver>[-<prerelease>], so re-running with a
+          # different PRERELEASE is idempotent.
+          mr="$dir/moduleinstance.yaml"
+          if [ -f "$mr" ]; then
+            sed -i -E "s|^([[:space:]]+version:[[:space:]]+).*$|\1${tag}|" "$mr"
+            echo "pinned ${name} moduleinstance -> ${tag}"
+          fi
+          # modulepackage fixture: the `"<path>": { v: "..." }` dep in cue.mod.
+          # Not a path dependency, so `cue mod tidy` cannot move it; rewrite the
+          # `v:` line that follows the dep's key.
+          mp="{{.RELEASES_DIR}}/${name}/cue.mod/module.cue"
+          if [ -f "$mp" ] && grep -q "\"${path}\"" "$mp"; then
+            awk -v p="\"${path}\"" -v v="${tag}" 'index($0,p) {f=1} f && /v: "/ {sub(/"[^"]+"/, "\"" v "\""); f=0} {print}' "$mp" > "$mp.tmp" && mv "$mp.tmp" "$mp"
+            echo "pinned ${name} modulepackage dep -> ${tag}"
+          fi
+          # config/samples ModuleInstance, when it instantiates this module.
+          if [ -f "{{.SAMPLE_MI}}" ] && grep -q "path: ${path}$" "{{.SAMPLE_MI}}"; then
+            awk -v p="path: ${path}" -v v="${tag}" 'index($0,p) {f=1} f && /version:/ {sub(/version: .*/, "version: " v); f=0} {print}' "{{.SAMPLE_MI}}" > "{{.SAMPLE_MI}}.tmp" && mv "{{.SAMPLE_MI}}.tmp" "{{.SAMPLE_MI}}"
+            echo "pinned sample ModuleInstance (${name}) -> ${tag}"
+          fi
         done
 
   bundle:

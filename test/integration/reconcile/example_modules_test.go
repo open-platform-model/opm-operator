@@ -31,6 +31,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // These specs render the published example modules (redis here) through the
@@ -85,9 +86,10 @@ var _ = Describe("Example module rendering", func() {
 
 		values := &releasesv1alpha1.RawValues{}
 		values.Raw = []byte(`{}`)
+		redis := fixtures.Must(GinkgoT(), "redis")
 		res, err := renderer.RenderModule(ctx,
 			"redis", "default",
-			"testing.opmodel.dev/modules/operator/redis@v0", "v0.1.7",
+			redis.ModulePath, redis.Tag(),
 			values)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res).NotTo(BeNil())

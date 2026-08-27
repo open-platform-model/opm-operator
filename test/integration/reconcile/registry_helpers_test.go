@@ -39,7 +39,7 @@ func testCatalogVersion() string {
 	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
 		return v
 	}
-	return "2.0.0-alpha.5"
+	return "2.0.0-alpha.6"
 }
 
 // skipIfNoTestRegistry skips the current spec when no registry is configured to

@@ -1,29 +1,77 @@
 name: Tests
 
+# Unit + integration tier. The registry-backed integration specs resolve the
+# fixture fleet (testing.opmodel.dev/modules/operator/*) from a job-local
+# registry seeded from THIS tree (hack/fixtures.sh seed), while core and the
+# catalogs still come from GHCR. A fixture bump and every consumer of its
+# version therefore land in ONE PR; publish-fixtures.yml publishes the same
+# coordinate to GHCR on merge. `hack/fixtures.sh check` keeps the two equal: a
+# fixture changed in the PR must carry a version GHCR does not hold yet.
+
 on:
   push:
     branches: [main]
   pull_request:
 
+env:
+  CUE_VERSION: 'v0.17.1'
+  # Fixtures from the job-local registry, everything else from GHCR
+  # (MIXED_CUE_REGISTRY in Taskfile.yml). Both variables: `cue` reads
+  # CUE_REGISTRY, opm reads only OPM_REGISTRY.
+  MIXED_CUE_REGISTRY: 'testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+  # A fresh module cache per job: a warm cache would serve a fixture without
+  # touching the seeded registry and hide a bad mapping.
+  CUE_CACHE_DIR: ${{ github.workspace }}/.cue-cache
+
 jobs:
   test:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `hack/fixtures.sh check` diffs each fixture against the base branch.
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@a93fa358375740cd8b0078f76355512b9208acb1 # v1.0.1
+        with:
+          version: ${{ env.CUE_VERSION }}
+
       - name: Install Task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
           version: 3.x
 
+      - name: Install opm
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.14
+
+      - name: Fixture publish gates (changed implies bumped)
+        env:
+          BASE_REF: origin/${{ github.base_ref || 'main' }}
+        run: task examples:check
+
+      - name: Seed the job-local registry from the tree
+        run: task examples:seed CUE_REGISTRY="$MIXED_CUE_REGISTRY"
+
       - name: Running Tests
+        env:
+          # The registry is provided, so a registry-backed spec that would skip
+          # is a failure; the catalog path names the subscription those specs
+          # materialize (without it they skip silently).
+          OPM_TEST_REGISTRY_FORCE: '1'
+          OPM_TEST_CATALOG_PATH: 'opmodel.dev/catalogs/opm@v2'
         run: |
           go mod tidy
-          task dev:test
+          task dev:test TEST_CUE_REGISTRY="$MIXED_CUE_REGISTRY"

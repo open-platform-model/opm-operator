@@ -95,7 +95,7 @@ jobs:
           echo "OPERATOR_DOCKER_CONFIG=$RUNNER_TEMP/ghcr/config.json" >> "$GITHUB_ENV"
 
       - name: Install opm
-        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.11
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.14
 
       - name: Publish example modules to GHCR (pre-release tags)
         if: steps.cap.outputs.can_publish == 'true'

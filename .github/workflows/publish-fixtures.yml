@@ -1,12 +1,14 @@
 name: Publish Fixtures
 
-# Publishes the example test modules to GHCR outside the release train.
+# Publishes the example test modules to GHCR outside the release train, so the
+# coordinate a PR tested against its job-local registry (test.yml seeds it from
+# the tree) exists on GHCR as soon as the PR merges. Every other context (release,
+# e2e, developers, the controller) resolves fixtures from GHCR.
 #
-# The release workflow publishes them on release, and the e2e workflow publishes
-# per-commit pre-release tags. Neither can BOOTSTRAP a new coordinate: when the
-# fixtures' module paths change, the release versions do not exist under the new
-# path until a release is cut, and every consumer that pins them — including the
-# registry-backed integration specs, which resolve from GHCR — fails until then.
+# The release workflow also publishes them on release, and the e2e workflow
+# publishes per-commit pre-release tags. Neither can BOOTSTRAP a new coordinate:
+# when the fixtures' module paths change, the release versions do not exist under
+# the new path until a release is cut.
 #
 # workflow_dispatch is the repair path — re-publish without waiting for a release.
 # NOTE: GitHub only offers workflow_dispatch for workflows already present on the
@@ -20,6 +22,7 @@ on:
       - main
     paths:
       - 'test/fixtures/modules/**'
+      - 'hack/fixtures.sh'
       - '.tasks/examples.yaml'
       - '.github/workflows/publish-fixtures.yml'
 
@@ -60,7 +63,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install opm
-        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.11
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.14
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin

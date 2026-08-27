@@ -29,6 +29,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // These tests exercise KernelModuleRenderer directly (the ModuleInstance
@@ -112,9 +113,10 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 
 			values := &releasesv1alpha1.RawValues{}
 			values.Raw = []byte(`{"message": "kernel hello"}`)
+			hello := fixtures.Must(GinkgoT(), "hello")
 			res, err := renderer.RenderModule(ctx,
 				"kernel-hello", "default",
-				"testing.opmodel.dev/modules/operator/hello@v0", "v0.0.6",
+				hello.ModulePath, hello.Tag(),
 				values)
 
 			Expect(err).NotTo(HaveOccurred())

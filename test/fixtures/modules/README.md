@@ -27,13 +27,31 @@ D38 / 0011 D12) — and `module.cue`'s `metadata` block derives from it. Edit th
 identity package, never the metadata block. Versions are independent of the
 operator's release version.
 
-Publishing goes through `opm module publish`, so every publish gate runs over
-these fixtures — the same pipeline the official templates use, and a fixture that
-violates a gate fails CI instead of shipping. On an operator release, CI
-publishes any module whose version is not already present and attaches the
-`moduleinstance.yaml` manifests to the GitHub Release. To bump a fixture, run
-`opm module version set <semver> test/fixtures/modules/<module>` and re-pin its
-`moduleinstance.yaml` (`task examples:pin`) and its modulepackage fixture.
+Publishing goes through `opm module publish` (`hack/fixtures.sh`, the same script
+the cli repo carries), so every publish gate runs over these fixtures and a
+fixture that violates a gate fails CI instead of shipping.
+
+The same coordinate is served from two places and only the registry mapping
+decides which one a consumer sees:
+
+- **PR CI** (`test.yml`) seeds a job-local registry from this tree
+  (`task examples:seed`) and runs the registry-backed integration specs with
+  `testing.opmodel.dev` mapped to it and everything else on GHCR. A fixture bump
+  and every consumer of its version (integration specs, the modulepackage
+  fixtures, `config/samples`) land in one PR.
+- **On merge** `publish-fixtures.yml` publishes the same coordinate to GHCR
+  (`task examples:publish`); releases and the e2e workflow publish there too.
+  Every other context resolves fixtures from GHCR.
+- **`task examples:check`** keeps the two equal: a fixture whose directory
+  changed since `origin/main` must carry a version GHCR does not hold yet,
+  because published versions are immutable.
+
+To bump a fixture, run `opm module version set <semver> test/fixtures/modules/<module>`
+and `task examples:pin`, which re-pins its `moduleinstance.yaml`, the sibling
+modulepackage fixture's `cue.mod` dep and `config/samples`. The integration
+specs read the version from the identity package (`test/fixtures/fixtures.go`)
+and need no edit. Across the workspace, `task deps:pins:fixtures` at the root
+does all of this for a dependency bump.
 
 ## Apply an example against a running operator
 
@@ -71,23 +89,29 @@ To remove an example:
 kubectl delete -f test/fixtures/modules/podinfo/moduleinstance.yaml
 ```
 
-## Publishing locally
+## Testing against the tree locally
 
-To exercise the modules against a local registry (e.g. for the registry-backed
-integration tests or the local e2e path), publish them with the local mapping:
+What PR CI does, on a laptop: start the workspace registry (`task registry:start`
+at the workspace root), then
 
 ```bash
-CUE_REGISTRY='testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works' \
-OPM_REGISTRY="$CUE_REGISTRY" \
-  task examples:publish
+task dev:test:seeded
 ```
 
-Only the fixture prefix needs to point at the local registry; core and the
-catalogs still resolve from GHCR. Both variables are required and are read by
-different tools: `cue` reads `CUE_REGISTRY`, while `opm` reads `OPM_REGISTRY`
-(`--registry` > `OPM_REGISTRY` > `~/.opm/config.cue`) and never consults
-`CUE_REGISTRY`.
+which seeds `localhost:5000` from `test/fixtures/modules` and runs the unit and
+integration tiers with the mixed mapping (`MIXED_CUE_REGISTRY` in `Taskfile.yml`:
+only the fixture prefix points at the local registry; core and the catalogs still
+resolve from GHCR) and `OPM_TEST_REGISTRY_FORCE=1`. To seed alone:
 
-`task examples:publish` reads each module's declared version from its identity
-package and publishes it if absent (idempotent); `task examples:bundle` collects
-the manifests into `dist/` for release upload.
+```bash
+task examples:seed CUE_REGISTRY='testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+```
+
+`seed` refuses a mapping that points `testing.opmodel.dev` at `ghcr.io`; GHCR is
+written by CI only. The script exports both `CUE_REGISTRY` and `OPM_REGISTRY`,
+which are read by different tools: `cue` reads the former, `opm` reads only
+`--registry` > `OPM_REGISTRY` > `~/.opm/config.cue`.
+
+`task examples:publish` publishes each module at its declared version if absent
+(idempotent); `task examples:bundle` collects the manifests into `dist/` for
+release upload.

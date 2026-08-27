@@ -42,14 +42,25 @@ tasks:
       - '"{{.CONTROLLER_GEN}}" object:headerFile="hack/boilerplate.go.txt" paths="./..."'
 
   test:
-    desc: Run unit and integration tests (resolves catalog from ghcr)
+    desc: 'Run unit and integration tests. Fixtures and catalogs resolve from GHCR unless TEST_CUE_REGISTRY overrides the mapping (PR CI passes the MIXED mapping after seeding a job-local registry from the tree). OPM_TEST_REGISTRY_FORCE=1 turns a skipped registry-backed spec into a failure.'
     deps: [manifests, generate, fmt, vet, ":tool:setup-envtest"]
     env:
-      CUE_REGISTRY: '{{.GHCR_CUE_REGISTRY}}'
+      CUE_REGISTRY: '{{.TEST_CUE_REGISTRY | default .GHCR_CUE_REGISTRY}}'
     cmds:
       - |
         KUBEBUILDER_ASSETS="$("{{.ENVTEST}}" use {{.ENVTEST_K8S_VERSION}} --bin-dir "{{.LOCALBIN}}" -p path)" \
         go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+  test:seeded:
+    desc: 'Run unit and integration tests against the tree''s fixtures: seed the local registry from test/fixtures/modules (registry from `task registry:start` at the workspace root), then test with the MIXED mapping and OPM_TEST_REGISTRY_FORCE=1. This is what PR CI runs.'
+    cmds:
+      - task: :examples:seed
+        vars: { CUE_REGISTRY: '{{.MIXED_CUE_REGISTRY}}' }
+      - task: test
+        vars: { TEST_CUE_REGISTRY: '{{.MIXED_CUE_REGISTRY}}' }
+    env:
+      OPM_TEST_REGISTRY_FORCE: '1'
+      OPM_TEST_CATALOG_PATH: 'opmodel.dev/catalogs/opm@v2'
 
   test:local:
     desc: Run unit and integration tests against local opm-registry (workspace modules must be published to localhost:5000)

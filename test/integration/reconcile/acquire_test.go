@@ -26,6 +26,7 @@ import (
 	"github.com/open-platform-model/library/opm/kernel"
 
 	"github.com/open-platform-model/opm-operator/internal/moduleacquire"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // These tests require the fixture module published to a local OCI registry.
@@ -55,13 +56,13 @@ var _ = Describe("Module Acquisition Integration", func() {
 		It("acquires the module and decodes its metadata", func() {
 			before := countAcquireTempDirs()
 
-			mod, err := moduleacquire.Acquire(ctx, k,
-				"testing.opmodel.dev/modules/operator/hello@v0", "v0.0.6", registry)
+			hello := fixtures.Must(GinkgoT(), "hello")
+			mod, err := moduleacquire.Acquire(ctx, k, hello.ModulePath, hello.Tag(), registry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mod).NotTo(BeNil())
 			Expect(mod.Metadata).NotTo(BeNil())
 			Expect(mod.Metadata.Name).To(Equal("hello"))
-			Expect(mod.Metadata.Version).To(Equal("0.0.6"))
+			Expect(mod.Metadata.Version).To(Equal(hello.Version))
 			// modulePath is the author-set field that regressed: the old
 			// wrapper shim re-embedded the module and collapsed core@v0's
 			// self-referential metadata. Acquire now delegates to
@@ -69,7 +70,7 @@ var _ = Describe("Module Acquisition Integration", func() {
 			// module with its staged source and preserves it; this pins that fix.
 			// On the core-v2 identity shape modulePath is the full
 			// major-suffixed module address.
-			Expect(mod.Metadata.ModulePath).To(Equal("testing.opmodel.dev/modules/operator/hello@v0"))
+			Expect(mod.Metadata.ModulePath).To(Equal(hello.ModulePath))
 
 			// Acquisition no longer stages a temp dir (the library loads the
 			// module in memory); assert none appears, as a guard.

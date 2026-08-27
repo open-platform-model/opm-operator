@@ -87,7 +87,7 @@ var _ = Describe("Example module rendering", func() {
 		values.Raw = []byte(`{}`)
 		res, err := renderer.RenderModule(ctx,
 			"redis", "default",
-			"testing.opmodel.dev/modules/operator/redis@v0", "v0.1.7",
+			"testing.opmodel.dev/modules/operator/redis@v0", "v0.1.8",
 			values)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res).NotTo(BeNil())

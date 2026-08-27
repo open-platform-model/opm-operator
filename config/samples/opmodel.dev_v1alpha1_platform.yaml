@@ -15,8 +15,10 @@ spec:
     opmodel.dev/catalogs/opm@v2:
       # Load-bearing pin: applied verbatim by the e2e specs, and kept aligned
       # with the CLI's DefaultPlatformTemplate seed and the library's
-      # opm_platform fixture. Bump as an ordinary fixture update when the
-      # catalog releases.
+      # opm_platform fixture. This file is NOT part of dist/install.yaml
+      # (`opm operator install` resolves the catalog version live), so bump
+      # it as `test(fixtures)`: no operator release. The mirrored CLI seed
+      # is shipped and bumps as `fix(deps)`.
       version: "2.0.0-alpha.6"
     opmodel.dev/catalogs/k8s@v1:
       # Second subscription mirroring the CLI's seeded default (seed-both-

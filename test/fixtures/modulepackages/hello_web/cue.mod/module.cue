@@ -7,12 +7,12 @@ source: {
 }
 deps: {
 	"opmodel.dev/catalogs/opm@v2": {
-		v: "v2.0.0-alpha.6"
+		v: "v2.0.0-alpha.3"
 	}
 	"opmodel.dev/core@v2": {
-		v: "v2.0.0-alpha.6"
+		v: "v2.0.0-alpha.4"
 	}
 	"testing.opmodel.dev/modules/operator/hello_web@v0": {
-		v: "v0.1.4"
+		v: "v0.1.3"
 	}
 }

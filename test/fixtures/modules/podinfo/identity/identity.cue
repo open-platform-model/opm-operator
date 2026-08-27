@@ -17,4 +17,4 @@ ModulePath: "testing.opmodel.dev/modules/operator/podinfo@v0"
 // Hand-managed: these fixtures are not on release-please's version train, so a
 // bump is an explicit edit here (or `opm module version set`) followed by a
 // re-pin in moduleinstance.yaml and the modulepackage fixture.
-Version: #VersionType | *"0.1.4"
+Version: #VersionType | *"0.1.5"

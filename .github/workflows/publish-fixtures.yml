@@ -60,7 +60,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install opm
-        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.11
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.14
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin

@@ -190,7 +190,7 @@ jobs:
       - name: Install opm
         # Fixtures publish through the cli's gated pipeline, so a fixture that
         # violates a publish gate fails the release instead of shipping.
-        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.11
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.14
 
       - name: Publish example modules to GHCR (idempotent)
         env:

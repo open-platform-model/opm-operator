@@ -56,12 +56,12 @@ var _ = Describe("Module Acquisition Integration", func() {
 			before := countAcquireTempDirs()
 
 			mod, err := moduleacquire.Acquire(ctx, k,
-				"testing.opmodel.dev/modules/operator/hello@v0", "v0.0.5", registry)
+				"testing.opmodel.dev/modules/operator/hello@v0", "v0.0.6", registry)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mod).NotTo(BeNil())
 			Expect(mod.Metadata).NotTo(BeNil())
 			Expect(mod.Metadata.Name).To(Equal("hello"))
-			Expect(mod.Metadata.Version).To(Equal("0.0.5"))
+			Expect(mod.Metadata.Version).To(Equal("0.0.6"))
 			// modulePath is the author-set field that regressed: the old
 			// wrapper shim re-embedded the module and collapsed core@v0's
 			// self-referential metadata. Acquire now delegates to

@@ -17,7 +17,7 @@ spec:
       # with the CLI's DefaultPlatformTemplate seed and the library's
       # opm_platform fixture. Bump as an ordinary fixture update when the
       # catalog releases.
-      version: "2.0.0-alpha.5"
+      version: "2.0.0-alpha.6"
     opmodel.dev/catalogs/k8s@v1:
       # Second subscription mirroring the CLI's seeded default (seed-both-
       # catalogs): the raw passthrough catalog, same commit as the opm@v2

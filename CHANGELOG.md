@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-alpha.13](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.12...v1.0.0-alpha.13) (2026-08-27)
+
+
+### Features
+
+* **openspec:** wire enhancement delivery-log declarations into the workflow ([b1aad82](https://github.com/open-platform-model/opm-operator/commit/b1aad829e9282109a7c84debda9ebad74384fb17))
+* **samples:** subscribe the sample platform to both first-party catalogs ([#93](https://github.com/open-platform-model/opm-operator/issues/93)) ([cf59242](https://github.com/open-platform-model/opm-operator/commit/cf59242560a6537d6cd404bb75b6d6ceb09d59da))
+
 ## [1.0.0-alpha.12](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.11...v1.0.0-alpha.12) (2026-08-19)
 
 

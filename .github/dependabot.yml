@@ -11,7 +11,10 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "deps"
+      # "deps" is not a Conventional Commit type, so release-please drops such
+      # merge commits from the changelog. Use "build(deps)".
+      prefix: "build"
+      include: "scope"
     groups:
       # The Kubernetes stack moves in lockstep; bump it as one PR.
       kubernetes:

@@ -10,7 +10,9 @@ import (
 
 func TestLoadPodinfo(t *testing.T) {
 	c := Must(t, "podinfo")
-	if !strings.HasPrefix(c.ModulePath, "testing.opmodel.dev/modules/") || !strings.HasSuffix(c.ModulePath, "/podinfo@v0") {
+	wellFormed := strings.HasPrefix(c.ModulePath, "testing.opmodel.dev/modules/") &&
+		strings.HasSuffix(c.ModulePath, "/podinfo@v0")
+	if !wellFormed {
 		t.Fatalf("ModulePath = %q, want testing.opmodel.dev/modules/<repo>/podinfo@v0", c.ModulePath)
 	}
 	if !regexp.MustCompile(`^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`).MatchString(c.Version) {

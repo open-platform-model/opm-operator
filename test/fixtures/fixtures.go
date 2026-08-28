@@ -81,11 +81,9 @@ func Load(name string) (Coordinate, error) {
 		if fv.Err() != nil {
 			return Coordinate{}, fmt.Errorf("fixtures: %s: %s: %w", name, field, fv.Err())
 		}
-		// Version is declared as `#VersionType | *"X.Y.Z"`; the default is the
-		// declared value, exactly as `cue eval` prints it.
-		if d, ok := fv.Default(); ok {
-			fv = d
-		}
+		// Both fields are plain literals (core #IdentityPackage; the kernel's
+		// loader gate rejects a defaulted disjunction), so no Default() fallback:
+		// a non-concrete value is an error here, as it is at build time.
 		s, err := fv.String()
 		if err != nil {
 			return Coordinate{}, fmt.Errorf("fixtures: %s: %s is not a concrete string: %w", name, field, err)

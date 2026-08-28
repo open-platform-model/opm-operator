@@ -5,10 +5,6 @@
 // against core's #IdentityPackage).
 package identity
 
-// #VersionType mirrors core.#VersionType (SemVer 2.0), duplicated so this
-// package stays import-free.
-#VersionType: string & =~"^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
-
 // ModulePath is the module's complete CUE module path, major suffix included
 // — byte-identical to cue.mod's `module:` field.
 ModulePath: "testing.opmodel.dev/modules/operator/podinfo@v0"
@@ -16,5 +12,7 @@ ModulePath: "testing.opmodel.dev/modules/operator/podinfo@v0"
 // Version is the module's bare SemVer; its major must agree with ModulePath's.
 // Hand-managed: these fixtures are not on release-please's version train, so a
 // bump is an explicit edit here (or `opm module version set`) followed by a
-// re-pin in moduleinstance.yaml and the modulepackage fixture.
-Version: #VersionType | *"0.1.5"
+// re-pin in moduleinstance.yaml and the modulepackage fixture. A plain
+// literal: the kernel's loader gate requires a concrete value, and a defaulted
+// disjunction is not one.
+Version: "0.1.6"

@@ -19,13 +19,10 @@ m.#Module
 // and name is the path's leaf (enhancements 0010 D8, 0011 D12). Edit
 // identity/identity.cue, not this block.
 metadata: {
-	_segments:  strings.Split(strings.SplitN(id.ModulePath, "@", 2)[0], "/")
-	name:       _segments[len(_segments)-1]
-	modulePath: id.ModulePath
-	// Interpolated rather than referenced so the value is concrete before
-	// defaults are finalized — the registry loader's shape gate requires a
-	// concrete metadata.version, and id.Version is a defaulted disjunction.
-	version:     "\(id.Version)"
+	_segments:   strings.Split(strings.SplitN(id.ModulePath, "@", 2)[0], "/")
+	name:        _segments[len(_segments)-1]
+	modulePath:  id.ModulePath
+	version:     id.Version
 	description: "Minimal test module — renders a single ConfigMap"
 }
 

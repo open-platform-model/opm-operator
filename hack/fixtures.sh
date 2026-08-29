@@ -21,7 +21,9 @@
 # `check` keeps the two equivalent: a fixture whose directory changed since
 # BASE_REF must carry a version that GHCR does not hold yet, because published
 # CUE module versions are immutable and a same-version edit would test one
-# thing at PR time and ship another.
+# thing at PR time and ship another. "Changed since" is measured from the
+# merge-base of BASE_REF and HEAD, so a branch that merely lags main (a
+# release-please branch after a fixture bump landed) is not "changed".
 #
 # Subcommands
 #   pins     print "<ModulePath>=<Version>" per fixture (from identity.cue)
@@ -111,11 +113,13 @@ testing_host() {
   printf '%s' "${entry#*=}"
 }
 
-# changed_since <ref> <dir>: 0 when the dir differs from <ref>.
+# changed_since <ref> <dir>: 0 when the dir differs from the merge-base of
+# <ref> and HEAD (the tree as it forked from <ref>, not <ref>'s current tip).
 changed_since() {
-  local ref=$1 dir=$2
+  local ref=$1 dir=$2 base
   git rev-parse -q --verify "$ref^{commit}" >/dev/null 2>&1 || die "ref '$ref' does not resolve (fetch it, or set BASE_REF/SINCE)"
-  ! git diff --quiet "$ref" -- "$dir"
+  base=$(git merge-base "$ref" HEAD) || die "no merge-base between '$ref' and HEAD"
+  ! git diff --quiet "$base" -- "$dir"
 }
 
 # only_already_published <output>: the publish refused for exactly one reason,

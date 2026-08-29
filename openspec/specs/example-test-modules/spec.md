@@ -5,15 +5,24 @@ TBD - created by archiving change add-example-test-modules. Update Purpose after
 ## Requirements
 ### Requirement: Public example module path
 
-All example test modules SHALL be authored under the CUE module path `opmodel.dev/modules/test/<module>@v0`, where `<module>` is the module's short name. Each module's `cue.mod/module.cue` `module:` field and its `#Module.metadata.modulePath` SHALL be consistent with this path so the module resolves to `ghcr.io/open-platform-model` under the standard `opmodel.dev` registry mapping already used by `core` and `catalog`.
+All example test modules SHALL be authored under the CUE module path `testing.opmodel.dev/modules/operator/<module>@v0`, where `<module>` is the module's short name. Each module's `cue.mod/module.cue` `module:` field and its `#Module.metadata.modulePath` SHALL agree with this path, and SHALL be published to `ghcr.io/open-platform-model` so the module resolves under the canonical registry mapping, which routes both `opmodel.dev` (core, catalogs) and `testing.opmodel.dev` (these fixtures) to GHCR.
+
+Fixtures SHALL NOT be authored under `opmodel.dev/*`. CUE resolves modules by longest-prefix match on the module path, so a fixture in the production namespace forces that entire prefix — core and the catalogs included — onto whatever registry serves the fixture. The publish gates enforce this independently: a nested path under `opmodel.dev` is refused.
 
 #### Scenario: New module declares public path
-- **WHEN** the podinfo module is authored
-- **THEN** its `cue.mod/module.cue` declares `module: "opmodel.dev/modules/test/podinfo@v0"` and `metadata.modulePath` is `"opmodel.dev/modules/test/podinfo@v0"`
+
+- **WHEN** a new example module is added
+- **THEN** its `cue.mod/module.cue` declares `module: "testing.opmodel.dev/modules/operator/podinfo@v0"` and `metadata.modulePath` resolves to the same value
 
 #### Scenario: Consumer resolves without extra config
-- **WHEN** a user with the standard `CUE_REGISTRY` mapping `opmodel.dev=ghcr.io/open-platform-model,registry.cue.works` resolves `opmodel.dev/modules/test/podinfo@v0`
-- **THEN** resolution succeeds against `ghcr.io/open-platform-model` with no additional registry mapping beyond what `core`/`catalog` already require
+
+- **WHEN** a user with the canonical `CUE_REGISTRY` mapping resolves `testing.opmodel.dev/modules/operator/podinfo@v0`
+- **THEN** it resolves from `ghcr.io/open-platform-model` with no additional registry configuration
+
+#### Scenario: Production namespace is refused
+
+- **WHEN** a fixture declares a path under `opmodel.dev/modules/test/`
+- **THEN** `opm module publish` refuses it as not fitting the namespace the domain publishes
 
 ### Requirement: podinfo web example module
 
@@ -43,11 +52,12 @@ The repo SHALL provide a redis example module modelling a stateful workload. It 
 
 ### Requirement: Example modules ship ready-to-apply manifests
 
-Each example module SHALL include a `ModuleRelease` manifest (and, where applicable, `Release`/`OCIRepository` manifests) that a user can apply against a running operator to deploy the example. The manifests SHALL reference the public `opmodel.dev/modules/test/<m>@v0` path and a concrete version.
+Each example module SHALL include a `ModuleInstance` manifest (and, where applicable, `ModulePackage`/`OCIRepository` manifests) that a user can apply against a running operator to deploy the example. The manifests SHALL reference the `testing.opmodel.dev/modules/operator/<m>@v0` path and a concrete version.
 
 #### Scenario: Manifest references public module
-- **WHEN** the podinfo `modulerelease.yaml` is inspected
-- **THEN** its `spec.module.path` is `opmodel.dev/modules/test/podinfo@v0` with an explicit `spec.module.version`
+
+- **WHEN** a user inspects an example module's `moduleinstance.yaml`
+- **THEN** its `spec.module.path` is `testing.opmodel.dev/modules/operator/podinfo@v0` with an explicit `spec.module.version`
 
 ### Requirement: podinfo liveness/readiness e2e validation
 
@@ -63,42 +73,31 @@ An e2e test SHALL deploy the podinfo `ModuleRelease` against a Kind-backed opera
 
 ### Requirement: ModulePackage fixture parity for example modules
 
-Every example test module (`hello`, `hello_web`, `podinfo`, `redis`) SHALL provide a
-ModulePackage fixture under `test/fixtures/modulepackages/<module>/` that mirrors the
-existing `hello` fixture: a `cue.mod/module.cue` declaring the release module
-`opmodel.dev/releases/test/<module>@v0`, an `instance.cue` that imports the published
-module and embeds it via `core.#ModuleInstance.#module`, a `values.cue` holding the
-package's configuration, a `modulepackage.yaml` (ServiceAccount + RoleBinding + `ModulePackage`
-CR referencing an `OCIRepository`), and an `ocirepository.yaml`. The release module's
-`cue.mod/module.cue` SHALL pin the same `opmodel.dev/modules/test/<module>@v0` version that
-the module's own `metadata.version` declares.
+Each example module SHALL have a sibling modulepackage fixture declaring `testing.opmodel.dev/releases/operator/<module>@v0`, an `instance.cue` that imports the published module, and a `cue.mod/module.cue` that pins the same `testing.opmodel.dev/modules/operator/<module>@v0` version the module declares.
 
 #### Scenario: Each module has a modulepackage fixture
-- **WHEN** `test/fixtures/modulepackages/` is enumerated
-- **THEN** it contains a `<module>/` directory for each of `hello`, `hello_web`, `podinfo`, `redis`
-- **AND** each directory contains `cue.mod/module.cue`, `instance.cue`, `values.cue`, `modulepackage.yaml`, and `ocirepository.yaml`
+
+- **WHEN** the modulepackage fixtures are enumerated
+- **THEN** there SHALL be one per example module, declaring `testing.opmodel.dev/releases/operator/<module>@v0`
 
 #### Scenario: instance.cue imports and embeds the published module
-- **WHEN** a module's `instance.cue` is inspected
-- **THEN** it embeds `core.#ModuleInstance`, imports `opmodel.dev/modules/test/<module>@v0`, and sets `#module` to the imported module
-- **AND** its `cue.mod/module.cue` pins that module at the version declared in the module's own `metadata.version`
+
+- **WHEN** a modulepackage fixture is loaded
+- **THEN** it embeds `core.#ModuleInstance`, imports `testing.opmodel.dev/modules/operator/<module>@v0`, and sets `#module` to the imported module
 
 #### Scenario: ModulePackage CR references its OCIRepository
-- **WHEN** a module's `modulepackage.yaml` is inspected
-- **THEN** its `ModulePackage` `spec.sourceRef` names the `OCIRepository` declared in the sibling `ocirepository.yaml`, whose `url` ends in `opmodel.dev/releases/test/<module>`
+
+- **WHEN** a modulepackage fixture's `ModulePackage` is inspected
+- **THEN** its `spec.sourceRef` names the `OCIRepository` declared in the sibling `ocirepository.yaml`, whose `url` ends in `testing.opmodel.dev/releases/operator/<module>`
 
 ### Requirement: hello_web ready-to-apply ModuleInstance
 
-The `hello_web` example module SHALL ship a `test/fixtures/modules/hello_web/moduleinstance.yaml`
-bundle — a `ServiceAccount`, `Role`, and `RoleBinding` granting the applier just the
-resource kinds the module renders (`apps/deployments`), plus a `ModuleInstance` referencing
-the public `opmodel.dev/modules/test/hello_web@v0` path and a concrete version — so all four
-example modules can be applied directly via a `ModuleInstance`.
+The `hello_web` example SHALL ship a `ModuleInstance` manifest referencing the `testing.opmodel.dev/modules/operator/hello_web@v0` path and a concrete version, so all four fleet members are applyable.
 
 #### Scenario: hello_web manifest references public module
-- **WHEN** `test/fixtures/modules/hello_web/moduleinstance.yaml` is inspected
-- **THEN** its `ModuleInstance` `spec.module.path` is `opmodel.dev/modules/test/hello_web@v0` with an explicit `spec.module.version`
-- **AND** the bundle includes a `ServiceAccount`/`Role`/`RoleBinding` whose Role grants `apps/deployments`
+
+- **WHEN** a user inspects `hello_web`'s `moduleinstance.yaml`
+- **THEN** its `spec.module.path` is `testing.opmodel.dev/modules/operator/hello_web@v0` with an explicit `spec.module.version`
 
 ### Requirement: ModulePackage render integration coverage
 
@@ -117,27 +116,26 @@ controller's ownership labels. The coverage SHALL remain gated on the local test
 - **WHEN** the integration suite runs without the local test registry configured
 - **THEN** the modulepackage render cases skip rather than fail
 
-
 ### Requirement: Fleet composition and identity shape
 
-The example test module fleet SHALL be `hello`, `hello_web`, `podinfo`, and `redis`, each authored on the core-v2 identity shape: `metadata.name` in snake case equal to the module path's leaf, `metadata.modulePath` the full major-suffixed address (`opmodel.dev/modules/test/<name>@v0`), `metadata.version` a bare SemVer, catalog imports on the versioned `v1beta1` packages of `opmodel.dev/catalogs/opm@v2`. Each module's `moduleinstance.yaml` SHALL pin the module's current published `v`-prefixed version.
+The example test module fleet SHALL be `hello`, `hello_web`, `podinfo`, and `redis`. Each SHALL carry an `identity/identity.cue` package as the single source of its module path and version (core `#IdentityPackage`), and its `#Module.metadata` SHALL DERIVE from that package rather than restate it: `metadata.modulePath` is the identity package's `ModulePath`, `metadata.version` its `Version`, and `metadata.name` the path's leaf in snake case. Catalog imports stay on the versioned `v1beta1` packages of `opmodel.dev/catalogs/opm@v2`. Each module's `moduleinstance.yaml` SHALL pin the module's current published `v`-prefixed version.
 
-The hyphenated `hello-web` name is retired at the source: a core-v2 module cannot carry a hyphen, so the fixture publishes under the renamed path `opmodel.dev/modules/test/hello_web@v0` (a new registry path — the previously published `hello-web@v0` artifacts remain unmodified, and their relocation/deletion is owned by enhancement 0011's `registry-cleanup`).
+A version bump SHALL therefore be an edit to `identity/identity.cue` (directly or via `opm module version set`), never to the metadata block.
 
-Each fixture's identity package SHALL declare `Version` as a plain string literal with no default arm and no local `#VersionType`, and its `metadata.version` SHALL reference that literal directly (`version: id.Version`), with no interpolation or other workaround in `metadata`. Every fixture SHALL load through the kernel's module loader (the same loader the controller uses at reconcile) unmodified.
+The hyphenated `hello-web` name is retired at the source: a core-v2 module cannot carry a hyphen, so the fixture publishes as `hello_web`. Artifacts previously published under `opmodel.dev/modules/test/*`, including the hyphenated `hello-web`, are unmodified by this change; their deletion is owned by enhancement 0011's `registry-cleanup`.
 
 #### Scenario: Fleet renders on the v2 line
 
-- **WHEN** each fleet module's ModuleInstance is applied against a platform subscribed to the v2 catalog
-- **THEN** every module renders and reconciles Ready without hand-authored matching labels
+- **WHEN** each fleet member is loaded and rendered
+- **THEN** it renders against `opmodel.dev/core@v2` and the versioned catalog packages without error
+
+#### Scenario: Metadata derives from identity
+
+- **WHEN** a fixture's `identity/identity.cue` declares a path and version
+- **THEN** its `metadata.modulePath`, `metadata.version`, and `metadata.name` evaluate to values derived from that package
+- **AND** `opm module publish` reports no derivation disagreement
 
 #### Scenario: Hyphenated name absent from the fleet
 
-- **WHEN** the fleet is enumerated (publish task, package-renderer tests, bundles)
-- **THEN** exactly `hello`, `hello_web`, `podinfo`, `redis` appear and no enumeration carries the hyphenated spelling
-
-#### Scenario: Fixture identity is a literal the kernel loads
-- **WHEN** `test/fixtures/modules/*/identity/identity.cue` is read
-- **THEN** each declares `Version: "<semver>"` with no `|`, no `*` and no `#VersionType`
-- **AND** the matching `module.cue` declares `version: id.Version`
-- **AND** the kernel's module loader accepts each fixture tree
+- **WHEN** the fleet's module paths are enumerated
+- **THEN** none contains a hyphen in its leaf segment

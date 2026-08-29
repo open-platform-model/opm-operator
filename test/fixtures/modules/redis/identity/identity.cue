@@ -15,4 +15,4 @@ ModulePath: "testing.opmodel.dev/modules/operator/redis@v0"
 // re-pin in moduleinstance.yaml and the modulepackage fixture. A plain
 // literal: the kernel's loader gate requires a concrete value, and a defaulted
 // disjunction is not one.
-Version: "0.1.9"
+Version: "0.1.10"

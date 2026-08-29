@@ -15,4 +15,4 @@ ModulePath: "testing.opmodel.dev/modules/operator/hello_web@v0"
 // re-pin in moduleinstance.yaml and the modulepackage fixture. A plain
 // literal: the kernel's loader gate requires a concrete value, and a defaulted
 // disjunction is not one.
-Version: "0.1.5"
+Version: "0.1.6"

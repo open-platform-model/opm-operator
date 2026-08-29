@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.14](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.13...v1.0.0-alpha.14) (2026-08-29)
+
+
+### Bug Fixes
+
+* **deps:** bump library to v1.0.0-alpha.20 ([#106](https://github.com/open-platform-model/opm-operator/issues/106)) ([e9e186b](https://github.com/open-platform-model/opm-operator/commit/e9e186b96fc3e6a094a675167e01e2396a80dec4))
+
 ## [1.0.0-alpha.13](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.12...v1.0.0-alpha.13) (2026-08-27)
 
 

@@ -57,6 +57,12 @@ func (r *KernelPackageRenderer) Render(
 	ctx context.Context,
 	packageDir string,
 ) (string, *RenderResult, error) {
+	// Serialize every Kernel call and every use of the held platform (see
+	// Store.AcquireKernel). Taken before the load, which already runs in the
+	// shared Kernel's context.
+	release := r.Store.AcquireKernel()
+	defer release()
+
 	raw, err := r.Kernel.LoadInstancePackage(ctx, packageDir, loaderfile.LoadOptions{Registry: r.Registry})
 	if err != nil {
 		if errors.Is(err, loaderfile.ErrWrongKind) {

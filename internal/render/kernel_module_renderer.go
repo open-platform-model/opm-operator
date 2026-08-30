@@ -64,6 +64,13 @@ func (r *KernelModuleRenderer) RenderModule(
 		return nil, ErrPlatformNotReady
 	}
 
+	// Serialize every Kernel call and every use of the held platform: the
+	// process shares one Kernel across three controllers, and rendering
+	// concurrently against one materialized platform races (library ADR-002,
+	// superseded). Released before the caller writes status.
+	release := r.Store.AcquireKernel()
+	defer release()
+
 	mod, err := moduleacquire.Acquire(ctx, r.Kernel, modulePath, moduleVersion, r.Registry)
 	if err != nil {
 		return nil, fmt.Errorf("acquiring module: %w", err)

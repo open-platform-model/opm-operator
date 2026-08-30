@@ -121,6 +121,12 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	in := platformInput(&plat)
 
+	// Serialize against the render paths: they share this Kernel and read the
+	// platform this reconcile is about to replace (see Store.AcquireKernel).
+	// Held through Store.Set so a render never observes the swap mid-flight.
+	release := r.Store.AcquireKernel()
+	defer release()
+
 	// SchemaCache is left nil; SynthesizePlatform defaults it to the Kernel's
 	// cache, preserving the one-Cache-per-process invariant.
 	p, err := r.Kernel.SynthesizePlatform(ctx, in)

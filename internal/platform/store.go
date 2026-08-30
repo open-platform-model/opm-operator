@@ -15,13 +15,25 @@ import (
 // .metadata.generation it was built for. Enhancement 0001 §8.3: one global
 // Platform per cluster needs one slot, not the library's content-hash LRU.
 //
-// The held *MaterializedPlatform is safe for concurrent read-only sharing
-// (library v0.17 guarantee), so the RWMutex lets future render-path readers
-// run concurrently with reconciler writes.
+// The Store also carries the render gate (AcquireKernel): the held
+// *MaterializedPlatform is NOT safe to render against from several goroutines
+// at once (the kernel's Compile fills into values reached through the
+// platform, and a fill writes evaluation state; library ADR-002 is superseded
+// on that measurement), and the single process-wide library Kernel is not safe
+// for concurrent method calls either. Every reconciler that touches the Kernel
+// or the held platform holds the gate for the duration. This is the stopgap the
+// library documents until enhancement 0019 D8 (one CUE build per render, in a
+// context that does not outlive it) removes the shared value.
 type Store struct {
 	mu         sync.RWMutex
 	current    *materialize.MaterializedPlatform
 	generation int64
+
+	// kernelMu serializes every use of the shared Kernel and of the held
+	// platform: SynthesizePlatform + Materialize in the PlatformReconciler,
+	// and acquire + synthesize + Compile in the render paths. Separate from
+	// mu, which only guards the slot pointer, so a render never blocks Get.
+	kernelMu sync.Mutex
 }
 
 // NewStore returns an empty Store holding no platform.
@@ -55,6 +67,19 @@ func (s *Store) Set(gen int64, mp *materialize.MaterializedPlatform) {
 	defer s.mu.Unlock()
 	s.current = mp
 	s.generation = gen
+}
+
+// AcquireKernel takes the render gate and returns the function that releases
+// it. Callers hold it across every Kernel call of one operation and across any
+// use of the platform returned by Get, and release it before writing status.
+// A nil Store returns a no-op release so unit fixtures without a store keep
+// working.
+func (s *Store) AcquireKernel() (release func()) {
+	if s == nil {
+		return func() {}
+	}
+	s.kernelMu.Lock()
+	return s.kernelMu.Unlock
 }
 
 // Clear drops the held platform so the store reports no platform held. Called

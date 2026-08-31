@@ -81,7 +81,7 @@ func testCatalogVersion() string {
 	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
 		return v
 	}
-	return "2.0.0-alpha.6"
+	return "4.0.1"
 }
 
 // materializeKernelOrSkip builds a Kernel from CUE_REGISTRY and skips the spec
@@ -179,7 +179,7 @@ var _ = Describe("Platform Controller", func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), fetched)).To(Succeed())
 			ready := apimeta.FindStatusCondition(fetched.Status.Conditions, status.ReadyCondition)
 			Expect(ready).NotTo(BeNil())
-			Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue), "reason=%s message=%s", ready.Reason, ready.Message)
 			Expect(ready.Reason).To(Equal(status.MaterializedReason))
 			Expect(fetched.Status.ObservedGeneration).To(Equal(fetched.Generation))
 			Expect(fetched.Status.OperatorVersion).To(Equal(version.Full()))

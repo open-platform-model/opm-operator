@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.15](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.14...v1.0.0-alpha.15) (2026-08-30)
+
+
+### Bug Fixes
+
+* **render:** serialize every Kernel use behind the platform store gate ([#110](https://github.com/open-platform-model/opm-operator/issues/110)) ([01eb7f1](https://github.com/open-platform-model/opm-operator/commit/01eb7f14a96fbe9f402bc5c9455376bb801cd5de))
+
 ## [1.0.0-alpha.14](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.13...v1.0.0-alpha.14) (2026-08-29)
 
 

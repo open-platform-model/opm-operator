@@ -36,6 +36,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/internal/version"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // clusterRequest is the reconcile request for the singleton Platform.
@@ -70,18 +71,6 @@ func registrySkip(msg string) {
 		Fail("OPM_TEST_REGISTRY_FORCE=1 but registry prerequisite missing: " + msg)
 	}
 	Skip(msg)
-}
-
-// testCatalogVersion is the exact catalog build the registry-backed specs
-// subscribe to (enhancement 0010 D14: a subscription names one published
-// build; there is no range vocabulary). Overridable via
-// OPM_TEST_CATALOG_VERSION so a fixture republish does not require a code
-// edit; the default tracks the pin in config/samples.
-func testCatalogVersion() string {
-	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
-		return v
-	}
-	return "4.0.1"
 }
 
 // materializeKernelOrSkip builds a Kernel from CUE_REGISTRY and skips the spec
@@ -167,7 +156,7 @@ var _ = Describe("Platform Controller", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type:     "kubernetes",
-					Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {Version: testCatalogVersion()}},
+					Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {Version: fixtures.CatalogVersion()}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, plat)).To(Succeed())

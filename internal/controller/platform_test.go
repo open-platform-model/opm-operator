@@ -49,8 +49,8 @@ var _ = Describe("Platform CRD", func() {
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type: "kubernetes",
 					Registry: map[string]releasesv1alpha1.Subscription{
-						"opmodel.dev/catalogs/opm@v2": {
-							Version: "2.0.0-alpha.3",
+						"opmodel.dev/catalogs/opm@v4": {
+							Version: "4.0.1",
 						},
 					},
 				},
@@ -78,7 +78,7 @@ var _ = Describe("Platform CRD", func() {
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type: "kubernetes",
 					Registry: map[string]releasesv1alpha1.Subscription{
-						"opmodel.dev/catalogs/opm@v2": {Version: "2.0.0-alpha.3"},
+						"opmodel.dev/catalogs/opm@v4": {Version: "4.0.1"},
 					},
 				},
 			}
@@ -87,7 +87,7 @@ var _ = Describe("Platform CRD", func() {
 			// The omitted enable round-trips as nil (deferred to schema default).
 			fetched := &releasesv1alpha1.Platform{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(platform), fetched)).To(Succeed())
-			Expect(fetched.Spec.Registry["opmodel.dev/catalogs/opm@v2"].Enable).To(BeNil())
+			Expect(fetched.Spec.Registry["opmodel.dev/catalogs/opm@v4"].Enable).To(BeNil())
 		})
 
 		It("rejects a registry entry missing the required version at admission", func() {
@@ -96,7 +96,7 @@ var _ = Describe("Platform CRD", func() {
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type: "kubernetes",
 					Registry: map[string]releasesv1alpha1.Subscription{
-						"opmodel.dev/catalogs/opm@v2": {},
+						"opmodel.dev/catalogs/opm@v4": {},
 					},
 				},
 			}
@@ -115,20 +115,20 @@ var _ = Describe("Platform CRD", func() {
 			Expect(unstructured.SetNestedField(platform.Object, "kubernetes", "spec", "type")).To(Succeed())
 			Expect(unstructured.SetNestedMap(platform.Object,
 				map[string]any{
-					"version": "2.0.0-alpha.3",
+					"version": "4.0.1",
 					"filter":  map[string]any{"range": ">=1.0.0-alpha"},
 				},
-				"spec", "registry", "opmodel.dev/catalogs/opm@v2")).To(Succeed())
+				"spec", "registry", "opmodel.dev/catalogs/opm@v4")).To(Succeed())
 			Expect(k8sClient.Create(ctx, platform)).To(Succeed())
 
 			fetched := &unstructured.Unstructured{}
 			fetched.SetGroupVersionKind(releasesv1alpha1.GroupVersion.WithKind("Platform"))
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(platform), fetched)).To(Succeed())
 			sub, found, err := unstructured.NestedMap(fetched.Object,
-				"spec", "registry", "opmodel.dev/catalogs/opm@v2")
+				"spec", "registry", "opmodel.dev/catalogs/opm@v4")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found).To(BeTrue())
-			Expect(sub).To(HaveKeyWithValue("version", "2.0.0-alpha.3"))
+			Expect(sub).To(HaveKeyWithValue("version", "4.0.1"))
 			Expect(sub).NotTo(HaveKey("filter"), "the structural schema must prune the retired filter field")
 		})
 

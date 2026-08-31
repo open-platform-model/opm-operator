@@ -86,7 +86,7 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 			// catalog provides the configmap-transformer the fixture module matches.
 			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 			if catalogPath == "" {
-				catalogPath = "opmodel.dev/catalogs/opm@v2"
+				catalogPath = "opmodel.dev/catalogs/opm@v4"
 			}
 			// Pin the catalog subscription to the exact build the authored
 			// package targets (0010 D14: one version, no ranges).

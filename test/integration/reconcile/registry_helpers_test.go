@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
+
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // registrySkip skips the current spec for a missing registry prerequisite —
@@ -31,15 +33,10 @@ func registrySkip(msg string) {
 }
 
 // testCatalogVersion is the exact catalog build the registry-backed specs
-// subscribe to (enhancement 0010 D14: a subscription names one published
-// build; there is no range vocabulary). Overridable via
-// OPM_TEST_CATALOG_VERSION so a fixture republish does not require a code
-// edit; the default tracks the pin in config/samples.
+// subscribe to — the shared default lives in fixtures.CatalogVersion so a
+// catalog bump edits one place for every suite.
 func testCatalogVersion() string {
-	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
-		return v
-	}
-	return "2.0.0-alpha.6"
+	return fixtures.CatalogVersion()
 }
 
 // skipIfNoTestRegistry skips the current spec when no registry is configured to

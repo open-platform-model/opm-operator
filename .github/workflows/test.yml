@@ -71,7 +71,7 @@ jobs:
           # is a failure; the catalog path names the subscription those specs
           # materialize (without it they skip silently).
           OPM_TEST_REGISTRY_FORCE: '1'
-          OPM_TEST_CATALOG_PATH: 'opmodel.dev/catalogs/opm@v2'
+          OPM_TEST_CATALOG_PATH: 'opmodel.dev/catalogs/opm@v4'
         run: |
           go mod tidy
           task dev:test TEST_CUE_REGISTRY="$MIXED_CUE_REGISTRY"

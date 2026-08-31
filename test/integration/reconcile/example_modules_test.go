@@ -62,7 +62,7 @@ var _ = Describe("Example module rendering", func() {
 			Name: "cluster",
 			Type: "kubernetes",
 			Subscriptions: map[string]synth.SubscriptionSpec{
-				"opmodel.dev/catalogs/opm@v2": {Version: testCatalogVersion()},
+				"opmodel.dev/catalogs/opm@v4": {Version: testCatalogVersion()},
 			},
 		})
 		if err != nil {

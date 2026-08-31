@@ -60,7 +60,7 @@ tasks:
         vars: { TEST_CUE_REGISTRY: '{{.MIXED_CUE_REGISTRY}}' }
     env:
       OPM_TEST_REGISTRY_FORCE: '1'
-      OPM_TEST_CATALOG_PATH: 'opmodel.dev/catalogs/opm@v2'
+      OPM_TEST_CATALOG_PATH: 'opmodel.dev/catalogs/opm@v4'
 
   test:local:
     desc: Run unit and integration tests against local opm-registry (workspace modules must be published to localhost:5000)

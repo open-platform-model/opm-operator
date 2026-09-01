@@ -19,7 +19,6 @@ package main
 import (
 	"crypto/tls"
 	"flag"
-	"log/slog"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -27,7 +26,6 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
-	"github.com/go-logr/logr"
 	"github.com/open-platform-model/library/opm/kernel"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -230,11 +228,9 @@ func main() {
 	// Construct the single long-lived library Kernel. Per library/CLAUDE.md a
 	// long-running consumer MUST keep one Kernel (and therefore one schema
 	// *Cache) alive for the process lifetime — never reconstruct it per
-	// reconcile. It is configured from the resolved registry value and a logger
-	// bridged to controller-runtime's logr.
+	// reconcile. It is configured from the resolved registry value.
 	k := kernel.New(
 		kernel.WithRegistry(registry),
-		kernel.WithLogger(slog.New(logr.ToSlogHandler(ctrl.Log.WithName("kernel")))),
 	)
 
 	// Smoke-verify core-schema resolution at startup so a misconfigured or

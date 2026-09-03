@@ -166,17 +166,21 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("generating platform module: %v", err))
 	}
+
+	// Serialize against the render paths: they share this Kernel and read the
+	// platform (and the module directory) this reconcile is about to replace
+	// (see Store.AcquireKernel). Taken before the write so a same-generation
+	// rewrite, which moves the live directory aside during the swap, is never
+	// observed by a render; held through Store.SetGenerated and the prune so
+	// no render sees the swap mid-flight. The registry I/O (the closure
+	// derivation above) stays outside the gate.
+	release := r.Store.AcquireKernel()
+	defer release()
+
 	dir, err := r.Layout.Write(plat.Generation, files)
 	if err != nil {
 		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("writing platform module: %v", err))
 	}
-
-	// Serialize against the render paths: they share this Kernel and read the
-	// platform this reconcile is about to replace (see Store.AcquireKernel).
-	// Held through Store.SetGenerated so a render never observes the swap
-	// mid-flight.
-	release := r.Store.AcquireKernel()
-	defer release()
 
 	// The build is the validation: it proves the pins resolve and exercises
 	// the schema's own tripwires (stamped-versus-derived version, key-to-

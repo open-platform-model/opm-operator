@@ -56,7 +56,7 @@ var _ = Describe("Example module rendering", func() {
 	BeforeEach(func() {
 		skipIfNoTestRegistry()
 		registry = os.Getenv("CUE_REGISTRY")
-		k = kernel.New(kernel.WithRegistry(registry))
+		k = materializeKernel(registry)
 
 		plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
 			Name: "cluster",

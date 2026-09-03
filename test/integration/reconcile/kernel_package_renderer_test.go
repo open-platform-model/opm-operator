@@ -79,7 +79,7 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 		BeforeEach(func() {
 			skipIfNoTestRegistry()
 			registry = os.Getenv("CUE_REGISTRY")
-			k = kernel.New(kernel.WithRegistry(registry))
+			k = materializeKernel(registry)
 
 			// Materialize a platform via the real synth → materialize path so the
 			// store holds the same shape the PlatformReconciler produces. The opm

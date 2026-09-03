@@ -286,6 +286,111 @@ var _ = Describe("Platform Controller", func() {
 			Expect(gens).To(Equal([]int64{first.Generation}), "a same-generation rewrite leaves one directory")
 		})
 
+		It("keeps the current and immediately superseded generation on disk and prunes older ones", func() {
+			k, reg := buildKernelOrSkip()
+			catalogPath := testCatalogPath()
+			store := platformstore.NewStore()
+			r := newPlatformReconciler(store, k, reg)
+
+			plat := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type:     "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {Version: fixtures.CatalogVersion()}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+
+			// reconcileGeneration reconciles the singleton, asserts a clean build
+			// and returns the generation the store now records.
+			reconcileGeneration := func() int64 {
+				GinkgoHelper()
+				_, err := r.Reconcile(ctx, clusterRequest)
+				Expect(err).NotTo(HaveOccurred())
+				fetched := &releasesv1alpha1.Platform{}
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), fetched)).To(Succeed())
+				ready := readyCondition(fetched)
+				Expect(ready.Status).To(Equal(metav1.ConditionTrue), "reason=%s message=%s", ready.Reason, ready.Message)
+				rec, ok := store.Generated()
+				Expect(ok).To(BeTrue())
+				Expect(rec.Generation).To(Equal(fetched.Generation))
+				return rec.Generation
+			}
+			// bumpSpec applies mutate to the stored spec; a spec change advances
+			// metadata.generation, which is what the retention keys on.
+			bumpSpec := func(mutate func(*releasesv1alpha1.PlatformSpec)) {
+				GinkgoHelper()
+				fetched := &releasesv1alpha1.Platform{}
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), fetched)).To(Succeed())
+				mutate(&fetched.Spec)
+				Expect(k8sClient.Update(ctx, fetched)).To(Succeed())
+			}
+
+			gen1 := reconcileGeneration()
+
+			disabled := false
+			bumpSpec(func(s *releasesv1alpha1.PlatformSpec) {
+				s.Registry["opmodel.dev/catalogs/k8s@v1"] = releasesv1alpha1.Subscription{Version: "1.0.0-alpha.2", Enable: &disabled}
+			})
+			gen2 := reconcileGeneration()
+			Expect(gen2).To(BeNumerically(">", gen1))
+
+			bumpSpec(func(s *releasesv1alpha1.PlatformSpec) {
+				delete(s.Registry, "opmodel.dev/catalogs/k8s@v1")
+			})
+			gen3 := reconcileGeneration()
+			Expect(gen3).To(BeNumerically(">", gen2))
+
+			gens, err := r.Layout.Generations()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gens).To(Equal([]int64{gen2, gen3}), "the current and immediately superseded generation stay; older ones are pruned")
+			_, statErr := os.Stat(r.Layout.Dir(gen1))
+			Expect(os.IsNotExist(statErr)).To(BeTrue(), "gen-%d should have been pruned", gen1)
+		})
+
+		It("keeps the current and previous generation on disk and prunes older ones", func() {
+			k, reg := buildKernelOrSkip()
+			store := platformstore.NewStore()
+			r := newPlatformReconciler(store, k, reg)
+
+			plat := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type:     "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{testCatalogPath(): {Version: fixtures.CatalogVersion()}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+
+			var generations []int64
+			reconcileCurrent := func() {
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), plat)).To(Succeed())
+				_, err := r.Reconcile(ctx, clusterRequest)
+				Expect(err).NotTo(HaveOccurred())
+				rec, ok := store.Generated()
+				Expect(ok).To(BeTrue())
+				Expect(rec.Generation).To(Equal(plat.Generation))
+				generations = append(generations, plat.Generation)
+			}
+			bumpGeneration := func(typ string) {
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), plat)).To(Succeed())
+				plat.Spec.Type = typ
+				Expect(k8sClient.Update(ctx, plat)).To(Succeed())
+			}
+
+			reconcileCurrent()
+			bumpGeneration("kubernetes-2")
+			reconcileCurrent()
+			bumpGeneration("kubernetes-3")
+			reconcileCurrent()
+			Expect(generations).To(HaveLen(3))
+			Expect(generations[2]).To(BeNumerically(">", generations[1]))
+
+			onDisk, err := r.Layout.Generations()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(onDisk).To(Equal(generations[1:]), "current and previous generation stay, older ones are pruned")
+		})
+
 		It("surfaces a nonexistent pin as Ready=False/BuildFailed naming path and version, keeping the last good record", func() {
 			k, reg := buildKernelOrSkip()
 

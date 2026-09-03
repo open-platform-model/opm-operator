@@ -34,7 +34,7 @@ import (
 )
 
 // This spec validates the podinfo example module end-to-end: it deploys the
-// controller, materializes the cluster Platform, applies the podinfo
+// controller, generates and builds the cluster Platform's module, applies the podinfo
 // ModuleInstance, and asserts the rendered Deployment's pods reach Ready — which
 // is only possible if the modelled HTTP liveness (/healthz) and readiness
 // (/readyz) probes pass against the running podinfo container. It then inspects

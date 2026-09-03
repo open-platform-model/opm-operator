@@ -172,7 +172,7 @@ var _ = Describe("ModulePackage live artifact pipeline", Ordered, func() {
 
 		By("applying the cluster Platform")
 		// ModulePackage reconciliation is Platform-gated (PlatformNotReady
-		// blocks apply until a materialized platform exists in the store).
+		// blocks apply until the platform store holds a built platform).
 		_, err = utils.Run(exec.Command("kubectl", "apply", "-f",
 			filepath.Join(projectDir, "config/samples/opmodel.dev_v1alpha1_platform.yaml")))
 		Expect(err).NotTo(HaveOccurred(), "Failed to apply the Platform")

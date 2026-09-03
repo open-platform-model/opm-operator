@@ -8,7 +8,7 @@ Task 1 is the gate for everything below it: this change was authored intent-firs
 
 ## Generation (after task 1)
 
-- [ ] 2. Platform-module generation package: CR spec → deterministic module content (`cue.mod/module.cue` with pins per the resolved closure answer, `platform.cue` with importing entries + expected-version stamps, disabled entries preserved); unit tests for determinism, two-catalog, disabled-entry, and stamp emission.
+- [x] 2. Platform-module generation package: CR spec → deterministic module content (`cue.mod/module.cue` with pins per the resolved closure answer, `platform.cue` with importing entries + expected-version stamps, disabled entries preserved); unit tests for determinism, two-catalog, disabled-entry, and stamp emission.
 - [ ] 3. Disk lifecycle per the resolved layout: write-then-swap (no partially-written module ever current), superseded-generation cleanup, boot regeneration path; unit tests with a temp root.
 
 ## Reconciler

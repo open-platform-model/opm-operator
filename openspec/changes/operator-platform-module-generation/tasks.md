@@ -4,7 +4,7 @@ Task 1 is the gate for everything below it: this change was authored intent-firs
 
 ## Design (second pass)
 
-- [ ] 1. Resolve `design.md`'s six open questions in a second pass (transitive-closure/tidy with a measurement shared with `cli-config-platform-module`, disk layout + boot regeneration, core-pin source, module path, status vocabulary + observability, package naming + store recording); update design.md and the delta spec where answers add or sharpen scenarios.
+- [x] 1. Resolve `design.md`'s six open questions in a second pass (transitive-closure/tidy with a measurement shared with `cli-config-platform-module`, disk layout + boot regeneration, core-pin source, module path, status vocabulary + observability, package naming + store recording); update design.md and the delta spec where answers add or sharpen scenarios.
 
 ## Generation (after task 1)
 

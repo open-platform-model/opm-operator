@@ -13,8 +13,8 @@ Task 1 is the gate for everything below it: this change was authored intent-firs
 
 ## Reconciler
 
-- [ ] 4. `PlatformReconciler`: replace synthesize+materialize with generate+build (kernel shape-gated platform loader, operator registry mapping); Ready condition and reason vocabulary per the resolved status answer; keep generation recording compatible with the store until `operator-render-switch`.
-- [ ] 5. Integration tests (envtest): Ready=True on a clean CR, Ready=False naming the path/version for a nonexistent pin, Ready=False naming the entry for a generation-defect conflict; determinism across repeated reconciles of one generation.
+- [x] 4. `PlatformReconciler`: replace synthesize+materialize with generate+build (kernel shape-gated platform loader, operator registry mapping); Ready condition and reason vocabulary per the resolved status answer; keep generation recording compatible with the store until `operator-render-switch`.
+- [x] 5. Integration tests (envtest): Ready=True on a clean CR, Ready=False naming the path/version for a nonexistent pin, Ready=False naming the entry for a generation-defect conflict; determinism across repeated reconciles of one generation.
 
 ## Docs and verification
 

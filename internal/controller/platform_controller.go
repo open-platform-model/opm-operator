@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sort"
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/patch"
-	oerrors "github.com/open-platform-model/library/opm/errors"
-	"github.com/open-platform-model/library/opm/helper/synth"
+	loaderfile "github.com/open-platform-model/library/opm/helper/loader/file"
 	"github.com/open-platform-model/library/opm/kernel"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,6 +42,7 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
+	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/internal/version"
@@ -53,39 +54,57 @@ import (
 const platformSingletonName = "cluster"
 
 // transientRecheckInterval is the fast retry cadence for clearly-transient
-// materialize failures (network/timeout). Kept conservative (a minute, not
+// build failures (network/timeout). Kept conservative (a minute, not
 // seconds) so a transient registry blip self-heals quickly without hammering
 // the singleton's registry; non-transient and unclassifiable failures fall
 // back to the long reconcile.StalledRecheckInterval.
 const transientRecheckInterval = time.Minute
 
-// PlatformReconciler reconciles the singleton Platform CR into a materialized
-// platform held in a process-local, generation-keyed store. On reconcile it
-// maps the spec to a synth.PlatformInput, runs SynthesizePlatform then
-// Materialize, holds the result, and surfaces the outcome on the CR's Ready
-// condition. Nothing yet reads the store; the CR's status is the observable
-// contract this slice delivers.
+// PlatformReconciler reconciles the singleton Platform CR into a platform CUE
+// module on the operator's own disk (enhancement 0019 D6). Per CR generation
+// it derives the module's dependency closure from the pinned catalogs'
+// published module files, generates the module (one importing #registry
+// entry per subscription, the CR's version stamped as the expected-version
+// tripwire), writes it under a per-generation directory, builds it through
+// the kernel's shape-gated platform loader, and records the result in the
+// process-local store for the render path. The outcome surfaces on the CR's
+// Ready condition: Generated, GenerateFailed or BuildFailed.
 type PlatformReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
 	EventRecorder events.EventRecorder
 
 	// Kernel is the shared, long-lived library Kernel constructed once at
-	// manager startup. SynthesizePlatform and Materialize run on it.
+	// manager startup. The platform build runs on it.
 	Kernel *kernel.Kernel
 
-	// Store holds the current materialized platform. Written here, read by
-	// the render path in a later slice.
+	// Store holds the current generated platform. Written here, read by the
+	// render path.
 	Store *platformstore.Store
+
+	// Registry is the CUE registry mapping (the manager's --registry value)
+	// the closure derivation and the build resolve through. Empty falls back
+	// to the process CUE_REGISTRY.
+	Registry string
+
+	// Layout owns the module directories under the manager's --platform-dir.
+	Layout platformmodule.Layout
+
+	// ModFiles serves published module files for the closure derivation.
+	// Nil constructs one from Registry on first use; a test may inject a
+	// fixture graph.
+	ModFiles platformmodule.ModFileSource
 }
 
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms,verbs=get;list;watch
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms/status,verbs=get;update;patch
 
-// Reconcile materializes the cluster-singleton Platform and records the
-// outcome on its status. It reconciles only the object named "cluster";
-// any other name is ignored without error. On delete it clears the store
-// slot (workloads are untouched — §8.4 freeze-don't-teardown).
+// Reconcile generates and builds the platform module for the
+// cluster-singleton Platform and records the outcome on its status. It
+// reconciles only the object named "cluster"; any other name is ignored
+// without error. On delete it clears the store (workloads are untouched:
+// §8.4 freeze-don't-teardown); the module directories are left for the next
+// generation's prune or the next manager start.
 func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -100,7 +119,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if apierrors.IsNotFound(err) {
 			// Deleted: drop the held platform. Workloads are not torn down.
 			r.Store.Clear()
-			log.Info("Platform deleted, cleared materialized-platform store", "name", req.Name)
+			log.Info("Platform deleted, cleared platform store", "name", req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -119,63 +138,109 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// pre-reconcile status.
 	patcher := patch.NewSerialPatcher(&plat, r.Client)
 
-	in := platformInput(&plat)
+	entries, err := platformEntries(&plat)
+	if err != nil {
+		// A stored object predating the CRD-required version field. Nothing
+		// external can change this; the stalled recheck keeps the status
+		// honest without hammering anything.
+		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, err.Error())
+	}
+
+	src, err := r.modFiles()
+	if err != nil {
+		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("configuring module registry: %v", err))
+	}
+	deps, err := platformmodule.Closure(ctx, src, platformmodule.Roots(entries))
+	if err != nil {
+		// The pinned build does not exist, or the registry is unreachable:
+		// the error names the module path and version.
+		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("resolving platform dependencies: %v", err))
+	}
+
+	files, err := platformmodule.Generate(platformmodule.Input{
+		Name:    plat.Name,
+		Type:    plat.Spec.Type,
+		Entries: entries,
+		Deps:    deps,
+	})
+	if err != nil {
+		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("generating platform module: %v", err))
+	}
+	dir, err := r.Layout.Write(plat.Generation, files)
+	if err != nil {
+		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("writing platform module: %v", err))
+	}
 
 	// Serialize against the render paths: they share this Kernel and read the
 	// platform this reconcile is about to replace (see Store.AcquireKernel).
-	// Held through Store.Set so a render never observes the swap mid-flight.
+	// Held through Store.SetGenerated so a render never observes the swap
+	// mid-flight.
 	release := r.Store.AcquireKernel()
 	defer release()
 
-	// SchemaCache is left nil; SynthesizePlatform defaults it to the Kernel's
-	// cache, preserving the one-Cache-per-process invariant.
-	p, err := r.Kernel.SynthesizePlatform(ctx, in)
+	// The build is the validation: it proves the pins resolve and exercises
+	// the schema's own tripwires (stamped-versus-derived version, key-to-
+	// modulePath binding), which name the offending #registry entry.
+	val, err := r.Kernel.LoadPlatformPackage(ctx, dir, loaderfile.LoadOptions{Registry: r.Registry})
 	if err != nil {
-		// Synthesis failures (schema/registry access, malformed spec) are not
-		// MaterializeErrors but, like materialize, resolve against external
-		// state that can recover without a spec change — so requeue on a
-		// bounded interval rather than waiting for the generation predicate.
-		return r.failMaterialize(ctx, patcher, &plat, err, fmt.Sprintf("synthesizing platform: %v", err))
+		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
+	}
+	p, err := r.Kernel.NewPlatformFromValue(val)
+	if err != nil {
+		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
 	}
 
-	mp, err := r.Kernel.Materialize(ctx, p)
-	if err != nil {
-		msg := fmt.Sprintf("materializing platform: %v", err)
-		if me, ok := errors.AsType[*oerrors.MaterializeError](err); ok {
-			msg = fmt.Sprintf("materialize failed: kind=%s subscription=%q version=%q: %v",
-				me.Kind, me.Subscription, me.Version, me.Cause)
-		}
-		// failMaterialize leaves the store untouched: a transient failure must
-		// not blank the platform the cluster is running on (§8.4 freeze posture).
-		return r.failMaterialize(ctx, patcher, &plat, err, msg)
+	// Success: record the generated module under the generation key, keep
+	// the immediately superseded generation on disk (a render may still be
+	// reading it) and prune everything older.
+	keep := []int64{plat.Generation}
+	if prev, ok := r.Store.Generated(); ok && prev.Generation != plat.Generation {
+		keep = append(keep, prev.Generation)
+	}
+	r.Store.SetGenerated(platformstore.Generated{Generation: plat.Generation, Dir: dir, Platform: p})
+	if err := r.Layout.Prune(keep...); err != nil {
+		log.Error(err, "Failed to prune superseded platform modules", "dir", r.Layout.Root)
 	}
 
-	// Success: hold the materialized platform under the generation key and
-	// mark Ready.
-	r.Store.Set(plat.Generation, mp)
 	plat.Status.ObservedGeneration = plat.Generation
 	plat.Status.OperatorVersion = version.Full()
-	status.MarkReadyWithReason(&plat, status.MaterializedReason, "Platform materialized")
-	r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeNormal, status.MaterializedReason, "Materialize", "Platform materialized for generation %d", plat.Generation)
+	status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
+	r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeNormal, status.GeneratedReason, "Generate", "Platform module generated and built for generation %d", plat.Generation)
 
-	log.Info("Platform materialized", "name", plat.Name, "generation", plat.Generation)
+	log.Info("Platform module generated and built", "name", plat.Name, "generation", plat.Generation, "dir", dir)
 	return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
 }
 
-// failMaterialize records a synth/materialize failure on plat and returns the
-// requeue result. Materialize resolves against a mutable external registry, so
-// no failure is terminal: it sets Ready=False/MaterializeFailed with msg,
-// records observedGeneration (so a stalled Platform reflects the generation it
-// observed rather than reading as un-reconciled), and requeues on a bounded
-// interval — short for clearly-transient causes (classified best-effort from
-// classifyErr), the long stalled recheck otherwise. The warning event is
-// emitted only when the failure is newly entered or its message changes, so
-// periodic rechecks of an unchanged failure do not spam events. The store is
-// left untouched, preserving any last-good materialized platform.
-func (r *PlatformReconciler) failMaterialize(
+// modFiles returns the module-file source for closure derivation,
+// constructing it from Registry on first use.
+func (r *PlatformReconciler) modFiles() (platformmodule.ModFileSource, error) {
+	if r.ModFiles != nil {
+		return r.ModFiles, nil
+	}
+	src, err := platformmodule.NewRegistry(r.Registry)
+	if err != nil {
+		return nil, err
+	}
+	r.ModFiles = src
+	return src, nil
+}
+
+// failReconcile records a generate/build failure on plat and returns the
+// requeue result. Both resolve against mutable external state (a registry,
+// a volume), so no failure is terminal: it sets Ready=False with reason and
+// msg, records observedGeneration (so a stalled Platform reflects the
+// generation it observed rather than reading as un-reconciled), and requeues
+// on a bounded interval: short for clearly-transient causes (classified
+// best-effort from classifyErr), the long stalled recheck otherwise. The
+// warning event is emitted only when the failure is newly entered or its
+// reason or message changes, so periodic rechecks of an unchanged failure do
+// not spam events. The store is left untouched, preserving any last-good
+// generated platform.
+func (r *PlatformReconciler) failReconcile(
 	ctx context.Context,
 	patcher *patch.SerialPatcher,
 	plat *releasesv1alpha1.Platform,
+	reason string,
 	classifyErr error,
 	msg string,
 ) (ctrl.Result, error) {
@@ -183,31 +248,30 @@ func (r *PlatformReconciler) failMaterialize(
 	prior := apimeta.FindStatusCondition(plat.Status.Conditions, status.ReadyCondition)
 	transition := prior == nil ||
 		prior.Status != metav1.ConditionFalse ||
-		prior.Reason != status.MaterializeFailedReason ||
+		prior.Reason != reason ||
 		prior.Message != msg
 
 	plat.Status.ObservedGeneration = plat.Generation
 	plat.Status.OperatorVersion = version.Full()
-	status.MarkStalled(plat, status.MaterializeFailedReason, "%s", msg)
+	status.MarkStalled(plat, reason, "%s", msg)
 
 	if transition {
-		r.EventRecorder.Eventf(plat, nil, corev1.EventTypeWarning, status.MaterializeFailedReason, "Materialize", "%s", msg)
+		r.EventRecorder.Eventf(plat, nil, corev1.EventTypeWarning, reason, "Generate", "%s", msg)
 	}
 
 	interval := opmreconcile.StalledRecheckInterval
-	if isTransientMaterialize(classifyErr) {
+	if isTransientFailure(classifyErr) {
 		interval = transientRecheckInterval
 	}
 	return ctrl.Result{RequeueAfter: interval}, r.patchStatus(ctx, patcher, plat)
 }
 
-// isTransientMaterialize reports whether err (or any error it wraps) is a
+// isTransientFailure reports whether err (or any error it wraps) is a
 // clearly-transient network/timeout failure worth a fast retry. It is
 // best-effort: unrecognized causes return false so the caller falls back to the
 // long recheck interval, making a misclassification never worse than a slow
-// recheck. errors.As/errors.Is unwrap through MaterializeError.Cause to reach
-// the underlying network error.
-func isTransientMaterialize(err error) bool {
+// recheck.
+func isTransientFailure(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -234,26 +298,26 @@ func (r *PlatformReconciler) patchStatus(ctx context.Context, patcher *patch.Ser
 	)
 }
 
-// platformInput maps a Platform CR to the typed synth.PlatformInput. The CRD
-// was authored as a 1:1 projection of the core #Platform surface, so the
-// mapping is mechanical. SchemaCache is left nil for the Kernel to default.
-func platformInput(plat *releasesv1alpha1.Platform) synth.PlatformInput {
-	in := synth.PlatformInput{
-		Name:        plat.Name,
-		Type:        plat.Spec.Type,
-		Labels:      plat.Labels,
-		Annotations: plat.Annotations,
-	}
-	if len(plat.Spec.Registry) > 0 {
-		in.Subscriptions = make(map[string]synth.SubscriptionSpec, len(plat.Spec.Registry))
-		for path, sub := range plat.Spec.Registry {
-			in.Subscriptions[path] = synth.SubscriptionSpec{
-				Enable:  sub.Enable,
-				Version: sub.Version,
-			}
+// platformEntries maps the CR's registry to the generator's entries, in
+// sorted path order. The CRD was authored as a 1:1 projection of the core
+// #Platform surface, so the mapping is mechanical: a nil Enable resolves to
+// the schema default (true). A subscription without a version (a stored
+// object predating the CRD-required field, which validation ratcheting keeps
+// status-patchable) is refused naming the path.
+func platformEntries(plat *releasesv1alpha1.Platform) ([]platformmodule.Entry, error) {
+	entries := make([]platformmodule.Entry, 0, len(plat.Spec.Registry))
+	for path, sub := range plat.Spec.Registry {
+		if sub.Version == "" {
+			return nil, fmt.Errorf("registry entry %q: version is required (stored object predates the required field)", path)
 		}
+		entries = append(entries, platformmodule.Entry{
+			Path:    path,
+			Version: sub.Version,
+			Enable:  sub.Enable == nil || *sub.Enable,
+		})
 	}
-	return in
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	return entries, nil
 }
 
 // SetupWithManager wires the controller into mgr, watching the Platform

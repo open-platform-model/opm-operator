@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/open-platform-model/library/opm/materialize"
+	"github.com/open-platform-model/library/opm/platform"
 )
 
 func TestStore_EmptyGet(t *testing.T) {
@@ -110,4 +111,40 @@ func TestStore_ConcurrentReadDuringWrite(t *testing.T) {
 	readerWg.Wait()
 	close(stop)
 	writerWg.Wait()
+}
+
+func TestStore_GeneratedRecord(t *testing.T) {
+	s := NewStore()
+	if _, ok := s.Generated(); ok {
+		t.Fatal("empty store should report no generated record")
+	}
+
+	s.SetGenerated(Generated{Generation: 4, Dir: "/tmp/opm-platform/gen-4", Platform: &platform.Platform{}})
+	got, ok := s.Generated()
+	if !ok {
+		t.Fatal("Generated after SetGenerated should report a record")
+	}
+	if got.Generation != 4 || got.Dir != "/tmp/opm-platform/gen-4" || got.Platform == nil {
+		t.Fatalf("unexpected record %+v", got)
+	}
+	if g := s.Generation(); g != 4 {
+		t.Fatalf("Generation should follow the generated record, got %d", g)
+	}
+	// The materialized slot is independent: nothing writes it any more.
+	if mp, ok := s.Get(); ok || mp != nil {
+		t.Fatalf("materialized slot should stay empty, got (%v, %v)", mp, ok)
+	}
+
+	s.SetGenerated(Generated{Generation: 5, Dir: "/tmp/opm-platform/gen-5", Platform: &platform.Platform{}})
+	if got, _ := s.Generated(); got.Generation != 5 {
+		t.Fatalf("a later SetGenerated should replace the record, got %+v", got)
+	}
+
+	s.Clear()
+	if _, ok := s.Generated(); ok {
+		t.Fatal("Clear should drop the generated record")
+	}
+	if g := s.Generation(); g != 0 {
+		t.Fatalf("Clear should reset generation, got %d", g)
+	}
 }

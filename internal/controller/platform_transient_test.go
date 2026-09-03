@@ -19,11 +19,10 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"testing"
-
-	oerrors "github.com/open-platform-model/library/opm/errors"
 )
 
 // timeoutError is a net.Error whose Timeout() is true, modelling a dial/read
@@ -36,7 +35,7 @@ func (timeoutError) Temporary() bool { return true }
 
 var _ net.Error = timeoutError{}
 
-func TestIsTransientMaterialize(t *testing.T) {
+func TestIsTransientFailure(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -63,21 +62,15 @@ func TestIsTransientMaterialize(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "transient cause wrapped in MaterializeError is transient",
-			err: &oerrors.MaterializeError{
-				Kind:         oerrors.MaterializeKindCatalog,
-				Subscription: "testing.opmodel.dev/catalogs/example",
-				Cause:        &url.Error{Op: "Get", URL: "https://registry.invalid/v2/", Err: errors.New("connection refused")},
-			},
+			name: "transient cause wrapped in a closure error is transient",
+			err: fmt.Errorf("resolving dependency testing.opmodel.dev/catalogs/example@v0.1.0: %w",
+				&url.Error{Op: "Get", URL: "https://registry.invalid/v2/", Err: errors.New("connection refused")}),
 			want: true,
 		},
 		{
-			name: "semantic MaterializeError (path not found) is not transient",
-			err: &oerrors.MaterializeError{
-				Kind:         oerrors.MaterializeKindCatalog,
-				Subscription: "testing.opmodel.dev/catalogs/does-not-exist",
-				Cause:        errors.New("subscription path could not be resolved"),
-			},
+			name: "semantic closure error (module not found) is not transient",
+			err: fmt.Errorf("resolving dependency testing.opmodel.dev/catalogs/does-not-exist@v9.9.9: %w",
+				errors.New("module not found")),
 			want: false,
 		},
 		{
@@ -89,8 +82,8 @@ func TestIsTransientMaterialize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isTransientMaterialize(tt.err); got != tt.want {
-				t.Errorf("isTransientMaterialize(%v) = %v, want %v", tt.err, got, tt.want)
+			if got := isTransientFailure(tt.err); got != tt.want {
+				t.Errorf("isTransientFailure(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
 	}

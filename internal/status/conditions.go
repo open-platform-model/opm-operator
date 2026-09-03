@@ -29,9 +29,11 @@ const (
 	DriftDetectedReason           = "DriftDetected"
 	ManagedExternallyReason       = "ManagedExternally"
 
-	// Platform-specific reasons.
-	MaterializedReason      = "Materialized"      // Ready=True: the Platform materialized successfully.
-	MaterializeFailedReason = "MaterializeFailed" // Ready=False: Materialize returned a MaterializeError.
+	// Platform-specific reasons (enhancement 0019 D6: the reconciler generates
+	// and builds the platform module; the materialize-era reasons are retired).
+	GeneratedReason      = "Generated"      // Ready=True: the platform module was generated and built.
+	GenerateFailedReason = "GenerateFailed" // Ready=False: the module could not be written to disk.
+	BuildFailedReason    = "BuildFailed"    // Ready=False: a dependency did not resolve or the module did not build.
 
 	// ModulePackage-specific reasons.
 	SourceNotReadyReason = "SourceNotReady"

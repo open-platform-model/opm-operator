@@ -89,11 +89,11 @@ var _ = Describe("Manager", Ordered, func() {
 			// Wait for the registry-override rollout to fully settle before any
 			// spec runs. The patch triggers a new ReplicaSet; without this wait
 			// the specs race the rollout and can hit a mid-test leader handoff
-			// (empty in-memory platform store) plus a cold catalog cache on the
-			// new pod's first synth, which escalates the reconcile backoff past
-			// the spec timeout. Settling first gives a single stable leader that
-			// materializes the Platform (warming the catalog cache) before the
-			// ModuleInstance specs apply their CRs.
+			// (empty in-memory platform store) plus a cold CUE module cache on
+			// the new pod's first build, which escalates the reconcile backoff
+			// past the spec timeout. Settling first gives a single stable leader
+			// that generates and builds the Platform's module (warming the module
+			// cache) before the ModuleInstance specs apply their CRs.
 			By("waiting for the registry-override rollout to settle")
 			cmd = exec.Command("kubectl", "-n", namespace, "rollout", "status",
 				"deployment/opm-operator-controller-manager", "--timeout=120s")

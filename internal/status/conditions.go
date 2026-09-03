@@ -29,9 +29,11 @@ const (
 	DriftDetectedReason           = "DriftDetected"
 	ManagedExternallyReason       = "ManagedExternally"
 
-	// Platform-specific reasons.
-	MaterializedReason      = "Materialized"      // Ready=True: the Platform materialized successfully.
-	MaterializeFailedReason = "MaterializeFailed" // Ready=False: Materialize returned a MaterializeError.
+	// Platform-specific reasons (enhancement 0019 D6: the reconciler generates
+	// and builds the platform module; the materialize-era reasons are retired).
+	GeneratedReason      = "Generated"      // Ready=True: the platform module was generated and built.
+	GenerateFailedReason = "GenerateFailed" // Ready=False: the module could not be written to disk.
+	BuildFailedReason    = "BuildFailed"    // Ready=False: a dependency did not resolve or the module did not build.
 
 	// ModulePackage-specific reasons.
 	SourceNotReadyReason = "SourceNotReady"
@@ -69,7 +71,7 @@ func MarkReady(obj conditions.Setter, messageFormat string, messageArgs ...any) 
 
 // MarkReadyWithReason sets Ready=True with an explicit reason and removes
 // Reconciling and Stalled conditions. Used where the success reason is not the
-// generic ReconciliationSucceeded (e.g. the Platform's Materialized reason).
+// generic ReconciliationSucceeded (e.g. the Platform's Generated reason).
 func MarkReadyWithReason(obj conditions.Setter, reason, messageFormat string, messageArgs ...any) {
 	conditions.Delete(obj, ReconcilingCondition)
 	conditions.Delete(obj, StalledCondition)

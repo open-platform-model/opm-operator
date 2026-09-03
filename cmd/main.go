@@ -42,6 +42,7 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/controller"
 	_ "github.com/open-platform-model/opm-operator/internal/metrics"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
+	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/source"
 	opmversion "github.com/open-platform-model/opm-operator/internal/version"
@@ -65,6 +66,7 @@ func init() {
 func main() {
 	var registry string
 	var cueCacheDir string
+	var platformDir string
 	var defaultServiceAccount string
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
@@ -96,6 +98,10 @@ func main() {
 			"testing.opmodel.dev/* to ghcr.io/open-platform-model with registry.cue.works as fallback.")
 	flag.StringVar(&cueCacheDir, "cue-cache-dir", "/tmp/cue-cache",
 		"Directory for CUE module download cache.")
+	flag.StringVar(&platformDir, "platform-dir", "/tmp/opm-platform",
+		"Directory the operator writes the generated platform CUE module to, one subdirectory per "+
+			"Platform generation. Emptied at start; the module is regenerated from the Platform CR on "+
+			"the first reconcile. Must be writable (the shipped manifest mounts an emptyDir at /tmp).")
 	flag.StringVar(&defaultServiceAccount, "default-service-account", "",
 		"Name of the ServiceAccount to impersonate when a ModuleInstance or ModulePackage has an empty "+
 			"spec.serviceAccountName. The SA is resolved in the resource's own namespace (not the "+
@@ -242,10 +248,19 @@ func main() {
 	}
 	setupLog.Info("OPM core schema resolved", "version", version)
 
-	// Single-slot, generation-keyed holder for the materialized cluster
-	// Platform. Constructed once and shared with the PlatformReconciler (writer)
-	// and, in a later slice, the render path (readers).
+	// Single-slot, generation-keyed holder for the cluster Platform.
+	// Constructed once and shared with the PlatformReconciler (writer) and the
+	// render path (readers).
 	platformStore := platformstore.NewStore()
+
+	// The generated platform module lives on ephemeral disk; the CR is the
+	// source of truth. Empty the directory so nothing stale from a previous
+	// container survives, then let the first Platform reconcile regenerate.
+	platformLayout := platformmodule.Layout{Root: platformDir}
+	if err := platformLayout.Reset(); err != nil {
+		setupLog.Error(err, "Failed to prepare platform module directory", "dir", platformDir)
+		os.Exit(1)
+	}
 
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
@@ -294,6 +309,8 @@ func main() {
 		EventRecorder: mgr.GetEventRecorder("opm-controller"),
 		Kernel:        k,
 		Store:         platformStore,
+		Registry:      registry,
+		Layout:        platformLayout,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Platform")
 		os.Exit(1)

@@ -39,7 +39,7 @@ import (
 
 // failureReconciler builds a PlatformReconciler with a concrete *FakeRecorder so
 // the test can inspect emitted events, and exercises the failure path directly
-// (no live registry — the failMaterialize helper carries all the novel
+// (no live registry — the failReconcile helper carries all the novel
 // retry/observed-generation/event-gating behavior under test).
 func failureReconciler(store *platformstore.Store) (*PlatformReconciler, *events.FakeRecorder) {
 	recorder := events.NewFakeRecorder(10)
@@ -75,13 +75,13 @@ var _ = Describe("Platform Controller failure handling", func() {
 		deletePlatform(platformSingletonName)
 	})
 
-	It("requeues a transient failure on the short interval with Ready=False/MaterializeFailed", func() {
+	It("requeues a transient failure on the short interval with Ready=False/BuildFailed", func() {
 		r, _ := failureReconciler(platformstore.NewStore())
 		plat := createSingleton()
 		patcher := freshPatcher(plat)
 
 		// A deadline-exceeded cause classifies as transient.
-		res, err := r.failMaterialize(ctx, patcher, plat, context.DeadlineExceeded, "materialize failed: registry timed out")
+		res, err := r.failReconcile(ctx, patcher, plat, status.BuildFailedReason, context.DeadlineExceeded, "resolving platform dependencies: registry timed out")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res.RequeueAfter).To(Equal(transientRecheckInterval))
 
@@ -90,7 +90,7 @@ var _ = Describe("Platform Controller failure handling", func() {
 		ready := apimeta.FindStatusCondition(fetched.Status.Conditions, status.ReadyCondition)
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-		Expect(ready.Reason).To(Equal(status.MaterializeFailedReason))
+		Expect(ready.Reason).To(Equal(status.BuildFailedReason))
 	})
 
 	It("requeues a semantic/unclassifiable failure on the long stalled interval", func() {
@@ -99,7 +99,7 @@ var _ = Describe("Platform Controller failure handling", func() {
 		patcher := freshPatcher(plat)
 
 		// A plain error cannot be classified as transient → long interval.
-		res, err := r.failMaterialize(ctx, patcher, plat, errors.New("subscription path could not be resolved"), "materialize failed: bad subscription path")
+		res, err := r.failReconcile(ctx, patcher, plat, status.BuildFailedReason, errors.New("subscription path could not be resolved"), "resolving platform dependencies: bad subscription path")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
 	})
@@ -109,7 +109,7 @@ var _ = Describe("Platform Controller failure handling", func() {
 		plat := createSingleton()
 		patcher := freshPatcher(plat)
 
-		_, err := r.failMaterialize(ctx, patcher, plat, errors.New("boom"), "materialize failed: boom")
+		_, err := r.failReconcile(ctx, patcher, plat, status.GenerateFailedReason, errors.New("boom"), "writing platform module: boom")
 		Expect(err).NotTo(HaveOccurred())
 
 		fetched := &releasesv1alpha1.Platform{}
@@ -123,7 +123,7 @@ var _ = Describe("Platform Controller failure handling", func() {
 		plat := createSingleton()
 		patcher := freshPatcher(plat)
 
-		_, err := r.failMaterialize(ctx, patcher, plat, errors.New("boom"), "materialize failed: boom")
+		_, err := r.failReconcile(ctx, patcher, plat, status.GenerateFailedReason, errors.New("boom"), "writing platform module: boom")
 		Expect(err).NotTo(HaveOccurred())
 
 		fetched := &releasesv1alpha1.Platform{}
@@ -134,14 +134,14 @@ var _ = Describe("Platform Controller failure handling", func() {
 	It("does not re-emit the warning event across repeated identical failures", func() {
 		r, recorder := failureReconciler(platformstore.NewStore())
 		plat := createSingleton()
-		const msg = "materialize failed: identical cause"
+		const msg = "building platform module: identical cause"
 
 		// First reconcile: enters the failed state → one event.
-		_, err := r.failMaterialize(ctx, freshPatcher(plat), plat, errors.New("boom"), msg)
+		_, err := r.failReconcile(ctx, freshPatcher(plat), plat, status.BuildFailedReason, errors.New("boom"), msg)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Second reconcile: same failure, unchanged message → no new event.
-		_, err = r.failMaterialize(ctx, freshPatcher(plat), plat, errors.New("boom"), msg)
+		_, err = r.failReconcile(ctx, freshPatcher(plat), plat, status.BuildFailedReason, errors.New("boom"), msg)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(recorder.Events).To(HaveLen(1), "an unchanged failure must not re-emit the warning event on recheck")
@@ -149,19 +149,19 @@ var _ = Describe("Platform Controller failure handling", func() {
 
 	It("preserves a previously stored good platform after a failed reconcile", func() {
 		store := platformstore.NewStore()
-		lastGood := materializeMarker()
-		store.Set(7, lastGood)
+		lastGood := generatedMarker(7)
+		store.SetGenerated(lastGood)
 
 		r, _ := failureReconciler(store)
 		plat := createSingleton()
 		patcher := freshPatcher(plat)
 
-		_, err := r.failMaterialize(ctx, patcher, plat, errors.New("boom"), "materialize failed: boom")
+		_, err := r.failReconcile(ctx, patcher, plat, status.GenerateFailedReason, errors.New("boom"), "writing platform module: boom")
 		Expect(err).NotTo(HaveOccurred())
 
-		held, ok := store.Get()
+		held, ok := store.Generated()
 		Expect(ok).To(BeTrue(), "the last-good platform must survive a failed reconcile")
-		Expect(held).To(BeIdenticalTo(lastGood))
+		Expect(held.Platform).To(BeIdenticalTo(lastGood.Platform))
 		Expect(store.Generation()).To(Equal(int64(7)))
 	})
 })

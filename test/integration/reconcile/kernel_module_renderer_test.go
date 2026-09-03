@@ -72,14 +72,14 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 		BeforeEach(func() {
 			skipIfNoTestRegistry()
 			registry = os.Getenv("CUE_REGISTRY")
-			k = kernel.New(kernel.WithRegistry(registry))
+			k = materializeKernel(registry)
 
 			// Materialize a platform via the real synth → materialize path so the
 			// store holds the same shape the PlatformReconciler produces. The opm
 			// catalog provides the transformers the fixture module matches.
 			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 			if catalogPath == "" {
-				catalogPath = "opmodel.dev/catalogs/opm@v4"
+				catalogPath = defaultTestCatalogPath
 			}
 			// The subscription names exactly one published catalog build (0010
 			// D14). Resource/transformer FQNs embed the catalog version, so the

@@ -17,6 +17,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/open-platform-model/library/opm/kernel"
+	"github.com/open-platform-model/library/opm/schema"
+
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -31,6 +34,11 @@ func registrySkip(msg string) {
 	}
 	Skip(msg)
 }
+
+// defaultTestCatalogPath is the catalog the registry-backed specs subscribe
+// to when OPM_TEST_CATALOG_PATH is unset: the first-party abstraction
+// catalog, resolved from GHCR under `task dev:test`.
+const defaultTestCatalogPath = "opmodel.dev/catalogs/opm@v4"
 
 // testCatalogVersion is the exact catalog build the registry-backed specs
 // subscribe to — the shared default lives in fixtures.CatalogVersion so a
@@ -82,4 +90,22 @@ func containerToolAvailable() bool {
 		}
 	}
 	return false
+}
+
+// materializeSchemaModule pins the core schema the interim materialize-based
+// specs synthesize against. The library's schema loader floats on the v2
+// major, which since 2026-09-01 resolves core 2.0.0-alpha.7, where a registry
+// entry carries its catalog by import and derives its version (0019 D5);
+// SynthesizePlatform + Materialize predate that shape and refuse it. These
+// specs exercise the render paths' interim materialized-slot contract, which
+// operator-render-switch retires together with this pin.
+const materializeSchemaModule = "opmodel.dev/core@v2.0.0-alpha.6"
+
+// materializeKernel builds a Kernel whose schema cache is pinned to
+// materializeSchemaModule, resolving through registry.
+func materializeKernel(registry string) *kernel.Kernel {
+	return kernel.New(
+		kernel.WithRegistry(registry),
+		kernel.WithSchemaLoader(schema.OCILoader{Module: materializeSchemaModule, Registry: registry}),
+	)
 }

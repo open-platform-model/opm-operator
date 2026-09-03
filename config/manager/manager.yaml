@@ -86,10 +86,10 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
         # Memory scales with the CATALOG SET, not with the number of workloads.
-        # Platform materialization pulls and indexes EVERY version each
-        # subscription's filter admits and holds them all in memory at once
-        # (library/opm/materialize), and rendering a module evaluates its whole
-        # CUE tree — modules that vendor CRDs carry megabytes of it.
+        # The generated platform module pins one build per subscribed catalog
+        # (enhancement 0019 D6), and every render evaluates the platform's
+        # catalogs together with the module's whole CUE tree — modules that
+        # vendor CRDs carry megabytes of it.
         #
         # 1Gi was not enough for a real cluster: a Platform indexing 7 catalog
         # versions while rendering a module with ~3.4MB of vendored CRDs was

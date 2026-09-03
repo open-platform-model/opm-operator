@@ -56,13 +56,13 @@ var _ = Describe("Example module rendering", func() {
 	BeforeEach(func() {
 		skipIfNoTestRegistry()
 		registry = os.Getenv("CUE_REGISTRY")
-		k = kernel.New(kernel.WithRegistry(registry))
+		k = materializeKernel(registry)
 
 		plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
 			Name: "cluster",
 			Type: "kubernetes",
 			Subscriptions: map[string]synth.SubscriptionSpec{
-				"opmodel.dev/catalogs/opm@v4": {Version: testCatalogVersion()},
+				defaultTestCatalogPath: {Version: testCatalogVersion()},
 			},
 		})
 		if err != nil {

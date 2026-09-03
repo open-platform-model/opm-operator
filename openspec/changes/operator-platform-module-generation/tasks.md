@@ -18,5 +18,5 @@ Task 1 is the gate for everything below it: this change was authored intent-firs
 
 ## Docs and verification
 
-- [ ] 6. Update `api/v1alpha1/platform_types.go` and `internal/platform/store.go` doc comments (retire "maps onto synth.PlatformInput" prose; name the generated-module record); `docs/` design note if the second pass produced one.
+- [x] 6. Update `api/v1alpha1/platform_types.go` and `internal/platform/store.go` doc comments (retire "maps onto synth.PlatformInput" prose; name the generated-module record); `docs/` design note if the second pass produced one.
 - [ ] 7. `task dev:fmt dev:vet dev:test` green; `task dev:lint` for the new package; note e2e deferral to `operator-render-switch` (the module is not consumed until then).

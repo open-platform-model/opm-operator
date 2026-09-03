@@ -60,21 +60,27 @@ spec:
               registry:
                 additionalProperties:
                   description: |-
-                    Subscription is a single catalog registry subscription, projecting core
-                    #Subscription. It maps onto synth.SubscriptionSpec.
+                    Subscription is a single catalog registry subscription. It becomes one
+                    #registry entry of the generated platform module, carrying the catalog by
+                    import.
                   properties:
                     enable:
                       description: |-
                         Enable toggles the subscription. A pointer so that an omitted value
                         defers to the schema default (true) rather than serializing as an
-                        explicit false; matches synth.SubscriptionSpec.Enable.
+                        explicit false. A disabled subscription is still pinned and imported by
+                        the generated module, with enable set to false on its entry.
                       type: boolean
                     version:
                       description: |-
                         Version names exactly one published catalog build as a bare SemVer
-                        string (e.g. "2.0.0-alpha.3") — the platform file IS the resolution
+                        string (e.g. "2.0.0-alpha.3") — the platform module IS the resolution
                         (enhancement 0010 D14); there is no range or allow/deny vocabulary. The
                         version's major must agree with the subscription key's `@vN` suffix.
+                        The operator uses it twice: as the generated cue.mod pin and as the
+                        entry's stamped expected version, which unifies with the imported
+                        catalog's own version so wrong bytes fail the build naming the entry
+                        (enhancement 0019 D13).
                         CRD-required is safe against the stored pre-reshape singleton: API
                         server validation ratcheting keeps status-subresource patches working
                         against a stored object lacking the field (measured in
@@ -106,9 +112,12 @@ spec:
               conditions:
                 description: |-
                   conditions represent the current state of the Platform resource. The
-                  PlatformReconciler summarizes materialization on the Ready condition:
-                  Ready=True (reason Materialized) on success, Ready=False (reason
-                  MaterializeFailed) on a MaterializeError.
+                  PlatformReconciler summarizes module generation on the Ready condition:
+                  Ready=True (reason Generated) when the generated platform module built,
+                  Ready=False with reason BuildFailed (a pinned build does not exist, a
+                  key disagrees with its imported catalog, or the module did not build;
+                  the message names the dependency or entry) or GenerateFailed (the
+                  module could not be written to the operator's disk).
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

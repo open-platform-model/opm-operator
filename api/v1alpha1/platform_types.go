@@ -22,10 +22,12 @@ import (
 )
 
 // PlatformSpec defines the desired state of Platform.
-// It is a near-1:1 projection of the core #Platform definition: an
+// It is a near-1:1 projection of the core #Platform author surface: an
 // informational type discriminator plus a path-keyed registry of catalog
-// subscriptions. Its shape maps directly onto synth.PlatformInput so a later
-// reconciler can convert spec to synth input without a translation layer.
+// subscriptions. The operator generates a platform CUE module from it on its
+// own disk (a cue.mod pinning every subscribed catalog and a platform.cue
+// carrying each catalog by import) and builds that module; the CR stays the
+// API and the module is derived state (enhancement 0019 D6).
 type PlatformSpec struct {
 	// Type is the informational discriminator for the platform (core
 	// #Platform.type). It does not affect matching; it labels the platform
@@ -42,19 +44,25 @@ type PlatformSpec struct {
 	Registry map[string]Subscription `json:"registry,omitempty"`
 }
 
-// Subscription is a single catalog registry subscription, projecting core
-// #Subscription. It maps onto synth.SubscriptionSpec.
+// Subscription is a single catalog registry subscription. It becomes one
+// #registry entry of the generated platform module, carrying the catalog by
+// import.
 type Subscription struct {
 	// Enable toggles the subscription. A pointer so that an omitted value
 	// defers to the schema default (true) rather than serializing as an
-	// explicit false; matches synth.SubscriptionSpec.Enable.
+	// explicit false. A disabled subscription is still pinned and imported by
+	// the generated module, with enable set to false on its entry.
 	// +optional
 	Enable *bool `json:"enable,omitempty"`
 
 	// Version names exactly one published catalog build as a bare SemVer
-	// string (e.g. "2.0.0-alpha.3") — the platform file IS the resolution
+	// string (e.g. "2.0.0-alpha.3") — the platform module IS the resolution
 	// (enhancement 0010 D14); there is no range or allow/deny vocabulary. The
 	// version's major must agree with the subscription key's `@vN` suffix.
+	// The operator uses it twice: as the generated cue.mod pin and as the
+	// entry's stamped expected version, which unifies with the imported
+	// catalog's own version so wrong bytes fail the build naming the entry
+	// (enhancement 0019 D13).
 	// CRD-required is safe against the stored pre-reshape singleton: API
 	// server validation ratcheting keeps status-subresource patches working
 	// against a stored object lacking the field (measured in
@@ -70,9 +78,12 @@ type PlatformStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the current state of the Platform resource. The
-	// PlatformReconciler summarizes materialization on the Ready condition:
-	// Ready=True (reason Materialized) on success, Ready=False (reason
-	// MaterializeFailed) on a MaterializeError.
+	// PlatformReconciler summarizes module generation on the Ready condition:
+	// Ready=True (reason Generated) when the generated platform module built,
+	// Ready=False with reason BuildFailed (a pinned build does not exist, a
+	// key disagrees with its imported catalog, or the module did not build;
+	// the message names the dependency or entry) or GenerateFailed (the
+	// module could not be written to the operator's disk).
 	// +listType=map
 	// +listMapKey=type
 	// +optional

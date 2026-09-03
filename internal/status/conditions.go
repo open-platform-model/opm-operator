@@ -71,7 +71,7 @@ func MarkReady(obj conditions.Setter, messageFormat string, messageArgs ...any) 
 
 // MarkReadyWithReason sets Ready=True with an explicit reason and removes
 // Reconciling and Stalled conditions. Used where the success reason is not the
-// generic ReconciliationSucceeded (e.g. the Platform's Materialized reason).
+// generic ReconciliationSucceeded (e.g. the Platform's Generated reason).
 func MarkReadyWithReason(obj conditions.Setter, reason, messageFormat string, messageArgs ...any) {
 	conditions.Delete(obj, ReconcilingCondition)
 	conditions.Delete(obj, StalledCondition)

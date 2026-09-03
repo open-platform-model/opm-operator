@@ -32,6 +32,11 @@ func registrySkip(msg string) {
 	Skip(msg)
 }
 
+// defaultTestCatalogPath is the catalog the registry-backed specs subscribe
+// to when OPM_TEST_CATALOG_PATH is unset: the first-party abstraction
+// catalog, resolved from GHCR under `task dev:test`.
+const defaultTestCatalogPath = "opmodel.dev/catalogs/opm@v4"
+
 // testCatalogVersion is the exact catalog build the registry-backed specs
 // subscribe to — the shared default lives in fixtures.CatalogVersion so a
 // catalog bump edits one place for every suite.

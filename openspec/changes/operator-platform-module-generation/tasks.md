@@ -19,4 +19,10 @@ Task 1 is the gate for everything below it: this change was authored intent-firs
 ## Docs and verification
 
 - [x] 6. Update `api/v1alpha1/platform_types.go` and `internal/platform/store.go` doc comments (retire "maps onto synth.PlatformInput" prose; name the generated-module record); `docs/` design note if the second pass produced one.
-- [ ] 7. `task dev:fmt dev:vet dev:test` green; `task dev:lint` for the new package; note e2e deferral to `operator-render-switch` (the module is not consumed until then).
+- [x] 7. `task dev:fmt dev:vet dev:test` green; `task dev:lint` for the new package; note e2e deferral to `operator-render-switch` (the module is not consumed until then).
+
+## Verification notes
+
+- `task dev:fmt dev:vet dev:test` and `task dev:lint` green on 2026-09-03 against GHCR (`CUE_REGISTRY` mapping from the root policy): the registry-backed Platform specs (clean two-catalog CR, byte-identical regeneration, nonexistent pin, generation defect, build recovery) ran rather than skipped.
+- e2e is deferred to `operator-render-switch`: nothing consumes the generated module until the render paths read the store's generated record, and until then every ModuleInstance and ModulePackage reports `PlatformNotReady`, so the Kind suite cannot pass on this change alone. The two changes land in one release train (proposal § Sequencing).
+- The library pin stays at `v1.0.0-alpha.23`: the build goes through `Kernel.LoadPlatformPackage`; `AcquirePlatformFromDir` (alpha.24, release pending) is adopted by `operator-render-switch`.

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -147,9 +148,7 @@ func (s requiringSource) ModFile(ctx context.Context, mv module.Version) (*modfi
 		return mf, err
 	}
 	deps := make(map[string]*modfile.Dep, len(mf.Deps)+1)
-	for p, d := range mf.Deps {
-		deps[p] = d
-	}
+	maps.Copy(deps, mf.Deps)
 	deps[s.extra.Path()] = &modfile.Dep{Version: s.extra.Version()}
 	patched := &modfile.File{Module: mf.Module, Language: mf.Language, Deps: deps}
 	if err := patched.Init(); err != nil {

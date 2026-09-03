@@ -56,7 +56,7 @@ func liveBuildKernelOrSkip() (*kernel.Kernel, string, string) {
 	}
 	catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 	if catalogPath == "" {
-		catalogPath = "opmodel.dev/catalogs/opm@v4"
+		catalogPath = defaultTestCatalogPath
 	}
 	src, err := platformmodule.NewRegistry(reg)
 	Expect(err).NotTo(HaveOccurred())

@@ -79,7 +79,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			// catalog provides the transformers the fixture module matches.
 			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
 			if catalogPath == "" {
-				catalogPath = "opmodel.dev/catalogs/opm@v4"
+				catalogPath = defaultTestCatalogPath
 			}
 			// The subscription names exactly one published catalog build (0010
 			// D14). Resource/transformer FQNs embed the catalog version, so the

@@ -28,8 +28,9 @@ const (
 	// per operator build and stated in the module for the render build's
 	// promotion to read (0019 D13). Must name a D5-shaped core (registry
 	// entries carrying the catalog by import: 2.0.0-alpha.7 or later).
-	// Bumped by the workspace pin tooling (.tasks/deps/platform-pins.sh)
-	// alongside the other pins that live outside a cue.mod.
+	// Bumped by the workspace-root pin tooling (`.tasks/deps/platform-pins.sh`
+	// beside this repo, run by `task deps:update` there) alongside the other
+	// pins that live outside a cue.mod.
 	CoreVersion = "v2.0.0-alpha.7"
 
 	// LanguageVersion is the generated module's declared CUE language

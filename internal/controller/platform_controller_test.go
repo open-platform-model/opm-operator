@@ -255,6 +255,9 @@ var _ = Describe("Platform Controller", func() {
 			// the release the library verified its glue against, with no
 			// operator-side constant involved.
 			Expect(mf.Deps[platformmodule.CorePath].Version).To(Equal(schema.DefaultSchemaVersion()))
+			// The closure pins the catalog's transitive requirement the CR never
+			// names, so the render module's promoted list covers it.
+			Expect(mf.Deps).To(HaveKey("cue.dev/x/k8s.io@v0"), "closure should pin the catalog's transitive dependency")
 			Expect(string(files[platformmodule.PlatformFileName])).To(ContainSubstring("enable:   false"))
 
 			// The record is what the render paths import the platform from:

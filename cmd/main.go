@@ -42,7 +42,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/controller"
 	_ "github.com/open-platform-model/opm-operator/internal/metrics"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
-	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/source"
 	opmversion "github.com/open-platform-model/opm-operator/internal/version"
@@ -272,7 +271,7 @@ func main() {
 	// The generated platform module lives on ephemeral disk; the CR is the
 	// source of truth. Empty the directory so nothing stale from a previous
 	// container survives, then let the first Platform reconcile regenerate.
-	platformLayout := platformmodule.Layout{Root: platformDir}
+	platformLayout := platformstore.Layout{Root: platformDir}
 	if err := platformLayout.Reset(); err != nil {
 		setupLog.Error(err, "Failed to prepare platform module directory", "dir", platformDir)
 		os.Exit(1)

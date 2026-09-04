@@ -27,8 +27,10 @@ import (
 
 	"cuelang.org/go/mod/modfile"
 	"cuelang.org/go/mod/module"
+	"github.com/open-platform-model/library/opm/helper/platformmodule"
 	"github.com/open-platform-model/library/opm/kernel"
 	"github.com/open-platform-model/library/opm/platform"
+	"github.com/open-platform-model/library/opm/schema"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -38,7 +40,6 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
-	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/internal/version"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
@@ -64,7 +65,7 @@ func newPlatformReconciler(store *platformstore.Store, k *kernel.Kernel, registr
 		Kernel:        k,
 		Store:         store,
 		Registry:      registry,
-		Layout:        platformmodule.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")},
+		Layout:        platformstore.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")},
 	}
 }
 
@@ -90,12 +91,18 @@ func buildKernelOrSkip() (*kernel.Kernel, string) {
 	if reg == "" {
 		registrySkip("CUE_REGISTRY not set — platform build specs need a reachable registry serving opmodel.dev/core")
 	}
-	src, err := platformmodule.NewRegistry(reg)
+	src, err := newTestModFileSource(reg)
 	Expect(err).NotTo(HaveOccurred())
 	if _, err := platformmodule.Closure(ctx, src, platformmodule.Roots(nil)); err != nil {
-		registrySkip("core " + platformmodule.CoreVersion + " not resolvable from CUE_REGISTRY: " + err.Error())
+		registrySkip("core " + schema.DefaultSchemaVersion() + " not resolvable from CUE_REGISTRY: " + err.Error())
 	}
 	return kernel.New(kernel.WithRegistry(reg)), reg
+}
+
+// newTestModFileSource is the module-file source the specs derive closures
+// through: the reconciler's own configuration, minus the client type.
+func newTestModFileSource(registry string) (platformmodule.ModFileSource, error) {
+	return platformmodule.NewRegistry(platformmodule.RegistryConfig{Registry: registry, Env: os.Environ()})
 }
 
 // testCatalogPath is the catalog the registry-backed specs subscribe to:
@@ -239,11 +246,18 @@ var _ = Describe("Platform Controller", func() {
 			files := readModule(rec.Dir)
 			mf, err := modfile.Parse(files[platformmodule.ModuleFileName], platformmodule.ModuleFileName)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(mf.QualifiedModule()).To(Equal(platformmodule.ModulePath))
+			Expect(mf.QualifiedModule()).To(Equal(PlatformModulePath))
 			Expect(mf.Deps).To(HaveKey(catalogPath))
 			Expect(mf.Deps[catalogPath].Version).To(Equal("v" + fixtures.CatalogVersion()))
 			Expect(mf.Deps).To(HaveKey("opmodel.dev/catalogs/k8s@v1"))
 			Expect(mf.Deps).To(HaveKey(platformmodule.CorePath))
+			// Core pin follows the library: the generated module pins core at
+			// the release the library verified its glue against, with no
+			// operator-side constant involved.
+			Expect(mf.Deps[platformmodule.CorePath].Version).To(Equal(schema.DefaultSchemaVersion()))
+			// The closure pins the catalog's transitive requirement the CR never
+			// names, so the render module's promoted list covers it.
+			Expect(mf.Deps).To(HaveKey("cue.dev/x/k8s.io@v0"), "closure should pin the catalog's transitive dependency")
 			Expect(string(files[platformmodule.PlatformFileName])).To(ContainSubstring("enable:   false"))
 
 			// The record is what the render paths import the platform from:
@@ -465,7 +479,7 @@ var _ = Describe("Platform Controller", func() {
 			// derived cue.mod pins the newer build while the entry stamps the
 			// CR's version. D13's tripwire turns that into a conflict naming the
 			// entry before anything renders against it.
-			real, err := platformmodule.NewRegistry(reg)
+			real, err := newTestModFileSource(reg)
 			Expect(err).NotTo(HaveOccurred())
 			store := platformstore.NewStore()
 			r := newPlatformReconciler(store, k, reg)
@@ -530,7 +544,7 @@ var _ = Describe("Platform Controller", func() {
 				EventRecorder: events.NewFakeRecorder(10),
 				Kernel:        kernel.New(),
 				Store:         store,
-				Layout:        platformmodule.Layout{Root: GinkgoT().TempDir()},
+				Layout:        platformstore.Layout{Root: GinkgoT().TempDir()},
 			}
 
 			res, err := r.Reconcile(ctx, clusterRequest)

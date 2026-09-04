@@ -1,22 +1,24 @@
-package platformmodule
+package platform
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/open-platform-model/library/opm/helper/platformmodule"
 )
 
-func sampleFiles(marker string) Files {
-	return Files{
-		ModuleFileName:   []byte("module: \"" + ModulePath + "\"\n// " + marker + "\n"),
-		PlatformFileName: []byte("package platform\n// " + marker + "\n"),
+func sampleFiles(marker string) platformmodule.Files {
+	return platformmodule.Files{
+		platformmodule.ModuleFileName:   []byte("module: \"opmodel.dev/platforms/cluster@v0\"\n// " + marker + "\n"),
+		platformmodule.PlatformFileName: []byte("package platform\n// " + marker + "\n"),
 	}
 }
 
 func readMarker(t *testing.T, dir string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(dir, PlatformFileName))
+	data, err := os.ReadFile(filepath.Join(dir, platformmodule.PlatformFileName))
 	if err != nil {
 		t.Fatalf("reading %s: %v", dir, err)
 	}
@@ -76,11 +78,11 @@ func TestLayout_WriteSameGenerationSwaps(t *testing.T) {
 
 func TestLayout_FailedWriteLeavesNoGenerationDirectory(t *testing.T) {
 	l := Layout{Root: t.TempDir()}
-	// A path escaping the module directory is refused after the staging
-	// directory exists, so the failure path runs with a partial staging tree.
-	_, err := l.Write(2, Files{
-		PlatformFileName: []byte("package platform\n"),
-		"../escape.cue":  []byte("nope"),
+	// A path escaping the module directory is refused by the helper after
+	// the staging directory exists, so the failure path must clean it up.
+	_, err := l.Write(2, platformmodule.Files{
+		platformmodule.PlatformFileName: []byte("package platform\n"),
+		"../escape.cue":                 []byte("nope"),
 	})
 	if err == nil {
 		t.Fatal("expected Write to refuse an escaping path")
@@ -95,7 +97,7 @@ func TestLayout_FailedWriteLeavesNoGenerationDirectory(t *testing.T) {
 	}
 }
 
-func TestLayout_PruneKeepsCurrentAndPrevious(t *testing.T) {
+func TestLayout_PruneKeepsOnlyTheKeepSet(t *testing.T) {
 	l := Layout{Root: t.TempDir()}
 	for _, g := range []int64{1, 2, 3} {
 		if _, err := l.Write(g, sampleFiles("x")); err != nil {

@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/open-platform-model/library/opm/helper/platformmodule"
 	"github.com/open-platform-model/library/opm/kernel"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +37,6 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	opmcontroller "github.com/open-platform-model/opm-operator/internal/controller"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
-	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
@@ -58,7 +58,7 @@ func liveBuildKernelOrSkip() (*kernel.Kernel, string, string) {
 	if catalogPath == "" {
 		catalogPath = defaultTestCatalogPath
 	}
-	src, err := platformmodule.NewRegistry(reg)
+	src, err := newTestModFileSource(reg)
 	Expect(err).NotTo(HaveOccurred())
 	entries := []platformmodule.Entry{{Path: catalogPath, Version: testCatalogVersion(), Enable: true}}
 	if _, err := platformmodule.Closure(ctx, src, platformmodule.Roots(entries)); err != nil {
@@ -125,7 +125,7 @@ var _ = Describe("Platform build recovery (registry-backed)", func() {
 			Kernel:        kernel.New(kernel.WithRegistry(deadRegistry)),
 			Store:         store,
 			Registry:      deadRegistry,
-			Layout:        platformmodule.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")},
+			Layout:        platformstore.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")},
 		}
 		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: recoveryPlatformName}}
 

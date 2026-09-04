@@ -75,6 +75,16 @@ type ModulePackageReconciler struct {
 	// consume to drive the render path; this slice wires it but does not read
 	// it on any reconcile path.
 	Kernel *kernel.Kernel
+
+	// MaxConcurrentRenders bounds how many ModulePackages reconcile (and so
+	// render) at once: the manager's --max-concurrent-renders, applied as
+	// MaxConcurrentReconciles. Zero or negative keeps controller-runtime's
+	// default of one.
+	MaxConcurrentRenders int
+
+	// warnings remembers each package's last render warnings so RenderWarning
+	// events are emitted on transition only (0019 D18).
+	warnings opmreconcile.WarningTracker
 }
 
 // +kubebuilder:rbac:groups=opmodel.dev,resources=modulepackages,verbs=get;list;watch;create;update;patch;delete
@@ -101,6 +111,7 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Fetcher:               r.Fetcher,
 		Renderer:              r.Renderer,
 		DefaultServiceAccount: r.DefaultServiceAccount,
+		Warnings:              &r.warnings,
 	}, req)
 }
 
@@ -112,10 +123,13 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 //     installed; see fluxSourceCRDsInstalled.
 //   - Platform (cluster singleton) — every change re-enqueues all ModulePackages via
 //     mapPlatformToModulePackages so packages blocked on PlatformNotReady recover
-//     promptly when the platform materializes. The generation predicate lives on
+//     promptly when the platform is generated. The generation predicate lives on
 //     For() (not as a global filter) so it does not suppress the Platform watch,
-//     whose trigger (materialization) is a status update that does not bump
-//     generation.
+//     whose trigger (the reconciler's status update) does not bump generation.
+//
+// MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
+// controller's MaxConcurrentReconciles: renders share nothing (library
+// ADR-005), so the only bound is memory.
 func (r *ModulePackageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.ModulePackage{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
@@ -160,6 +174,7 @@ func (r *ModulePackageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return b.
 		WithOptions(controller.Options{
+			MaxConcurrentReconciles: r.MaxConcurrentRenders,
 			RateLimiter: workqueue.NewTypedMaxOfRateLimiter(
 				workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](1*time.Second, 5*time.Minute),
 				&workqueue.TypedBucketRateLimiter[ctrl.Request]{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
@@ -233,8 +248,8 @@ func (r *ModulePackageReconciler) mapSourceToModulePackages(kind string) handler
 // Was: mapPlatformToReleases
 // mapPlatformToModulePackages enqueues every ModulePackage in the cluster when the
 // (singleton) Platform changes. This unblocks packages sitting in
-// PlatformNotReady the moment the platform materializes, rather than waiting for
-// the interval requeue. List-all is cheap: the Platform is a cluster singleton,
+// PlatformNotReady the moment the platform is generated, rather than waiting
+// for the interval requeue. List-all is cheap: the Platform is a cluster singleton,
 // its changes are rare, and the ModulePackage count is bounded.
 func (r *ModulePackageReconciler) mapPlatformToModulePackages(ctx context.Context, _ client.Object) []reconcile.Request {
 	var list releasesv1alpha1.ModulePackageList

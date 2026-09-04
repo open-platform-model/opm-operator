@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/open-platform-model/library/opm/helper/synth"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
@@ -45,12 +44,13 @@ import (
 // self-referential shape failed with "#module.metadata.modulePath: field not
 // allowed". This test is therefore the regression guard for that core fix.
 //
-// Run with: task dev:test:local (skips automatically without the local registry).
+// The fixtures resolve from CUE_REGISTRY (GHCR under `task dev:test`); the
+// registry-backed specs skip automatically without a mapping.
 
 var _ = Describe("KernelPackageRenderer Integration", func() {
 	Context("when the platform store is empty", func() {
-		It("returns ErrPlatformNotReady or ErrUnsupportedKind before compiling", func() {
-			// With no materialized platform, the renderer must not reach Compile.
+		It("returns ErrPlatformNotReady or a load error before rendering", func() {
+			// With no generated platform, the renderer must not reach the build.
 			// It either short-circuits on platform readiness, or — if the fixture
 			// imports are unresolvable in this environment — fails the load before
 			// the platform gate. Either way it must not panic or render.
@@ -69,7 +69,7 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 		})
 	})
 
-	Context("when the store holds a materialized platform", func() {
+	Context("when the store holds a generated platform", func() {
 		var (
 			k        *kernel.Kernel
 			registry string
@@ -79,45 +79,22 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 		BeforeEach(func() {
 			skipIfNoTestRegistry()
 			registry = os.Getenv("CUE_REGISTRY")
-			k = materializeKernel(registry)
-
-			// Materialize a platform via the real synth → materialize path so the
-			// store holds the same shape the PlatformReconciler produces. The opm
-			// catalog provides the configmap-transformer the fixture module matches.
-			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
-			if catalogPath == "" {
-				catalogPath = defaultTestCatalogPath
-			}
-			// Pin the catalog subscription to the exact build the authored
-			// package targets (0010 D14: one version, no ranges).
-			// Resource/transformer FQNs are version-qualified, so a
-			// subscription materializing a different catalog build would leave
-			// the component unmatched — independent of the render-path fix.
-			plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
-				Name: "cluster",
-				Type: "kubernetes",
-				Subscriptions: map[string]synth.SubscriptionSpec{
-					catalogPath: {Version: testCatalogVersion()},
-				},
-			})
-			if err != nil {
-				registrySkip("synthesizing platform failed (registry/schema unreachable): " + err.Error())
-			}
-			mp, err := k.Materialize(ctx, plat)
-			if err != nil {
-				registrySkip("materializing platform failed (catalog unreachable): " + err.Error())
-			}
-			store = platformstore.NewStore()
-			store.Set(1, mp)
+			k = kernel.New(kernel.WithRegistry(registry))
+			// Generate and build the platform module the way the
+			// PlatformReconciler does, pinned to the exact catalog build the
+			// authored packages target (0010 D14: one version, no ranges).
+			// Resource/transformer FQNs are version-qualified, so a different
+			// catalog build would leave the components unmatched.
+			store = generatedPlatformStore(k, registry, kernel.SkewWarn)
 		})
 
 		// Every modulepackage fixture is an author-written #ModuleInstance that
 		// imports its published test module and embeds it via #module. They all
 		// exercise the same load+embed regression guard; the opm catalog pinned
 		// above provides the configmap/deployment/service/statefulset transformers
-		// each module matches, so they render against the one materialized platform.
+		// each module matches, so they render against the one generated platform.
 		for _, pkg := range []string{"hello", "hello_web", "podinfo", "redis"} {
-			It("loads the authored "+pkg+" release fixture (imported #module) and renders its resources", func() {
+			It("acquires the authored "+pkg+" package fixture (imported #module) and renders its resources", func() {
 				fixtureDir, err := filepath.Abs(filepath.Join("..", "..", "fixtures", "modulepackages", pkg))
 				Expect(err).NotTo(HaveOccurred())
 
@@ -134,12 +111,13 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 				// #Module must NOT fail with "field not allowed". A self-referential
 				// #Module identity shape would surface that error here.
 				Expect(err).NotTo(HaveOccurred(),
-					"loading the authored release with an imported #Module must not fail "+
+					"acquiring the authored package with an imported #Module must not fail "+
 						"(a self-referential #Module identity would fail with 'field not allowed')")
 				Expect(kind).To(Equal(render.KindModuleInstance))
 				Expect(res).NotTo(BeNil())
 				Expect(res.Resources).NotTo(BeEmpty(),
-					"the %s fixture must compile to at least one resource", pkg)
+					"the %s fixture must render to at least one resource", pkg)
+				Expect(store.Leased()).To(BeEmpty(), "the render releases its lease on return")
 
 				for _, r := range res.Resources {
 					Expect(r.Instance).NotTo(BeEmpty(), "resource %s missing instance provenance", r)

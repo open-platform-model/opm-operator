@@ -17,9 +17,14 @@ const (
 
 // Condition reasons.
 const (
-	SuspendedReason               = "Suspended"
-	ResolutionFailedReason        = "ResolutionFailed"
-	RenderFailedReason            = "RenderFailed"
+	SuspendedReason        = "Suspended"
+	ResolutionFailedReason = "ResolutionFailed"
+	RenderFailedReason     = "RenderFailed"
+	// SkewRefusedReason: Ready=False, the platform's skew policy is Refuse and
+	// the module requires a newer catalog build than the platform pins
+	// (enhancement 0019 D7/D18). The fix is a platform pin bump or a module
+	// downgrade, so it is distinct from RenderFailed.
+	SkewRefusedReason             = "SkewRefused"
 	ApplyFailedReason             = "ApplyFailed"
 	PruneFailedReason             = "PruneFailed"
 	ImpersonationFailedReason     = "ImpersonationFailed"
@@ -30,7 +35,7 @@ const (
 	ManagedExternallyReason       = "ManagedExternally"
 
 	// Platform-specific reasons (enhancement 0019 D6: the reconciler generates
-	// and builds the platform module; the materialize-era reasons are retired).
+	// and builds the platform module).
 	GeneratedReason      = "Generated"      // Ready=True: the platform module was generated and built.
 	GenerateFailedReason = "GenerateFailed" // Ready=False: the module could not be written to disk.
 	BuildFailedReason    = "BuildFailed"    // Ready=False: a dependency did not resolve or the module did not build.
@@ -50,6 +55,11 @@ const (
 	PrunedReason  = "Pruned"
 	ResumedReason = "Resumed"
 	NoOpReason    = "NoOp"
+	// RenderWarningReason is the Warning event a successful render's advisory
+	// messages (catalog skew under Warn, unhandled optional traits) are
+	// emitted under, once per distinct message when the object's warning set
+	// changes.
+	RenderWarningReason = "RenderWarning"
 )
 
 // MarkReconciling sets Reconciling=True, removes Stalled, and sets Ready=Unknown.

@@ -24,7 +24,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/open-platform-model/library/opm/helper/synth"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -35,17 +34,16 @@ import (
 )
 
 // These specs render the published example modules (redis here) through the
-// real KernelModuleRenderer against the local OCI registry and assert the
-// modelled workload/storage/probe contract, complementing the podinfo e2e
-// (which proves the probes actually pass on a live cluster). They skip
-// automatically in CI (the example modules + the catalog version they pin live
-// on the local registry); run with `task dev:test:local`.
+// real KernelModuleRenderer against CUE_REGISTRY and assert the modelled
+// workload/storage/probe contract, complementing the podinfo e2e (which
+// proves the probes actually pass on a live cluster). They skip automatically
+// without a registry mapping.
 //
 // The platform subscription names exactly one published catalog build (0010
 // D14) — matching the cluster Platform sample and avoiding catalog-version
 // skew. Resource and transformer FQNs embed the catalog version, so the
-// platform MUST materialize the same catalog build the modules pin; any other
-// build yields "no matching transformer".
+// generated platform MUST pin the same catalog build the modules pin; any
+// other build yields "no matching transformer".
 var _ = Describe("Example module rendering", func() {
 	var (
 		k        *kernel.Kernel
@@ -56,24 +54,8 @@ var _ = Describe("Example module rendering", func() {
 	BeforeEach(func() {
 		skipIfNoTestRegistry()
 		registry = os.Getenv("CUE_REGISTRY")
-		k = materializeKernel(registry)
-
-		plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
-			Name: "cluster",
-			Type: "kubernetes",
-			Subscriptions: map[string]synth.SubscriptionSpec{
-				defaultTestCatalogPath: {Version: testCatalogVersion()},
-			},
-		})
-		if err != nil {
-			registrySkip("synthesizing platform failed (registry/schema unreachable): " + err.Error())
-		}
-		mp, err := k.Materialize(ctx, plat)
-		if err != nil {
-			registrySkip("materializing platform failed (catalog unreachable): " + err.Error())
-		}
-		store = platformstore.NewStore()
-		store.Set(1, mp)
+		k = kernel.New(kernel.WithRegistry(registry))
+		store = generatedPlatformStore(k, registry, kernel.SkewWarn)
 	})
 
 	It("renders the redis module as a StatefulSet + headless Service + PVC with an exec probe", func() {

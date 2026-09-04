@@ -68,6 +68,7 @@ func main() {
 	var cueCacheDir string
 	var platformDir string
 	var defaultServiceAccount string
+	var maxConcurrentRenders int
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -108,6 +109,13 @@ func main() {
 			"controller's); it must exist in each tenant namespace or the reconcile stalls with "+
 			"ImpersonationFailed. Empty (default) preserves today's behavior: fall back to the "+
 			"controller's own identity. See docs/TENANCY.md for the recommended per-namespace SA pattern.")
+	flag.IntVar(&maxConcurrentRenders, "max-concurrent-renders", 1,
+		"Maximum number of ModuleInstances and ModulePackages (each) reconciled, and so rendered, at once. "+
+			"Renders share nothing, so the bound is memory, not cores: budget about 61 MB plus 7.75 MB per "+
+			"component of the largest module per concurrent render, on top of a 0.3 GB base, against the "+
+			"pod's memory limit (enhancement 0019). Throughput saturates at about physical cores divided by "+
+			"1.6 renders in flight. The default of 1 preserves serial reconciles; the Platform controller "+
+			"is always serial.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -117,6 +125,11 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if maxConcurrentRenders < 1 {
+		setupLog.Error(nil, "Invalid flag value: --max-concurrent-renders must be at least 1", "value", maxConcurrentRenders)
+		os.Exit(1)
+	}
 
 	setupLog.Info("Starting opm-operator", "version", opmversion.Full())
 
@@ -234,7 +247,10 @@ func main() {
 	// Construct the single long-lived library Kernel. Per library/CLAUDE.md a
 	// long-running consumer MUST keep one Kernel (and therefore one schema
 	// *Cache) alive for the process lifetime — never reconstruct it per
-	// reconcile. It is configured from the resolved registry value.
+	// reconcile. It is configured from the resolved registry value. Its
+	// context-owning calls are serialised behind the platform store's kernel
+	// gate; Kernel.Render shares nothing and runs concurrently under
+	// --max-concurrent-renders.
 	k := kernel.New(
 		kernel.WithRegistry(registry),
 	)
@@ -279,6 +295,7 @@ func main() {
 		},
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
+		MaxConcurrentRenders:  maxConcurrentRenders,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleInstance")
 		os.Exit(1)
@@ -299,6 +316,7 @@ func main() {
 		},
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
+		MaxConcurrentRenders:  maxConcurrentRenders,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModulePackage")
 		os.Exit(1)

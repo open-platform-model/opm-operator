@@ -85,13 +85,13 @@ var _ = Describe("ModulePackage platform-gated rendering", func() {
 		return types.NamespacedName{Name: name, Namespace: namespace}
 	}
 
-	Context("when a platform is materialized (5.1)", func() {
+	Context("when a platform module is recorded (5.1)", func() {
 		It("renders the release and applies the resulting resources", func() {
 			ctx := context.Background()
 
 			// The render+apply success path runs through the PackageRenderer seam
 			// the cut-over swaps to KernelPackageRenderer. Exercising the kernel's
-			// load→compile internals against a materialized platform requires a live
+			// load→compile internals against a generated platform requires a live
 			// OCI registry, so that is covered by the renderer's own tests; here we
 			// assert the reconciler applies and records status when rendering
 			// succeeds (the platform-present case), mirroring the ModuleInstance gate
@@ -131,7 +131,7 @@ var _ = Describe("ModulePackage platform-gated rendering", func() {
 		})
 	})
 
-	Context("when no platform is materialized (5.2)", func() {
+	Context("when no platform module is recorded (5.2)", func() {
 		It("blocks with PlatformNotReady, applying and pruning nothing", func() {
 			ctx := context.Background()
 

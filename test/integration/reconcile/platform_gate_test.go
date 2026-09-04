@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/open-platform-model/library/opm/materialize"
+	"github.com/open-platform-model/library/opm/platform"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,7 +45,7 @@ import (
 
 // platformGatedStubRenderer mirrors KernelModuleRenderer's platform gate without
 // needing an OCI registry: it returns render.ErrPlatformNotReady while the store
-// holds no materialized platform, and a stub ConfigMap result once it does. This
+// holds no generated platform, and a stub ConfigMap result once it does. This
 // lets a manager-driven test prove the Platform watch re-enqueues a release
 // blocked on PlatformNotReady the moment a Platform appears.
 type platformGatedStubRenderer struct {
@@ -57,9 +57,11 @@ func (r *platformGatedStubRenderer) RenderModule(
 	_, ns, _, _ string,
 	values *releasesv1alpha1.RawValues,
 ) (*render.RenderResult, error) {
-	if _, ok := r.store.Get(); !ok {
+	_, release, ok := r.store.Lease()
+	if !ok {
 		return nil, render.ErrPlatformNotReady
 	}
+	defer release()
 	return stubRenderResult(ns, values), nil
 }
 
@@ -154,13 +156,13 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		Expect(k8sClient.Get(ctx, cmName, &corev1.ConfigMap{})).
 			To(MatchError(ContainSubstring("not found")))
 
-		// Phase 2: materialize the platform in the store, then apply the Platform
-		// CR. The CR change triggers the watch → mapPlatformToModuleInstances
+		// Phase 2: record a generated platform in the store, then apply the
+		// Platform CR. The CR change triggers the watch → mapPlatformToModuleInstances
 		// re-enqueues the blocked release; the store is now populated, so the
 		// renderer succeeds and the resources are applied. The watch enqueues
 		// every release on any Platform change, independent of the Platform's
 		// contents.
-		store.Set(1, &materialize.MaterializedPlatform{})
+		store.SetGenerated(platformstore.Generated{Generation: 1, Platform: &platform.Platform{}})
 		platform := &releasesv1alpha1.Platform{
 			ObjectMeta: metav1.ObjectMeta{Name: platformName},
 			Spec:       releasesv1alpha1.PlatformSpec{Type: "kubernetes"},

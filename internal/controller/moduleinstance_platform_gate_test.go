@@ -59,14 +59,14 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 		return types.NamespacedName{Name: name, Namespace: namespace}
 	}
 
-	Context("when a platform is materialized (5.1)", func() {
+	Context("when a platform module is recorded (5.1)", func() {
 		It("renders the module and applies the resulting resources", func() {
 			ctx := context.Background()
 
 			// The render+apply success path runs through the ModuleRenderer seam
 			// that the cut-over swaps to KernelModuleRenderer. Exercising the
 			// kernel's acquire→synthesize→compile internals requires a live OCI
-			// registry and a materialized platform, so those are covered by the
+			// registry and a generated platform, so those are covered by the
 			// renderer's own tests; here we assert the reconciler applies and
 			// records status when rendering succeeds (the platform-present case).
 			nn := newModuleInstance(ctx, "gate-apply-mr")
@@ -102,7 +102,7 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 		})
 	})
 
-	Context("when no platform is materialized (5.2)", func() {
+	Context("when no platform module is recorded (5.2)", func() {
 		It("blocks with PlatformNotReady, applying and pruning nothing", func() {
 			ctx := context.Background()
 
@@ -120,7 +120,7 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 				EventRecorder:   recorder,
 				Renderer: &render.KernelModuleRenderer{
 					Kernel:      kernel.New(),
-					Store:       platformstore.NewStore(), // empty: no materialized platform
+					Store:       platformstore.NewStore(), // empty: no generated platform
 					RuntimeName: "opm-controller",
 				},
 			}
@@ -135,7 +135,7 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 			// first failure) — not the 30-minute StalledRecheckInterval. This is
 			// the recovery path when the Platform watch edge is missed, e.g. a
 			// controller restart into an already-Ready Platform whose
-			// re-materialize emits no status event.
+			// regeneration emits no status event.
 			Expect(result.RequeueAfter).To(Equal(opmreconcile.BackoffBaseDelay))
 			Expect(result.RequeueAfter).NotTo(Equal(opmreconcile.StalledRecheckInterval))
 

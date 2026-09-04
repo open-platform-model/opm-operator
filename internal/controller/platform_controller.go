@@ -66,7 +66,8 @@ const transientRecheckInterval = time.Minute
 // published module files, generates the module (one importing #registry
 // entry per subscription, the CR's version stamped as the expected-version
 // tripwire), writes it under a per-generation directory, builds it through
-// the kernel's shape-gated platform loader, and records the result in the
+// the kernel's shape-gated platform loader, and records the result together
+// with the resolved skew policy (spec.skewPolicy, 0019 D7/D18) in the
 // process-local store for the render path. The outcome surfaces on the CR's
 // Ready condition: Generated, GenerateFailed or BuildFailed.
 type PlatformReconciler struct {
@@ -167,13 +168,15 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("generating platform module: %v", err))
 	}
 
-	// Serialize against the render paths: they share this Kernel and read the
-	// platform (and the module directory) this reconcile is about to replace
-	// (see Store.AcquireKernel). Taken before the write so a same-generation
-	// rewrite, which moves the live directory aside during the swap, is never
-	// observed by a render; held through Store.SetGenerated and the prune so
-	// no render sees the swap mid-flight. The registry I/O (the closure
-	// derivation above) stays outside the gate.
+	// The kernel gate serialises the build against the render paths' own
+	// context-owning calls (acquisition, synthesis): the build evaluates in
+	// the shared Kernel's context (see Store.AcquireKernel). Taken before the
+	// write and held through Store.SetGenerated and the prune so a
+	// same-generation rewrite, which moves the live directory aside during
+	// the swap, is never observed by an acquisition mid-flight. Render builds
+	// run outside the gate and are protected by their lease instead: the
+	// prune keep set below covers every leased generation. The registry I/O
+	// (the closure derivation above) stays outside the gate.
 	release := r.Store.AcquireKernel()
 	defer release()
 
@@ -184,24 +187,27 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// The build is the validation: it proves the pins resolve and exercises
 	// the schema's own tripwires (stamped-versus-derived version, key-to-
-	// modulePath binding), which name the offending #registry entry.
-	val, err := r.Kernel.LoadPlatformPackage(ctx, dir, loaderfile.LoadOptions{Registry: r.Registry})
-	if err != nil {
-		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
-	}
-	p, err := r.Kernel.NewPlatformFromValue(val)
+	// modulePath binding), which name the offending #registry entry. The
+	// source-carrying acquisition is what the render build imports the
+	// platform from (Kernel.Render requires Platform.Source).
+	p, err := r.Kernel.AcquirePlatformFromDir(ctx, dir, loaderfile.LoadOptions{Registry: r.Registry})
 	if err != nil {
 		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
 	}
 
-	// Success: record the generated module under the generation key, keep
-	// the immediately superseded generation on disk (a render may still be
-	// reading it) and prune everything older.
-	keep := []int64{plat.Generation}
-	if prev, ok := r.Store.Generated(); ok && prev.Generation != plat.Generation {
-		keep = append(keep, prev.Generation)
-	}
-	r.Store.SetGenerated(platformstore.Generated{Generation: plat.Generation, Dir: dir, Platform: p})
+	// Success: record the generated module under the generation key with the
+	// resolved skew policy, then prune every directory no render can still
+	// be reading: keep the current generation plus every generation a render
+	// holds a lease on (exact, replacing the "current plus previous"
+	// approximation). A generation leased now is pruned by the next reconcile
+	// once released.
+	r.Store.SetGenerated(platformstore.Generated{
+		Generation: plat.Generation,
+		Dir:        dir,
+		Platform:   p,
+		Skew:       skewPolicy(&plat),
+	})
+	keep := append([]int64{plat.Generation}, r.Store.Leased()...)
 	if err := r.Layout.Prune(keep...); err != nil {
 		log.Error(err, "Failed to prune superseded platform modules", "dir", r.Layout.Root)
 	}
@@ -300,6 +306,16 @@ func (r *PlatformReconciler) patchStatus(ctx context.Context, patcher *patch.Ser
 			},
 		},
 	)
+}
+
+// skewPolicy resolves spec.skewPolicy to the kernel's policy: Refuse maps to
+// SkewRefuse, anything else (Warn, unset) to SkewWarn, the D18 default. The
+// CRD enum keeps other values out at admission.
+func skewPolicy(plat *releasesv1alpha1.Platform) kernel.SkewPolicy {
+	if plat.Spec.SkewPolicy != nil && *plat.Spec.SkewPolicy == releasesv1alpha1.SkewPolicyRefuse {
+		return kernel.SkewRefuse
+	}
+	return kernel.SkewWarn
 }
 
 // platformEntries maps the CR's registry to the generator's entries, in

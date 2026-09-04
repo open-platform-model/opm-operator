@@ -55,14 +55,14 @@ func TestKernelPackageRenderer_UnsupportedKind(t *testing.T) {
 	assert.Nil(t, result)
 }
 
-// With no materialized platform, a ModuleInstance package is blocked before
-// Compile with ErrPlatformNotReady — nothing is rendered.
+// With no generated platform recorded, a ModuleInstance package is blocked
+// before the build with ErrPlatformNotReady — nothing is rendered.
 func TestKernelPackageRenderer_PlatformNotReady(t *testing.T) {
 	dir := writeInstancePackage(t, KindModuleInstance)
 
 	r := &KernelPackageRenderer{
 		Kernel:      kernel.New(),
-		Store:       platformstore.NewStore(), // empty: no materialized platform
+		Store:       platformstore.NewStore(), // empty: no generated platform
 		RuntimeName: "opm-controller",
 	}
 

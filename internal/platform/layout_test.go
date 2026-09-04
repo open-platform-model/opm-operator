@@ -97,7 +97,7 @@ func TestLayout_FailedWriteLeavesNoGenerationDirectory(t *testing.T) {
 	}
 }
 
-func TestLayout_PruneKeepsCurrentAndPrevious(t *testing.T) {
+func TestLayout_PruneKeepsOnlyTheKeepSet(t *testing.T) {
 	l := Layout{Root: t.TempDir()}
 	for _, g := range []int64{1, 2, 3} {
 		if _, err := l.Write(g, sampleFiles("x")); err != nil {

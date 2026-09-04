@@ -1,7 +1,10 @@
 // Package platform holds the process-local platform store: a single-slot,
 // concurrency-safe holder of the platform module generated and built from the
 // cluster-singleton Platform CR. It is written by the PlatformReconciler and
-// read by the render path.
+// read by the render path. It also owns [Layout], the on-disk lifecycle of
+// the generated module directories the store records (per-generation
+// directories, staging swaps, retention, boot reset); the module content
+// itself comes from the library's opm/helper/platformmodule generator.
 //
 // The store records one [Generated] platform module per Platform CR
 // generation: the module directory on the operator's own disk, the platform

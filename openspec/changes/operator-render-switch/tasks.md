@@ -1,6 +1,6 @@
 # Tasks: operator-render-switch
 
-Gate: task 1.1 (the library pin) needs the `library-render-cutover` release; nothing below builds before it. Landed against `v1.0.0-alpha.24`; the synthesized-instance path additionally needs library PR `fix(renderstage): mark each input module default so its self-imports resolve` released and pinned (task 1.1 re-runs as a `fix(deps)` bump), which also gates task 4.4.
+Gate: task 1.1 (the library pin) needs the `library-render-cutover` release; nothing below builds before it. Landed against `v1.0.0-alpha.24`, then re-pinned to `v1.0.0-alpha.25` (library PR 108: the render module marks each input module default so a synthesized instance's unqualified self-imports resolve).
 
 ## 1. Pin and API
 

@@ -35,6 +35,7 @@ None.
 ### Modified Capabilities
 
 - `platform-module-generation`: the core pin is the library's verified release rather than an operator compiled-in version; generation goes through the shared library helper.
+- `platform-module-generation` (spec-only correction, no code change): the per-generation directory requirement is restated to the retention the operator has kept since `operator-render-switch`: the current generation plus every generation a render leases, not "current and immediately superseded". The main spec drifted when the lease model landed without a delta.
 
 ## Impact
 

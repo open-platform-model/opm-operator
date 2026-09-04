@@ -8,23 +8,21 @@ The `Release` reconciler renders its Flux-fetched release package through the ke
 
 ### Requirement: Release renders through the kernel against the materialized platform
 
-The `Release` reconciler SHALL render its Flux-fetched release package through the kernel-backed `KernelReleaseRenderer`. For a package whose `kind` is `ModuleRelease`, the renderer SHALL load the package in the kernel's context (`Kernel.LoadReleasePackage`), construct the release (`Kernel.NewReleaseFromValue`), read the materialized platform from the store, and `Kernel.Compile` against it, adapting the compiled output to operator resources and inventory entries. No values SHALL be injected — the authored release package carries its own values. Successful rendering SHALL flow through the existing apply/inventory/prune path unchanged.
+`KernelPackageRenderer` SHALL acquire the extracted package as a source-carrying instance through the kernel's on-disk acquisition and render it through the single-build render with the leased platform record and its skew policy.
 
 #### Scenario: ModuleRelease package renders and applies
 
-- **WHEN** a platform is materialized and a `Release` whose fetched package has `kind: ModuleRelease` is reconciled
-- **THEN** the package is rendered through the kernel against the materialized platform
-- **AND** the rendered resources are applied and recorded in inventory and status as before
+- **WHEN** a `ModulePackage` artifact holding a `#ModuleInstance` package is rendered while a generated platform is recorded
+- **THEN** the rendered resources are applied and recorded as before
 
 ### Requirement: Block Release when no platform is materialized
 
-When rendering returns `ErrPlatformNotReady`, the `Release` reconciler SHALL set `Ready=False` with reason `PlatformNotReady`, SHALL apply and prune nothing, SHALL emit a warning event, and SHALL requeue. This is a blocked-on-dependency state, distinct from a render failure or a stall.
+When the store holds no generated-module record, the package renderer SHALL return `ErrPlatformNotReady` after kind detection and before any build, and the reconciler SHALL set `Ready=False` reason `PlatformNotReady`.
 
 #### Scenario: No platform present blocks the release inertly
 
-- **WHEN** a `Release` is reconciled while no `Platform` is materialized
-- **THEN** its status carries `Ready=False` with reason `PlatformNotReady`
-- **AND** nothing is applied to or pruned from the cluster
+- **WHEN** a `ModulePackage` is reconciled while no platform is recorded
+- **THEN** its status carries `PlatformNotReady` and nothing is applied
 
 ### Requirement: Re-enqueue Releases when the platform becomes ready
 
@@ -48,22 +46,24 @@ For a fetched package whose `kind` is anything other than `ModuleRelease`, the r
 
 ### Requirement: Unresolved platform demands classify as resolution failures
 
-When kernel rendering of a ModuleRelease package fails because the module
-demands contracts the materialized platform does not provide, the reconciler
-MUST report `Ready=False` with reason `ResolutionFailed` and `Stalled=True` —
-not `RenderFailed`. The classification MUST hold when the unresolved-demands
-failure is reported together with unmatched-component failures.
+The reconciler SHALL classify a refused render by its typed cause: unresolved platform demands and unmatched components SHALL be `ResolutionFailed`; a catalog-skew refusal SHALL be `SkewRefused` with a message naming the module path, the module's required build and the platform's build; a transform failure, an over-subscribed provider contract, or any other refusal SHALL be `RenderFailed`.
 
-Kernel-rendering failures that are not resolution-class (ordinary CUE
-evaluation errors) MUST keep reason `RenderFailed`, and the
-platform-not-materialized state MUST keep reason `PlatformNotReady`.
+#### Scenario: Skew refusal is distinct
+
+- **WHEN** the platform's policy is `Refuse` and the package's module requires a newer catalog build than the platform pins
+- **THEN** the package reports `Ready=False` reason `SkewRefused` naming the path and both versions, applies nothing, and requeues on the stalled recheck interval
+
+#### Scenario: Over-subscribed provider contract is a render failure
+
+- **WHEN** the build refuses because two enabled catalogs provide the same provider-fulfilled contract
+- **THEN** the package reports `RenderFailed` with the kernel's message naming the contract key and both catalogs
 
 #### Scenario: Package demands contracts the platform does not provide
 
-- **WHEN** a ModuleRelease package renders against a materialized platform that does not provide contracts the module demands
+- **WHEN** a package renders against a platform whose catalogs do not provide contracts the module demands
 - **THEN** the ModulePackage reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True`, and a Warning event carries the unresolved-demands message
 
 #### Scenario: Ordinary evaluation error keeps RenderFailed
 
-- **WHEN** kernel rendering fails for a cause that is not a resolution-class failure
+- **WHEN** the render fails for a cause that is neither a resolution-class failure nor a skew refusal
 - **THEN** the ModulePackage reports `Ready=False` with reason `RenderFailed`

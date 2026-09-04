@@ -33,21 +33,22 @@ guarantees at most one `Platform` can exist.
 
 ### Requirement: PlatformSpec projects core #Platform
 
-`PlatformSpec` SHALL be a near-1:1 projection of the core `#Platform` definition.
-It SHALL carry a required `type` string (the informational discriminator) and a
-`registry` map keyed by major-suffixed catalog CUE module path. Each registry
-entry SHALL be a `Subscription` with an optional `enable` flag (a pointer/optional
-field such that an omitted value defers to the schema default of `true`) and a
-`version` (see the Subscription shape requirement). The field shapes SHALL
-correspond to `synth.PlatformInput` (`Type`, `Subscriptions` map of
-`{Enable, Version}`) so the reconciler can convert spec to synth input without a
-translation layer.
+`PlatformSpec` SHALL carry `type` (required, informational discriminator), `registry` (path-keyed catalog subscriptions) and `skewPolicy` (optional enum `Warn` | `Refuse`; unset means `Warn`). `skewPolicy` is the operator's response when a module's declared catalog requirement is newer than the build the platform pins: `Warn` renders and reports the skew; `Refuse` refuses the render. The field SHALL be validated at admission by an enum constraint. The operator generates a platform CUE module from `type` and `registry`; `skewPolicy` is not part of the module.
+
+#### Scenario: Skew policy defaults to Warn
+
+- **WHEN** a Platform is applied without `spec.skewPolicy`
+- **THEN** it is admitted and reconciles as `Warn`
+
+#### Scenario: Invalid skew policy is rejected at admission
+
+- **WHEN** a Platform sets `spec.skewPolicy: Strict`
+- **THEN** the API server rejects it
 
 #### Scenario: Minimal valid platform spec
 
 - **WHEN** a `Platform` is applied with `spec.type` set and a `spec.registry` entry keyed by a catalog module path carrying only a `version`
-- **THEN** the API server accepts it
-- **AND** the omitted `enable` is understood downstream as the schema default (true)
+- **THEN** the API server accepts it, the omitted `enable` is understood as the schema default (true) and the omitted `skewPolicy` as `Warn`
 
 #### Scenario: type is required
 
@@ -76,20 +77,17 @@ translation layer.
 
 ### Requirement: PlatformStatus carries conditions and observedGeneration
 
-`PlatformStatus` SHALL carry a `conditions []metav1.Condition` list (list-map
-keyed by `type`), an `observedGeneration` field, and an optional
-`operatorVersion` string field the reconciler stamps with the running
-operator's version (enhancement 0006 D24 — read by the CLI's version-skew
-ceiling), following the existing CRD status conventions in this repo. The
-status SHALL accommodate a `Materialized` condition that a later reconciler
-sets. The CRD SHALL expose an `Operator` printcolumn sourced from
-`.status.operatorVersion`.
+`PlatformStatus` SHALL carry `conditions` (a `metav1.Condition` list keyed by type), `observedGeneration` and `operatorVersion`. The Ready condition SHALL summarise module generation: `Ready=True` reason `Generated`; `Ready=False` reason `BuildFailed` or `GenerateFailed`.
+
+#### Scenario: Status reflects the generate-and-build outcome
+
+- **WHEN** the Platform reconciles
+- **THEN** `status.conditions` carries a Ready condition with one of the reasons `Generated`, `BuildFailed` or `GenerateFailed`
 
 #### Scenario: Status subresource present
 
 - **WHEN** the CRD is installed
-- **THEN** `Platform` exposes a `/status` subresource
-- **AND** `status.conditions`, `status.observedGeneration`, and `status.operatorVersion` are part of the schema
+- **THEN** `Platform` exposes a `/status` subresource, and `status.conditions`, `status.observedGeneration` and `status.operatorVersion` are part of the schema
 
 #### Scenario: Operator printcolumn
 

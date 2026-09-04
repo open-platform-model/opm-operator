@@ -8,11 +8,17 @@ The `internal/status` package MUST define string constants for condition types: 
 - **THEN** all four condition type constants are available and match the design doc values
 
 ### Requirement: Reason constants
-The `internal/status` package MUST define string constants for condition reasons: `Suspended`, `SourceNotReady`, `SourceUnavailable`, `ArtifactFetchFailed`, `ArtifactInvalid`, `RenderFailed`, `ApplyFailed`, `PruneFailed`, `ReconciliationSucceeded`.
+
+The status package SHALL define the reason constants used on the Ready condition, including `SkewRefused` (Ready=False: the platform's skew policy is `Refuse` and the module requires a newer catalog build than the platform pins) beside the existing `ResolutionFailed`, `RenderFailed`, `PlatformNotReady` and the Platform reasons `Generated`, `BuildFailed`, `GenerateFailed`.
 
 #### Scenario: Reason constants available
 - **WHEN** code imports `internal/status`
 - **THEN** all reason constants are available as exported string constants
+
+#### Scenario: Skew refusal reason is available
+
+- **WHEN** a render is refused under the `Refuse` policy
+- **THEN** the reconciler marks `Ready=False` with reason `SkewRefused`
 
 ### Requirement: Condition helper functions
 The `internal/status` package MUST provide helper functions for common condition transitions.

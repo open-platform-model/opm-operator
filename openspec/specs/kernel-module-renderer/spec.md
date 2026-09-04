@@ -11,36 +11,39 @@ and is wired into the reconcilers in production (see `platform-gated-rendering`)
 
 ### Requirement: Render a ModuleRelease through the kernel
 
-The operator SHALL provide a `KernelModuleRenderer` that implements the existing `ModuleRenderer` interface and renders a `ModuleRelease` entirely through the library kernel. Given a name, namespace, module path, module version, and optional values, it SHALL: read the current `*MaterializedPlatform` from the platform store; acquire the target module via the module-acquisition helper; convert the supplied `*RawValues` to a `cue.Value` (or no values, applying `#config` defaults); call `Kernel.SynthesizeRelease`; call `Kernel.Compile` with the materialized platform and a runtime identity; and return a `RenderResult` whose resources are adapted from the compiled output. The legacy `*provider.Provider` parameter SHALL be ignored.
+`KernelModuleRenderer` SHALL acquire the module from the registry, synthesize the instance (source-carrying) with the supplied values, and render it through the single-build render with the leased platform record and the record's skew policy. The kernel gate SHALL be held only across acquisition and synthesis; the build SHALL run outside it so renders of different objects overlap.
 
 #### Scenario: Renders resources from a materialized platform
 
-- **WHEN** the store holds a materialized platform and `RenderModule` is called for a module resolvable in the registry
-- **THEN** it returns a `RenderResult` whose `Resources` correspond to the kernel's compiled output
-- **AND** each resource carries the release, component, and transformer provenance from the compiled item
+- **WHEN** `RenderModule` is called for a resolvable module while a generated platform is recorded
+- **THEN** the result carries the rendered resources and inventory entries, and any warnings the build reported
 
 #### Scenario: Values are applied when supplied
 
 - **WHEN** non-nil `RawValues` are passed
-- **THEN** they are compiled to a `cue.Value` and supplied to `SynthesizeRelease`
+- **THEN** they are compiled to a `cue.Value` and supplied to instance synthesis
 - **AND** when no values are supplied the module's `#config` defaults apply
 
 ### Requirement: Gate rendering on a materialized platform
 
-When the platform store holds no materialized platform, `KernelModuleRenderer.RenderModule` SHALL return a typed `ErrPlatformNotReady` and SHALL NOT acquire a module, synthesize, or compile. This slice defines the renderer's error; mapping it to a custom-resource condition is out of scope here.
+`KernelModuleRenderer` SHALL return `ErrPlatformNotReady` before any registry I/O when the store holds no generated-module record, and SHALL hold a lease on the record for the duration of the render otherwise.
 
 #### Scenario: Empty store yields ErrPlatformNotReady
 
-- **WHEN** `RenderModule` is called while the store holds no platform
-- **THEN** it returns `ErrPlatformNotReady`
-- **AND** no module acquisition, synthesis, or compile is attempted
+- **WHEN** `RenderModule` is called while the store holds no record
+- **THEN** it returns `ErrPlatformNotReady` without acquiring the module
 
 ### Requirement: Adapt compiled output to operator resources
 
-The operator SHALL provide `core.ResourceFromCompiled` converting a library `*core.Compiled` to an operator `*core.Resource` by copying the CUE value and the release, component, and transformer provenance. Inventory entries SHALL be built from the adapted resources using the existing inventory bridge.
+The renderer SHALL adapt the single-build render's compiled objects to operator resources and inventory entries exactly as before, and SHALL return the build's warnings on the result for the reconciler to report.
 
 #### Scenario: Compiled item maps to a resource
 
 - **WHEN** a library `Compiled` with a value and provenance is adapted
 - **THEN** the resulting `core.Resource` carries the same value, release, component, and transformer
 - **AND** an inventory entry can be built from it via the existing `ToUnstructured` path
+
+#### Scenario: Warnings reach the reconciler
+
+- **WHEN** the build reports a warning (unhandled optional trait, catalog skew under `Warn`)
+- **THEN** the render result carries the warning text

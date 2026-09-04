@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0-alpha.16](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.15...v1.0.0-alpha.16) (2026-09-04)
+
+
+### Features
+
+* **controller:** generate the platform module from the Platform CR (0019 D6) ([#118](https://github.com/open-platform-model/opm-operator/issues/118)) ([3b0d126](https://github.com/open-platform-model/opm-operator/commit/3b0d126c8dd9f84cc1763f14b81031bff0f03101))
+* **render:** render through the single-build kernel path against the generated platform (0019 D7/D8/D18) ([#119](https://github.com/open-platform-model/opm-operator/issues/119)) ([8fd1e5f](https://github.com/open-platform-model/opm-operator/commit/8fd1e5f2099782d85d088f1548aa74c2a0f14cb4))
+
+
+### Bug Fixes
+
+* **deps:** bump library to v1.0.0-alpha.22, catalog_opm fixtures to the v4 line (4.0.1) ([#115](https://github.com/open-platform-model/opm-operator/issues/115)) ([7127503](https://github.com/open-platform-model/opm-operator/commit/71275039561acd4c511c26e3b0353a03ff21bc1d))
+
+
+### Code Refactoring
+
+* **controller:** generate the platform module through the library helper ([#120](https://github.com/open-platform-model/opm-operator/issues/120)) ([85243d2](https://github.com/open-platform-model/opm-operator/commit/85243d20491464fc5c0906f3aeae46a2d9f0cf51))
+* **main:** drop kernel WithLogger argument ([#117](https://github.com/open-platform-model/opm-operator/issues/117)) ([ae9276d](https://github.com/open-platform-model/opm-operator/commit/ae9276dcbe72cf586e85883af784a927310af320))
+
 ## [1.0.0-alpha.15](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.14...v1.0.0-alpha.15) (2026-08-30)
 
 

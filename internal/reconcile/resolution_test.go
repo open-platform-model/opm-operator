@@ -8,8 +8,8 @@ import (
 
 	"k8s.io/client-go/tools/events"
 
-	"github.com/open-platform-model/library/opm/compile"
 	oerrors "github.com/open-platform-model/library/opm/errors"
+	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/render"
@@ -28,18 +28,39 @@ func identityErr() error {
 	}
 }
 
-// unresolvedDemandsJoin mirrors the library's compile gate
-// (compile/module.go): a bare errors.Join carrying *UnresolvedDemandsError
-// alongside *UnmatchedComponentsError, wrapped once by the renderer. If the
-// library changes this shape, these tests fail rather than letting typed
-// routing silently degrade to the string fallback.
-func unresolvedDemandsJoin() error {
-	return errors.Join(
-		&oerrors.UnresolvedDemandsError{Demands: []oerrors.UnresolvedDemand{
-			{Component: "web", FQN: "opmodel.dev/contracts/volume", Kind: "resource"},
-		}},
-		&compile.UnmatchedComponentsError{Components: []string{"web"}},
-	)
+// renderRefused mirrors the kernel's fail-closed gate: a *kernel.RenderError
+// carrying the diagnostics and the joined typed causes, wrapped once by the
+// renderer. If the library changes this shape, these tests fail rather than
+// letting typed routing silently degrade to the string fallback.
+func renderRefused(causes ...error) error {
+	return fmt.Errorf("rendering module instance: %w", &kernel.RenderError{Err: errors.Join(causes...)})
+}
+
+func unresolvedDemands() error {
+	return &oerrors.UnresolvedDemandsError{Demands: []oerrors.UnresolvedDemand{
+		{Component: "web", FQN: "opmodel.dev/contracts/volume", Kind: "resource"},
+	}}
+}
+
+func unmatchedComponents() error {
+	return &oerrors.UnmatchedComponentsError{Components: []string{"web"}}
+}
+
+func overSubscribed() error {
+	return oerrors.OverSubscribedContractError{Key: "opmodel.dev/contracts/ingress", Catalogs: []string{"a@v1", "b@v1"}}
+}
+
+func transformFailure() error {
+	return &oerrors.TransformError{ComponentName: "web", TransformerFQN: "deployment", Cause: errors.New("boom")}
+}
+
+// skewRefused mirrors the kernel's pre-evaluation refusal under SkewRefuse:
+// a plain error joining one *oerrors.SkewError per skewed path, wrapped by
+// the renderer.
+func skewRefused() error {
+	return fmt.Errorf("rendering module instance: %w", fmt.Errorf("render refused before evaluation: %w", errors.Join(
+		&oerrors.SkewError{Path: "opmodel.dev/catalogs/opm@v4", ModuleVersion: "v4.1.0", PlatformVersion: "v4.0.1"},
+	)))
 }
 
 func TestClassifyRenderError(t *testing.T) {
@@ -68,10 +89,34 @@ func TestClassifyRenderError(t *testing.T) {
 			wantReason:  status.ResolutionFailedReason,
 		},
 		{
-			name:        "unresolved demands joined and wrapped by renderer",
-			err:         fmt.Errorf("compiling module release: %w", unresolvedDemandsJoin()),
+			name:        "unresolved demands and unmatched components refused by the gate",
+			err:         renderRefused(unresolvedDemands(), unmatchedComponents()),
 			wantOutcome: FailedStalled,
 			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name:        "unmatched components alone refused by the gate",
+			err:         renderRefused(unmatchedComponents()),
+			wantOutcome: FailedStalled,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name:        "skew refused under the Refuse policy",
+			err:         skewRefused(),
+			wantOutcome: FailedStalled,
+			wantReason:  status.SkewRefusedReason,
+		},
+		{
+			name:        "over-subscribed provider contract is a render failure",
+			err:         renderRefused(overSubscribed()),
+			wantOutcome: FailedStalled,
+			wantReason:  status.RenderFailedReason,
+		},
+		{
+			name:        "transform failure is a render failure",
+			err:         renderRefused(transformFailure()),
+			wantOutcome: FailedStalled,
+			wantReason:  status.RenderFailedReason,
 		},
 		{
 			name:        "platform not ready keeps its gate",
@@ -92,8 +137,8 @@ func TestClassifyRenderError(t *testing.T) {
 			wantReason:  status.RenderFailedReason,
 		},
 		{
-			name:        "transform-failure join stays RenderFailed",
-			err:         fmt.Errorf("compiling module release: %w", fmt.Errorf("executing transforms: %w", errors.Join(errors.New("boom")))),
+			name:        "pre-evaluation operator defect stays RenderFailed",
+			err:         fmt.Errorf("rendering module instance: %w", errors.New(`platform "cluster" carries no Source`)),
 			wantOutcome: FailedStalled,
 			wantReason:  status.RenderFailedReason,
 		},
@@ -120,6 +165,16 @@ func TestClassifyRenderError(t *testing.T) {
 	}
 }
 
+func TestClassifyRenderError_SkewMessageNamesPathAndVersions(t *testing.T) {
+	mi := &releasesv1alpha1.ModuleInstance{}
+	_, msg := classifyRenderError(mi, events.NewFakeRecorder(2), skewRefused())
+	for _, want := range []string{"opmodel.dev/catalogs/opm@v4", "v4.1.0", "v4.0.1"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("SkewRefused message %q must name %q", msg, want)
+		}
+	}
+}
+
 func TestRenderErrorReason(t *testing.T) {
 	tests := []struct {
 		name string
@@ -132,9 +187,19 @@ func TestRenderErrorReason(t *testing.T) {
 			want: status.UnsupportedKindReason,
 		},
 		{
-			name: "unresolved demands joined and wrapped by renderer",
-			err:  fmt.Errorf("compiling module instance: %w", unresolvedDemandsJoin()),
+			name: "unresolved demands and unmatched components refused by the gate",
+			err:  renderRefused(unresolvedDemands(), unmatchedComponents()),
 			want: status.ResolutionFailedReason,
+		},
+		{
+			name: "skew refused under the Refuse policy",
+			err:  skewRefused(),
+			want: status.SkewRefusedReason,
+		},
+		{
+			name: "over-subscribed provider contract is a render failure",
+			err:  renderRefused(overSubscribed()),
+			want: status.RenderFailedReason,
 		},
 		{
 			name: "loader string fallback still routes",

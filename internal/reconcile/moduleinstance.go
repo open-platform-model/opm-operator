@@ -56,6 +56,9 @@ type ModuleInstanceParams struct {
 	// ModuleInstance has an empty spec.serviceAccountName. Empty disables
 	// the default and preserves the controller-client fallback.
 	DefaultServiceAccount string
+	// Warnings remembers each instance's last render warnings so RenderWarning
+	// events are emitted on transition only. Nil emits every non-empty set.
+	Warnings *WarningTracker
 }
 
 // ReconcileModuleInstance orchestrates all phases of the reconcile loop.
@@ -104,6 +107,7 @@ func ReconcileModuleInstance(
 
 	// Deletion branch: if DeletionTimestamp is set, run cleanup and return.
 	if !mi.DeletionTimestamp.IsZero() {
+		params.Warnings.Forget(keyOf(&mi))
 		result, err := handleDeletion(ctx, params, &mi)
 		opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
 		return result, err
@@ -260,14 +264,14 @@ func ReconcileModuleInstance(
 	if err != nil {
 		outcome, errMsg = classifyRenderError(&mi, params.EventRecorder, err)
 		// PlatformNotReady is a transient blocked-on-dependency state (the
-		// platform store has no materialized platform yet), so it must retry on
-		// the fast exponential backoff like other transient failures — not the
-		// 30-minute stalled recheck. The Platform watch normally re-enqueues
-		// promptly when the platform materializes, but that edge is missed when
-		// the controller restarts into an already-Ready Platform (the
-		// re-materialize emits no status event), leaving the bounded backoff as
-		// the real recovery path. Genuinely stalled render/resolution errors
-		// keep the long recheck.
+		// platform store holds no generated platform module yet), so it must
+		// retry on the fast exponential backoff like other transient failures
+		// — not the 30-minute stalled recheck. The Platform watch normally
+		// re-enqueues promptly when the platform is generated, but that edge
+		// is missed when the controller restarts into an already-Ready
+		// Platform (the regeneration emits no status event), leaving the
+		// bounded backoff as the real recovery path. Genuinely stalled
+		// render/resolution errors keep the long recheck.
 		if outcome == FailedTransient {
 			retryAfter = ComputeBackoff(reconcileFailureCount(mi.Status.FailureCounters) + 1)
 		} else {
@@ -277,6 +281,7 @@ func ReconcileModuleInstance(
 	}
 
 	status.MarkModuleResolved(&mi, fmt.Sprintf("%s@%s", mi.Spec.Module.Path, mi.Spec.Module.Version))
+	reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, &mi, renderResult)
 
 	renderDigest, err := status.RenderDigest(renderResult.Resources)
 	if err != nil {
@@ -809,16 +814,17 @@ func pruneStaleResources(
 
 // classifyRenderError maps a render error to its status condition and event,
 // returning the reconcile outcome and error message for the deferred status
-// commit. Both classifications requeue on StalledRecheckInterval (set by the
-// caller).
+// commit. The stalled classifications requeue on StalledRecheckInterval (set
+// by the caller).
 //
 // render.ErrPlatformNotReady is a blocked-on-dependency state: the platform
-// store holds no materialized platform yet. The instance is healthy but waiting
-// for the cluster Platform, so it is marked Ready=False/PlatformNotReady (not
-// Stalled), applies and prunes nothing, and requeues. The Platform watch
-// (mapPlatformToModuleInstances) re-enqueues it promptly when the platform
-// materializes; StalledRecheckInterval is the safety net. All other errors are
-// terminal render/resolution stalls.
+// store holds no generated platform module yet. The instance is healthy but
+// waiting for the cluster Platform, so it is marked Ready=False/PlatformNotReady
+// (not Stalled), applies and prunes nothing, and requeues. The Platform watch
+// (mapPlatformToModuleInstances) re-enqueues it promptly when the platform is
+// generated; the bounded backoff is the safety net. All other errors are
+// terminal render/resolution stalls, classified by the kernel's typed cause
+// (renderFailureReason): ResolutionFailed, SkewRefused or RenderFailed.
 func classifyRenderError(
 	mi *releasesv1alpha1.ModuleInstance,
 	recorder events.EventRecorder,
@@ -829,10 +835,7 @@ func classifyRenderError(
 		status.MarkNotReady(mi, status.PlatformNotReadyReason, "%s", err)
 		return FailedTransient, err.Error()
 	}
-	reason := status.RenderFailedReason
-	if isTypedResolutionError(err) || isResolutionError(err) {
-		reason = status.ResolutionFailedReason
-	}
+	reason := renderFailureReason(err, isResolutionError)
 	recorder.Eventf(mi, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
 	status.MarkStalled(mi, reason, "%s", err)
 	return FailedStalled, err.Error()

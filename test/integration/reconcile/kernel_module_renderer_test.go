@@ -22,7 +22,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/open-platform-model/library/opm/helper/synth"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -33,14 +32,13 @@ import (
 )
 
 // These tests exercise KernelModuleRenderer directly (the ModuleInstance
-// reconciler now wires it in production). The happy path requires the fixture
-// module published to a local OCI registry plus a resolvable catalog to
-// materialize the platform against; it is skipped automatically when either is
-// unavailable. Run with: task dev:test:local
+// reconciler wires it in production). The happy path requires the fixture
+// module and its catalog to resolve from CUE_REGISTRY (GHCR under
+// `task dev:test`); it is skipped automatically when either is unavailable.
 
 var _ = Describe("KernelModuleRenderer Integration", func() {
 	Context("when the platform store is empty", func() {
-		It("returns ErrPlatformNotReady without acquiring or compiling", func() {
+		It("returns ErrPlatformNotReady without acquiring or rendering", func() {
 			// No registry is configured and the module path is unresolvable: if
 			// the gate did not short-circuit, acquisition would fail loudly with
 			// a different error. MatchError(ErrPlatformNotReady) proves the
@@ -62,7 +60,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 		})
 	})
 
-	Context("when the store holds a materialized platform", func() {
+	Context("when the store holds a generated platform", func() {
 		var (
 			k        *kernel.Kernel
 			registry string
@@ -72,38 +70,15 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 		BeforeEach(func() {
 			skipIfNoTestRegistry()
 			registry = os.Getenv("CUE_REGISTRY")
-			k = materializeKernel(registry)
-
-			// Materialize a platform via the real synth → materialize path so the
-			// store holds the same shape the PlatformReconciler produces. The opm
-			// catalog provides the transformers the fixture module matches.
-			catalogPath := os.Getenv("OPM_TEST_CATALOG_PATH")
-			if catalogPath == "" {
-				catalogPath = defaultTestCatalogPath
-			}
-			// The subscription names exactly one published catalog build (0010
-			// D14). Resource/transformer FQNs embed the catalog version, so the
-			// platform must materialize the same build the fixture module
-			// targets or rendering fails with "no matching transformer".
-			plat, err := k.SynthesizePlatform(ctx, synth.PlatformInput{
-				Name: "cluster",
-				Type: "kubernetes",
-				Subscriptions: map[string]synth.SubscriptionSpec{
-					catalogPath: {Version: testCatalogVersion()},
-				},
-			})
-			if err != nil {
-				registrySkip("synthesizing platform failed (registry/schema unreachable): " + err.Error())
-			}
-			mp, err := k.Materialize(ctx, plat)
-			if err != nil {
-				registrySkip("materializing platform failed (catalog unreachable): " + err.Error())
-			}
-			store = platformstore.NewStore()
-			store.Set(1, mp)
+			k = kernel.New(kernel.WithRegistry(registry))
+			// Generate and build the platform module the way the
+			// PlatformReconciler does, subscribed to the exact catalog build the
+			// fixture module targets: transformer FQNs embed the catalog
+			// version, so another build leaves the components unmatched.
+			store = generatedPlatformStore(k, registry, kernel.SkewWarn)
 		})
 
-		It("renders the fixture module's resources with provenance and inventory", func() {
+		It("renders the fixture module's resources with provenance and inventory, releasing its lease", func() {
 			renderer := &render.KernelModuleRenderer{
 				Kernel:      k,
 				Store:       store,
@@ -122,9 +97,12 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(res).NotTo(BeNil())
 			Expect(res.Resources).NotTo(BeEmpty(),
-				"the fixture module must compile to at least one resource")
+				"the fixture module must render to at least one resource")
+			Expect(res.Warnings).To(BeEmpty(), "a module pinning the platform's catalog build renders without warnings")
+			Expect(res.ResolvedVersions).NotTo(BeEmpty(), "the build reports the resolved-versions rows (0019 D18)")
+			Expect(store.Leased()).To(BeEmpty(), "the render releases its lease on return")
 
-			// Every rendered resource carries release/component/transformer
+			// Every rendered resource carries instance/component/transformer
 			// provenance copied from the kernel's Compiled output, plus the
 			// runtime-identity labels that lock the Go/CUE contract between
 			// core.LabelManagedByControllerValue and the catalog's #runtimeName.

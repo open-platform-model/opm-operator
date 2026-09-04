@@ -65,6 +65,16 @@ type ModuleInstanceReconciler struct {
 	// consume to drive the render path; this slice wires it but does not read
 	// it on any reconcile path.
 	Kernel *kernel.Kernel
+
+	// MaxConcurrentRenders bounds how many ModuleInstances reconcile (and so
+	// render) at once: the manager's --max-concurrent-renders, applied as
+	// MaxConcurrentReconciles. Zero or negative keeps controller-runtime's
+	// default of one.
+	MaxConcurrentRenders int
+
+	// warnings remembers each instance's last render warnings so RenderWarning
+	// events are emitted on transition only (0019 D18).
+	warnings opmreconcile.WarningTracker
 }
 
 // +kubebuilder:rbac:groups=opmodel.dev,resources=moduleinstances,verbs=get;list;watch;create;update;patch;delete
@@ -91,6 +101,7 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		EventRecorder:         r.EventRecorder,
 		Renderer:              r.Renderer,
 		DefaultServiceAccount: r.DefaultServiceAccount,
+		Warnings:              &r.warnings,
 	}, req)
 }
 
@@ -100,10 +111,15 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 //   - ModuleInstance CRs (primary, generation-change predicate)
 //   - Platform (cluster singleton) — every change re-enqueues all
 //     ModuleInstances via mapPlatformToModuleInstances so releases blocked on
-//     PlatformNotReady recover promptly when the platform materializes. The
-//     generation predicate lives on For() (not as a global event filter) so it
-//     does not suppress the Platform watch, whose trigger (materialization) is
-//     a status update that does not bump generation.
+//     PlatformNotReady recover promptly when the platform is generated, and
+//     instances rendered under a superseded pin set or skew policy re-render.
+//     The generation predicate lives on For() (not as a global event filter)
+//     so it does not suppress the Platform watch, whose trigger (the
+//     reconciler's status update) does not bump generation.
+//
+// MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
+// controller's MaxConcurrentReconciles: renders share nothing (library
+// ADR-005), so the only bound is memory.
 func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.ModuleInstance{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
@@ -112,6 +128,7 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToModuleInstances),
 		).
 		WithOptions(controller.Options{
+			MaxConcurrentReconciles: r.MaxConcurrentRenders,
 			RateLimiter: workqueue.NewTypedMaxOfRateLimiter(
 				workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](1*time.Second, 5*time.Minute),
 				&workqueue.TypedBucketRateLimiter[ctrl.Request]{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
@@ -123,8 +140,8 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // mapPlatformToModuleInstances enqueues every ModuleInstance in the cluster when
 // the (singleton) Platform changes. This unblocks releases sitting in
-// PlatformNotReady the moment the platform materializes, rather than waiting for
-// the stalled-recheck backoff. List-all is cheap: the Platform is a cluster
+// PlatformNotReady the moment the platform is generated, rather than waiting
+// for the stalled-recheck backoff. List-all is cheap: the Platform is a cluster
 // singleton, its changes are rare, and the instance count is bounded.
 func (r *ModuleInstanceReconciler) mapPlatformToModuleInstances(ctx context.Context, _ client.Object) []reconcile.Request {
 	var list releasesv1alpha1.ModuleInstanceList

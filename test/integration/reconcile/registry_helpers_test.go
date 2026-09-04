@@ -13,13 +13,20 @@ package reconcile_test
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
+	loaderfile "github.com/open-platform-model/library/opm/helper/loader/file"
 	"github.com/open-platform-model/library/opm/kernel"
-	"github.com/open-platform-model/library/opm/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
+	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -39,6 +46,15 @@ func registrySkip(msg string) {
 // to when OPM_TEST_CATALOG_PATH is unset: the first-party abstraction
 // catalog, resolved from GHCR under `task dev:test`.
 const defaultTestCatalogPath = "opmodel.dev/catalogs/opm@v4"
+
+// testCatalogPath is the catalog the registry-backed specs subscribe to:
+// OPM_TEST_CATALOG_PATH when set (seeded CI), defaultTestCatalogPath otherwise.
+func testCatalogPath() string {
+	if p := os.Getenv("OPM_TEST_CATALOG_PATH"); p != "" {
+		return p
+	}
+	return defaultTestCatalogPath
+}
 
 // testCatalogVersion is the exact catalog build the registry-backed specs
 // subscribe to — the shared default lives in fixtures.CatalogVersion so a
@@ -92,20 +108,75 @@ func containerToolAvailable() bool {
 	return false
 }
 
-// materializeSchemaModule pins the core schema the interim materialize-based
-// specs synthesize against. The library's schema loader floats on the v2
-// major, which since 2026-09-01 resolves core 2.0.0-alpha.7, where a registry
-// entry carries its catalog by import and derives its version (0019 D5);
-// SynthesizePlatform + Materialize predate that shape and refuse it. These
-// specs exercise the render paths' interim materialized-slot contract, which
-// operator-render-switch retires together with this pin.
-const materializeSchemaModule = "opmodel.dev/core@v2.0.0-alpha.6"
+// generatedPlatformStore seeds a store the way the PlatformReconciler does:
+// it derives the dependency closure of one catalog subscription (the exact
+// build the fixture modules target, 0010 D14), generates the platform module
+// into a per-spec temporary Layout, builds it through the kernel's
+// source-carrying platform acquisition (the record Kernel.Render imports the
+// platform from) and records it as generation 1 under the given skew policy.
+// The registry-backed specs then exercise the same path the reconciler does.
+// A registry or catalog that does not resolve skips the spec (or fails under
+// OPM_TEST_REGISTRY_FORCE=1).
+func generatedPlatformStore(k *kernel.Kernel, registry string, skew kernel.SkewPolicy) *platformstore.Store {
+	GinkgoHelper()
+	return generatedPlatformStoreAt(k, registry, testCatalogVersion(), skew)
+}
 
-// materializeKernel builds a Kernel whose schema cache is pinned to
-// materializeSchemaModule, resolving through registry.
-func materializeKernel(registry string) *kernel.Kernel {
-	return kernel.New(
-		kernel.WithRegistry(registry),
-		kernel.WithSchemaLoader(schema.OCILoader{Module: materializeSchemaModule, Registry: registry}),
-	)
+// generatedPlatformStoreAt is generatedPlatformStore pinned to an explicit
+// catalog build, for the skew specs.
+func generatedPlatformStoreAt(
+	k *kernel.Kernel,
+	registry, catalogVersion string,
+	skew kernel.SkewPolicy,
+) *platformstore.Store {
+	GinkgoHelper()
+	src, err := platformmodule.NewRegistry(registry)
+	Expect(err).NotTo(HaveOccurred())
+	entries := []platformmodule.Entry{{Path: testCatalogPath(), Version: catalogVersion, Enable: true}}
+	deps, err := platformmodule.Closure(ctx, src, platformmodule.Roots(entries))
+	if err != nil {
+		registrySkip("core and catalog not resolvable from CUE_REGISTRY: " + err.Error())
+	}
+	files, err := platformmodule.Generate(platformmodule.Input{
+		Name:    "cluster",
+		Type:    "kubernetes",
+		Entries: entries,
+		Deps:    deps,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	layout := platformmodule.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")}
+	dir, err := layout.Write(1, files)
+	Expect(err).NotTo(HaveOccurred())
+
+	plat, err := k.AcquirePlatformFromDir(ctx, dir, loaderfile.LoadOptions{Registry: registry})
+	if err != nil {
+		registrySkip("building the generated platform module failed (registry/schema unreachable): " + err.Error())
+	}
+	Expect(plat.Source).NotTo(BeNil(), "the acquired platform must carry its on-disk source")
+
+	store := platformstore.NewStore()
+	store.SetGenerated(platformstore.Generated{Generation: 1, Dir: dir, Platform: plat, Skew: skew})
+	return store
+}
+
+// keyOfObject returns the namespaced name of obj.
+func keyOfObject(obj client.Object) types.NamespacedName {
+	return types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}
+}
+
+// countRecordedEvents drains rec and returns how many of the recorded events
+// carry reason.
+func countRecordedEvents(rec *events.FakeRecorder, reason string) int {
+	n := 0
+	for {
+		select {
+		case e := <-rec.Events:
+			if strings.Contains(e, reason) {
+				n++
+			}
+		default:
+			return n
+		}
+	}
 }

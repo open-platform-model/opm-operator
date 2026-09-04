@@ -9,6 +9,7 @@ import (
 
 	"github.com/open-platform-model/library/opm/helper/synth"
 	"github.com/open-platform-model/library/opm/kernel"
+	"github.com/open-platform-model/library/opm/module"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/moduleacquire"
@@ -16,21 +17,22 @@ import (
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
-// ErrPlatformNotReady is returned by KernelModuleRenderer.RenderModule when the
-// platform store holds no materialized platform. It is a typed sentinel so the
-// reconciler-side mapping to a custom-resource condition (a later slice) can
-// branch on it via errors.Is without string matching.
-var ErrPlatformNotReady = errors.New("platform not ready: no materialized platform")
+// ErrPlatformNotReady is returned by the renderers when the platform store
+// holds no generated platform module. It is a typed sentinel so the
+// reconciler-side mapping to a custom-resource condition can branch on it via
+// errors.Is without string matching.
+var ErrPlatformNotReady = errors.New("platform not ready: no generated platform module")
 
 // KernelModuleRenderer renders a ModuleInstance entirely through the library
-// kernel behind the ModuleRenderer seam: it reads the materialized platform
-// from the store, acquires the target module from the registry, synthesizes
-// the instance, and compiles it against the platform.
+// kernel behind the ModuleRenderer seam: it leases the generated platform
+// record from the store, acquires the target module from the registry,
+// synthesizes the instance, and renders it against the platform module through
+// the kernel's single-build render (enhancement 0019 D9).
 type KernelModuleRenderer struct {
 	// Kernel is the shared, long-lived library Kernel (one per process).
 	Kernel *kernel.Kernel
 
-	// Store holds the materialized platform written by the PlatformReconciler.
+	// Store holds the generated platform written by the PlatformReconciler.
 	Store *platformstore.Store
 
 	// Registry is the CUE_REGISTRY mapping applied per module acquisition.
@@ -45,29 +47,55 @@ type KernelModuleRenderer struct {
 var _ ModuleRenderer = (*KernelModuleRenderer)(nil)
 
 // RenderModule renders the module at modulePath@moduleVersion into a
-// RenderResult via the kernel. It reads the materialized platform from the
+// RenderResult via the kernel. It leases the generated platform from the
 // store (returning ErrPlatformNotReady before any I/O when absent), acquires
 // the module, compiles supplied values to a cue.Value (the zero value when none
 // are supplied, letting the module's #config defaults apply), synthesizes the
-// instance, compiles it against the platform, and adapts the compiled output to
+// instance, renders it against the platform, and adapts the compiled output to
 // operator resources plus inventory entries.
 //
-// The platform comes from the injected store.
+// The kernel gate is held only across acquisition and synthesis, the calls
+// that evaluate in the shared Kernel's own context; the render build shares
+// nothing (library ADR-005) and runs outside the gate, so renders of different
+// objects overlap under --max-concurrent-renders. The lease is held for the
+// whole call: the build reads the platform module directory the record names.
 func (r *KernelModuleRenderer) RenderModule(
 	ctx context.Context,
 	name, namespace, modulePath, moduleVersion string,
 	values *releasesv1alpha1.RawValues,
 ) (*RenderResult, error) {
 	// Gate before any registry I/O: nothing can be rendered without a platform.
-	mp, ok := r.Store.Get()
+	rec, releaseLease, ok := r.Store.Lease()
 	if !ok {
 		return nil, ErrPlatformNotReady
 	}
+	defer releaseLease()
 
-	// Serialize every Kernel call and every use of the held platform: the
-	// process shares one Kernel across three controllers, and rendering
-	// concurrently against one materialized platform races (library ADR-002,
-	// superseded). Released before the caller writes status.
+	inst, err := r.synthesize(ctx, name, namespace, modulePath, moduleVersion, values)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := r.Kernel.Render(ctx, kernel.RenderInput{
+		Instance:    inst,
+		Platform:    rec.Platform,
+		RuntimeName: r.RuntimeName,
+		Skew:        rec.Skew,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("rendering module instance: %w", err)
+	}
+
+	return resultFromRender(out)
+}
+
+// synthesize acquires the module and synthesizes the source-carrying instance
+// under the kernel gate, released before the caller renders.
+func (r *KernelModuleRenderer) synthesize(
+	ctx context.Context,
+	name, namespace, modulePath, moduleVersion string,
+	values *releasesv1alpha1.RawValues,
+) (*module.Instance, error) {
 	release := r.Store.AcquireKernel()
 	defer release()
 
@@ -78,7 +106,7 @@ func (r *KernelModuleRenderer) RenderModule(
 
 	// Convert CRD values to a cue.Value. The zero cue.Value signals "no values
 	// supplied" to SynthesizeInstance, which then relies on the module's #config
-	// defaults for concreteness — mirroring the legacy path's behavior.
+	// defaults for concreteness.
 	var cueValues cue.Value
 	if values != nil && values.Raw != nil {
 		compiled := r.Kernel.CueContext().CompileBytes(values.Raw, cue.Filename("values"))
@@ -88,7 +116,7 @@ func (r *KernelModuleRenderer) RenderModule(
 		cueValues = compiled
 	}
 
-	rel, err := r.Kernel.SynthesizeInstance(ctx, synth.InstanceInput{
+	inst, err := r.Kernel.SynthesizeInstance(ctx, synth.InstanceInput{
 		Module:    mod,
 		Name:      name,
 		Namespace: namespace,
@@ -97,16 +125,14 @@ func (r *KernelModuleRenderer) RenderModule(
 	if err != nil {
 		return nil, fmt.Errorf("synthesizing release: %w", err)
 	}
+	return inst, nil
+}
 
-	out, err := r.Kernel.Compile(ctx, kernel.CompileInput{
-		ModuleInstance: rel,
-		Platform:       mp,
-		RuntimeName:    r.RuntimeName,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("compiling module release: %w", err)
-	}
-
+// resultFromRender adapts the kernel's render output to the operator's
+// RenderResult: compiled objects to resources with provenance, inventory
+// entries built through the existing ToUnstructured bridge, and the build's
+// warnings and resolved-version rows carried through for the reconciler.
+func resultFromRender(out *kernel.RenderResult) (*RenderResult, error) {
 	resources := make([]*core.Resource, 0, len(out.Compiled))
 	for _, c := range out.Compiled {
 		resources = append(resources, core.ResourceFromCompiled(c))
@@ -121,5 +147,6 @@ func (r *KernelModuleRenderer) RenderModule(
 		Resources:        resources,
 		InventoryEntries: entries,
 		Warnings:         out.Warnings,
+		ResolvedVersions: out.Diagnostics.ResolvedVersions,
 	}, nil
 }

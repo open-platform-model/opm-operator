@@ -59,6 +59,10 @@ type ModulePackageParams struct {
 	// an empty spec.serviceAccountName. Empty disables the default and
 	// preserves the controller-client fallback.
 	DefaultServiceAccount string
+
+	// Warnings remembers each package's last render warnings so RenderWarning
+	// events are emitted on transition only. Nil emits every non-empty set.
+	Warnings *WarningTracker
 }
 
 // Was: ReconcileRelease
@@ -96,6 +100,7 @@ func ReconcileModulePackage(
 	}
 
 	if !pkg.DeletionTimestamp.IsZero() {
+		params.Warnings.Forget(keyOf(&pkg))
 		return handleModulePackageDeletion(ctx, params, &pkg)
 	}
 
@@ -367,10 +372,10 @@ func renderModulePackage(
 	kind, result, err := params.Renderer.Render(ctx, packageDir)
 	if err != nil {
 		// PlatformNotReady is a blocked-on-dependency state, not a stall: the
-		// store holds no materialized platform yet. Mark Ready=False/
+		// store holds no generated platform module yet. Mark Ready=False/
 		// PlatformNotReady (non-stalled), apply and prune nothing, and requeue.
-		// The Platform watch (mapPlatformToModulePackages) re-enqueues promptly when
-		// the platform materializes; the interval requeue is the safety net.
+		// The Platform watch (mapPlatformToModulePackages) re-enqueues promptly
+		// when the platform is generated; the interval requeue is the safety net.
 		if errors.Is(err, render.ErrPlatformNotReady) {
 			status.MarkNotReady(pkg, status.PlatformNotReadyReason, "%s", err)
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.PlatformNotReadyReason, "Render", "%s", err)
@@ -386,18 +391,18 @@ func renderModulePackage(
 		status.MarkStalled(pkg, status.UnsupportedKindReason, "%s", msg)
 		return nil, &phaseFail{FailedStalled, msg, StalledRecheckInterval}
 	}
+	reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, pkg, result)
 	return result, nil
 }
 
+// renderErrorReason maps a failed package render to its reason: an
+// unsupported kind first, then the kernel's typed cause (renderFailureReason)
+// with the package loader's string fallback.
 func renderErrorReason(err error) string {
-	switch {
-	case errors.Is(err, render.ErrUnsupportedKind):
+	if errors.Is(err, render.ErrUnsupportedKind) {
 		return status.UnsupportedKindReason
-	case isTypedResolutionError(err), isResolutionErrorMsg(err):
-		return status.ResolutionFailedReason
-	default:
-		return status.RenderFailedReason
 	}
+	return renderFailureReason(err, isResolutionErrorMsg)
 }
 
 func computeModulePackageDigests(

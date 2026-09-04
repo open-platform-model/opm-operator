@@ -42,7 +42,31 @@ type PlatformSpec struct {
 	// the subscribed version (enhancement 0010 D14).
 	// +optional
 	Registry map[string]Subscription `json:"registry,omitempty"`
+
+	// SkewPolicy is the operator's response to catalog version skew: a
+	// module whose cue.mod requires a newer build of an OPM-namespace path
+	// (core or a catalog) than the platform pins (enhancement 0019 D7/D18).
+	// "Warn" (the default when unset) renders against the platform's build
+	// and reports the skew as a RenderWarning event on the workload; "Refuse"
+	// refuses the render before evaluation and the workload reports
+	// Ready=False with reason SkewRefused, naming the path and both versions.
+	// The policy is not part of the generated platform module; it is recorded
+	// beside it, so changing the field alone bumps the generation, regenerates
+	// and re-enqueues the workloads.
+	// +kubebuilder:validation:Enum=Warn;Refuse
+	// +optional
+	SkewPolicy *string `json:"skewPolicy,omitempty"`
 }
+
+// Skew policy values for PlatformSpec.SkewPolicy.
+const (
+	// SkewPolicyWarn renders against the platform's build and reports the
+	// skew. The default.
+	SkewPolicyWarn = "Warn"
+
+	// SkewPolicyRefuse refuses the render before evaluation.
+	SkewPolicyRefuse = "Refuse"
+)
 
 // Subscription is a single catalog registry subscription. It becomes one
 // #registry entry of the generated platform module, carrying the catalog by

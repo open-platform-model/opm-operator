@@ -246,10 +246,11 @@ var _ = Describe("Platform Controller", func() {
 			Expect(mf.Deps).To(HaveKey(platformmodule.CorePath))
 			Expect(string(files[platformmodule.PlatformFileName])).To(ContainSubstring("enable:   false"))
 
-			// The materialized slot is untouched: the render paths gate on it
-			// until operator-render-switch reads the generated record.
-			_, held := store.Get()
-			Expect(held).To(BeFalse())
+			// The record is what the render paths import the platform from:
+			// it must carry its on-disk source and the default skew policy.
+			Expect(rec.Platform.Source).NotTo(BeNil(), "the built platform must carry its source for Kernel.Render")
+			Expect(rec.Platform.Source.Root).To(Equal(rec.Dir))
+			Expect(rec.Skew).To(Equal(kernel.SkewWarn), "an unset spec.skewPolicy resolves to Warn")
 		})
 
 		It("regenerates byte-identical module content for the same generation", func() {
@@ -286,7 +287,7 @@ var _ = Describe("Platform Controller", func() {
 			Expect(gens).To(Equal([]int64{first.Generation}), "a same-generation rewrite leaves one directory")
 		})
 
-		It("keeps the current and immediately superseded generation on disk and prunes older ones", func() {
+		It("prunes every superseded generation no render leases once the next generation builds", func() {
 			k, reg := buildKernelOrSkip()
 			catalogPath := testCatalogPath()
 			store := platformstore.NewStore()
@@ -343,12 +344,14 @@ var _ = Describe("Platform Controller", func() {
 
 			gens, err := r.Layout.Generations()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(gens).To(Equal([]int64{gen2, gen3}), "the current and immediately superseded generation stay; older ones are pruned")
-			_, statErr := os.Stat(r.Layout.Dir(gen1))
-			Expect(os.IsNotExist(statErr)).To(BeTrue(), "gen-%d should have been pruned", gen1)
+			Expect(gens).To(Equal([]int64{gen3}), "only the current generation stays when no render leases an earlier one")
+			for _, gen := range []int64{gen1, gen2} {
+				_, statErr := os.Stat(r.Layout.Dir(gen))
+				Expect(os.IsNotExist(statErr)).To(BeTrue(), "gen-%d should have been pruned", gen)
+			}
 		})
 
-		It("keeps the current and previous generation on disk and prunes older ones", func() {
+		It("keeps a leased superseded generation on disk and prunes it on the next reconcile once released", func() {
 			k, reg := buildKernelOrSkip()
 			store := platformstore.NewStore()
 			r := newPlatformReconciler(store, k, reg)
@@ -379,16 +382,32 @@ var _ = Describe("Platform Controller", func() {
 			}
 
 			reconcileCurrent()
+			// A render takes a lease on generation 1 (as the renderers do for
+			// the duration of Kernel.Render) and is still reading its directory
+			// when generation 2 lands.
+			leased, release, ok := store.Lease()
+			Expect(ok).To(BeTrue())
+			Expect(leased.Generation).To(Equal(generations[0]))
+
 			bumpGeneration("kubernetes-2")
 			reconcileCurrent()
+			Expect(generations).To(HaveLen(2))
+			Expect(generations[1]).To(BeNumerically(">", generations[0]))
+			onDisk, err := r.Layout.Generations()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(onDisk).To(Equal(generations), "a leased superseded generation survives the swap")
+			Expect(store.Leased()).To(Equal([]int64{generations[0]}))
+
+			// The render finishes; the next reconcile prunes the released
+			// generation along with the now-unleased generation 2.
+			release()
+			Expect(store.Leased()).To(BeEmpty())
 			bumpGeneration("kubernetes-3")
 			reconcileCurrent()
 			Expect(generations).To(HaveLen(3))
-			Expect(generations[2]).To(BeNumerically(">", generations[1]))
-
-			onDisk, err := r.Layout.Generations()
+			onDisk, err = r.Layout.Generations()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(onDisk).To(Equal(generations[1:]), "current and previous generation stay, older ones are pruned")
+			Expect(onDisk).To(Equal(generations[2:]), "once released, a superseded generation is pruned by the next reconcile")
 		})
 
 		It("surfaces a nonexistent pin as Ready=False/BuildFailed naming path and version, keeping the last good record", func() {

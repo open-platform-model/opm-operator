@@ -791,6 +791,22 @@ spec:
                   core #Platform.#registry. The key's major must agree with the major of
                   the subscribed version (enhancement 0010 D14).
                 type: object
+              skewPolicy:
+                description: |-
+                  SkewPolicy is the operator's response to catalog version skew: a
+                  module whose cue.mod requires a newer build of an OPM-namespace path
+                  (core or a catalog) than the platform pins (enhancement 0019 D7/D18).
+                  "Warn" (the default when unset) renders against the platform's build
+                  and reports the skew as a RenderWarning event on the workload; "Refuse"
+                  refuses the render before evaluation and the workload reports
+                  Ready=False with reason SkewRefused, naming the path and both versions.
+                  The policy is not part of the generated platform module; it is recorded
+                  beside it, so changing the field alone bumps the generation, regenerates
+                  and re-enqueues the workloads.
+                enum:
+                - Warn
+                - Refuse
+                type: string
               type:
                 description: |-
                   Type is the informational discriminator for the platform (core

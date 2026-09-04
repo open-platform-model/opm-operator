@@ -20,13 +20,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	loaderfile "github.com/open-platform-model/library/opm/helper/loader/file"
+	"github.com/open-platform-model/library/opm/helper/platformmodule"
 	"github.com/open-platform-model/library/opm/kernel"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	opmcontroller "github.com/open-platform-model/opm-operator/internal/controller"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
-	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -40,6 +41,12 @@ func registrySkip(msg string) {
 		Fail("OPM_TEST_REGISTRY_FORCE=1 but registry prerequisite missing: " + msg)
 	}
 	Skip(msg)
+}
+
+// newTestModFileSource is the module-file source the specs derive closures
+// through: the reconciler's own configuration, minus the client type.
+func newTestModFileSource(registry string) (platformmodule.ModFileSource, error) {
+	return platformmodule.NewRegistry(platformmodule.RegistryConfig{Registry: registry, Env: os.Environ()})
 }
 
 // defaultTestCatalogPath is the catalog the registry-backed specs subscribe
@@ -130,7 +137,7 @@ func generatedPlatformStoreAt(
 	skew kernel.SkewPolicy,
 ) *platformstore.Store {
 	GinkgoHelper()
-	src, err := platformmodule.NewRegistry(registry)
+	src, err := newTestModFileSource(registry)
 	Expect(err).NotTo(HaveOccurred())
 	entries := []platformmodule.Entry{{Path: testCatalogPath(), Version: catalogVersion, Enable: true}}
 	deps, err := platformmodule.Closure(ctx, src, platformmodule.Roots(entries))
@@ -138,14 +145,15 @@ func generatedPlatformStoreAt(
 		registrySkip("core and catalog not resolvable from CUE_REGISTRY: " + err.Error())
 	}
 	files, err := platformmodule.Generate(platformmodule.Input{
-		Name:    "cluster",
-		Type:    "kubernetes",
-		Entries: entries,
-		Deps:    deps,
+		Name:       "cluster",
+		Type:       "kubernetes",
+		ModulePath: opmcontroller.PlatformModulePath,
+		Entries:    entries,
+		Deps:       deps,
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	layout := platformmodule.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")}
+	layout := platformstore.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")}
 	dir, err := layout.Write(1, files)
 	Expect(err).NotTo(HaveOccurred())
 

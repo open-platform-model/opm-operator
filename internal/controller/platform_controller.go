@@ -22,11 +22,13 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"sort"
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/patch"
 	loaderfile "github.com/open-platform-model/library/opm/helper/loader/file"
+	"github.com/open-platform-model/library/opm/helper/platformmodule"
 	"github.com/open-platform-model/library/opm/kernel"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,7 +44,6 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
-	"github.com/open-platform-model/opm-operator/internal/platformmodule"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/internal/version"
@@ -52,6 +53,15 @@ import (
 // Platform singleton. The CRD enforces this via a CEL rule; the reconciler
 // guards on it again as defense-in-depth (enhancement 0001 §8.1).
 const platformSingletonName = "cluster"
+
+// PlatformModulePath is the generated platform module's own identity: the
+// reserved, never-published platforms namespace (enhancement 0019 D6). Fixed
+// rather than derived per generation so generated files are byte-stable
+// across generations of the same spec, and distinct from every instance
+// module path the render build could pair it with. Operator input to the
+// library's generator, which owns everything else about the module
+// including the core pin (its verified release, schema.DefaultSchemaVersion).
+const PlatformModulePath = "opmodel.dev/platforms/cluster@v0"
 
 // transientRecheckInterval is the fast retry cadence for clearly-transient
 // build failures (network/timeout). Kept conservative (a minute, not
@@ -63,13 +73,15 @@ const transientRecheckInterval = time.Minute
 // PlatformReconciler reconciles the singleton Platform CR into a platform CUE
 // module on the operator's own disk (enhancement 0019 D6). Per CR generation
 // it derives the module's dependency closure from the pinned catalogs'
-// published module files, generates the module (one importing #registry
-// entry per subscription, the CR's version stamped as the expected-version
-// tripwire), writes it under a per-generation directory, builds it through
-// the kernel's shape-gated platform loader, and records the result together
-// with the resolved skew policy (spec.skewPolicy, 0019 D7/D18) in the
-// process-local store for the render path. The outcome surfaces on the CR's
-// Ready condition: Generated, GenerateFailed or BuildFailed.
+// published module files and generates the module through the library's
+// platform-module helper (one importing #registry entry per subscription,
+// the CR's version stamped as the expected-version tripwire, core pinned at
+// the library's verified release), writes it under a per-generation
+// directory, builds it through the kernel's shape-gated platform loader, and
+// records the result together with the resolved skew policy
+// (spec.skewPolicy, 0019 D7/D18) in the process-local store for the render
+// path. The outcome surfaces on the CR's Ready condition: Generated,
+// GenerateFailed or BuildFailed.
 type PlatformReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
@@ -89,7 +101,7 @@ type PlatformReconciler struct {
 	Registry string
 
 	// Layout owns the module directories under the manager's --platform-dir.
-	Layout platformmodule.Layout
+	Layout platformstore.Layout
 
 	// ModFiles serves published module files for the closure derivation.
 	// Nil constructs one from Registry on first use; a test may inject a
@@ -159,10 +171,11 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	files, err := platformmodule.Generate(platformmodule.Input{
-		Name:    plat.Name,
-		Type:    plat.Spec.Type,
-		Entries: entries,
-		Deps:    deps,
+		Name:       plat.Name,
+		Type:       plat.Spec.Type,
+		ModulePath: PlatformModulePath,
+		Entries:    entries,
+		Deps:       deps,
 	})
 	if err != nil {
 		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("generating platform module: %v", err))
@@ -222,12 +235,18 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 // modFiles returns the module-file source for closure derivation,
-// constructing it from Registry on first use.
+// constructing it on first use from the operator's registry mapping, its
+// client type and the process environment (CUE_CACHE_DIR is set at manager
+// start), passed explicitly: the helper reads nothing from the process.
 func (r *PlatformReconciler) modFiles() (platformmodule.ModFileSource, error) {
 	if r.ModFiles != nil {
 		return r.ModFiles, nil
 	}
-	src, err := platformmodule.NewRegistry(r.Registry)
+	src, err := platformmodule.NewRegistry(platformmodule.RegistryConfig{
+		Registry:   r.Registry,
+		ClientType: "opm-operator",
+		Env:        os.Environ(),
+	})
 	if err != nil {
 		return nil, err
 	}

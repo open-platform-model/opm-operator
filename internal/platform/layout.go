@@ -1,4 +1,4 @@
-package platformmodule
+package platform
 
 import (
 	"crypto/rand"
@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/open-platform-model/library/opm/helper/platformmodule"
 )
 
 const (
@@ -31,8 +33,11 @@ const (
 // Layout owns the on-disk lifecycle of generated platform modules under Root
 // (the manager's --platform-dir): one directory per CR generation, written
 // by staging plus rename so a module directory is either absent or complete,
-// pruned to the current and previous generation after each successful
-// build, and emptied at manager start.
+// pruned to the current and every leased generation after each successful
+// build, and emptied at manager start. The module content itself comes from
+// the library's generator (opm/helper/platformmodule); the lifecycle is
+// operator process policy, which is why it lives here beside the store that
+// records the directories.
 type Layout struct {
 	Root string
 }
@@ -51,7 +56,7 @@ func (l Layout) Dir(generation int64) string {
 // same generation (a re-reconcile after a build failure, or a container
 // restart on the same volume) is moved aside before the swap and removed
 // after it.
-func (l Layout) Write(generation int64, files Files) (string, error) {
+func (l Layout) Write(generation int64, files platformmodule.Files) (string, error) {
 	if l.Root == "" {
 		return "", errors.New("platform layout has no root directory")
 	}
@@ -70,9 +75,9 @@ func (l Layout) Write(generation int64, files Files) (string, error) {
 	if err := os.Mkdir(staging, 0o755); err != nil {
 		return "", fmt.Errorf("creating staging directory %s: %w", staging, err)
 	}
-	if err := writeFiles(staging, files); err != nil {
+	if err := files.WriteTo(staging); err != nil {
 		_ = os.RemoveAll(staging)
-		return "", err
+		return "", fmt.Errorf("writing platform module files: %w", err)
 	}
 
 	dir := l.Dir(generation)
@@ -163,23 +168,6 @@ func (l Layout) Generations() ([]int64, error) {
 	}
 	slices.Sort(out)
 	return out, nil
-}
-
-func writeFiles(dir string, files Files) error {
-	for name, data := range files {
-		rel := filepath.FromSlash(name)
-		if filepath.IsAbs(rel) || strings.HasPrefix(rel, "..") {
-			return fmt.Errorf("refusing to write %q outside the module directory", name)
-		}
-		path := filepath.Join(dir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
-		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			return fmt.Errorf("writing %s: %w", path, err)
-		}
-	}
-	return nil
 }
 
 func randomSuffix() (string, error) {

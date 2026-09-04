@@ -25,7 +25,7 @@ Gate: task 1.1 (the library pin) needs the `library-render-cutover` release; not
 - [x] 4.1 `test/integration/reconcile/registry_helpers_test.go`: replace `materializeKernel`/`materializeSchemaModule` with a helper that generates, builds and records a platform module (`platformmodule.Generate` + `Closure` + `Layout`, `AcquirePlatformFromDir`, `SetGenerated`); migrate `kernel_module_renderer`, `kernel_package_renderer`, `example_modules` and `platform_gate` specs onto it.
 - [x] 4.2 Controller unit specs: `SkewRefused` classification (a fixture module pinning a newer catalog than the platform, policy `Refuse`), `Warn` renders with one `RenderWarning` event and no repeat on the next reconcile, over-subscription surfaces as `RenderFailed`.
 - [x] 4.3 Concurrency: an integration spec with `MaxConcurrentReconciles: 2` rendering two instances, both Ready; `task dev:test` under `-race` for `internal/render` and `internal/platform`.
-- [ ] 4.4 `task dev:e2e` green: podinfo, lifecycle and redis specs pass against the generated platform (the acceptance run for the wave).
+- [x] 4.4 `task dev:e2e` green: podinfo, lifecycle and redis specs pass against the generated platform (the acceptance run for the wave).
 
 ## 5. Docs and cleanup
 

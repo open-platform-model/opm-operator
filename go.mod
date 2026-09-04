@@ -11,7 +11,7 @@ require (
 	github.com/fluxcd/source-controller/api v1.9.4
 	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
-	github.com/open-platform-model/library v1.0.0-alpha.24
+	github.com/open-platform-model/library v1.0.0-alpha.25
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/time v0.15.0

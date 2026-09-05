@@ -20,7 +20,6 @@ import (
 // value-typed oerrors.IdentityError, wrapped once by the module renderer.
 func identityErr() error {
 	return oerrors.IdentityError{
-		Artifact:   "module",
 		Field:      "path",
 		Declared:   "opmodel.dev/modules/other",
 		Fetched:    "opmodel.dev/modules/demo",

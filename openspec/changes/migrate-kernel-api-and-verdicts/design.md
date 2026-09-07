@@ -1,0 +1,78 @@
+# Design: migrate-kernel-api-and-verdicts
+
+## Context
+
+See `proposal.md` § Why for the motivation. The design-relevant state:
+
+- The operator already constructs one long-lived `*kernel.Kernel` with `kernel.WithRegistry` (`library-kernel-runtime`, "Kernel configured from existing inputs"). Every `loaderfile.LoadOptions{Registry: r.Registry}` at an acquire call site therefore repeats a mapping the Kernel already holds; the renderers' `Registry` fields exist only to feed those options.
+- `internal/moduleacquire/acquire.go` already calls `Kernel.AcquireModuleFromRegistry(ctx, path, version)` — the post-`one-api-tier` signature. Its own `registry string` parameter is already vestigial. The registry-path acquisition needs no edit.
+- `internal/render/kernel_module_renderer.go` compiles `values.Raw` with `cue.Filename("values")` and passes the resulting `cue.Value` as `synth.InstanceInput.Values`. The new `kernel.InstanceInput.Values` is `[]kernel.Source`, where a `Source` pairs a value with an `Origin` that MUST equal the `cue.Filename` the value was compiled under. `Kernel.LoadSourceFromBytes(origin, b)` builds both halves correctly in one call.
+- `render.RenderResult.Warnings []string` is an operator type. It is constructed in exactly one place (`resultFromRender`) and read by `reportRenderDiagnostics` -> `emitRenderWarnings`, which passes it to `WarningTracker.Update(key, warnings)` and then to `distinctSorted`. So the strings are simultaneously the event text, the dedup key and the change-detection key.
+- `internal/reconcile/resolution.go` routes on `*UnresolvedDemandsError`, `*UnmatchedComponentsError`, `*SkewError` and `IdentityError` — all of which keep their names and receivers. Only the over-subscription type changes, and it appears in one comment and one test constructor.
+
+Constraint: the target library alpha does not exist yet. Every task must be verifiable against a local `replace` directive and must leave `go.mod` pinned to a real published version until the alpha lands.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- One green tree at the end, with intermediate states green wherever the compiler allows it.
+- No CRD field, condition reason, event reason, metric or flag changes: this is a dependency migration.
+- Every fact the kernel's warning strings named is still named, by operator-authored text.
+- The warning tracker stops treating a library sentence as its identity key.
+
+**Non-Goals:**
+
+- Changing what the operator renders, applies or prunes, or the render digest.
+- Reshaping `render.RenderResult`. `Warnings []string` stays a `[]string`; only its producer and the tracker's key change.
+- Fixing `module-acquisition`'s stale requirement text (it still names `LoadModuleFromRegistry` + `NewModuleFromValue`, which the code stopped using before this change). That is pre-existing spec drift, not this migration's to correct.
+- Removing `moduleacquire.Acquire`'s vestigial `registry` parameter.
+- Adopting anything else new in the target library alpha beyond what these two changes force.
+
+## Decisions
+
+### The two library migrations land as one change, not two
+
+**Context**: `one-api-tier` and `cue-owned-verdicts` are separate library changes.
+**Explored**: (A) two operator changes, acquire-surface first; (B) one change.
+**Decision**: B.
+**Rationale**: both ship in the same library alpha, so there is no `go.mod` pin at which only the first is present; under (A) the first would be verifiable only against a library commit. `kernel_module_renderer.go` is edited by both (values stack, then the warnings producer), so (A) also edits it twice. The batch is small — seven files — and the task groups are individually reviewable.
+
+### Raw values become one source with a CR-field origin
+
+**Context**: `InstanceInput.Values` is now a `[]Source`, and a `Source`'s `Origin` must match the `cue.Filename` its value was compiled under or error attribution breaks.
+**Explored**: (A) keep the current `CompileBytes(..., cue.Filename("values"))` and wrap it in a hand-built `Source{Value: v, Origin: "values"}`; (B) call `Kernel.LoadSourceFromBytes(origin, raw)` and let the kernel maintain the invariant; (C) pass an empty stack and keep filling values elsewhere.
+**Decision**: B, with the origin naming the CR field the bytes came from (`spec.values`) rather than the bare word `values`.
+**Rationale**: (A) restates a contract the library documents as easy to get wrong and the compiler cannot check. (C) is not available — the operator must not fill values into an evaluated instance. The origin upgrade is free at the same call site and turns an anonymous position into one an operator reading an event can act on.
+
+### `RenderResult.Warnings` keeps its type; the tracker's key stops being the sentence
+
+**Context**: the library removed `RenderResult.Warnings []string`; the operator has its own field of the same name, whose strings are also the tracker's change-detection key.
+**Explored**: (A) reshape `render.RenderResult` to carry typed advisory rows and format at the event site; (B) keep `[]string`, add one operator formatter at the single construction site, and leave the tracker keyed on the strings; (C) B plus keying the tracker on the underlying facts.
+**Decision**: C.
+**Rationale**: (A) changes a struct several files read for no behavior difference. (B) leaves the bug the library change exposed: the tracker's identity is a sentence, so any rewording — now the operator's own, and therefore likelier to change — re-emits every event for every object on the next reconcile. Keying on the facts (path plus both versions; component plus trait) makes rewording free, which is the point of owning the wording. The event text still comes from the same formatter, so the emitted strings are unchanged this time.
+
+### The compiled adapter changes its import, not its shape
+
+**Context**: `opm/core` is deleted and `Compiled` moves to `opm/kernel` with the same four fields.
+**Decision**: `pkg/core/compiled_adapter.go` swaps the import and the parameter type; the field copy, the nil guard and the operator's `Resource` are untouched.
+**Rationale**: the operator wraps the type on arrival precisely so a library-side move like this is a one-line edit. This is that edit.
+
+## Risks / Trade-offs
+
+- [The target library alpha does not exist, so the work cannot be finished in one sitting] → every task is staged against a local `replace github.com/open-platform-model/library => ../library`, with the pin bump as the last task; a reviewer can run the whole change before the release exists.
+- [Re-keying the warning tracker could suppress an event that should fire, or fire one that should not] → the key is a superset of what the sentence encoded (the sentence was derived from exactly these facts), so no distinct finding collapses; a test covering "same facts, different wording" and "different facts" is a task, not an assumption.
+- [The operator's warning wording diverges from the CLI's for the same fact] → accepted, and the point of the library change: the operator emits Kubernetes events with a dedup key, the CLI prints lines. The facts named are pinned by the `events-emission` and `kernel-module-renderer` deltas so neither frontend can silently drop one.
+- [Changing the values origin from `values` to `spec.values` changes error text an e2e test may assert on] → the origin appears in a values-validation failure message; the task checks the e2e suite for that assertion rather than assuming none exists.
+
+## Migration Plan
+
+1. Add `replace github.com/open-platform-model/library => ../library` locally. Land the acquire-surface group (task 1) — mechanical and compiler-guided.
+2. Land the values-stack change (task 2), then the compiled adapter and the verdict type renames (task 3).
+3. Land the warnings producer and the tracker re-key (task 4), the group with actual behavior in it.
+4. Run the full gate and the e2e suite (task 5).
+5. When the library alpha is published, replace the `replace` directive with the real pin and re-run the gate (task 6). Rollback is a re-pin to `v1.0.0-alpha.26` together with a revert of this change; no CRD, persisted status field or event reason changes shape.
+
+## Open Questions
+
+- Which alpha number carries both library changes. It does not affect the specs, the approach or the task breakdown — only the literal in `go.mod` at the last task.

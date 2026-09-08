@@ -8,6 +8,7 @@ See `proposal.md` § Why for the motivation. The design-relevant state:
 - `internal/moduleacquire/acquire.go` already calls `Kernel.AcquireModuleFromRegistry(ctx, path, version)` — the post-`one-api-tier` signature. Its own `registry string` parameter is already vestigial. The registry-path acquisition needs no edit.
 - `internal/render/kernel_module_renderer.go` compiles `values.Raw` with `cue.Filename("values")` and passes the resulting `cue.Value` as `synth.InstanceInput.Values`. The new `kernel.InstanceInput.Values` is `[]kernel.Source`, where a `Source` pairs a value with an `Origin` that MUST equal the `cue.Filename` the value was compiled under. `Kernel.LoadSourceFromBytes(origin, b)` builds both halves correctly in one call.
 - `render.RenderResult.Warnings []string` is an operator type. It is constructed in exactly one place (`resultFromRender`) and read by `reportRenderDiagnostics` -> `emitRenderWarnings`, which passes it to `WarningTracker.Update(key, warnings)` and then to `distinctSorted`. So the strings are simultaneously the event text, the dedup key and the change-detection key.
+- `Store.kernelMu` serialises every call that evaluated in the Kernel's shared context (`internal/platform/store.go:67-71`). The library-side reason for it disappears with `kernel-owns-no-build-context`, whose every verb builds in a context it creates and releases. `Store.mu` and the generation leases are a different mechanism (they guard the record and the directory a render reads) and stay.
 - `internal/reconcile/resolution.go` routes on `*UnresolvedDemandsError`, `*UnmatchedComponentsError`, `*SkewError` and `IdentityError` — all of which keep their names and receivers. Only the over-subscription type changes, and it appears in one comment and one test constructor.
 
 Constraint: the target library alpha does not exist yet. Every task must be verifiable against a local `replace` directive and must leave `go.mod` pinned to a real published version until the alpha lands.
@@ -31,12 +32,12 @@ Constraint: the target library alpha does not exist yet. Every task must be veri
 
 ## Decisions
 
-### The two library migrations land as one change, not two
+### The three library migrations land as one change, not three
 
-**Context**: `one-api-tier` and `cue-owned-verdicts` are separate library changes.
-**Explored**: (A) two operator changes, acquire-surface first; (B) one change.
+**Context**: `one-api-tier`, `cue-owned-verdicts` and `kernel-owns-no-build-context` are separate library changes.
+**Explored**: (A) one operator change per library change, acquire-surface first; (B) one change.
 **Decision**: B.
-**Rationale**: both ship in the same library alpha, so there is no `go.mod` pin at which only the first is present; under (A) the first would be verifiable only against a library commit. `kernel_module_renderer.go` is edited by both (values stack, then the warnings producer), so (A) also edits it twice. The batch is small — seven files — and the task groups are individually reviewable.
+**Rationale**: all three ship in the same library alpha, so there is no `go.mod` pin at which only the first is present; under (A) the first would be verifiable only against a library commit. `kernel_module_renderer.go` is edited by all three (values stack, the warnings producer, the gate release), so (A) also edits it three times. The batch is small — about a dozen files — and the task groups are individually reviewable.
 
 ### Raw values become one source with a CR-field origin
 
@@ -58,11 +59,19 @@ Constraint: the target library alpha does not exist yet. Every task must be veri
 **Decision**: `pkg/core/compiled_adapter.go` swaps the import and the parameter type; the field copy, the nil guard and the operator's `Resource` are untouched.
 **Rationale**: the operator wraps the type on arrival precisely so a library-side move like this is a one-line edit. This is that edit.
 
+### The kernel gate goes with the shared context
+
+**Context**: `kernelMu` exists because a `cue.Context` is not safe for concurrent builds and the Kernel held one. The library's `Kernel` is now documented as safe for concurrent use across its methods, every verb building in its own context.
+**Explored**: (A) keep the gate as a throttle on acquisition and synthesis; (B) delete it.
+**Decision**: B. `kernelMu`, `AcquireKernel` and the three acquire-and-release sites go; nothing replaces them.
+**Rationale**: (A) keeps a mutex whose stated reason is gone and a second concurrency knob no flag reads: `--max-concurrent-renders` already bounds the render reconcilers, and the Platform reconciler builds one generation at a time by construction. Memory follows the artifacts a reconcile holds, which the library change bounds per call; the platform build's cost is paid once per generation as before.
+
 ## Risks / Trade-offs
 
 - [The target library alpha does not exist, so the work cannot be finished in one sitting] → every task is staged against a local `replace github.com/open-platform-model/library => ../library`, with the pin bump as the last task; a reviewer can run the whole change before the release exists.
 - [Re-keying the warning tracker could suppress an event that should fire, or fire one that should not] → the key is a superset of what the sentence encoded (the sentence was derived from exactly these facts), so no distinct finding collapses; a test covering "same facts, different wording" and "different facts" is a task, not an assumption.
 - [The operator's warning wording diverges from the CLI's for the same fact] → accepted, and the point of the library change: the operator emits Kubernetes events with a dedup key, the CLI prints lines. The facts named are pinned by the `events-emission` and `kernel-module-renderer` deltas so neither frontend can silently drop one.
+- [A concurrency defect in the library's per-verb contexts would surface in the operator first] → the library change ships a race test running acquire and synth from several goroutines on one Kernel; task 5.4 runs an envtest with `--max-concurrent-renders=2` so two ModuleInstances acquire, synthesize and render concurrently, under the race detector.
 - [Changing the values origin from `values` to `spec.values` changes error text an e2e test may assert on] → the origin appears in a values-validation failure message; the task checks the e2e suite for that assertion rather than assuming none exists.
 
 ## Migration Plan
@@ -70,9 +79,10 @@ Constraint: the target library alpha does not exist yet. Every task must be veri
 1. Add `replace github.com/open-platform-model/library => ../library` locally. Land the acquire-surface group (task 1) — mechanical and compiler-guided.
 2. Land the values-stack change (task 2), then the compiled adapter and the verdict type renames (task 3).
 3. Land the warnings producer and the tracker re-key (task 4), the group with actual behavior in it.
-4. Run the full gate and the e2e suite (task 5).
-5. When the library alpha is published, replace the `replace` directive with the real pin and re-run the gate (task 6). Rollback is a re-pin to `v1.0.0-alpha.26` together with a revert of this change; no CRD, persisted status field or event reason changes shape.
+4. Delete the kernel gate and repoint the smoke check (task 5).
+5. Run the full gate and the e2e suite (task 6).
+6. When the library alpha is published, replace the `replace` directive with the real pin and re-run the gate (task 7). Rollback is a re-pin to `v1.0.0-alpha.26` together with a revert of this change; no CRD, persisted status field or event reason changes shape.
 
 ## Open Questions
 
-- Which alpha number carries both library changes. It does not affect the specs, the approach or the task breakdown — only the literal in `go.mod` at the last task.
+- Which alpha number carries all three library changes. It does not affect the specs, the approach or the task breakdown — only the literal in `go.mod` at the last task.

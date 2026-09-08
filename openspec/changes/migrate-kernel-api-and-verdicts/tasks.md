@@ -1,10 +1,10 @@
 # Tasks: migrate-kernel-api-and-verdicts
 
-Every task before 6.1 runs against a local `replace github.com/open-platform-model/library => ../library` (added in 1.1, removed in 6.1).
+Every task before 7.1 runs against a local `replace github.com/open-platform-model/library => ../library` (added in 1.1, removed in 7.1).
 
 ## 1. Acquire calls drop their load options
 
-- [ ] 1.1 Add `replace github.com/open-platform-model/library => ../library` to `go.mod`, then `go build ./...`; verify the only failures reported are the `opm/helper/loader/file`, `opm/helper/synth` and `opm/core` import lines in the four files that name them.
+- [ ] 1.1 Add `replace github.com/open-platform-model/library => ../library` to `go.mod`, then `go build ./...`; verify the only failures reported are the `opm/helper/loader/file`, `opm/helper/synth` and `opm/core` import lines in the four files that name them and the two `CueContext()` calls (`cmd/main.go`, `internal/render/kernel_module_renderer.go`).
 - [ ] 1.2 `internal/controller/platform_controller.go`: drop the `loaderfile.LoadOptions{Registry: r.Registry}` argument from `AcquirePlatformFromDir` and the `loaderfile` import; remove the reconciler's `Registry` field if nothing else reads it; verify `make test` passes for the controller package and `grep -n 'r.Registry' internal/controller/platform_controller.go` returns only surviving uses.
 - [ ] 1.3 `internal/render/kernel_package_renderer.go`: drop the load-options argument from `AcquireInstanceFromDir`, rename the `loaderfile.ErrWrongKind` comparison (and the comment above it) to `liberrors.ErrWrongKind`, drop the `loaderfile` import and the renderer's now-unused `Registry` field; verify the package's wrong-kind test still classifies a non-instance package the same way.
 
@@ -27,11 +27,18 @@ Every task before 6.1 runs against a local `replace github.com/open-platform-mod
 - [ ] 4.3 `internal/reconcile/warnings.go`: key `WarningTracker.Update` on the advisory facts rather than the formatted strings (skew: path plus both versions; trait: component plus trait), leaving the emitted event text, reason and action unchanged; verify `go test ./internal/reconcile/...` passes.
 - [ ] 4.4 Add tracker tests for the two transition cases: same facts with different wording emits nothing, and a changed fact emits; verify each fails when the tracker is reverted to keying on the strings.
 
-## 5. Gates and end-to-end
+## 5. The kernel gate goes
 
-- [ ] 5.1 `make fmt`, `make vet`, `make lint`, `make test` green; verify `make build` produces the manager binary.
-- [ ] 5.2 Run the envtest and e2e suites against the local `replace`; verify a ModuleInstance with a warn-policy skew reaches `Ready=True` and emits exactly one `RenderWarning` event naming the path and both versions, and that a second reconcile with unchanged facts emits none.
+- [ ] 5.1 `internal/platform/store.go`: delete `kernelMu`, `AcquireKernel` and the doc comment describing the gate; `internal/controller/platform_controller.go`, `internal/render/kernel_package_renderer.go`, `internal/render/kernel_module_renderer.go`: delete the `release := r.Store.AcquireKernel()` and `defer release()` lines and every comment naming the gate; verify `go build ./...` is green and `grep -rn 'AcquireKernel\|kernelMu' --include=*.go .` is empty.
+- [ ] 5.2 `cmd/main.go`: `verifyCoreSchema` calls `k.SchemaCache().Get()`; verify the test covering `verifyCoreSchema` passes and `grep -rn 'CueContext()' --include=*.go .` is empty.
+- [ ] 5.3 `CLAUDE.md` (the "Renders share nothing; the kernel gate is narrow" bullet becomes "every kernel call shares nothing": one Kernel, no gate, concurrency bounded by `--max-concurrent-renders` and the Platform reconciler's one-generation-at-a-time construction) and `docs/RENDERING.md` (steps 1 and 2 no longer serialise); verify `grep -rn -i 'kernel gate\|AcquireKernel\|serialised behind' CLAUDE.md docs` is empty.
+- [ ] 5.4 Envtest: with `--max-concurrent-renders=2`, two ModuleInstances against one Platform reconcile at the same time; verify both reach `Ready=True` and `go test -race ./internal/render/... ./internal/controller/... ./internal/platform/...` is green.
 
-## 6. Pin the released library
+## 6. Gates and end-to-end
 
-- [ ] 6.1 Remove the `replace` directive and bump `github.com/open-platform-model/library` in `go.mod` to the published alpha carrying both `one-api-tier` and `cue-owned-verdicts`, then `go mod tidy`; verify `make test` and `make build` are green with no `replace` directive present and `openspec validate migrate-kernel-api-and-verdicts` passes.
+- [ ] 6.1 `make fmt`, `make vet`, `make lint`, `make test` green; verify `make build` produces the manager binary.
+- [ ] 6.2 Run the envtest and e2e suites against the local `replace`; verify a ModuleInstance with a warn-policy skew reaches `Ready=True` and emits exactly one `RenderWarning` event naming the path and both versions, and that a second reconcile with unchanged facts emits none.
+
+## 7. Pin the released library
+
+- [ ] 7.1 Remove the `replace` directive and bump `github.com/open-platform-model/library` in `go.mod` to the published alpha carrying `one-api-tier`, `cue-owned-verdicts` and `kernel-owns-no-build-context`, then `go mod tidy`; verify `make test` and `make build` are green with no `replace` directive present and `openspec validate migrate-kernel-api-and-verdicts` passes.

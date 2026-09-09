@@ -42,15 +42,15 @@ func unresolvedDemands() error {
 }
 
 func unmatchedComponents() error {
-	return &oerrors.UnmatchedComponentsError{Components: []string{"web"}}
+	return &oerrors.UnmatchedComponentsError{Components: []oerrors.UnmatchedComponent{{Component: "web"}}}
 }
 
 func overSubscribed() error {
-	return oerrors.OverSubscribedContractError{Key: "opmodel.dev/contracts/ingress", Catalogs: []string{"a@v1", "b@v1"}}
+	return &oerrors.OverSubscribedContractsError{Contracts: []oerrors.OverSubscribedContract{{Key: "opmodel.dev/contracts/ingress", Catalogs: []string{"a@v1", "b@v1"}}}}
 }
 
 func transformFailure() error {
-	return &oerrors.TransformError{ComponentName: "web", TransformerFQN: "deployment", Cause: errors.New("boom")}
+	return &oerrors.TransformError{Component: "web", Transformer: "deployment", Cause: errors.New("boom")}
 }
 
 // skewRefused mirrors the kernel's pre-evaluation refusal under SkewRefuse:

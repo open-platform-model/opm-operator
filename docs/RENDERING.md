@@ -25,11 +25,11 @@ a library bump moves the core pin with no operator change. A render then:
    context, and reads the matching verdicts and rendered objects off the
    built value.
 
-Steps 1 and 2 evaluate in the process's single shared kernel and are
-serialised behind the store's kernel gate. Step 3 shares nothing: the
-context is created for the render and dropped with it, so renders of
-different objects overlap freely. No platform value is held between renders
-and nothing grows with render count.
+All three steps share nothing: every kernel verb, the acquisition and
+synthesis of step 2 as much as the render of step 3, builds in a CUE context
+created for that call and dropped with it, so renders of different objects
+overlap freely and nothing serialises them but the limit below. No platform
+value is held between renders and nothing grows with render count.
 
 ## `--max-concurrent-renders`
 

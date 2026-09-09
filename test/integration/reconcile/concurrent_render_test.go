@@ -19,6 +19,7 @@ package reconcile_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -37,6 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/open-platform-model/library/opm/kernel"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	opmcontroller "github.com/open-platform-model/opm-operator/internal/controller"
@@ -44,17 +47,21 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // rendezvousRenderer proves two renders overlap: each RenderModule call
 // arrives at a barrier sized for two and only proceeds once the other call
 // has arrived too. Under MaxConcurrentReconciles: 1 the second call could
 // never arrive while the first waits, so the barrier would time out and both
-// renders would fail; under 2 both pass. Each instance renders a ConfigMap
-// named after itself so the two inventories do not overlap.
+// renders would fail; under 2 both pass. With no inner renderer each
+// instance renders a stub ConfigMap named after itself so the two
+// inventories do not overlap; with one, the call is delegated to it after
+// the barrier, so both real renders are in flight at the same time.
 type rendezvousRenderer struct {
 	barrier sync.WaitGroup
 	timeout time.Duration
+	inner   render.ModuleRenderer
 }
 
 func newRendezvousRenderer(parties int, timeout time.Duration) *rendezvousRenderer {
@@ -65,8 +72,8 @@ func newRendezvousRenderer(parties int, timeout time.Duration) *rendezvousRender
 
 func (r *rendezvousRenderer) RenderModule(
 	ctx context.Context,
-	name, ns, _, _ string,
-	_ *releasesv1alpha1.RawValues,
+	name, ns, modulePath, moduleVersion string,
+	values *releasesv1alpha1.RawValues,
 ) (*render.RenderResult, error) {
 	r.barrier.Done()
 	arrived := make(chan struct{})
@@ -77,6 +84,9 @@ func (r *rendezvousRenderer) RenderModule(
 		return nil, fmt.Errorf("render of %s waited %s for a concurrent render that never arrived", name, r.timeout)
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	}
+	if r.inner != nil {
+		return r.inner.RenderModule(ctx, name, ns, modulePath, moduleVersion, values)
 	}
 	return namedConfigMapResult(name, ns), nil
 }
@@ -195,5 +205,125 @@ var _ = Describe("Concurrent renders (manager-driven)", func() {
 				return k8sClient.Get(ctx, nn, &current) != nil
 			}).WithTimeout(15 * time.Second).WithPolling(250 * time.Millisecond).Should(BeTrue())
 		}
+	})
+})
+
+// The kernel-backed proof that the gate is gone (spec library-kernel-runtime
+// "Two renders overlap", "No kernel gate"): two ModuleInstances of the
+// fixture module reconcile at the same time through one shared Kernel and
+// one generated platform, with MaxConcurrentRenders 2. The barrier holds
+// both calls until each has arrived, so acquisition, synthesis and the
+// build of the two renders overlap end to end; both reach Ready and apply
+// the ConfigMap their inventory records. One instance per namespace, so the
+// two renders of the same module do not contend for one object. The
+// instances are deleted through the running manager on the way out, pass or
+// fail, so a failure cannot leak them into a sibling manager-driven spec.
+// Registry-backed: skips without a mapping. Run under -race to catch a
+// shared context.
+var _ = Describe("Concurrent kernel renders (manager-driven, registry-backed)", func() {
+	const (
+		instanceName = "concurrent-kernel-mi"
+		namespaceA   = "concurrent-kernel-a"
+		namespaceB   = "concurrent-kernel-b"
+	)
+
+	It("renders two ModuleInstances through one Kernel at once under MaxConcurrentRenders 2, both Ready", func() {
+		skipIfNoTestRegistry()
+		registry := os.Getenv("CUE_REGISTRY")
+		k := kernel.New(kernel.WithRegistry(registry))
+		store := generatedPlatformStore(k, registry)
+		hello := fixtures.Must(GinkgoT(), "hello")
+
+		// Registered first so it runs last (DeferCleanup is LIFO): the
+		// instances below are deleted while the manager still runs.
+		mgrCtx, cancelMgr := context.WithCancel(ctx)
+		DeferCleanup(cancelMgr)
+
+		for _, ns := range []string{namespaceA, namespaceB} {
+			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: ns},
+			}))).To(Succeed())
+		}
+
+		skipNameValidation := true
+		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+			Scheme:                 scheme.Scheme,
+			LeaderElection:         false,
+			Metrics:                metricsserver.Options{BindAddress: "0"},
+			HealthProbeBindAddress: "0",
+			Controller:             config.Controller{SkipNameValidation: &skipNameValidation},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		renderer := newRendezvousRenderer(2, 30*time.Second)
+		renderer.inner = &render.KernelModuleRenderer{
+			Kernel:      k,
+			Store:       store,
+			Registry:    registry,
+			RuntimeName: core.LabelManagedByControllerValue,
+		}
+		reconciler := &opmcontroller.ModuleInstanceReconciler{
+			Client:               mgr.GetClient(),
+			APIReader:            mgr.GetAPIReader(),
+			Scheme:               mgr.GetScheme(),
+			RestConfig:           cfg,
+			ResourceManager:      apply.NewResourceManager(mgr.GetClient(), "opm-controller"),
+			EventRecorder:        events.NewFakeRecorder(64),
+			Renderer:             renderer,
+			Kernel:               k,
+			MaxConcurrentRenders: 2,
+		}
+		Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
+
+		go func() {
+			defer GinkgoRecover()
+			_ = mgr.Start(mgrCtx)
+		}()
+
+		for _, ns := range []string{namespaceA, namespaceB} {
+			mi := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: instanceName, Namespace: ns},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Module: releasesv1alpha1.ModuleReference{Path: hello.ModulePath, Version: hello.Tag()},
+					Values: emptyValues(),
+				},
+			}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				nn := types.NamespacedName{Name: instanceName, Namespace: ns}
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
+					ObjectMeta: metav1.ObjectMeta{Name: instanceName, Namespace: ns},
+				}))).To(Succeed())
+				Eventually(func() bool {
+					var current releasesv1alpha1.ModuleInstance
+					return k8sClient.Get(ctx, nn, &current) != nil
+				}).WithTimeout(30 * time.Second).WithPolling(250 * time.Millisecond).Should(BeTrue())
+			})
+		}
+
+		for _, ns := range []string{namespaceA, namespaceB} {
+			nn := types.NamespacedName{Name: instanceName, Namespace: ns}
+			var current releasesv1alpha1.ModuleInstance
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+				ready := meta.FindStatusCondition(current.Status.Conditions, status.ReadyCondition)
+				g.Expect(ready).NotTo(BeNil())
+				g.Expect(ready.Status).To(Equal(metav1.ConditionTrue), "reason=%s message=%s", ready.Reason, ready.Message)
+			}).WithTimeout(2 * time.Minute).WithPolling(250 * time.Millisecond).Should(Succeed())
+
+			// The inventory names what the render applied; the object is there.
+			Expect(current.Status.Inventory).NotTo(BeNil(), "the instance in %s records its inventory", ns)
+			Expect(current.Status.Inventory.Entries).NotTo(BeEmpty())
+			for _, entry := range current.Status.Inventory.Entries {
+				if entry.Kind != "ConfigMap" {
+					continue
+				}
+				Expect(entry.Namespace).To(Equal(ns), "the ConfigMap lands in the instance's namespace")
+				applied := types.NamespacedName{Name: entry.Name, Namespace: entry.Namespace}
+				Expect(k8sClient.Get(ctx, applied, &corev1.ConfigMap{})).To(Succeed(),
+					"the instance in %s applied ConfigMap %s", ns, entry.Name)
+			}
+		}
+		Expect(store.Leased()).To(BeEmpty(), "both renders released their lease")
 	})
 })

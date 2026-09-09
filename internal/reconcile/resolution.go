@@ -45,7 +45,7 @@ func isSkewRefusal(err error) bool {
 // the typed cause the kernel attached, in precedence order: a skew refusal is
 // SkewRefused; unresolved demands, unmatched components and identity
 // mismatches are ResolutionFailed; a transform failure, an over-subscribed
-// provider contract (*oerrors.TransformError, oerrors.OverSubscribedContractError)
+// provider contract (*oerrors.TransformError, *oerrors.OverSubscribedContractsError)
 // and every other refusal or evaluation error are RenderFailed. The
 // pre-evaluation refusals that indicate an operator defect (a missing Source,
 // an uncovered OPM path) fall through to RenderFailed with the kernel's

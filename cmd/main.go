@@ -246,10 +246,10 @@ func main() {
 	// Construct the single long-lived library Kernel. Per library/CLAUDE.md a
 	// long-running consumer MUST keep one Kernel (and therefore one schema
 	// *Cache) alive for the process lifetime — never reconstruct it per
-	// reconcile. It is configured from the resolved registry value. Its
-	// context-owning calls are serialised behind the platform store's kernel
-	// gate; Kernel.Render shares nothing and runs concurrently under
-	// --max-concurrent-renders.
+	// reconcile. It is configured from the resolved registry value. Every
+	// verb builds in a context of its own (library ADR-007), so the Kernel is
+	// shared across the controllers with no gate; concurrency is bounded by
+	// --max-concurrent-renders on the render paths.
 	k := kernel.New(
 		kernel.WithRegistry(registry),
 	)
@@ -310,7 +310,6 @@ func main() {
 		Renderer: &render.KernelPackageRenderer{
 			Kernel:      k,
 			Store:       platformStore,
-			Registry:    registry,
 			RuntimeName: core.LabelManagedByControllerValue,
 		},
 		DefaultServiceAccount: defaultServiceAccount,
@@ -355,7 +354,7 @@ func main() {
 // resolved schema version on success. Kept separate from main() so the failure
 // path is assertable without os.Exit.
 func verifyCoreSchema(k *kernel.Kernel) (string, error) {
-	if _, err := k.SchemaCache().Get(k.CueContext()); err != nil {
+	if _, err := k.SchemaCache().Get(); err != nil {
 		return "", err
 	}
 	return k.SchemaCache().ResolvedVersion(), nil

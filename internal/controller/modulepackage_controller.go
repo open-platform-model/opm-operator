@@ -129,7 +129,7 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 //
 // MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
 // controller's MaxConcurrentReconciles: renders share nothing (library
-// ADR-005), so the only bound is memory.
+// ADR-005, ADR-007), so the only bound is memory.
 func (r *ModulePackageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.ModulePackage{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).

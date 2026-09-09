@@ -20,18 +20,25 @@ type RenderResult struct {
 	// InventoryEntries are the CRD-typed inventory entries built from Resources.
 	InventoryEntries []releasesv1alpha1.InventoryEntry
 
-	// Warnings are the render build's advisory, human-readable messages:
-	// effectively-optional unhandled traits and, under the Warn skew policy,
-	// catalog version skew. Unresolved demands (undemandable resources,
-	// unhandled load-bearing traits) refuse the render instead of landing
-	// here (0010 D28). The reconciler emits them as RenderWarning events on
-	// transition.
+	// Warnings are the render's advisory findings, worded by the operator
+	// (renderWarnings) from the diagnostics' rows: effectively-optional
+	// unhandled traits and, under the Warn skew policy, catalog version
+	// skew. Unresolved demands (undemandable resources, unhandled
+	// load-bearing traits) refuse the render instead of landing here (0010
+	// D28). The reconciler emits them as RenderWarning events on transition,
+	// keyed on the rows below rather than on these strings.
 	Warnings []string
+
+	// UnhandledTraits maps a component to the effectively-optional traits no
+	// matched transformer handles, as the build reported it. Plain data: the
+	// facts behind the trait warnings, the reconciler's transition key.
+	UnhandledTraits map[string][]string
 
 	// ResolvedVersions are the per-path version rows the build reports
 	// (0019 D18): for every OPM-namespace path the instance module requires,
 	// the build it asked for and the build the platform carries. Plain data;
-	// the reconciler logs them at debug level.
+	// the reconciler logs them at debug level, and a row marked Newer is the
+	// fact behind a skew warning.
 	ResolvedVersions []kernel.ResolvedVersion
 }
 

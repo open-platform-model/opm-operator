@@ -1,10 +1,10 @@
 package core
 
 import (
-	librarycore "github.com/open-platform-model/library/opm/core"
+	"github.com/open-platform-model/library/opm/kernel"
 )
 
-// ResourceFromCompiled adapts a library *core.Compiled — the kernel's terminal
+// ResourceFromCompiled adapts a library *kernel.Compiled — the kernel's terminal
 // per-transformer output — into the operator's *Resource. The two types carry
 // identical fields (CUE value plus instance/component/transformer provenance),
 // so the adapter is a field copy; it exists so the kernel-backed render path
@@ -12,7 +12,7 @@ import (
 // pipeline unchanged.
 //
 // A nil input yields a nil result.
-func ResourceFromCompiled(c *librarycore.Compiled) *Resource {
+func ResourceFromCompiled(c *kernel.Compiled) *Resource {
 	if c == nil {
 		return nil
 	}

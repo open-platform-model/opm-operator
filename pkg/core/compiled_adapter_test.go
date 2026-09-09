@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	librarycore "github.com/open-platform-model/library/opm/core"
+	"github.com/open-platform-model/library/opm/kernel"
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
@@ -16,7 +16,7 @@ func TestResourceFromCompiled_CopiesFields(t *testing.T) {
 	v := ctx.CompileString(deploymentCUE)
 	require.NoError(t, v.Err())
 
-	compiled := &librarycore.Compiled{
+	compiled := &kernel.Compiled{
 		Value:       v,
 		Instance:    "test-instance",
 		Component:   "web",

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	loaderfile "github.com/open-platform-model/library/opm/helper/loader/file"
+	oerrors "github.com/open-platform-model/library/opm/errors"
 	"github.com/open-platform-model/library/opm/kernel"
 	"github.com/open-platform-model/library/opm/module"
 
@@ -24,14 +24,12 @@ import (
 // No values are injected: a ModulePackage references an authored #ModuleInstance
 // that already carries its own values — there is no SynthesizeInstance step.
 type KernelPackageRenderer struct {
-	// Kernel is the shared, long-lived library Kernel (one per process).
+	// Kernel is the shared, long-lived library Kernel (one per process). The
+	// registry mapping it was constructed with resolves the package's imports.
 	Kernel *kernel.Kernel
 
 	// Store holds the generated platform written by the PlatformReconciler.
 	Store *platformstore.Store
-
-	// Registry is the CUE_REGISTRY mapping applied while loading the package.
-	Registry string
 
 	// RuntimeName is the runtime identity injected into each transformer's
 	// #context (e.g. "opm-controller").
@@ -45,22 +43,22 @@ var _ PackageRenderer = (*KernelPackageRenderer)(nil)
 //
 // Kind detection rides on the loader's shape gate: Kernel.AcquireInstanceFromDir
 // gates to the #ModuleInstance kind, so any other kind fails with
-// loaderfile.ErrWrongKind — the library's documented signal for frontends to
+// oerrors.ErrWrongKind — the library's documented signal for frontends to
 // branch on the failure class via errors.Is. That resolves kind detection in
-// the kernel's context without a separate non-gated peek.
+// the acquisition itself without a separate peek.
 //
-// For a ModuleInstance package it acquires the instance under the kernel gate
-// (the load evaluates in the shared Kernel's context), gates on platform
+// For a ModuleInstance package it acquires the instance, gates on platform
 // readiness (returning ErrPlatformNotReady before any build when no platform
 // module is recorded, so nothing is applied), and renders against the leased
-// platform outside the gate; the build shares nothing (library ADR-005).
+// platform. Every kernel call shares nothing (library ADR-005, ADR-007):
+// acquisition and build each evaluate in a context of their own, with no gate.
 func (r *KernelPackageRenderer) Render(
 	ctx context.Context,
 	packageDir string,
 ) (string, *RenderResult, error) {
 	inst, err := r.acquire(ctx, packageDir)
 	if err != nil {
-		if errors.Is(err, loaderfile.ErrWrongKind) {
+		if errors.Is(err, oerrors.ErrWrongKind) {
 			// Only #ModuleInstance is renderable; any other kind is unsupported.
 			return "", nil, fmt.Errorf("%w: %w", ErrUnsupportedKind, err)
 		}
@@ -93,10 +91,8 @@ func (r *KernelPackageRenderer) Render(
 	return KindModuleInstance, result, nil
 }
 
-// acquire loads the package as a validated, source-carrying instance under
-// the kernel gate, released before the caller renders.
+// acquire loads the package as a validated, source-carrying instance. The
+// Kernel is safe for concurrent use (library ADR-007), so no gate is taken.
 func (r *KernelPackageRenderer) acquire(ctx context.Context, packageDir string) (*module.Instance, error) {
-	release := r.Store.AcquireKernel()
-	defer release()
-	return r.Kernel.AcquireInstanceFromDir(ctx, packageDir, loaderfile.LoadOptions{Registry: r.Registry})
+	return r.Kernel.AcquireInstanceFromDir(ctx, packageDir)
 }

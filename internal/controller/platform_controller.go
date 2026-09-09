@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/patch"
-	loaderfile "github.com/open-platform-model/library/opm/helper/loader/file"
 	"github.com/open-platform-model/library/opm/helper/platformmodule"
 	"github.com/open-platform-model/library/opm/kernel"
 	corev1 "k8s.io/api/core/v1"
@@ -96,8 +95,9 @@ type PlatformReconciler struct {
 	Store *platformstore.Store
 
 	// Registry is the CUE registry mapping (the manager's --registry value)
-	// the closure derivation and the build resolve through. Empty falls back
-	// to the process CUE_REGISTRY.
+	// the closure derivation resolves through; the build resolves through
+	// the mapping Kernel was constructed with. Empty falls back to the
+	// process CUE_REGISTRY.
 	Registry string
 
 	// Layout owns the module directories under the manager's --platform-dir.
@@ -181,17 +181,11 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("generating platform module: %v", err))
 	}
 
-	// The kernel gate serialises the build against the render paths' own
-	// context-owning calls (acquisition, synthesis): the build evaluates in
-	// the shared Kernel's context (see Store.AcquireKernel). Taken before the
-	// write and held through Store.SetGenerated and the prune so a
-	// same-generation rewrite, which moves the live directory aside during
-	// the swap, is never observed by an acquisition mid-flight. Render builds
-	// run outside the gate and are protected by their lease instead: the
-	// prune keep set below covers every leased generation. The registry I/O
-	// (the closure derivation above) stays outside the gate.
-	release := r.Store.AcquireKernel()
-	defer release()
+	// No kernel gate: every Kernel verb builds in a context of its own
+	// (library ADR-007), so the build below runs concurrently with the render
+	// paths' acquisitions and syntheses. Render builds read the module
+	// directory under their lease: the prune keep set below covers every
+	// leased generation.
 
 	dir, err := r.Layout.Write(plat.Generation, files)
 	if err != nil {
@@ -203,7 +197,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// modulePath binding), which name the offending #registry entry. The
 	// source-carrying acquisition is what the render build imports the
 	// platform from (Kernel.Render requires Platform.Source).
-	p, err := r.Kernel.AcquirePlatformFromDir(ctx, dir, loaderfile.LoadOptions{Registry: r.Registry})
+	p, err := r.Kernel.AcquirePlatformFromDir(ctx, dir)
 	if err != nil {
 		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
 	}

@@ -45,14 +45,12 @@ type Generated struct {
 // .metadata.generation it was built for. Enhancement 0001 §8.3: one global
 // Platform per cluster needs one slot, not the library's content-hash LRU.
 //
-// The Store also carries the kernel gate (AcquireKernel). The single
-// process-wide library Kernel is not safe for concurrent method calls that
-// evaluate in its own cue.Context (module acquisition, instance synthesis,
-// on-disk acquisition, the platform build); those are serialised behind the
-// gate. Kernel.Render shares nothing between renders (library ADR-005,
-// 0019 D8): it builds in a fresh context and reads only the inputs' staged
-// sources, so it runs outside the gate and renders of different objects
-// overlap.
+// The Store carries no kernel gate. The single process-wide library Kernel
+// is safe for concurrent use across its method calls (library ADR-007): every
+// verb (module acquisition, instance synthesis, on-disk acquisition, the
+// platform build, the render) builds in a cue.Context of its own and
+// retains nothing, so acquisitions, syntheses and renders of different
+// objects overlap with no mutex.
 type Store struct {
 	mu         sync.RWMutex
 	generated  *Generated
@@ -63,12 +61,6 @@ type Store struct {
 	// kept on disk by the PlatformReconciler's prune, whatever the current
 	// generation is.
 	leases map[int64]int
-
-	// kernelMu serializes every context-owning use of the shared Kernel: the
-	// platform build in the PlatformReconciler, and acquire + synthesize (or
-	// on-disk acquisition) in the render paths. Separate from mu, which only
-	// guards the record and the lease counts, so a render never blocks Lease.
-	kernelMu sync.Mutex
 }
 
 // NewStore returns an empty Store holding no platform.
@@ -152,19 +144,6 @@ func (s *Store) Leased() []int64 {
 	}
 	slices.Sort(out)
 	return out
-}
-
-// AcquireKernel takes the kernel gate and returns the function that releases
-// it. Callers hold it across the context-owning Kernel calls of one operation
-// (acquisition, synthesis, on-disk acquisition, the platform build) and
-// release it before Kernel.Render and before writing status. A nil Store
-// returns a no-op release so unit fixtures without a store keep working.
-func (s *Store) AcquireKernel() (release func()) {
-	if s == nil {
-		return func() {}
-	}
-	s.kernelMu.Lock()
-	return s.kernelMu.Unlock
 }
 
 // Clear drops the held record so the store reports no platform held. Called

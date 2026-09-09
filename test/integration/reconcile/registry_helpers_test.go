@@ -19,7 +19,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	loaderfile "github.com/open-platform-model/library/opm/helper/loader/file"
 	"github.com/open-platform-model/library/opm/helper/platformmodule"
 	"github.com/open-platform-model/library/opm/kernel"
 	"k8s.io/apimachinery/pkg/types"
@@ -120,13 +119,14 @@ func containerToolAvailable() bool {
 // build the fixture modules target, 0010 D14), generates the platform module
 // into a per-spec temporary Layout, builds it through the kernel's
 // source-carrying platform acquisition (the record Kernel.Render imports the
-// platform from) and records it as generation 1 under the given skew policy.
-// The registry-backed specs then exercise the same path the reconciler does.
-// A registry or catalog that does not resolve skips the spec (or fails under
+// platform from) and records it as generation 1 under the Warn skew policy
+// (generatedPlatformStoreAt takes the policy and the catalog build). The
+// registry-backed specs then exercise the same path the reconciler does. A
+// registry or catalog that does not resolve skips the spec (or fails under
 // OPM_TEST_REGISTRY_FORCE=1).
-func generatedPlatformStore(k *kernel.Kernel, registry string, skew kernel.SkewPolicy) *platformstore.Store {
+func generatedPlatformStore(k *kernel.Kernel, registry string) *platformstore.Store {
 	GinkgoHelper()
-	return generatedPlatformStoreAt(k, registry, testCatalogVersion(), skew)
+	return generatedPlatformStoreAt(k, registry, testCatalogVersion(), kernel.SkewWarn)
 }
 
 // generatedPlatformStoreAt is generatedPlatformStore pinned to an explicit
@@ -157,7 +157,7 @@ func generatedPlatformStoreAt(
 	dir, err := layout.Write(1, files)
 	Expect(err).NotTo(HaveOccurred())
 
-	plat, err := k.AcquirePlatformFromDir(ctx, dir, loaderfile.LoadOptions{Registry: registry})
+	plat, err := k.AcquirePlatformFromDir(ctx, dir)
 	if err != nil {
 		registrySkip("building the generated platform module failed (registry/schema unreachable): " + err.Error())
 	}

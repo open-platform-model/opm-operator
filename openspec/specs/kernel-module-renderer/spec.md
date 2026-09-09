@@ -1,11 +1,12 @@
 ## Purpose
 
 Define a `KernelModuleRenderer` that implements the operator's `ModuleRenderer`
-interface and renders a `ModuleRelease` entirely through the library kernel. It
-reads the current materialized platform from the platform store, acquires the
-target module, synthesizes and compiles the release, and adapts the compiled
-output into operator resources. The renderer is gated on a materialized platform
-and is wired into the reconcilers in production (see `platform-gated-rendering`).
+interface and renders a `ModuleInstance` entirely through the library kernel. It
+leases the generated platform record from the platform store, acquires the
+target module, synthesizes the instance, renders it through the kernel's
+single-build render, and adapts the compiled output into operator resources.
+The renderer is gated on a generated platform and is wired into the reconcilers
+in production (see `platform-gated-rendering`).
 
 ## Requirements
 

@@ -31,7 +31,7 @@ The second change is also what the operator's own warning path wanted. `internal
 - `verifyCoreSchema` (`cmd/main.go`) calls `k.SchemaCache().Get()`; the startup smoke check is otherwise unchanged.
 - `CLAUDE.md` (the "kernel gate is narrow" bullet) and `docs/RENDERING.md` (steps 1 and 2) describe the new shape: every kernel call shares nothing.
 
-**Dependency:** `go.mod` moves `github.com/open-platform-model/library` to the alpha carrying all three changes. That alpha does not exist yet, so this change is blocked on the `library` release.
+**Dependency:** `go.mod` moves `github.com/open-platform-model/library` to the alpha carrying all three changes. `v1.0.0-alpha.27` (2026-09-08) carried the first two and `v1.0.0-alpha.28` (2026-09-09) carries all three; `go.mod` pins alpha.28.
 
 ## Capabilities
 

@@ -51,7 +51,21 @@ Constraint: the target library alpha does not exist yet. Every task must be veri
 **Context**: the library removed `RenderResult.Warnings []string`; the operator has its own field of the same name, whose strings are also the tracker's change-detection key.
 **Explored**: (A) reshape `render.RenderResult` to carry typed advisory rows and format at the event site; (B) keep `[]string`, add one operator formatter at the single construction site, and leave the tracker keyed on the strings; (C) B plus keying the tracker on the underlying facts.
 **Decision**: C.
-**Rationale**: (A) changes a struct several files read for no behavior difference. (B) leaves the bug the library change exposed: the tracker's identity is a sentence, so any rewording — now the operator's own, and therefore likelier to change — re-emits every event for every object on the next reconcile. Keying on the facts (path plus both versions; component plus trait) makes rewording free, which is the point of owning the wording. The event text still comes from the same formatter, so the emitted strings are unchanged this time.
+**Rationale**: (A) changes a struct several files read for no behavior difference. (B) leaves the bug the library change exposed: the tracker's identity is a sentence, so any rewording — now the operator's own, and therefore likelier to change — re-emits every event for every object on the next reconcile. Keying on the facts (path plus both versions; component plus trait) makes rewording free, which is the point of owning the wording. The event text still comes from the same formatter, so the emitted strings are unchanged this time. The facts have to travel: `render.RenderResult` gains `UnhandledTraits map[string][]string` beside the `ResolvedVersions` rows it already carried, plain data the tracker reads for its key. `Warnings []string` and every reader of it are untouched, so this is an addition, not the reshape (A) rejected.
+
+### A values source is checked against `#config` before synthesis
+
+**Context**: the "values error names its origin" scenario relies on the kernel attributing a `#config` violation to the source's origin. `Kernel.SynthesizeInstance` does run that per-source check, but only after the instance build succeeds; the build bakes the merged values into the module's own tree, so for any module whose component consumes the offending value (the `hello` fixture, every real module) the build fails first and the error names the component path (`#components.hello.spec.configMaps.hello.data.message: conflicting values string and 42`) with no origin at all. The library's own test for the attribution uses a module with `#components: {}`.
+**Explored**: (A) accept the build's error and drop the scenario; (B) call `Kernel.ValidateConfigDetailed(mod.ConfigSchema(), sources)` before synthesis, the kernel's documented validation entry (the `cli` render workflow already runs it over its `-f` files), and word its CUE findings with their positions; (C) ask `library` to run its per-source check before, not after, the build.
+**Decision**: B, with (C) noted for `library` as a follow-up.
+**Rationale**: (A) leaves the origin unreachable, which was the point of naming it. (B) is one kernel call on the same values, inside the same gate, and reports `#config.message: conflicting values 42 and string (... spec.values:1:13)`; it also asserts concreteness against `#config` with the module's defaults applied, which synthesis would have refused a step later anyway. (C) is the right long-term home but blocks on a library change this migration does not own.
+
+### A ModuleInstance without values synthesizes with the empty document
+
+**Context**: the "no values" scenario says the module's `#config` defaults apply. The task planned an empty source stack for that case; the new test (W1 of the verification) showed synthesis refusing it with `values: incomplete value _` even though every `#config` field of the fixture has a default. The core schema declares `#ModuleInstance.values: _` and unifies `#module.#config` with it; with no values file the field stays the open `_`, which is never concrete. This predates the migration: the alpha.26 zero-`cue.Value` path left the same field unfilled, and no test rendered without values.
+**Explored**: (A) keep the empty stack and drop the scenario; (B) supply `{}` under the `spec.values` origin when the CR carries no values; (C) ask `core` to default `values` to `{}`.
+**Decision**: B. `spec.values` is optional on the CRD, so absent values are a first-class input and must mean "all defaults".
+**Rationale**: (A) makes an optional CRD field mandatory in practice. (B) is what the schema's own values unification does with an authored `values: {}`: defaults fill, required fields without defaults still fail concreteness, and the pre-synthesis `#config` check covers the empty document the same way. (C) is a schema change with its own consumers to weigh; worth raising, not blocking here.
 
 ### The compiled adapter changes its import, not its shape
 
@@ -76,7 +90,7 @@ Constraint: the target library alpha does not exist yet. Every task must be veri
 
 ## Migration Plan
 
-1. Add `replace github.com/open-platform-model/library => ../library` locally. Land the acquire-surface group (task 1) — mechanical and compiler-guided.
+1. Add `replace github.com/open-platform-model/library => ../library` locally (as landed: `v1.0.0-alpha.27` was already published with the first two library changes and equal to `library` main, so it was pinned directly). Land the acquire-surface group (task 1) — mechanical and compiler-guided.
 2. Land the values-stack change (task 2), then the compiled adapter and the verdict type renames (task 3).
 3. Land the warnings producer and the tracker re-key (task 4), the group with actual behavior in it.
 4. Delete the kernel gate and repoint the smoke check (task 5).
@@ -85,4 +99,4 @@ Constraint: the target library alpha does not exist yet. Every task must be veri
 
 ## Open Questions
 
-- Which alpha number carries all three library changes. It does not affect the specs, the approach or the task breakdown — only the literal in `go.mod` at the last task.
+- Which alpha number carries all three library changes. It does not affect the specs, the approach or the task breakdown — only the literal in `go.mod` at the last task. Resolved: `v1.0.0-alpha.28`.

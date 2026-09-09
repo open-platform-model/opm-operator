@@ -36,11 +36,11 @@ The `Release` reconciler SHALL watch the `Platform` resource and re-enqueue all 
 
 ### Requirement: Non-ModuleRelease packages are rejected
 
-For a fetched package whose `kind` is anything other than `ModuleRelease`, the renderer SHALL return `ErrUnsupportedKind` and the reconciler SHALL surface `Ready=False` with reason `UnsupportedKind` and `Stalled=True`. The rejection SHALL NOT name speculative kinds: the kernel's `#ModuleRelease` load gate (`loaderfile.ErrWrongKind`) is the detection mechanism, and the resulting error is generic.
+For a fetched package whose `kind` is anything other than `ModuleInstance`, the renderer SHALL return `ErrUnsupportedKind` and the reconciler SHALL surface `Ready=False` with reason `UnsupportedKind` and `Stalled=True`. The rejection SHALL NOT name speculative kinds: the kernel's `#ModuleInstance` shape gate (`oerrors.ErrWrongKind`, the sentinel the library's `opm/errors` package declares) is the detection mechanism, and the resulting error is generic.
 
 #### Scenario: Wrong-kind package is rejected
 
-- **WHEN** a `Release` whose fetched package has a `kind` other than `ModuleRelease` is reconciled
+- **WHEN** a `ModulePackage` whose fetched package has a `kind` other than `ModuleInstance` is reconciled
 - **THEN** rendering returns an unsupported-kind error
 - **AND** the status reflects `UnsupportedKind` and nothing is applied
 

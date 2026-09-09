@@ -85,7 +85,7 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 			// authored packages target (0010 D14: one version, no ranges).
 			// Resource/transformer FQNs are version-qualified, so a different
 			// catalog build would leave the components unmatched.
-			store = generatedPlatformStore(k, registry, kernel.SkewWarn)
+			store = generatedPlatformStore(k, registry)
 		})
 
 		// Every modulepackage fixture is an author-written #ModuleInstance that
@@ -101,7 +101,6 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 				renderer := &render.KernelPackageRenderer{
 					Kernel:      k,
 					Store:       store,
-					Registry:    registry,
 					RuntimeName: core.LabelManagedByControllerValue,
 				}
 

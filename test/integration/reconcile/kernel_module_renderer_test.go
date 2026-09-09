@@ -22,6 +22,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -35,6 +37,29 @@ import (
 // reconciler wires it in production). The happy path requires the fixture
 // module and its catalog to resolve from CUE_REGISTRY (GHCR under
 // `task dev:test`); it is skipped automatically when either is unavailable.
+
+// helloDefaultMessage is the fixture module's #config.message default
+// (test/fixtures/modules/hello/module.cue).
+const helloDefaultMessage = "hello from opm"
+
+// configMapMessage returns data.message of the ConfigMap the fixture module
+// renders, failing the spec when the result carries no ConfigMap.
+func configMapMessage(res *render.RenderResult) string {
+	GinkgoHelper()
+	for _, r := range res.Resources {
+		if r.Kind() != "ConfigMap" {
+			continue
+		}
+		u, err := r.ToUnstructured()
+		Expect(err).NotTo(HaveOccurred())
+		msg, found, err := unstructured.NestedString(u.Object, "data", "message")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue(), "the fixture's ConfigMap carries data.message")
+		return msg
+	}
+	Fail("the fixture module renders no ConfigMap")
+	return ""
+}
 
 var _ = Describe("KernelModuleRenderer Integration", func() {
 	Context("when the platform store is empty", func() {
@@ -75,7 +100,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			// PlatformReconciler does, subscribed to the exact catalog build the
 			// fixture module targets: transformer FQNs embed the catalog
 			// version, so another build leaves the components unmatched.
-			store = generatedPlatformStore(k, registry, kernel.SkewWarn)
+			store = generatedPlatformStore(k, registry)
 		})
 
 		It("renders the fixture module's resources with provenance and inventory, releasing its lease", func() {
@@ -101,6 +126,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			Expect(res.Warnings).To(BeEmpty(), "a module pinning the platform's catalog build renders without warnings")
 			Expect(res.ResolvedVersions).NotTo(BeEmpty(), "the build reports the resolved-versions rows (0019 D18)")
 			Expect(store.Leased()).To(BeEmpty(), "the render releases its lease on return")
+			Expect(configMapMessage(res)).To(Equal("kernel hello"), "the supplied values reach the rendered object")
 
 			// Every rendered resource carries instance/component/transformer
 			// provenance copied from the kernel's Compiled output, plus the
@@ -124,6 +150,52 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			// One inventory entry per rendered resource, built via the existing
 			// ToUnstructured bridge.
 			Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))
+		})
+
+		It("takes the module's #config defaults when no values are supplied", func() {
+			renderer := &render.KernelModuleRenderer{
+				Kernel:      k,
+				Store:       store,
+				Registry:    registry,
+				RuntimeName: core.LabelManagedByControllerValue,
+			}
+
+			hello := fixtures.Must(GinkgoT(), "hello")
+			res, err := renderer.RenderModule(ctx,
+				"kernel-hello-defaults", "default",
+				hello.ModulePath, hello.Tag(),
+				nil)
+
+			Expect(err).NotTo(HaveOccurred(), "an empty values stack leaves #config to its defaults")
+			Expect(res).NotTo(BeNil())
+			Expect(configMapMessage(res)).To(Equal(helloDefaultMessage))
+		})
+
+		It("reports a #config violation at the spec.values origin", func() {
+			renderer := &render.KernelModuleRenderer{
+				Kernel:      k,
+				Store:       store,
+				Registry:    registry,
+				RuntimeName: core.LabelManagedByControllerValue,
+			}
+
+			// The fixture's #config.message is a string; an integer violates
+			// it. The values reach synthesis as one source whose origin names
+			// the CR field, so the error is attributed there rather than to
+			// an anonymous values filename.
+			values := &releasesv1alpha1.RawValues{}
+			values.Raw = []byte(`{"message": 42}`)
+			hello := fixtures.Must(GinkgoT(), "hello")
+			res, err := renderer.RenderModule(ctx,
+				"kernel-hello-bad-values", "default",
+				hello.ModulePath, hello.Tag(),
+				values)
+
+			Expect(res).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("spec.values"),
+				"a values error names the origin the operator gave the source")
+			Expect(store.Leased()).To(BeEmpty(), "a failed render releases its lease on return")
 		})
 	})
 })

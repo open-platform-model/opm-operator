@@ -106,7 +106,7 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 		It("blocks with PlatformNotReady, applying and pruning nothing", func() {
 			ctx := context.Background()
 
-			// Use the real KernelModuleRenderer with an empty store. Store.Get()
+			// Use the real KernelModuleRenderer with an empty store. Store.Lease()
 			// reports no platform, so RenderModule returns ErrPlatformNotReady
 			// before any registry I/O — exercising the actual sentinel through
 			// the gate, no OCI registry required.

@@ -55,7 +55,7 @@ var _ = Describe("Example module rendering", func() {
 		skipIfNoTestRegistry()
 		registry = os.Getenv("CUE_REGISTRY")
 		k = kernel.New(kernel.WithRegistry(registry))
-		store = generatedPlatformStore(k, registry, kernel.SkewWarn)
+		store = generatedPlatformStore(k, registry)
 	})
 
 	It("renders the redis module as a StatefulSet + headless Service + PVC with an exec probe", func() {

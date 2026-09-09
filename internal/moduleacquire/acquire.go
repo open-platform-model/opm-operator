@@ -26,7 +26,7 @@ import (
 // true). That source is REQUIRED downstream: Kernel.SynthesizeInstance now
 // builds the instance inside the module's own staged root so the module's
 // tidied dependency closure (including catalog subpackages) drives transitive
-// resolution. A source-free module would be rejected with synth.ErrMissingSource
+// resolution. A source-free module would be rejected with oerrors.ErrMissingSource
 // (library#31, library v1.0.0-alpha.3 migration).
 //
 // The registry parameter is retained for signature stability; the kernel

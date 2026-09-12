@@ -43,15 +43,30 @@ context: |
   Start simple. Complexity MUST be justified.
   - e.g., Defer complex rollback logic or cross-release dependency graphs (`dependsOn`) until v1alpha1 basic execution is proven.
 
-  ### VIII. Small Batch Sizes (Iterative & Incremental Delivery)
-  All changes MUST be kept TINY. Small, incremental, independently verifiable steps are required.
-  - **WARNING & BLOCK**: If a user requests a change that is too large (e.g., implementing an entire controller, refactoring multiple packages at once, or designing + implementing + testing a major feature in one go), the Agent MUST warn the user, block the execution, and suggest a way to split the request into smaller, sequential tasks.
-  - **Commit Quality**: Tiny changes lead to focused, atomic commits. A single commit should ideally touch one specific concern (e.g., scaffolding an API, adding one reconcile phase, or writing tests for one package).
+  ### VIII. Mergeable Sections (Iterative & Incremental Delivery)
+  A change is delivered as the sections of its `tasks.md` (`## N. Title` headings with `N.M`
+  checkboxes). Two invariants hold at every section boundary; they replace any size limit on
+  the change itself.
+  - **Every merge leaves `main` releasable.** A section MUST end green under the validation
+    gates and MUST close with a commit task naming the Conventional Commit it lands as
+    (Principle VI). Nothing that would break `main` is carried across a section boundary.
+  - **Work survives a session boundary.** The commit task is the pause point: a session that
+    stops there leaves checked boxes and a clean tree, and the next session resumes by running
+    apply again.
+  - One PR per change, one commit per section, is the default. Section 1 is a spike whenever
+    design.md carries an unverified assumption.
+  - **WARNING & BLOCK**: when a request cannot be cut into sections that each satisfy both
+    invariants, or needs more than about five, the Agent MUST warn, block, and propose a split
+    into sequential changes (Execution Gate).
 
   ## Execution Gate (Agent Directive)
-  Before beginning ANY implementation, the Agent MUST evaluate the scope of the request against the "Small Batch Sizes" principle.
-  If the request is too large, the Agent MUST reply with:
-  "🛑 **Scope Warning**: This request is too large for a single safe iteration. I suggest we split it into the following smaller steps: [list 2-3 logical, tiny steps]. Should we start with step 1?"
+  Before beginning ANY implementation, the Agent MUST evaluate the request against the
+  "Mergeable Sections" principle. Block only when the request cannot be cut into sections that
+  each end green and leave `main` releasable, or when it needs more than about five such
+  sections. In that case the Agent MUST reply with:
+  "🛑 **Scope Warning**: This request does not cut into a handful of mergeable sections. I
+  suggest we split it into the following changes: [list 2-3 changes, each a few sections that
+  leave main releasable]. Should we start with the first?"
 
   ## Technology Standards
   
@@ -90,7 +105,13 @@ rules:
     - Identify affected API types and controllers.
     - State whether this is MAJOR/MINOR/PATCH per SemVer.
     - Complexity additions MUST include justification (Principle VII).
-    - Scope MUST be small enough to implement in a short session (Principle VIII).
+    - Scope MUST cut into at most about five tasks.md sections, each ending green and leaving
+      `main` releasable on its own (Principle VIII).
+    - "Delivery mode: one PR per change is the default and needs no statement. When a downstream
+      consumer must pick up a published pin mid-change, add exactly one line to the proposal,
+      `Delivery: one PR per section (<consumer> needs <pin> after section <N>)`, and the change
+      ships section by section. In that mode the change stays active on main between PRs, and
+      spec sync and enhancement delivery logging wait for archive after the last PR."
     - "If this change implements decisions from an enhancement in the sibling enhancements/ repo, create enhancement.yaml in this change directory declaring it (implements: [{enhancement: \"NNNN\", decisions: [D1, ...], resolves: []}]). Write it at creation time, while the enhancement is in context; it is what makes archive-time delivery logging mechanical."
   
   design:
@@ -120,21 +141,50 @@ rules:
   tasks:
     - "Focus: STEPS to take for implementation"
     - "Updates when: Tasks complete, new tasks discovered, blockers identified"
-    - "CRITICAL: Break tasks into TINY chunks (max 1-2 hours)."
-    - "CRITICAL: If the task list grows too long (>10 items) or spans multiple distinct features, suggest splitting into a new OpenSpec change."
+    - "CRITICAL: Every `## N.` section MUST end green under the validation gates and MUST close
+      with a commit task: an ordinary `- [ ] N.M` checkbox whose text names the Conventional
+      Commit to make, e.g. `- [ ] 1.4 task dev:fmt dev:vet dev:lint dev:test green, then commit feat(controller): add the source grant phase`
+      (types and scopes per Principle VI). The commit task is the pause point; nothing uncommitted is carried across
+      a section boundary."
+    - "CRITICAL: Cut the change into at most about five sections, each a coherent unit that
+      leaves main releasable by itself. If it needs more, or a section cannot end green on its
+      own, split into a new OpenSpec change. Section 1 is a spike whenever design.md carries an
+      unverified assumption; its commit task lands what the spike produced (a test, a fixture,
+      or the finding written into design.md)."
     - Group tasks by component (API, Internal Packages, Controller).
     - Ensure `task dev:manifests dev:generate` is run after API changes.
-    - Include validation gates as final tasks (`task dev:fmt dev:vet dev:lint dev:test`).
-    - "NEVER include delivery operations as tasks: no committing, pushing, branching,
-      opening or merging PRs, tagging, cutting releases, and no commit-message or PR-body
-      hygiene checks. tasks.md covers implementation and verification only — delivery
-      happens afterwards under the repo's normal git workflow and needs no spelling out.
-      Sole exception: a change whose stated deliverable is itself a release or publishing
+    - Include the validation gates (`task dev:fmt dev:vet dev:lint dev:test`, after `task dev:manifests dev:generate` when API types changed) in every section's commit task, not as a
+      trailing section; cross-cutting checks (e2e runs, consumer builds) go into the last real section before
+      its commit.
+    - "The section-closing commit is the ONLY delivery operation allowed in tasks.md: no pushing,
+      branching, opening or merging PRs, tagging, cutting releases, and no commit-message or
+      PR-body hygiene checks. Everything past the commit happens under the repo's normal git
+      workflow (one PR per change by default; one PR per section only when the proposal says
+      so). Sole exception: a change whose stated deliverable is itself a release or publishing
       operation; there those steps ARE the implementation."
 
-# Post-archive hook: served to the archiving agent by
-# `openspec instructions archive --change <name> --json` as operationGuidance.
+# Operation hooks: served to the agent by `openspec instructions apply|archive --change <name>
+# --json` as operationGuidance.
 operations:
+  apply:
+    guidance:
+      - "Work section by section: every `## N.` block of tasks.md ends with a commit task. Before
+        checking that box, run the section's gates (`task dev:fmt dev:vet dev:lint dev:test`, after `task dev:manifests dev:generate` when API types changed) on the whole tree and make
+        exactly the named Conventional Commit (types and scopes per Principle VI; optional plain Co-Authored-By: Claude
+        <noreply@anthropic.com> trailer only, never a session link, never a bare @name, and
+        no body line starting with word( because the squash body reaches release-please). Do not start the next section with uncommitted work in the tree."
+      - "The commit task is the only delivery operation apply performs: no push, no PR, no tag,
+        no release. Commit on the working branch the run started on. If the run started on
+        main, create the working branch before the first commit task; never commit to main."
+      - "Pausing: when the user asks to pause, or a blocker appears, finish the current section's
+        commit task first if its gates are green; otherwise report exactly which boxes are
+        checked and what is uncommitted in the tree. A new session resumes by running apply
+        again: the checked boxes plus a clean tree are the resume state."
+      - "Delivery mode: unless proposal.md carries `Delivery: one PR per section`, all section
+        commits ship in one PR after the last section and the PR title carries the change's
+        release class. In per-section mode each section commit is the PR title and therefore a
+        release trigger; the change stays active on main between PRs, and spec sync and enhancement
+        delivery logging wait for archive after the last PR."
   archive:
     guidance:
       - "If this change directory contains enhancement.yaml, finish the archive by logging the landing: from the workspace root run `task enhancements:delivery:log FROM=<archived-change-path> SUMMARY=\"<one line: what landed>\"`. It appends a CUE-validated entry to each declared enhancement's delivery.yaml; confirm it printed 'logged' for every declared enhancement."

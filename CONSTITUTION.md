@@ -15,7 +15,7 @@ This document is the reader-friendly reference for the principles that shape con
 | **V** | [Declarative Intent via Server-Side Apply](#v-declarative-intent-via-server-side-apply) | The controller declares desired state and relies on SSA for mutation |
 | **VI** | [Semantic Versioning and Commit Discipline](#vi-semantic-versioning-and-commit-discipline) | Releases use SemVer and commits follow Conventional Commits |
 | **VII** | [Simplicity & YAGNI](#vii-simplicity--yagni) | Complexity must be justified; start with the simplest design that works |
-| **VIII** | [Small Batch Sizes](#viii-small-batch-sizes) | Changes must stay tiny, incremental, and independently verifiable |
+| **VIII** | [Mergeable Sections](#viii-mergeable-sections) | Every section ends green and commits; every merge leaves `main` releasable |
 
 ---
 
@@ -126,24 +126,24 @@ If complexity is introduced, it should solve a real controller problem, not a sp
 
 ---
 
-### VIII. Small Batch Sizes
+### VIII. Mergeable Sections
 
-All work MUST be delivered in tiny, independently verifiable steps.
+A change is delivered as the sections of its `tasks.md` (`## N. Title` headings with `N.M` checkboxes). Two invariants hold at every section boundary; they replace any size limit on the change itself.
 
-- A request spanning multiple major concerns SHOULD be split before implementation
-- A single commit SHOULD ideally address one concern
-- Large features SHOULD be delivered as sequential increments
-- Small changes keep validation, review, and rollback simpler
+- Every merge leaves `main` releasable: a section MUST end green under the validation gates and MUST close with a commit task naming its Conventional Commit
+- Work survives a session boundary: the commit task is the pause point, leaving checked boxes and a clean tree for the next session to resume from
+- A change SHOULD cut into at most about five sections; one PR per change with one commit per section is the default
+- Section 1 is a spike whenever the design carries an unverified assumption
 
-This principle applies to both planning and implementation. Large bundled changes hide risk, slow review, and weaken validation.
+This principle applies to both planning and implementation. A section that cannot end green on its own hides risk, slows review, and weakens validation.
 
 #### Execution Gate
 
-Before beginning implementation, an agent MUST evaluate whether the requested change is small enough for a safe iteration.
+Before beginning any implementation, the request MUST be evaluated against the mergeable-sections principle.
 
-If the request is too large, the required response is:
+If the request cannot be cut into sections that each end green and leave `main` releasable, or needs more than about five, the required response is:
 
-> "🛑 **Scope Warning**: This request is too large for a single safe iteration. I suggest we split it into the following smaller steps: [list 2-3 logical, tiny steps]. Should we start with step 1?"
+> "🛑 **Scope Warning**: This request does not cut into a handful of mergeable sections. I suggest we split it into the following changes: [list 2-3 changes, each a few sections that leave main releasable]. Should we start with the first?"
 
 ---
 
@@ -242,10 +242,10 @@ Recommended `Research & Decisions` shape:
 
 - Focus on implementation steps
 - Update tasks as work completes, blockers appear, or new work is discovered
-- Break tasks into tiny chunks, ideally no more than 1-2 hours each
-- If the list grows beyond roughly 10 items or spans multiple features, split it into another OpenSpec change
+- Every section ends green and closes with a commit task naming its Conventional Commit
+- At most about five sections; more, or a section that cannot end green alone, is another OpenSpec change
 - Group tasks by component such as API, internal packages, and controller
-- Include validation gates as final tasks, especially `task dev:fmt dev:vet dev:lint dev:test`
+- Run the validation gates in every section's commit task: `task dev:fmt dev:vet dev:lint dev:test`
 
 ---
 
@@ -257,7 +257,7 @@ These principles reinforce each other:
 - Separation of concerns keeps reconcile flow understandable and testable
 - Inventory and status make operations explicit and auditable
 - SSA keeps mutation declarative and retry-safe
-- Small batch sizes keep change quality high and validation practical
+- Mergeable sections keep `main` releasable and work resumable across sessions
 
 When principles appear to conflict, treat that as a design smell and document the trade-off explicitly.
 

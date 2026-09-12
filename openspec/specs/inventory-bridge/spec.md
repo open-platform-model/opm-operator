@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Bridges the controller's inventory tracking to the CLI's shared inventory shapes: identity comparison, entry construction from rendered resources, and the CLI packages the controller carries as local copies.
+
+## Requirements
 
 ### Requirement: Inventory identity comparison
 The `internal/inventory` package MUST provide `IdentityEqual` and `K8sIdentityEqual` functions operating on `v1alpha1.InventoryEntry`. `IdentityEqual` compares Group, Kind, Namespace, Name, and Component (excluding Version). `K8sIdentityEqual` compares Group, Kind, Namespace, and Name only.
@@ -69,8 +73,6 @@ The `process_modulerelease.go` file MUST remain in `pkg/render/` with its origin
 #### Scenario: ProcessModuleRelease available in render package
 - **WHEN** `pkg/render/` is inspected
 - **THEN** it contains `ProcessModuleRelease` in `process_modulerelease.go`
-
-## CHANGED Requirements
 
 ### Requirement: Inventory type alias preserved
 The existing `type Current = releasesv1alpha1.Inventory` alias in `internal/inventory` MUST be preserved as a semantic marker used by other internal packages.

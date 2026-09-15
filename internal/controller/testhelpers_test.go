@@ -50,6 +50,11 @@ func (s *stubRenderer) RenderModule(
 	return stubRenderResult(namespace, values), nil
 }
 
+// stubContract is the contract FQN the stub render result reports as its
+// component's demand, in the shape TransformerRegistration.spec.provides
+// carries.
+const stubContract = "opmodel.dev/catalogs/opm/resources/config-maps@v1beta1"
+
 // stubRenderResult builds a ConfigMap render result named "test-module" in the
 // given namespace, with data.message from values (default "hello").
 func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *render.RenderResult {
@@ -99,8 +104,9 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 	}
 
 	return &render.RenderResult{
-		Resources:        []*core.Resource{resource},
-		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
+		Resources:         []*core.Resource{resource},
+		InventoryEntries:  []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
+		RequiredContracts: []string{stubContract},
 	}
 }
 

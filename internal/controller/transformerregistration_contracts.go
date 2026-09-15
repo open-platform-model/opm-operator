@@ -182,8 +182,17 @@ func subscribedContract(provides []string, providers map[string][]string, ownCat
 // Only active claims hold. An accepted but inactive claim has never served,
 // so it has no dependents to protect, and letting it block a competitor would
 // let a provider that never came up lock out one that did (enhancement 0015
-// D2). A claim on its way out does not hold either, matching the D12 rule
-// one field over.
+// D2).
+//
+// A claim on its way out does not hold either — unless its deletion is
+// BLOCKED, in which case it is not on its way out: it is still serving the
+// dependents the block protects, and its catalog is still a registry entry of
+// the generated platform. Accepting a second provider of the same contract
+// while that is true does not produce a migration, it produces an
+// over-subscribed platform whose generation the single-provider guard refuses
+// cluster-wide (0010 D32/D37). Refusing the newcomer here names the claim
+// that holds the contract and the dependents holding it open, which is the
+// same rule the D12 check one file over now reads.
 //
 // Claims are walked in name order and each one's contracts in sorted order,
 // so the reported conflict does not move between reconciles.
@@ -201,7 +210,10 @@ func (r *TransformerRegistrationReconciler) activeContractHolder(
 	others := make([]*releasesv1alpha1.TransformerRegistration, 0, len(list.Items))
 	for i := range list.Items {
 		other := &list.Items[i]
-		if other.Name == claim.Name || !other.Status.Active || !other.DeletionTimestamp.IsZero() {
+		if other.Name == claim.Name || !other.Status.Active {
+			continue
+		}
+		if !other.DeletionTimestamp.IsZero() && !claimContributesAfterDeletion(other) {
 			continue
 		}
 		others = append(others, other)

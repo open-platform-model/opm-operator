@@ -100,13 +100,15 @@ type TransformerRegistrationReconciler struct {
 	Store *platformstore.Store
 }
 
-// +kubebuilder:rbac:groups=opmodel.dev,resources=transformerregistrations,verbs=get;list;watch
+// +kubebuilder:rbac:groups=opmodel.dev,resources=transformerregistrations,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=opmodel.dev,resources=transformerregistrations/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=opmodel.dev,resources=transformerregistrations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=opmodel.dev,resources=moduleinstances,verbs=get;list;watch
 
-// Reconcile records a verdict on one claim. A claim mid-deletion is left
-// alone: the finalizer and the lifecycle edges belong to the activation
-// change, so there is nothing to clean up here.
+// Reconcile records a verdict on one claim, and guards its removal. A claim
+// carrying a deletion timestamp goes to reconcileDeletion, which blocks while
+// instances still demand contracts it provides (enhancement 0015 D3) and
+// releases the finalizer once they are gone.
 func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -119,7 +121,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	if !claim.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return r.reconcileDeletion(ctx, &claim)
 	}
 
 	log.Info("Reconciling TransformerRegistration", "name", claim.Name, "generation", claim.Generation)
@@ -268,8 +270,13 @@ func (r *TransformerRegistrationReconciler) holderOf(
 		if other.Name == claim.Name || other.Spec.Catalog != claim.Spec.Catalog {
 			continue
 		}
-		// A claim on its way out is not competing for the provider.
-		if !other.DeletionTimestamp.IsZero() {
+		// A claim on its way out is not competing for the provider — but a
+		// claim whose deletion is BLOCKED is not on its way out. It is still
+		// accepted, still active, and its catalog is still in the generated
+		// platform (activeClaims), so a second claim for the same catalog is
+		// the duplicate D12 refuses. The two reads agree deliberately: see
+		// the change's design.md for what that costs a provider migration.
+		if !other.DeletionTimestamp.IsZero() && !claimContributesAfterDeletion(other) {
 			continue
 		}
 		if olderClaim(other, holder) {
@@ -403,6 +410,12 @@ func (r *TransformerRegistrationReconciler) accept(
 	claim *releasesv1alpha1.TransformerRegistration,
 	provider *releasesv1alpha1.ModuleInstance,
 ) error {
+	// The guard finalizer goes on at acceptance and rides the same patch as
+	// the verdict: an accepted claim can be deleted the moment it is
+	// readable, and a claim that reached the API server accepted but unheld
+	// is one whose dependents the guard cannot protect.
+	holdClaim(claim)
+
 	claim.Status.ObservedGeneration = claim.Generation
 	claim.Status.Accepted = true
 	status.MarkReadyWithReason(claim, status.AcceptedReason,
@@ -533,6 +546,28 @@ func (r *TransformerRegistrationReconciler) patchStatus(
 	)
 }
 
+// claimSpecOrDeletionChanged passes a claim UPDATE when its generation moved,
+// or when it acquired a deletion timestamp.
+//
+// GenerationChangedPredicate alone is not enough now that deletion is guarded:
+// stamping a deletion timestamp does not bump metadata.generation, so a plain
+// generation filter would swallow the one event the guard has to see, and the
+// claim would sit marked-for-deletion until the interval requeue noticed. The
+// added clause is deliberately narrow — the transition into deleting, not
+// every metadata write — so a finalizer patch made by this controller does not
+// wake it again.
+func claimSpecOrDeletionChanged() predicate.Predicate {
+	return predicate.Or(
+		predicate.GenerationChangedPredicate{},
+		predicate.Funcs{
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return e.ObjectOld.GetDeletionTimestamp().IsZero() &&
+					!e.ObjectNew.GetDeletionTimestamp().IsZero()
+			},
+		},
+	)
+}
+
 // SetupWithManager wires the controller into mgr. The generation predicate
 // sits on For() rather than as a global filter so it does not suppress the
 // two cross-object watches, whose triggers (the Platform reconciler's status
@@ -543,7 +578,7 @@ func (r *TransformerRegistrationReconciler) patchStatus(
 // either waiting out the interval requeue.
 func (r *TransformerRegistrationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&releasesv1alpha1.TransformerRegistration{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&releasesv1alpha1.TransformerRegistration{}, builder.WithPredicates(claimSpecOrDeletionChanged())).
 		Watches(
 			&releasesv1alpha1.Platform{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToRegistrations),
@@ -575,8 +610,20 @@ func (r *TransformerRegistrationReconciler) mapPlatformToRegistrations(ctx conte
 	return requests
 }
 
-// mapInstanceToRegistrations enqueues the claims whose spec.providerRef names
-// the ModuleInstance that changed, and nothing else.
+// mapInstanceToRegistrations enqueues the claims an instance can change the
+// answer for, and nothing else. Two relations qualify:
+//
+//   - the claim's spec.providerRef names this instance, so its readiness and
+//     its inventory decide the claim's verdict; and
+//   - the claim provides a contract this instance's status.requiredContracts
+//     demands, so this instance is one of the dependents a blocked deletion
+//     is counting.
+//
+// The second is what lets a blocked claim release promptly: the last
+// dependent going away is an instance event, on an instance the claim has no
+// reference to, and without this the block would hold until the interval
+// requeue noticed. A deleted instance still carries its demand on the object
+// the delete event delivers, so the dependent it was is reachable here.
 //
 // Unlike the Platform map func above, this one filters rather than enqueuing
 // every claim: the Platform is a cluster singleton whose changes are rare,
@@ -584,10 +631,10 @@ func (r *TransformerRegistrationReconciler) mapPlatformToRegistrations(ctx conte
 // so an unrelated instance's reconcile must not re-judge every claim in the
 // cluster.
 //
-// The filter is a scan of the listed claims rather than a field index on
-// spec.providerRef. Claims are one per provider instance — tens on a fleet,
-// not thousands — so the scan runs over a small cached list, and an index can
-// replace it later without changing what this function promises.
+// The filter is a scan of the listed claims rather than a field index. Claims
+// are one per provider instance — tens on a fleet, not thousands — so the scan
+// runs over a small cached list, and an index can replace it later without
+// changing what this function promises.
 func (r *TransformerRegistrationReconciler) mapInstanceToRegistrations(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list releasesv1alpha1.TransformerRegistrationList
 	if err := r.List(ctx, &list); err != nil {
@@ -595,26 +642,51 @@ func (r *TransformerRegistrationReconciler) mapInstanceToRegistrations(ctx conte
 		return nil
 	}
 
+	demanded := map[string]struct{}{}
+	if instance, ok := obj.(*releasesv1alpha1.ModuleInstance); ok {
+		for _, fqn := range instance.Status.RequiredContracts {
+			demanded[fqn] = struct{}{}
+		}
+	}
+
 	var requests []reconcile.Request
 	for i := range list.Items {
-		ref := list.Items[i].Spec.ProviderRef
-		if ref.Namespace != obj.GetNamespace() || ref.Name != obj.GetName() {
+		claim := &list.Items[i]
+		ref := claim.Spec.ProviderRef
+		isProvider := ref.Namespace == obj.GetNamespace() && ref.Name == obj.GetName()
+		if !isProvider && !providesAny(claim, demanded) {
 			continue
 		}
 		requests = append(requests, reconcile.Request{
-			NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
+			NamespacedName: client.ObjectKeyFromObject(claim),
 		})
 	}
 	return requests
 }
 
-// providerFacts is the pair of facts about a provider instance that a claim's
-// verdict depends on: whether it reports Ready, which the activation gate
-// reads, and the digest of the inventory the provider-identity check looks
-// the claim up in.
+// providesAny reports whether the claim provides any contract in demanded.
+func providesAny(claim *releasesv1alpha1.TransformerRegistration, demanded map[string]struct{}) bool {
+	for _, fqn := range claim.Spec.Provides {
+		if _, ok := demanded[fqn]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// providerFacts is the set of facts about an instance that a claim's verdict
+// or its deletion block depends on: whether it reports Ready, which the
+// activation gate reads; the digest of the inventory the provider-identity
+// check looks the claim up in; and the contracts it demands, which decide
+// whether it is a dependent holding a claim's deletion open.
+//
+// The demand is carried as a joined string rather than a slice so the whole
+// struct stays comparable and the predicate can keep comparing it with ==.
+// The separator is a newline, which no contract FQN contains.
 type providerFacts struct {
 	ready           metav1.ConditionStatus
 	inventoryDigest string
+	demand          string
 }
 
 // readProviderFacts projects a watched object down to the facts a verdict
@@ -631,6 +703,7 @@ func readProviderFacts(obj client.Object) (providerFacts, bool) {
 	if instance.Status.Inventory != nil {
 		facts.inventoryDigest = instance.Status.Inventory.Digest
 	}
+	facts.demand = strings.Join(instance.Status.RequiredContracts, "\n")
 	return facts, true
 }
 

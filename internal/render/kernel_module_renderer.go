@@ -95,7 +95,12 @@ func (r *KernelModuleRenderer) RenderModule(
 		return nil, fmt.Errorf("rendering module instance: %w", err)
 	}
 
-	return resultFromRender(out, rec.Identity)
+	contracts, err := declaredContracts(inst)
+	if err != nil {
+		return nil, fmt.Errorf("reading the instance's contract demand: %w", err)
+	}
+
+	return resultFromRender(out, rec.Identity, contracts)
 }
 
 // synthesize acquires the module and synthesizes the source-carrying
@@ -179,7 +184,16 @@ func cueFindings(err error) string {
 // entries built through the existing ToUnstructured bridge, the advisory
 // rows worded as warnings (renderWarnings), and the rows themselves
 // (unhandled traits, resolved versions) carried through for the reconciler.
-func resultFromRender(out *kernel.RenderResult, identity platformstore.PackageIdentity) (*RenderResult, error) {
+//
+// contracts is the instance's declared demand, computed by the caller from
+// the instance rather than from this output: the kernel reports matched
+// PAIRS, which name transformers, and turning a transformer back into the
+// contracts it serves would need the platform.
+func resultFromRender(
+	out *kernel.RenderResult,
+	identity platformstore.PackageIdentity,
+	contracts []string,
+) (*RenderResult, error) {
 	resources := make([]*core.Resource, 0, len(out.Compiled))
 	for _, c := range out.Compiled {
 		resources = append(resources, core.ResourceFromCompiled(c))
@@ -191,11 +205,12 @@ func resultFromRender(out *kernel.RenderResult, identity platformstore.PackageId
 	}
 
 	return &RenderResult{
-		Resources:        resources,
-		InventoryEntries: entries,
-		Warnings:         renderWarnings(out.Diagnostics),
-		UnhandledTraits:  out.Diagnostics.UnhandledTraits,
-		ResolvedVersions: out.Diagnostics.ResolvedVersions,
-		PlatformIdentity: identity.String(),
+		Resources:         resources,
+		InventoryEntries:  entries,
+		Warnings:          renderWarnings(out.Diagnostics),
+		UnhandledTraits:   out.Diagnostics.UnhandledTraits,
+		ResolvedVersions:  out.Diagnostics.ResolvedVersions,
+		RequiredContracts: contracts,
+		PlatformIdentity:  identity.String(),
 	}, nil
 }

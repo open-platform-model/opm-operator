@@ -15,12 +15,14 @@ See `proposal.md`. Current state, read 2026-09-15 at alpha.19:
 
 **Goals**
 
-- A provider cannot abandon its dependents through either door.
-- Every refusal names the dropped contracts and the dependent count, so the operator's next action is obvious.
+- A provider cannot abandon its dependents by being deleted.
+- The refusal names the dependent count and the instances, so the operator's next action is obvious.
+- The demand it counts is a fact any later consumer can read, so the shrinking door does not have to rediscover it.
 - The approach is chosen by measurement, not by the first idea that fits.
 
 **Non-Goals**
 
+- The shrinking door (D16) — its own change. This one builds the count it needs and stops there.
 - Activation — `registration-activation`.
 - Regeneration and `Platform.status.registry` — `registration-driven-regeneration`.
 - A general readiness-aggregation wait, and therefore D14's exclusion.
@@ -53,14 +55,6 @@ Three things the spike changed about the shape the proposal guessed:
 
 **Alternative — recompute at deletion time. Rejected on measurement.** The failure the proposal reasoned about is real and worse than stated: it is nondeterministic. With a warm CUE module cache an unreachable registry is invisible and the recompute succeeds; with a cold cache it fails in 435ms with `module not found` — textually identical to "the module was deleted from the registry". A recompute finalizer therefore cannot distinguish "no dependents" from "I could not tell", and which of the two it hits depends on what that controller pod's CUE cache happens to hold. Fail-closed makes an unrelated registry outage block every claim deletion; fail-open lets the abandonment through. Neither is acceptable for a delete path.
 
-### A finalizer alone does not preserve the guarantee
-
-`PlatformReconciler.activeClaims` (`internal/controller/platform_controller.go:291`) drops any claim carrying a deletion timestamp: *"A claim being deleted is dropped: its provider is on its way out, so its catalog should not enter the next package."* That is correct when deletion proceeds, and wrong when a finalizer holds it: the object stays, the finalizer reports the block, and the catalog nonetheless leaves the next generated platform — so the abandonment the guard exists to prevent happens anyway, on the next Platform regeneration, with the claim still sitting there reporting that it is protecting its dependents.
-
-It is not immediate. `claimContributionPredicate` reads only `Accepted`, `Active` and the catalog coordinate, so stamping a deletion timestamp wakes no Platform reconcile; the divergence only lands when some other claim event or a Platform generation change triggers one. That makes it a latent, event-ordering-dependent hole rather than a guaranteed one, which is the harder kind to notice.
-
-**Section 3 therefore carries a second edit the tasks did not name:** a claim whose deletion is blocked keeps contributing to the active set, and `activeClaims` drops a terminating claim only once the block has released. Section 2.1 is where this is written into tasks.md before anything is built on it.
-
 **Alternative — derive from `ContractInventory.RequiredBy`.** Looks like the cheap answer and is measuring the wrong side. `RequiredBy` maps a contract to the enabled **transformers** whose `requiredResources` or `requiredTraits` name it. A provider-fulfilled contract's requirer is the provider's own transformer, so:
 
 ```
@@ -78,7 +72,15 @@ It is not immediate. `claimContributionPredicate` reads only `Accepted`, `Active
 
 The requirer vanishes with the provider, so the signal goes quiet exactly when the damage is done. This alternative is recorded because it is the trap a later reader will fall into, not because it is viable.
 
-### The refusal site is chosen after the count, not before
+### A finalizer alone does not preserve the guarantee
+
+`PlatformReconciler.activeClaims` (`internal/controller/platform_controller.go:291`) drops any claim carrying a deletion timestamp: *"A claim being deleted is dropped: its provider is on its way out, so its catalog should not enter the next package."* That is correct when deletion proceeds, and wrong when a finalizer holds it: the object stays, the finalizer reports the block, and the catalog nonetheless leaves the next generated platform — so the abandonment the guard exists to prevent happens anyway, on the next Platform regeneration, with the claim still sitting there reporting that it is protecting its dependents.
+
+It is not immediate. `claimContributionPredicate` reads only `Accepted`, `Active` and the catalog coordinate, so stamping a deletion timestamp wakes no Platform reconcile; the divergence only lands when some other claim event or a Platform generation change triggers one. That makes it a latent, event-ordering-dependent hole rather than a guaranteed one, which is the harder kind to notice.
+
+**Section 3 therefore carries a second edit the tasks did not name:** a claim whose deletion is blocked keeps contributing to the active set, and `activeClaims` drops a terminating claim only once the block has released. Section 2.1 is where this is written into tasks.md before anything is built on it.
+
+### The refusal site is chosen after the count — and it turned out to be its own change
 
 D16 fixes one constraint — the refusal must land while the previously accepted claim is still effective — and leaves the mechanics to this slice. Two doors:
 
@@ -87,7 +89,11 @@ D16 fixes one constraint — the refusal must land while the previously accepted
 | Validating webhook | Reject the shrinking update at admission | Certificates, a service, a failure policy, and a new outage mode where the webhook being down blocks claim writes in a repo that ships none today |
 | Hold-last-good | Keep the last accepted claim in status; it stays effective while the refused update sits on the CR | No new infrastructure. The effective set diverges from the CR's spec — a second answer to what a claim says, which is the shape D11's derivation discipline exists to avoid |
 
-D16 names hold-last-good as the fallback "if a pre-apply refusal proves infeasible". The sequencing decision here is that **the door is chosen after the spike**, because a pre-apply refusal that cannot name dependents is not worth webhook infrastructure.
+D16 names hold-last-good as the fallback "if a pre-apply refusal proves infeasible". The sequencing decision was that **the door is chosen after the spike**, because a pre-apply refusal that cannot name dependents is not worth webhook infrastructure.
+
+With the count built, the answer is that neither column fits in the one section this change had left. A webhook is a cert lifecycle, a Service, a failure policy and a kustomize overlay in a repo that ships none, and the write it would reject is the operator's OWN apply — a `TransformerRegistration` is rendered output, so a rejected shrink leaves the provider's ModuleInstance stuck not-ready and attributes the refusal to the instance rather than to the claim. Hold-last-good avoids that and pays elsewhere: the platform's `ClaimCoordinate` comes off `spec`, and `providesDrift` re-derives from the catalog `spec` names, so holding a last-good coordinate means threading an "effective claim" through acceptance, the platform's active set and D11's derivation discipline at once.
+
+Both are real work with real arguments. Neither is a section. **The requirement and this question left together**, and what stays here is the half that is done and green.
 
 ### The finalizer follows the repo's existing shape
 
@@ -163,9 +169,10 @@ Whatever the count's source, the block itself is `internal/reconcile/moduleinsta
 - [A persisted count is stale by construction — it reflects the last render] -> measured and bounded: the field is refreshed on every successful render, and the only two events that can move an instance's demand (its own generation, any Platform change) are both already watched. A failed render leaves the previous value, which over-reports — the fail-closed direction.
 - [A suspended or CLI-owned instance never re-renders, so its field freezes] -> it freezes at its last rendered demand, which over-reports for as long as the instance exists and stops mattering when it is deleted. Same fail-closed direction; no special handling.
 - [The finalizer makes a claim undeletable while the operator is down] -> standard for any finalizer in this repo; the existing `AnnotationForceDeleteOrphan` escape hatch on releases is the precedent if an equivalent is wanted, and is out of scope until asked for.
-- [Webhook infrastructure changes the install surface] -> if the spike selects it, the proposal's SemVer note is revisited before implementation, not after.
+- [Webhook infrastructure changes the install surface] -> moved out with D16, so this change's install surface is unchanged and its SemVer note stands at MINOR.
+- [D16 stays unenforced while its change is unwritten] -> real, and stated rather than papered over: a provider CAN still shrink its provides and abandon its dependents. The capability spec says so, so nothing downstream reads a guarantee that is not there. The deletion door being shut is worth having on its own, and it is the door an operator reaches for first.
 
 ## Open Questions
 
 1. ~~**Persist or recompute?**~~ **Answered by the section 1 spike: persist.** `ModuleInstance.status.requiredContracts` carries the instance's declared demand, written at render time; the finalizer intersects it with the claim's `provides`. Recompute was rejected because an unreachable registry makes it fail as `module not found` on a cold CUE cache and succeed silently on a warm one — the same cluster state, two answers. See the decision and its measurements above.
-2. **Webhook or hold-last-good?** Still open; section 4.1 answers it now that the count exists.
+2. ~~**Webhook or hold-last-good?**~~ **Moved out with D16.** It is answered by the shrink-refusal change, not here. With the count built, the honest reading of the table above is that BOTH doors cost more than the section this change had left for them — a webhook adds an install surface the operator does not have, and hold-last-good reaches into acceptance, D11 and the platform's coordinate. Squeezing either in would have meant shipping a section that does not end green, so the question left with the requirement it serves.

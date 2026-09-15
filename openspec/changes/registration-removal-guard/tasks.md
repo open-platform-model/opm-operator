@@ -1,10 +1,14 @@
 # Tasks: registration-removal-guard
 
-Four sections. **Section 1 was a spike and it was load-bearing**: design.md committed to no approach
+Three sections. **Section 1 was a spike and it was load-bearing**: design.md committed to no approach
 until it landed, because both open questions could change this change's API surface. It has landed
 (2026-09-15) and 2.1 has corrected sections 2 and 3 against what it found — the approach, one extra
-site the finalizer needs, and the CRD field this change now carries. Open Question 2 is still open
-and section 4.1 answers it.
+site the finalizer needs, and the CRD field this change now carries.
+
+**The shrink refusal (D16) was section 4 and is now its own change.** The spike answered Open
+Question 1; Open Question 2 — the refusal site — turned out to be worth more than one section
+whichever way it goes, so it moves rather than getting squeezed in. design.md records why. What
+lands here is D3: a claim with dependents cannot be deleted.
 
 ## 1. Spike — where the dependent count comes from
 
@@ -35,9 +39,3 @@ generated platform and its dependents are abandoned while the block reports that
 - [x] 3.1 Add the finalizer to `TransformerRegistration`, following `internal/reconcile/moduleinstance.go`'s pattern: add it when the claim is first accepted, check dependents on a deletion timestamp, remove it when the count reaches zero. The count is the number of `ModuleInstance`s whose `status.requiredContracts` intersect the claim's `spec.provides`. Note that finalizer patches do not bump generation, which matters because the claim reconciler filters on `GenerationChangedPredicate`. Verify: deleting a depended-on claim blocks and reports the count; the block releases when the last dependent goes; a claim with no dependents deletes immediately.
 - [x] 3.2 Make `PlatformReconciler.activeClaims` (`internal/controller/platform_controller.go`) keep a terminating claim in the active set while its deletion is blocked, and drop it only once the block has released. Verify: a regeneration triggered while a blocked claim is terminating still carries that claim's catalog, so its dependents keep rendering; a terminating claim with no dependents leaves the active set as it does today.
 - [x] 3.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): block deleting a claim its dependents still need`.
-
-## 4. The shrink refusal
-
-- [ ] 4.1 Choose the refusal site now that the count exists (design.md Open Question 2: validating webhook, or D16's hold-last-good fallback). Record the choice and its reason in design.md before implementing. If it is a webhook, revisit `proposal.md`'s SemVer and Impact notes, since the install surface changes. Verify: design.md answers Open Question 2 with a reason, not a preference.
-- [ ] 4.2 Refuse an update that drops a contract dependents still demand, naming the dropped contracts and the count, with the same shape as the blocked delete. Verify: the refusal takes effect while the previously accepted claim is still effective — the test asserts dependents still render after the refusal, which is the whole point D16 makes; a same-contract-set upgrade and a drop nobody demands both pass untouched.
-- [ ] 4.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): refuse a provides shrink that would abandon dependents`.

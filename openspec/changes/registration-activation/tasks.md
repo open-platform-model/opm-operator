@@ -18,5 +18,5 @@ assumptions to prove, so section 1 is not a spike.
 
 ## 3. Docs
 
-- [ ] 3.1 Record in `docs/` (or the controller's doc comment, whichever the reviewer prefers) that activation latches and why: the active-claim set is an input to platform regeneration, so health-driven deactivation would cause fleet-wide render churn from a transient condition. This is the rule most likely to be "fixed" into live-tracking by a later reader. Verify: the note names the consequence, not just the rule.
-- [ ] 3.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(controller): record why activation latches`.
+- [x] 3.1 Record in `docs/` (or the controller's doc comment, whichever the reviewer prefers) that activation latches and why: the active-claim set is an input to platform regeneration, so health-driven deactivation would cause fleet-wide render churn from a transient condition. This is the rule most likely to be "fixed" into live-tracking by a later reader. Verify: the note names the consequence, not just the rule.
+- [x] 3.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(controller): record why activation latches`.

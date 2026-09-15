@@ -431,6 +431,10 @@ func (r *TransformerRegistrationReconciler) accept(
 // Only accept calls this, which is what makes "an unaccepted claim never
 // activates" structural as well: every refusal and every deferred verdict
 // returns before reaching it.
+//
+// docs/design/transformer-registration-activation.md carries the full
+// argument, for the reader who arrives here intending to make the gate track
+// provider health live.
 func gateActivation(claim *releasesv1alpha1.TransformerRegistration, provider *releasesv1alpha1.ModuleInstance) {
 	if claim.Status.Active {
 		return

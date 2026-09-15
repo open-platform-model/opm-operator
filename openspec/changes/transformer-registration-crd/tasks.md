@@ -4,10 +4,10 @@ Three sections. design.md carries no unverified assumption about this repo; its 
 
 ## 1. API type and generated manifests
 
-- [ ] 1.1 Add `api/v1alpha1/transformerregistration_types.go` per design.md § The type: cluster scope, status subresource, the CEL name rule, print columns, `Spec` with `Catalog`, `Version`, `Provides` and `ProviderRef` all required, `Status` with `Conditions`, `Accepted` and `Active`. Follow the house conventions exactly — `omitzero` on `metadata`/`status`, `+listType=map` conditions, hand-written `GetConditions`/`SetConditions`, and the per-type `init()` scheme registration copied from `platform_types.go`, not from `kubebuilder create api`. Verify: `go build ./...` passes and the file ends with a `SchemeBuilder.Register` block.
-- [ ] 1.2 Add `ProviderReference` to `api/v1alpha1/common_types.go` unless an existing reference type in that file fits verbatim; if one does, use it and say so in the type's doc comment. Verify: no second namespace/name reference struct is introduced.
-- [ ] 1.3 `task dev:manifests dev:generate`, then add `- bases/opmodel.dev_transformerregistrations.yaml` to `config/crd/kustomization.yaml` above the scaffold marker. Verify: the generated CRD carries `scope: Cluster`, the four required spec fields, the status subresource and the CEL rule; `zz_generated.deepcopy.go` gains the three new deepcopy funcs.
-- [ ] 1.4 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(api): add the cluster-scoped TransformerRegistration CRD`.
+- [x] 1.1 Add `api/v1alpha1/transformerregistration_types.go` per design.md § The type: cluster scope, status subresource, the CEL name rule, print columns, `Spec` with `Catalog`, `Version`, `Provides` and `ProviderRef` all required, `Status` with `Conditions`, `Accepted` and `Active`. Follow the house conventions exactly — `omitzero` on `metadata`/`status`, `+listType=map` conditions, hand-written `GetConditions`/`SetConditions`, and the per-type `init()` scheme registration copied from `platform_types.go`, not from `kubebuilder create api`. Verify: `go build ./...` passes and the file ends with a `SchemeBuilder.Register` block.
+- [x] 1.2 Add `ProviderReference` to `api/v1alpha1/common_types.go` unless an existing reference type in that file fits verbatim; if one does, use it and say so in the type's doc comment. Verify: no second namespace/name reference struct is introduced.
+- [x] 1.3 `task dev:manifests dev:generate`, then add `- bases/opmodel.dev_transformerregistrations.yaml` to `config/crd/kustomization.yaml` above the scaffold marker. Verify: the generated CRD carries `scope: Cluster`, the four required spec fields, the status subresource and the CEL rule; `zz_generated.deepcopy.go` gains the three new deepcopy funcs.
+- [x] 1.4 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(api): add the cluster-scoped TransformerRegistration CRD`.
 
 ## 2. RBAC
 
@@ -18,7 +18,7 @@ Three sections. design.md carries no unverified assumption about this repo; its 
 
 ## 3. Admission tests
 
-- [ ] 3.1 Add `test/integration/crdvalidation/transformerregistration_test.go` following `skewpolicy_test.go`: apply an object shaped exactly as the `catalog_opm` renderer emits (group, version, kind and the dot-joined name from issue 132's recorded JSON) and assert acceptance. Verify: the test passes against envtest over `config/crd/bases`.
+- [ ] 3.1 Add `test/integration/crdvalidation/transformerregistration_test.go` following `skewpolicy_test.go`: apply an object shaped exactly as the `catalog_opm` renderer emits and assert acceptance. Take the spec fields, labels and the dot-joined name from issue 132's recorded JSON, but `apiVersion: opmodel.dev/v1alpha1` from design.md's group decision — the issue's JSON records the prefixed group the catalog is being corrected away from. Verify: the test passes against envtest over `config/crd/bases`.
 - [ ] 3.2 Assert the refusals: a claim with no `spec.catalog` is rejected naming the field; a claim named without a dot is rejected with the CEL message; a claim carrying `metadata.namespace` is rejected as cluster-scoped. Verify: each failing case asserts the API server's message, not just that an error occurred.
 - [ ] 3.3 Assert the accepted edge: `spec.provides` as an empty list is accepted. Verify: the test names why in a comment, so it is not "fixed" later into a refusal.
 - [ ] 3.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(crdvalidation): cover the TransformerRegistration admission rules`.

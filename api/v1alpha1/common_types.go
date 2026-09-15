@@ -45,6 +45,28 @@ type ModuleReference struct {
 	Version string `json:"version"`
 }
 
+// ProviderReference identifies the ModuleInstance that claimed a provider
+// catalog, by namespace and name.
+//
+// Flux's meta.NamespacedObjectReference is the shape this would otherwise
+// reuse, but it does not fit verbatim: its Namespace is +optional, acting as
+// a LocalObjectReference when absent. A TransformerRegistration is
+// cluster-scoped, so it has no namespace of its own to fall back to and an
+// omitted namespace would name nothing findable. Both fields are required
+// here. The operator stamps them from the rendering instance rather than
+// accepting them from a module author (enhancement 0015 D11).
+type ProviderReference struct {
+	// Namespace of the claiming ModuleInstance.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Namespace string `json:"namespace"`
+
+	// Name of the claiming ModuleInstance.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Name string `json:"name"`
+}
+
 // RolloutSpec configures apply behavior for a release.
 type RolloutSpec struct {
 	// Strategy controls how apply operations are performed.

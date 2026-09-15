@@ -90,6 +90,27 @@ When more than one claim names the same provider catalog, acceptance SHALL accep
 - **WHEN** both claims are reconciled repeatedly with no spec change
 - **THEN** the same claim keeps acceptance
 
+### Requirement: A contract has one provider
+
+Acceptance SHALL refuse a claim whose `provides` names a contract that an enabled `Platform.spec.registry` subscription or another **active** claim already provides, naming the holder and the contract (enhancement 0015 D2, keeping 0010 D37's exactly-one-provider rule). This refusal is distinct from the duplicate-claim refusal: that one is about two claims naming the same catalog, this one is about two providers of the same contract, which can arrive from different catalogs entirely.
+
+An **inactive** accepted claim SHALL NOT hold a contract against a competitor, because a claim that has never served has no dependents to protect.
+
+#### Scenario: A claim is refused against an enabled subscription
+
+- **WHEN** a claim names a contract an enabled subscription's catalog already provides
+- **THEN** the claim is refused, naming the contract and the subscribed catalog
+
+#### Scenario: A claim is refused against an active claim
+
+- **WHEN** a claim names a contract another active claim already provides
+- **THEN** the claim is refused, naming the contract and the holding claim
+
+#### Scenario: An inactive accepted claim does not block a competitor
+
+- **WHEN** a claim names a contract an accepted but inactive claim also provides
+- **THEN** this check does not refuse it on that basis
+
 ### Requirement: A build-incompatible provider is refused at acceptance
 
 Acceptance SHALL compare the catalog's committed requirements against the platform's resolved versions, per shared OPM-namespace path, and SHALL refuse the claim when the catalog requires a version greater than the platform's within the same major, or any version in a different major (enhancement 0015 D8). The refusal SHALL happen here rather than at render, where the failure would name an unrelated module instance. The refusal message SHALL state that the comparison is conservative — a requirement records what the provider was tidied against, not what it uses — and that lowering the requirement is the author's fix.

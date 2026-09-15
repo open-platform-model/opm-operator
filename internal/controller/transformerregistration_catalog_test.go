@@ -103,12 +103,14 @@ func catalogSourceRequiring(deps map[string]string) *catalog.Source {
 // acceptanceReconciler returns a reconciler with a platform in its store, so
 // the specs below reach the checks rather than parking on PlatformNotReady.
 // The platform resolves core, which the default provider catalog does not
-// require, so nothing here refuses on build compatibility.
+// require, so nothing here refuses on build compatibility, and its enabled
+// subscriptions provide no contract, so nothing here refuses on D2 either.
 func acceptanceReconciler(catalogs CatalogAcquirer) *TransformerRegistrationReconciler {
 	store := platformstore.NewStore()
 	store.SetGenerated(platformstore.Generated{
 		Generation: 1,
 		Dir:        platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
+		Platform:   platformProviding(nil),
 	})
 	return &TransformerRegistrationReconciler{
 		Client:        k8sClient,

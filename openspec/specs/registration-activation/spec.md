@@ -2,7 +2,7 @@
 
 Define when an accepted `TransformerRegistration` becomes active, what keeps it active, and what does not. Activation is the second of the three states enhancement 0015 D3 defines; acceptance is the first and is a separate capability.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: An accepted claim activates when its provider is ready
 
@@ -22,6 +22,12 @@ An accepted claim SHALL become active when the `ModuleInstance` named by `spec.p
 
 - **WHEN** a refused claim's provider reports `Ready=True`
 - **THEN** `status.active` stays false
+
+#### Scenario: A refused claim reports no waiting-on-provider state
+
+- **WHEN** a claim that was accepted and waiting on its provider is later refused
+- **THEN** it no longer reports that it is waiting on its provider, because the refusal is why it is inactive
+- **AND** a claim refused while already active keeps reporting that it is active
 
 ### Requirement: Activation latches against provider health
 

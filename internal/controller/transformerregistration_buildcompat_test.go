@@ -73,6 +73,7 @@ func buildCompatReconciler(cat *catalog.Catalog, platformDeps map[string]string)
 	store.SetGenerated(platformstore.Generated{
 		Generation: 1,
 		Dir:        platformDirWith(platformDeps),
+		Platform:   platformProviding(nil),
 	})
 	r.Store = store
 	return r

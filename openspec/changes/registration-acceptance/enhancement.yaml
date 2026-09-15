@@ -1,0 +1,21 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+#
+# Claimed conservatively. D10, D11 and D12 were over-claimed by earlier
+# changes and removed from 0015's log; this change is the acceptance those
+# decisions describe, so it completes them. D8 is wholly here.
+#
+# NOT claimed, and deliberately:
+#   D3  - spans acceptance AND activation; the activation health gate lands
+#         in registration-activation-and-lifecycle, which completes D3.
+#   D2  - its acceptance arm refuses a claim for a contract an "active
+#         subscription or registration already provides". This change
+#         establishes no activeness, so the activation change completes it.
+#   D16 - the finalizer and the shrink refusal, in the activation change.
+#
+# Before logging, diff this list against proposal.md's "Not in this change"
+# section and drop anything it names.
+implements:
+  - enhancement: "0015"
+    decisions: [D8, D10, D11, D12]
+    resolves: []

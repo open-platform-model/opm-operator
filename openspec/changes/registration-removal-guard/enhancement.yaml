@@ -1,0 +1,12 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+#
+# D16 is the whole of this change: refusing a removal, whether it arrives as
+# a delete or as an update that shrinks `provides`.
+#
+# Before logging, diff this list against proposal.md's "Not in this change"
+# section and drop anything it names.
+implements:
+  - enhancement: "0015"
+    decisions: [D16]
+    resolves: []

@@ -1,0 +1,17 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+#
+# D3 and D2 were over-claimed by earlier changes and removed from 0015's log;
+# this change completes both. D3's remaining half is the activation health
+# gate. D2's remaining half is the second enforcement arm: a claim naming a
+# contract an enabled subscription or an active claim already provides.
+#
+# D16 is NOT here: the finalizer and the shrink refusal are
+# registration-removal-guard, which has its own dependent-count problem.
+#
+# Before logging, diff this list against proposal.md's "Not in this change"
+# section and drop anything it names.
+implements:
+  - enhancement: "0015"
+    decisions: [D2, D3]
+    resolves: []

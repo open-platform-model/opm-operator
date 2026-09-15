@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.18](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.17...v1.0.0-alpha.18) (2026-09-15)
+
+
+### Features
+
+* **api:** add the cluster-scoped TransformerRegistration CRD ([#133](https://github.com/open-platform-model/opm-operator/issues/133)) ([06b197a](https://github.com/open-platform-model/opm-operator/commit/06b197a3546b76df78cdee9b940f0056a023216e))
+
 ## [1.0.0-alpha.17](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.16...v1.0.0-alpha.17) (2026-09-14)
 
 

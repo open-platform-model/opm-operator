@@ -154,7 +154,7 @@ func generatedPlatformStoreAt(
 	Expect(err).NotTo(HaveOccurred())
 
 	layout := platformstore.Layout{Root: filepath.Join(GinkgoT().TempDir(), "platform")}
-	dir, err := layout.Write(1, files)
+	dir, err := layout.Write(platformstore.NewPackageIdentity(1, nil), files)
 	Expect(err).NotTo(HaveOccurred())
 
 	plat, err := k.AcquirePlatformFromDir(ctx, dir)
@@ -164,7 +164,12 @@ func generatedPlatformStoreAt(
 	Expect(plat.Source).NotTo(BeNil(), "the acquired platform must carry its on-disk source")
 
 	store := platformstore.NewStore()
-	store.SetGenerated(platformstore.Generated{Generation: 1, Dir: dir, Platform: plat, Skew: skew})
+	store.SetGenerated(platformstore.Generated{
+		Identity: platformstore.NewPackageIdentity(1, nil),
+		Dir:      dir,
+		Platform: plat,
+		Skew:     skew,
+	})
 	return store
 }
 

@@ -41,10 +41,11 @@ This is the change that makes the second transformer path actually reach a rende
 
 ### Modified Capabilities
 
-- `platform-module-generation`: its generated package is currently a function of the Platform CR alone. That becomes the tuple.
-- `platform-reconciler`: gains the claim watch and the status union, if its requirements name the reconciler's trigger set.
+Confirmed against their current spec text during the change. All three state the assumption, so no delta was dropped.
 
-Both are confirmed against their current spec text during the change rather than guessed here; if one turns out not to state the assumption, its delta is dropped.
+- `platform-module-generation`: its generated package was a function of the Platform CR alone, and its module directory was keyed on the CR generation. That becomes the tuple and the package identity. Also records the one-catalog-one-key rule.
+- `platform-reconciler`: gains the claim watch, and its store requirement was named and worded "generation-keyed" throughout, which D17 replaces with the identity.
+- `registration-acceptance`: not anticipated here. Making an active claim's catalog a registry entry gave the D2 subscription arm a way to refuse a claim against itself; the delta states that a claim's own catalog never holds a contract against it, and that excusing it never excuses another provider.
 
 ## Impact on existing behaviour
 

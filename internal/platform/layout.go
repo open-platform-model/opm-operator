@@ -8,55 +8,56 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/open-platform-model/library/opm/helper/platformmodule"
 )
 
 const (
-	// generationPrefix names a completed generation's directory:
-	// <root>/gen-<generation>.
-	generationPrefix = "gen-"
+	// packagePrefix names a completed package's directory: <root>/gen-<...>,
+	// the [PackageIdentity] string form, which always starts with the CR
+	// generation the package was built for.
+	packagePrefix = "gen-"
 
-	// stagingPrefix names an in-progress write: <root>/.staging-<generation>-<random>.
+	// stagingPrefix names an in-progress write: <root>/.staging-<identity>-<random>.
 	// Hidden so a directory listing reads current state first, and never a
-	// generation directory's name so a crash mid-write cannot be mistaken for
+	// package directory's name so a crash mid-write cannot be mistaken for
 	// a complete module.
 	stagingPrefix = ".staging-"
 
-	// asidePrefix names a superseded copy of a generation directory moved
-	// out of the way during a same-generation swap.
+	// asidePrefix names a superseded copy of a package directory moved out of
+	// the way during a same-identity swap.
 	asidePrefix = ".aside-"
 )
 
 // Layout owns the on-disk lifecycle of generated platform modules under Root
-// (the manager's --platform-dir): one directory per CR generation, written
-// by staging plus rename so a module directory is either absent or complete,
-// pruned to the current and every leased generation after each successful
-// build, and emptied at manager start. The module content itself comes from
-// the library's generator (opm/helper/platformmodule); the lifecycle is
-// operator process policy, which is why it lives here beside the store that
-// records the directories.
+// (the manager's --platform-dir): one directory per [PackageIdentity],
+// written by staging plus rename so a module directory is either absent or
+// complete, pruned to the current and every leased identity after each
+// successful build, and emptied at manager start. The module content itself
+// comes from the library's generator (opm/helper/platformmodule); the
+// lifecycle is operator process policy, which is why it lives here beside the
+// store that records the directories.
 type Layout struct {
 	Root string
 }
 
-// Dir returns the directory a generation's module lives in, whether or not
-// it exists.
-func (l Layout) Dir(generation int64) string {
-	return filepath.Join(l.Root, generationPrefix+strconv.FormatInt(generation, 10))
+// Dir returns the directory an identity's module lives in, whether or not it
+// exists. The identity's string form is the directory name, so two packages
+// generated for the same CR generation from different active-claim sets get
+// different directories and neither overwrites the other.
+func (l Layout) Dir(id PackageIdentity) string {
+	return filepath.Join(l.Root, id.String())
 }
 
-// Write materialises files as generation's module directory and returns its
+// Write materialises files as the identity's module directory and returns its
 // path. The files are written into a staging directory first and renamed
 // into place, so no reader observes a partially written module: a failure
 // at any point leaves the staging directory (cleaned by the next Prune or
-// Reset) and never a generation directory. An existing directory for the
-// same generation (a re-reconcile after a build failure, or a container
-// restart on the same volume) is moved aside before the swap and removed
-// after it.
-func (l Layout) Write(generation int64, files platformmodule.Files) (string, error) {
+// Reset) and never a package directory. An existing directory for the same
+// identity (a re-reconcile after a build failure, or a container restart on
+// the same volume) is moved aside before the swap and removed after it.
+func (l Layout) Write(id PackageIdentity, files platformmodule.Files) (string, error) {
 	if l.Root == "" {
 		return "", errors.New("platform layout has no root directory")
 	}
@@ -71,7 +72,7 @@ func (l Layout) Write(generation int64, files platformmodule.Files) (string, err
 	if err != nil {
 		return "", err
 	}
-	staging := filepath.Join(l.Root, stagingPrefix+strconv.FormatInt(generation, 10)+"-"+suffix)
+	staging := filepath.Join(l.Root, stagingPrefix+id.String()+"-"+suffix)
 	if err := os.Mkdir(staging, 0o755); err != nil {
 		return "", fmt.Errorf("creating staging directory %s: %w", staging, err)
 	}
@@ -80,8 +81,8 @@ func (l Layout) Write(generation int64, files platformmodule.Files) (string, err
 		return "", fmt.Errorf("writing platform module files: %w", err)
 	}
 
-	dir := l.Dir(generation)
-	aside := filepath.Join(l.Root, asidePrefix+strconv.FormatInt(generation, 10)+"-"+suffix)
+	dir := l.Dir(id)
+	aside := filepath.Join(l.Root, asidePrefix+id.String()+"-"+suffix)
 	if _, statErr := os.Stat(dir); statErr == nil {
 		if err := os.Rename(dir, aside); err != nil {
 			_ = os.RemoveAll(staging)
@@ -102,10 +103,10 @@ func (l Layout) Write(generation int64, files platformmodule.Files) (string, err
 	return dir, nil
 }
 
-// Prune removes every entry under Root except the generation directories
-// listed in keep: superseded generations, staging leftovers and moved-aside
-// copies. A missing Root is not an error.
-func (l Layout) Prune(keep ...int64) error {
+// Prune removes every entry under Root except the package directories the
+// identities in keep name: superseded packages, staging leftovers and
+// moved-aside copies. A missing Root is not an error.
+func (l Layout) Prune(keep ...PackageIdentity) error {
 	entries, err := os.ReadDir(l.Root)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -114,8 +115,8 @@ func (l Layout) Prune(keep ...int64) error {
 		return fmt.Errorf("listing platform directory %s: %w", l.Root, err)
 	}
 	kept := make(map[string]bool, len(keep))
-	for _, g := range keep {
-		kept[generationPrefix+strconv.FormatInt(g, 10)] = true
+	for _, id := range keep {
+		kept[id.String()] = true
 	}
 	var errs []error
 	for _, e := range entries {
@@ -145,9 +146,12 @@ func (l Layout) Reset() error {
 	return nil
 }
 
-// Generations lists the complete generation directories under Root, in
-// ascending generation order. Staging and moved-aside entries are ignored.
-func (l Layout) Generations() ([]int64, error) {
+// Packages lists the complete package directories under Root by name — each
+// name the string form of the [PackageIdentity] it was written for — in
+// lexical order. Staging and moved-aside entries are ignored. The identity is
+// not recoverable from the name (its claim list is digested), so callers
+// compare against an identity's String rather than parsing.
+func (l Layout) Packages() ([]string, error) {
 	entries, err := os.ReadDir(l.Root)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -155,16 +159,12 @@ func (l Layout) Generations() ([]int64, error) {
 		}
 		return nil, fmt.Errorf("listing platform directory %s: %w", l.Root, err)
 	}
-	var out []int64
+	var out []string
 	for _, e := range entries {
-		if !e.IsDir() || !strings.HasPrefix(e.Name(), generationPrefix) {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), packagePrefix) {
 			continue
 		}
-		g, err := strconv.ParseInt(strings.TrimPrefix(e.Name(), generationPrefix), 10, 64)
-		if err != nil {
-			continue
-		}
-		out = append(out, g)
+		out = append(out, e.Name())
 	}
 	slices.Sort(out)
 	return out, nil

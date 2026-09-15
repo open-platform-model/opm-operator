@@ -97,9 +97,87 @@ type Subscription struct {
 }
 
 // PlatformStatus defines the observed state of Platform.
+// RegistryEntrySource names how a catalog reached the platform's resolved
+// registry: the two paths transformers take to a platform (enhancement 0015
+// D3).
+// +kubebuilder:validation:Enum=Subscription;Registration
+type RegistryEntrySource string
+
+const (
+	// RegistryEntrySubscription is a catalog the Platform CR's spec.registry
+	// authored: a platform admin subscribed to it deliberately.
+	RegistryEntrySubscription RegistryEntrySource = "Subscription"
+
+	// RegistryEntryRegistration is a catalog an accepted-and-active
+	// TransformerRegistration contributed: a provider module registered it
+	// and the operator judged the claim.
+	RegistryEntryRegistration RegistryEntrySource = "Registration"
+)
+
+// ResolvedRegistryEntry is one catalog of the registry the platform is
+// actually running, resolved from both of its sources. A catalog is one
+// registry key, so an authored subscription and a claim naming the same
+// catalog resolve to a single entry sourced Subscription: the admin's pin
+// and enable decision is the deliberate one.
+type ResolvedRegistryEntry struct {
+	// catalog is the major-suffixed CUE module path of the catalog.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Catalog string `json:"catalog"`
+
+	// version is the bare SemVer build the generated platform module pins
+	// the catalog at.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Version string `json:"version"`
+
+	// enabled reports whether the catalog's transformers register. A
+	// disabled subscription is still pinned and imported by the generated
+	// module, so it belongs in the resolved registry, but it contributes no
+	// transformer; reading the list without this field would overstate what
+	// the platform runs. Every catalog an active claim contributed is
+	// enabled.
+	// +optional
+	Enabled bool `json:"enabled,omitzero"`
+
+	// source records which of the two transformer paths put the catalog
+	// here, so an operator can tell an authored subscription from one a
+	// provider registered.
+	// +required
+	Source RegistryEntrySource `json:"source"`
+}
+
 type PlatformStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// packageIdentity identifies the generated platform package by the two
+	// inputs it is a function of (enhancement 0015 D13): this CR's
+	// generation and the sorted set of active claims' catalog coordinates.
+	// The same inputs always produce the same value and any change to either
+	// produces a different one.
+	//
+	// This, not status.active on a TransformerRegistration, is the
+	// authoritative answer to what a render is building against. The claim
+	// reconciler writes the verdict on the claim and this reconciler folds
+	// the verdict into the package, so the two are eventually consistent: an
+	// observer can see a claim active for a moment before a package
+	// containing its catalog exists. Generation is level-computed, so the
+	// next regeneration catches up; until it lands, an active claim is a
+	// promise about the next package, not a statement about the current one.
+	// +optional
+	PackageIdentity string `json:"packageIdentity,omitempty"`
+
+	// registry is the resolved union of the registry the platform is
+	// running: the subscriptions spec.registry authored plus the catalogs
+	// active TransformerRegistrations contributed, each entry recording
+	// which. It makes the effective set enumerable from the Platform rather
+	// than only by listing every claim, and it is rewritten on every
+	// generation, so it follows the active set in both directions.
+	// +listType=map
+	// +listMapKey=catalog
+	// +optional
+	Registry []ResolvedRegistryEntry `json:"registry,omitempty"`
 
 	// conditions represent the current state of the Platform resource. The
 	// PlatformReconciler summarizes module generation on the Ready condition:

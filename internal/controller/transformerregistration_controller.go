@@ -219,7 +219,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 		return r.deferVerdict(ctx, patcher, &claim, status.PlatformNotReadyReason,
 			fmt.Sprintf("The generated platform's contract providers could not be read: %v", err))
 	}
-	if contract, catalogPath := subscribedContract(claim.Spec.Provides, providers); contract != "" {
+	if contract, catalogPath := subscribedContract(claim.Spec.Provides, providers, claim.Spec.Catalog); contract != "" {
 		return r.refuse(ctx, patcher, &claim, status.ContractSubscribedReason, fmt.Sprintf(
 			"Contract %s is already provided by subscribed catalog %s; a contract has exactly one provider, "+
 				"so disable that subscription or withdraw this claim",

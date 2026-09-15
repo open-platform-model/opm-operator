@@ -84,7 +84,7 @@ func (r *KernelPackageRenderer) Render(
 		return KindModuleInstance, nil, fmt.Errorf("rendering module instance: %w", err)
 	}
 
-	result, err := resultFromRender(out)
+	result, err := resultFromRender(out, rec.Identity)
 	if err != nil {
 		return KindModuleInstance, nil, err
 	}

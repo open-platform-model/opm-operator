@@ -59,11 +59,14 @@ var transformerModulePath = cue.ParsePath("metadata.modulePath")
 // overSubscribed), neither of which says WHICH catalog provides a contract.
 // That is the value D2's refusal has to name.
 //
-// A contract two enabled catalogs both provide is already the platform's own
-// over-subscription, reported by the inventory and refused at generation; the
-// lowest module path wins here so this function stays deterministic rather
-// than reporting whichever the map iteration surfaced.
-func subscriptionProviders(p *platform.Platform) (map[string]string, error) {
+// Every provider of a contract is recorded, not just one, because the claim
+// being judged may be one of them: an ACTIVE claim's catalog is a registry
+// entry of the platform it is judged against (enhancement 0015 D13), so its
+// own transformers show up here. The caller drops the claim's own catalog and
+// judges against what remains; keeping only one provider per contract would
+// make that a coin toss. The paths are sorted, so the caller reports the
+// lowest competing one rather than whichever the map iteration surfaced.
+func subscriptionProviders(p *platform.Platform) (map[string][]string, error) {
 	if p == nil {
 		return nil, fmt.Errorf("no platform has been built")
 	}
@@ -81,7 +84,7 @@ func subscriptionProviders(p *platform.Platform) (map[string]string, error) {
 		return nil, fmt.Errorf("reading platform %s: %w", composedTransformers, err)
 	}
 
-	providers := map[string]string{}
+	providers := map[string][]string{}
 	for iter.Next() {
 		impl := iter.Selector().Unquoted()
 
@@ -100,11 +103,15 @@ func subscriptionProviders(p *platform.Platform) (map[string]string, error) {
 			}
 		}
 	}
+	for fqn, paths := range providers {
+		slices.Sort(paths)
+		providers[fqn] = slices.Compact(paths)
+	}
 	return providers, nil
 }
 
-// collectProvided records modulePath as the provider of every contract the
-// transformer's demand map at path requires with fulfilment "provider".
+// collectProvided records modulePath among the providers of every contract
+// the transformer's demand map at path requires with fulfilment "provider".
 // An absent demand map contributes nothing: both maps are optional on
 // #ComponentTransformer.
 func collectProvided(
@@ -112,7 +119,7 @@ func collectProvided(
 	impl string,
 	path cue.Path,
 	modulePath string,
-	providers map[string]string,
+	providers map[string][]string,
 ) error {
 	demands := transformer.LookupPath(path)
 	if !demands.Exists() {
@@ -136,23 +143,32 @@ func collectProvided(
 		if s != "provider" {
 			continue
 		}
-		if held, ok := providers[fqn]; !ok || modulePath < held {
-			providers[fqn] = modulePath
-		}
+		providers[fqn] = append(providers[fqn], modulePath)
 	}
 	return nil
 }
 
-// subscribedContract returns the first contract the claim provides that an
-// enabled subscription already provides, with the subscribed catalog holding
-// it, or two empty strings when none does.
+// subscribedContract returns the first contract the claim provides that some
+// OTHER enabled registry entry already provides, with the catalog holding it,
+// or two empty strings when none does.
 //
-// The claim's contracts are walked in sorted order, so a claim colliding on
-// several always reports the same one rather than whichever the slice
-// happened to list first.
-func subscribedContract(provides []string, providers map[string]string) (contract, catalogPath string) {
+// ownCatalog is the claim's own catalog path, and every provider matching it
+// is skipped. Once a claim is active its catalog is a registry entry of the
+// very platform the next reconcile judges it against (enhancement 0015 D13),
+// so without this a re-judged claim would be refused for providing what it
+// itself provides, be deactivated, drop out of the next package and be
+// accepted again — the oscillation D13's loop has to avoid. A claim's own
+// contracts are what it is for; only another provider of them is a conflict.
+//
+// The claim's contracts are walked in sorted order and each contract's
+// providers likewise, so a claim colliding on several always reports the same
+// one rather than whichever the slice happened to list first.
+func subscribedContract(provides []string, providers map[string][]string, ownCatalog string) (contract, catalogPath string) {
 	for _, fqn := range slices.Sorted(slices.Values(provides)) {
-		if held, ok := providers[fqn]; ok {
+		for _, held := range providers[fqn] {
+			if held == ownCatalog {
+				continue
+			}
 			return fqn, held
 		}
 	}

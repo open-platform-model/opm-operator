@@ -162,6 +162,6 @@ var _ = Describe("Platform Controller failure handling", func() {
 		held, ok := store.Generated()
 		Expect(ok).To(BeTrue(), "the last-good platform must survive a failed reconcile")
 		Expect(held.Platform).To(BeIdenticalTo(lastGood.Platform))
-		Expect(store.Generation()).To(Equal(int64(7)))
+		Expect(store.Identity()).To(Equal(platformIdentity(7)))
 	})
 })

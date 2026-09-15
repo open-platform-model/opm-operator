@@ -66,9 +66,9 @@ func TestTransformerRegistrationAtAdmission(t *testing.T) {
 	require.NoError(t, err)
 
 	// The shape the catalog_opm renderer emits, recorded in opm-operator issue
-	// 132. The apiVersion is this repo's flat group: the issue's JSON records
-	// the prefixed "opm.opmodel.dev" spelling the catalog is being corrected
-	// away from (design.md, The group is the operator's flat opmodel.dev).
+	// 132. The apiVersion is this repo's flat group: the issue's JSON recorded
+	// the prefixed "opm.opmodel.dev" spelling, which catalog_opm corrected to
+	// this one in its correct-registration-api-group change (PR 91).
 	// Everything else is the issue's JSON verbatim, so drift between the two
 	// sides of the contract fails a test rather than a cluster.
 	rendered := func() *unstructured.Unstructured {

@@ -19,7 +19,7 @@ spec:
       # (`opm operator install` resolves the catalog version live), so bump
       # it as `test(fixtures)`: no operator release. The mirrored CLI seed
       # is shipped and bumps as `fix(deps)`.
-      version: "4.1.0"
+      version: "4.3.1"
     opmodel.dev/catalogs/k8s@v1:
       # Second subscription mirroring the CLI's seeded default (seed-both-
       # catalogs): the raw passthrough catalog, same commit as the opm@v2

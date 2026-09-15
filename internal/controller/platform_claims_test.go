@@ -346,6 +346,53 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			Expect(shrunk.Status.PackageIdentity).To(Equal(platformIdentity(shrunk.Generation).String()))
 		})
 
+		It("leaves the identity and the union describing the last-good package when a build fails", func() {
+			k, reg := buildKernelOrSkip()
+			store := platformstore.NewStore()
+			r := newPlatformReconciler(store, k, reg)
+
+			plat := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type:     "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{testCatalogPath(): {Version: fixtures.CatalogVersion()}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+
+			_, err := r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+			good := fetchPlatform()
+			Expect(good.Status.PackageIdentity).NotTo(BeEmpty())
+			Expect(catalogsInUnion(good)).To(ConsistOf(testCatalogPath()))
+
+			// A claim naming a catalog that does not resolve: the tuple moves,
+			// the build fails, and the last-good package is still the one the
+			// store holds and every render is consuming.
+			storeActiveClaim("default."+providerInstanceName, "opmodel.dev/catalogs/does-not-exist@v1", "9.9.9")
+			Eventually(func(g Gomega) {
+				var list releasesv1alpha1.TransformerRegistrationList
+				g.Expect(k8sClient.List(ctx, &list)).To(Succeed())
+				g.Expect(list.Items).To(HaveLen(1))
+			}).Should(Succeed())
+
+			res, err := r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.RequeueAfter).NotTo(BeZero(), "a failed build requeues")
+
+			failed := fetchPlatform()
+			Expect(readyCondition(failed).Reason).To(Equal(status.BuildFailedReason))
+			Expect(failed.Status.PackageIdentity).To(Equal(good.Status.PackageIdentity),
+				"a failed generation must not advertise an identity nothing built")
+			Expect(catalogsInUnion(failed)).To(ConsistOf(testCatalogPath()),
+				"the union keeps describing the package the store still holds")
+
+			held, ok := store.Generated()
+			Expect(ok).To(BeTrue())
+			Expect(held.Identity.String()).To(Equal(good.Status.PackageIdentity),
+				"status and the held package agree, which is what the identity is for")
+		})
+
 		It("computes from current state, so a stale event regenerates what the state implies", func() {
 			k, reg := buildKernelOrSkip()
 			store := platformstore.NewStore()

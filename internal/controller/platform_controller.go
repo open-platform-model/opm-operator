@@ -188,13 +188,6 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, err.Error())
 	}
 
-	// The identity and the resolved union are what the tuple resolved to, so
-	// they are written on every generation, the no-op one included: together
-	// they are the Platform's own account of what a render is building
-	// against (0015 D13).
-	plat.Status.PackageIdentity = identity.String()
-	plat.Status.Registry = resolvedRegistry(&plat, entries)
-
 	// Level-computed generation makes a repeat of the same tuple a no-op: the
 	// package held is the package this reconcile would produce, byte for
 	// byte. Skipping it is what bounds a burst of claim activations to one
@@ -205,6 +198,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			"name", plat.Name, "identity", identity, "dir", held.Dir)
 		plat.Status.ObservedGeneration = plat.Generation
 		plat.Status.OperatorVersion = version.Full()
+		recordEffectiveRegistry(&plat, identity, entries)
 		status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
 		return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
 	}
@@ -271,6 +265,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	plat.Status.ObservedGeneration = plat.Generation
 	plat.Status.OperatorVersion = version.Full()
+	recordEffectiveRegistry(&plat, identity, entries)
 	status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
 	r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeNormal, status.GeneratedReason, "Generate", "Platform module generated and built for generation %d", plat.Generation)
 
@@ -313,6 +308,22 @@ func claimCoordinates(claims []releasesv1alpha1.TransformerRegistration) []platf
 		})
 	}
 	return coords
+}
+
+// recordEffectiveRegistry stamps the package identity and the resolved
+// registry union on the Platform's status. It is called only where a package
+// under that identity is the one the store holds: after a successful build,
+// and on the no-op skip. A failed generation leaves both fields describing the
+// last-good package, for the same reason failReconcile leaves the store
+// untouched — status would otherwise advertise a registry the operator never
+// built and no render can be consuming.
+func recordEffectiveRegistry(
+	plat *releasesv1alpha1.Platform,
+	identity platformstore.PackageIdentity,
+	entries []platformmodule.Entry,
+) {
+	plat.Status.PackageIdentity = identity.String()
+	plat.Status.Registry = resolvedRegistry(plat, entries)
 }
 
 // resolvedRegistry maps the generator's entries to the union Platform status

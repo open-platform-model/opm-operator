@@ -28,7 +28,7 @@ Should we start with the first? This proposal describes change 1; change 2 is no
 
 ## Impact
 
-- **API types**: none. `TransformerRegistrationStatus` already carries `conditions`, `accepted` and `active`; this change writes the first two.
+- **API types**: one additive status field. `TransformerRegistrationStatus` already carries `conditions`, `accepted` and `active`, and this change writes the first two — but unlike the other three CRDs it carried no `observedGeneration`, which the verdict has to record, so this change adds it (optional, additive) and regenerates the CRD.
 - **Platform reconciler**: untouched. Regeneration keyed on the accepted set is change 3 (`registration-driven-regeneration`), not this one.
 - **RBAC**: the manager role already carries `get;list;watch` and the status verbs on the kind (shipped in PR 133). No marker changes expected; if one is, it regenerates.
 - **Downstream consumers**: none in-cluster. No provider catalog exists, so no module renders a claim; every claim reaching a cluster today is hand-applied by a platform admin.

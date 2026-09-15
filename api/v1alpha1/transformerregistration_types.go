@@ -72,9 +72,12 @@ type TransformerRegistrationSpec struct {
 // acceptance reconciler writes conditions, accepted and observedGeneration;
 // active stays false until an accepted claim's provider is serving.
 type TransformerRegistrationStatus struct {
-	// observedGeneration is the .metadata.generation the recorded verdict was
-	// reached for. A claim whose generation is ahead of this has been edited
-	// since it was judged, so its verdict is stale.
+	// observedGeneration is the .metadata.generation this claim was last
+	// reconciled for, whether or not that reconcile reached a verdict: a claim
+	// waiting on the platform or on its provider's inventory records the
+	// generation it observed rather than reading as un-reconciled. A claim
+	// whose generation is ahead of this has been edited since, so whatever
+	// conditions report is stale.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 

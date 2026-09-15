@@ -120,7 +120,12 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	// pre-reconcile status.
 	patcher := patch.NewSerialPatcher(&claim, r.Client)
 
-	generated, ok := r.Store.Generated()
+	// Lease, not Generated: the build-compatibility check below reads the
+	// generated module directory off disk, and the PlatformReconciler's prune
+	// keeps only the current generation plus every leased one. Without a
+	// lease a regeneration landing mid-reconcile deletes the directory under
+	// the read.
+	generated, release, ok := r.Store.Lease()
 	if !ok {
 		// No platform to judge against. Not a refusal: the platform's absence
 		// says nothing about the claim, and writing a verdict here would make
@@ -131,6 +136,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 			status.PlatformNotReadyReason,
 			"No platform has been generated yet, so the claim cannot be judged")
 	}
+	defer release()
 
 	// Acceptance re-derives every fact it judges: nothing on the claim is
 	// trusted (enhancement 0015 D11). The catalog is the first operand, so it
@@ -192,7 +198,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 			holder, claim.Spec.Catalog))
 	}
 
-	return r.accept(ctx, patcher, &claim)
+	return ctrl.Result{}, r.accept(ctx, patcher, &claim)
 }
 
 // holderOf returns the name of the claim that holds this claim's provider
@@ -334,16 +340,22 @@ func (r *TransformerRegistrationReconciler) checkProviderIdentity(
 // accept records the claim as accepted. It does not activate: status.active
 // stays false until an accepted claim's provider is reported serving, which
 // is a later change.
+//
+// No requeue: an accepted claim is re-judged when its own spec changes (the
+// generation predicate) or when the platform it was judged against is
+// regenerated (the Platform watch), and nothing else can invalidate the
+// verdict. A newly created competitor cannot take the provider from it,
+// because a claim created later cannot carry an earlier creationTimestamp.
 func (r *TransformerRegistrationReconciler) accept(
 	ctx context.Context,
 	patcher *patch.SerialPatcher,
 	claim *releasesv1alpha1.TransformerRegistration,
-) (ctrl.Result, error) {
+) error {
 	claim.Status.ObservedGeneration = claim.Generation
 	claim.Status.Accepted = true
 	status.MarkReadyWithReason(claim, status.AcceptedReason,
 		"Claim accepted for catalog %s at %s", claim.Spec.Catalog, claim.Spec.Version)
-	return ctrl.Result{}, r.patchStatus(ctx, patcher, claim)
+	return r.patchStatus(ctx, patcher, claim)
 }
 
 // refuse records a refusal naming what failed and the value that failed it.

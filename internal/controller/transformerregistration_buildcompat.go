@@ -34,11 +34,11 @@ import (
 // to the directory the Platform reconciler wrote it to.
 const platformModFileName = "cue.mod/module.cue"
 
-// opmNamespaceSuffixes are the module-path prefixes D8's comparison covers. A
+// opmNamespacePrefixes are the module-path prefixes D8's comparison covers. A
 // catalog's third-party dependencies are not the platform's business: only a
 // path both sides could share can make a provider build-incompatible with the
 // platform it would run in.
-var opmNamespaceSuffixes = []string{"opmodel.dev/", "testing.opmodel.dev/"}
+var opmNamespacePrefixes = []string{"opmodel.dev/", "testing.opmodel.dev/"}
 
 // platformRequirements reads the dependency versions the generated platform
 // module committed, keyed by major-qualified path exactly as
@@ -164,7 +164,7 @@ func conservativeRefusal(base, qualified, catalogVersion, platformVersion, why s
 // inOPMNamespace reports whether a module path lives in a namespace the
 // platform and a provider catalog can share.
 func inOPMNamespace(path string) bool {
-	for _, prefix := range opmNamespaceSuffixes {
+	for _, prefix := range opmNamespacePrefixes {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}

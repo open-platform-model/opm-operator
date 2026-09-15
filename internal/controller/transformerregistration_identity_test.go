@@ -44,10 +44,12 @@ import (
 // uuid label on rendered output fails here rather than silently widening the
 // identity signal acceptance relies on.
 //
-// The rendered object is byte-for-byte the golden fixture in catalog_opm's
-// opm/transformers/transformer_registration_transformer.cue, whose
-// _testTransformerRegistrationLabelCount guard asserts the label count is
-// exactly four.
+// The rendered object has the same shape as the golden fixture in
+// catalog_opm's opm/transformers/transformer_registration_transformer.cue,
+// whose _testTransformerRegistrationLabelCount guard asserts the label count
+// is exactly four. Only the managed-by value differs: the fixture renders
+// under the CLI's test runtime name, while a claim reaching this controller
+// was rendered by the operator.
 const (
 	spikeClaimInstanceName      = "k8up"
 	spikeClaimInstanceNamespace = "backup-system"

@@ -55,17 +55,26 @@ Acceptance SHALL derive the provider-fulfilled contract set from the acquired ca
 
 ### Requirement: The claim must come from the instance it names
 
-Acceptance SHALL require the claim's instance-identity owner labels to exist and to agree with `spec.providerRef`, refusing the claim otherwise (enhancement 0015 D11's check deferred to this slice). `providerRef` is stamped by the renderer and cannot be authored, so a mismatch means the object did not come from the instance it names — a hand-applied stray, which would otherwise point a later health gate at the wrong package.
+Acceptance SHALL verify that the `ModuleInstance` named by `spec.providerRef` exists and that its `status.inventory` owns this claim, refusing the claim otherwise (enhancement 0015 D11's check deferred to this slice). `providerRef` is stamped by the renderer and cannot be authored, so a claim its named instance does not own did not come from that instance — a hand-applied stray, which would otherwise point a later health gate at the wrong package.
 
-#### Scenario: A claim whose labels disagree with providerRef is refused
+The check SHALL be grounded in the inventory rather than in the claim's labels. D11 suggests the owner labels, but measured, a rendered claim carries an instance *name* label and no namespace-bearing or uuid label, while `providerRef` carries a namespace and a name; a label-only check would therefore admit a stray placed by any instance sharing the provider's name in another namespace — the exact substitution the check exists to stop. The inventory is already this repo's ownership record by constitutional principle.
 
-- **WHEN** a claim's instance-identity owner labels name a different instance than `spec.providerRef`
+An instance whose inventory has not settled SHALL leave the claim awaiting a verdict rather than refused: a claim can reach the API server before its owner's status does, and a race is not a verdict.
+
+#### Scenario: A claim its named instance does not own is refused
+
+- **WHEN** the `ModuleInstance` named by `spec.providerRef` has a settled inventory that does not hold this claim
 - **THEN** the claim is refused, naming both identities
 
-#### Scenario: A claim carrying no owner labels is refused
+#### Scenario: A claim naming an instance that does not exist is refused
 
-- **WHEN** a claim carries no instance-identity owner labels
+- **WHEN** `spec.providerRef` names a `ModuleInstance` that is absent
 - **THEN** the claim is refused as not rendered output, rather than accepted on the strength of its own `providerRef`
+
+#### Scenario: A claim racing its provider's inventory is not refused
+
+- **WHEN** the `ModuleInstance` named by `spec.providerRef` exists but has written no inventory yet
+- **THEN** no verdict is recorded and the claim is retried
 
 ### Requirement: A second claim for one provider is refused naming the claimant
 

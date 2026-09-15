@@ -99,6 +99,7 @@ The inventory route is confirmed viable and the recorded fallback stays unused.
 - [Refusing an unresolvable coordinate and a wrong-kind artifact differently costs a distinguishing branch] -> required by the spec: one is a registry or coordinate problem and one is an authoring problem, and collapsing them sends the claimant to the wrong fix.
 - [Acceptance fetches a catalog on every reconcile] -> CUE caches the module zip on disk, and a claim reconciles on generation change. If this proves hot, the resolved verdict is already on status and `observedGeneration` gates recomputation.
 - [D12's oldest-wins can hand acceptance to a claim whose instance is being deleted] -> out of scope here; the finalizer and the lifecycle edges are the next change, which is where a holder handoff belongs.
+- [D12's oldest-wins picks the holder without regard to whether that claim passes the other checks, so two claims whose older one is refused leave neither accepted] -> accepted deliberately. The spec requires at most one acceptance, not exactly one, and deciding the holder on acceptance outcomes would reintroduce the reconcile-order dependence the immutable-fields rule was chosen to remove. Both claims carry a diagnostic naming what failed, so the operator sees the older claim's own refusal alongside the newer one's duplicate refusal.
 
 ## Open Questions
 

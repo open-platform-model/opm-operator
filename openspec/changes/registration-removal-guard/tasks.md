@@ -10,7 +10,7 @@ anything is built on it.
 - [x] 1.1 Measure the persist candidate: what the render result already exposes about instance -> component -> transformer -> contract, where a `ModuleInstance` status write would land, and how stale the field would be under normal reconcile cadence. Verify: the finding names a concrete field shape and a concrete write site, or says why neither is available.
 - [x] 1.2 Measure the recompute candidate: what re-deriving one instance's demand costs at finalizer time, and what happens when the registry is unreachable. Verify: the failure mode is measured, not reasoned about — the question is whether a delete can be blocked by an unrelated outage.
 - [x] 1.3 Write the outcome into design.md, replacing "Candidate: persist demand at render time" with the decision and its evidence, and answer Open Question 1. If neither candidate is affordable, say so plainly and stop: the honest outcome is to re-scope with the enhancement rather than ship a guard that does not guard. Verify: design.md no longer describes two candidates; a reader can tell which was chosen and why.
-- [ ] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(design): settle where the registration dependent count comes from`.
+- [x] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(design): settle where the registration dependent count comes from`.
 
 ## 2. The dependent count
 

@@ -12,9 +12,9 @@ assumptions to prove, so section 1 is not a spike.
 
 ## 2. D2 — one provider per contract
 
-- [ ] 2.1 Refuse a claim whose `provides` names a contract an enabled `Platform.spec.registry` subscription already provides, naming the contract and the subscribed catalog. Read the contracts from the built platform in `internal/platform.Store`, requeueing rather than judging when it is absent, as the acceptance path already does. Verify: the refusal names both, and a claim judged before the platform is built is requeued.
-- [ ] 2.2 Extend the refusal to contracts held by another **active** claim, naming the holder. An accepted but inactive claim does not hold a contract (design.md § D2's arm). Verify: three tests — refused against an active claim, not refused against an inactive one, and the refusal names the holder.
-- [ ] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): refuse a second provider for one contract`.
+- [x] 2.1 Refuse a claim whose `provides` names a contract an enabled `Platform.spec.registry` subscription already provides, naming the contract and the subscribed catalog. Read the contracts from the built platform in `internal/platform.Store`, requeueing rather than judging when it is absent, as the acceptance path already does. Verify: the refusal names both, and a claim judged before the platform is built is requeued.
+- [x] 2.2 Extend the refusal to contracts held by another **active** claim, naming the holder. An accepted but inactive claim does not hold a contract (design.md § D2's arm). Verify: three tests — refused against an active claim, not refused against an inactive one, and the refusal names the holder.
+- [x] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): refuse a second provider for one contract`.
 
 ## 3. Docs
 

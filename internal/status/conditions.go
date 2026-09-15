@@ -104,6 +104,17 @@ const (
 	// activation.
 	ProviderNotReadyReason = "ProviderNotReady"
 
+	// ContractSubscribedReason: the claim provides a contract an enabled
+	// Platform.spec.registry subscription's catalog already provides
+	// (enhancement 0015 D2). Distinct from ContractClaimed because the fix is
+	// a different object: a platform edit, not a module removal.
+	ContractSubscribedReason = "ContractSubscribed"
+
+	// ContractClaimedReason: the claim provides a contract another ACTIVE
+	// claim already provides. An accepted but inactive claim holds nothing,
+	// so it never produces this refusal.
+	ContractClaimedReason = "ContractClaimed"
+
 	// DuplicateClaimReason: another claim already holds this provider catalog
 	// (enhancement 0015 D12). The message names the holder, so an operator
 	// can see which object to remove.

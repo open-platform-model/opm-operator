@@ -206,6 +206,37 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 			holder, claim.Spec.Catalog))
 	}
 
+	// D2's second arm: one contract, one provider. Distinct from the D12
+	// refusal above, which is about two claims naming the same CATALOG; this
+	// one is about two providers of the same CONTRACT, which can arrive from
+	// different catalogs entirely.
+	providers, err := subscriptionProviders(generated.Platform)
+	if err != nil {
+		// The platform's providers could not be read, so the claim cannot be
+		// judged against them. Not a refusal, for the same reason an absent
+		// platform is not one.
+		return r.deferVerdict(ctx, patcher, &claim, status.PlatformNotReadyReason,
+			fmt.Sprintf("The generated platform's contract providers could not be read: %v", err))
+	}
+	if contract, catalogPath := subscribedContract(claim.Spec.Provides, providers); contract != "" {
+		return r.refuse(ctx, patcher, &claim, status.ContractSubscribedReason, fmt.Sprintf(
+			"Contract %s is already provided by subscribed catalog %s; a contract has exactly one provider, "+
+				"so disable that subscription or withdraw this claim",
+			contract, catalogPath))
+	}
+
+	contract, contractHolder, err := r.activeContractHolder(ctx, &claim)
+	if err != nil {
+		return r.deferVerdict(ctx, patcher, &claim, status.ContractClaimedReason,
+			fmt.Sprintf("Competing providers of this claim's contracts could not be listed: %v", err))
+	}
+	if contract != "" {
+		return r.refuse(ctx, patcher, &claim, status.ContractClaimedReason, fmt.Sprintf(
+			"Contract %s is already provided by active claim %s; a contract has exactly one provider, "+
+				"so remove one of the two providers",
+			contract, contractHolder))
+	}
+
 	return ctrl.Result{}, r.accept(ctx, patcher, &claim, provider)
 }
 

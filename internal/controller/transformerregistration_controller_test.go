@@ -50,13 +50,46 @@ var claimCounter int
 // D12 duplicate. A spec that wants two claims competing passes the same path
 // to createClaimFor.
 func createClaim(ctx context.Context, namespace string) *releasesv1alpha1.TransformerRegistration {
-	return createClaimFor(ctx, namespace, fmt.Sprintf("opmodel.dev/catalogs/%s@v1", namespace))
+	return createClaimFor(ctx, namespace, claimCatalogFor(namespace))
 }
 
-// createClaimFor applies a well-formed claim for the named provider catalog.
-// The CRD requires the dot-joined name, so the object name is derived from
-// the provider instance rather than chosen.
+// createClaimFor applies a well-formed claim for the named provider catalog,
+// listing the contract every spec that does not care about contracts uses.
 func createClaimFor(ctx context.Context, namespace, catalogPath string) *releasesv1alpha1.TransformerRegistration {
+	return createClaimListing(ctx, namespace, catalogPath, backupTrait)
+}
+
+// createClaimProviding applies a well-formed claim naming a provider catalog
+// of its own and listing the given contracts.
+//
+// A spec that leaves an ACTIVE claim behind must list contracts of its own
+// (claimContract): the suite shares one API server, D2 gives a contract
+// exactly one provider cluster-wide, and an active claim holding the shared
+// contract would refuse every later spec that claims it.
+func createClaimProviding(ctx context.Context, namespace string, provides ...string) *releasesv1alpha1.TransformerRegistration {
+	return createClaimListing(ctx, namespace, claimCatalogFor(namespace), provides...)
+}
+
+// claimCatalogFor is the provider catalog path a spec's own claim names.
+func claimCatalogFor(namespace string) string {
+	return fmt.Sprintf("opmodel.dev/catalogs/%s@v1", namespace)
+}
+
+// claimContract is a provider-fulfilled contract FQN unique to the calling
+// spec's namespace. See createClaimProviding for why that matters.
+func claimContract(namespace string) string {
+	return fmt.Sprintf("opmodel.dev/catalogs/opm/traits/%s@v1alpha1", namespace)
+}
+
+// createClaimListing applies a well-formed claim for the named provider
+// catalog listing the given contracts. The CRD requires the dot-joined name,
+// so the object name is derived from the provider instance rather than
+// chosen.
+func createClaimListing(
+	ctx context.Context,
+	namespace, catalogPath string,
+	provides ...string,
+) *releasesv1alpha1.TransformerRegistration {
 	const name = providerInstanceName
 	claim := &releasesv1alpha1.TransformerRegistration{
 		ObjectMeta: metav1.ObjectMeta{
@@ -65,7 +98,7 @@ func createClaimFor(ctx context.Context, namespace, catalogPath string) *release
 		Spec: releasesv1alpha1.TransformerRegistrationSpec{
 			Catalog:  catalogPath,
 			Version:  "1.0.0",
-			Provides: []string{backupTrait},
+			Provides: provides,
 			ProviderRef: releasesv1alpha1.ProviderReference{
 				Namespace: namespace,
 				Name:      name,

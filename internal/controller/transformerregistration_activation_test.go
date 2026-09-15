@@ -32,8 +32,8 @@ import (
 
 // setProviderReadiness sets the Ready condition of the provider instance in
 // the given namespace, which is what the activation gate reads. The reason
-// varies with the status so a transition back to ready is a real condition
-// change rather than a no-op the flux setter would collapse.
+// varies with the status, so a transition back to ready is a real condition
+// change rather than one the flux setter would collapse.
 func setProviderReadiness(ctx context.Context, namespace string, ready bool) {
 	var instance releasesv1alpha1.ModuleInstance
 	Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -64,22 +64,38 @@ func activeOf(claim releasesv1alpha1.TransformerRegistration) *metav1.Condition 
 	return active
 }
 
+// activatedClaim leaves an accepted, ACTIVE claim in the namespace, providing
+// the given contracts, and returns it as stored.
+func activatedClaim(
+	ctx context.Context,
+	namespace string,
+	provides ...string,
+) releasesv1alpha1.TransformerRegistration {
+	claim := createClaimProviding(ctx, namespace, provides...)
+	ownProvidedInventory(ctx, namespace, claim.Name)
+	setProviderReadiness(ctx, namespace, true)
+
+	activated := judge(ctx, acceptanceReconciler(&stubCatalogs{cat: providerCatalog(provides...)}), claim.Name)
+	Expect(activated.Status.Active).To(BeTrue())
+	return activated
+}
+
 var _ = Describe("TransformerRegistration activation: D3 — the readiness gate", func() {
 	Context("the ModuleInstance watch", func() {
 		It("enqueues only the claims whose providerRef names the changed instance", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
-			claim := createClaim(ctx, ns)
+			claim := createClaimProviding(ctx, ns, claimContract(ns))
 			ownProvidedInventory(ctx, ns, claim.Name)
-
-			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
 
 			var provider releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Namespace: ns, Name: providerInstanceName,
 			}, &provider)).To(Succeed())
 
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(claimContract(ns))})
 			requests := r.mapInstanceToRegistrations(ctx, &provider)
+
 			Expect(requests).To(HaveLen(1))
 			Expect(requests[0].Name).To(Equal(claim.Name))
 		})
@@ -87,13 +103,13 @@ var _ = Describe("TransformerRegistration activation: D3 — the readiness gate"
 		It("enqueues no claim for an instance no claim names", func() {
 			ctx := context.Background()
 
-			// The suite's other specs have left claims in the cluster, so a
-			// list-all-and-enqueue map func would return them all here.
+			// The suite's other specs have left claims all over the cluster,
+			// so a list-all-and-enqueue map func would return every one here.
 			unrelated := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "not-a-provider", Namespace: "default"},
 			}
 
-			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog()})
 			Expect(r.mapInstanceToRegistrations(ctx, unrelated)).To(BeEmpty())
 		})
 	})
@@ -102,10 +118,11 @@ var _ = Describe("TransformerRegistration activation: D3 — the readiness gate"
 		It("stays inactive while its provider is not ready, saying what it waits on", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
-			claim := createClaim(ctx, ns)
+			contract := claimContract(ns)
+			claim := createClaimProviding(ctx, ns, contract)
 			ownProvidedInventory(ctx, ns, claim.Name)
 
-			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(contract)})
 			judged := judge(ctx, r, claim.Name)
 
 			Expect(judged.Status.Accepted).To(BeTrue())
@@ -122,10 +139,11 @@ var _ = Describe("TransformerRegistration activation: D3 — the readiness gate"
 		It("activates when its provider becomes ready, with no change to its own spec", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
-			claim := createClaim(ctx, ns)
+			contract := claimContract(ns)
+			claim := createClaimProviding(ctx, ns, contract)
 			ownProvidedInventory(ctx, ns, claim.Name)
 
-			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(contract)})
 
 			inactive := judge(ctx, r, claim.Name)
 			Expect(inactive.Status.Active).To(BeFalse())
@@ -148,12 +166,12 @@ var _ = Describe("TransformerRegistration activation: D3 — the readiness gate"
 		It("stays inactive even though its provider is ready", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
-			claim := createClaim(ctx, ns) // claims backupTrait
+			claim := createClaimProviding(ctx, ns, claimContract(ns))
 			ownProvidedInventory(ctx, ns, claim.Name)
 			setProviderReadiness(ctx, ns, true)
 
-			// A catalog implementing nothing: the claim is refused on D11
-			// before the gate is anywhere near.
+			// A catalog implementing nothing: the claim is refused on D11,
+			// long before the gate.
 			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog()})
 			judged := judge(ctx, r, claim.Name)
 
@@ -169,11 +187,12 @@ var _ = Describe("TransformerRegistration activation: D3 — the readiness gate"
 		It("keeps an active claim active through a provider outage and recovery", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
-			claim := createClaim(ctx, ns)
+			contract := claimContract(ns)
+			claim := createClaimProviding(ctx, ns, contract)
 			ownProvidedInventory(ctx, ns, claim.Name)
 			setProviderReadiness(ctx, ns, true)
 
-			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(contract)})
 
 			activated := judge(ctx, r, claim.Name)
 			Expect(activated.Status.Active).To(BeTrue())

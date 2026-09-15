@@ -22,3 +22,12 @@ Three sections. design.md carries no unverified assumption about this repo; its 
 - [x] 3.2 Assert the refusals: a claim with no `spec.catalog` is rejected naming the field; a claim named without a dot is rejected with the CEL message; and cluster scope is asserted by what the API server stores. **Corrected against measurement:** a claim carrying `metadata.namespace` is NOT rejected — measured at Kubernetes 1.36, `rest.BeforeCreate` clears the namespace on a cluster-scoped kind before validation runs, so the create is accepted and the namespace is silently stripped. The test asserts the stored namespace is empty, which is what the spec's scenario ("a TransformerRegistration object carries no namespace") actually requires. Verify: each failing case asserts the API server's message, not just that an error occurred.
 - [x] 3.3 Assert the accepted edge: `spec.provides` as an empty list is accepted. Verify: the test names why in a comment, so it is not "fixed" later into a refusal.
 - [x] 3.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(crdvalidation): cover the TransformerRegistration admission rules`.
+
+## 4. RBAC admission tests
+
+Added after verification (W1): the spec's "Creating a claim requires platform-admin RBAC"
+requirement shipped with both its scenarios untested, so the security property the change
+exists to establish was unasserted.
+
+- [x] 4.1 Add `test/integration/crdvalidation/transformerregistration_rbac_test.go`: impersonate a tenant ServiceAccount as `internal/apply` does and assert the create is refused with `IsForbidden` naming the subject; then bind the ClusterRole **read from `config/rbac/`**, not a copy, and assert the same create succeeds. Also assert the shipped role has no ClusterRoleBinding. Verify: envtest runs the apiserver with `--authorization-mode=RBAC` (controller-runtime v0.24.1), so the refusal is authorization rather than validation; the two cases form a differential, so neither passes vacuously.
+- [x] 4.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(rbac): cover the platform-admin gate on transformer registrations`.

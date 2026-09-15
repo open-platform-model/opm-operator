@@ -20,8 +20,7 @@ tasks:
     deps: [":dev:manifests", ":dev:generate", ":tool:kustomize"]
     cmds:
       - mkdir -p dist
-      - 'cd config/manager && "{{.KUSTOMIZE}}" edit set image controller={{.IMG}}'
-      - '"{{.KUSTOMIZE}}" build config/default > dist/install.yaml'
+      - 'hack/render-config.sh "{{.KUSTOMIZE}}" "{{.IMG}}" config/default > dist/install.yaml'
 
   ## DEPLOY ##
 
@@ -45,8 +44,7 @@ tasks:
     desc: Deploy the controller manager
     deps: [":dev:manifests", ":tool:kustomize", ":kind:load", "crds"]
     cmds:
-      - 'cd config/manager && "{{.KUSTOMIZE}}" edit set image controller={{.IMG}}'
-      - '"{{.KUSTOMIZE}}" build config/default | "{{.KUBECTL}}" apply -f -'
+      - 'hack/render-config.sh "{{.KUSTOMIZE}}" "{{.IMG}}" config/default | "{{.KUBECTL}}" apply -f -'
       - |
         {{.KUBECTL}} -n opm-operator-system patch deployment opm-operator-controller-manager \
           --type=json \

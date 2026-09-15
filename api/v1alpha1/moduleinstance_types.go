@@ -133,6 +133,25 @@ type ModuleInstanceStatus struct {
 	// +optional
 	Inventory *Inventory `json:"inventory,omitempty"`
 
+	// RequiredContracts lists every contract FQN this instance's components
+	// declare, sorted and deduplicated, as the last successful render
+	// reported them. It is the instance side of the removal guard
+	// (enhancement 0015 D3, D16): a TransformerRegistration counts its
+	// dependents by intersecting this with its own spec.provides, so a
+	// provider cannot be deleted, or shrink its provides, out from under
+	// the instances still demanding what it serves.
+	//
+	// Derived, never authored. The contracts are read off the synthesized
+	// instance's components, which is the same keyspace the render's
+	// matching compares, so nothing a module author writes into spec can
+	// raise or lower the count. A reconcile that does not render — a failed
+	// render, a suspended instance, a CLI-owned one — leaves the previous
+	// value: a stale entry over-reports demand and blocks a deletion that
+	// could have proceeded, which is the safe direction for a guard.
+	// +listType=atomic
+	// +optional
+	RequiredContracts []string `json:"requiredContracts,omitempty"`
+
 	// +optional
 	History []HistoryEntry `json:"history,omitempty"`
 

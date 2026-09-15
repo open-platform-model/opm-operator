@@ -314,6 +314,19 @@ func ReconcileModuleInstance(
 		mi.Status.InstanceUUID = uuid
 	}
 
+	// Persist the contracts this instance's components demand (enhancement
+	// 0015 D3, D16). Written here rather than in the success path because
+	// the demand is a fact about the render, not about the apply: a
+	// regenerated platform re-enqueues every instance, and the render that
+	// follows is frequently a no-op for apply while being the only evidence
+	// that the demand moved. The no-op branch of the deferred patch commits
+	// it along with everything else on Status.
+	//
+	// Every path that returns before this point leaves the previous value,
+	// which over-reports demand and so blocks a claim deletion that could
+	// have proceeded. That is the direction a guard should fail in.
+	mi.Status.RequiredContracts = renderResult.RequiredContracts
+
 	lastApplied := status.DigestSet{
 		Source:    mi.Status.LastAppliedSourceDigest,
 		Config:    mi.Status.LastAppliedConfigDigest,

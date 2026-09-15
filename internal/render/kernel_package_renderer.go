@@ -84,7 +84,16 @@ func (r *KernelPackageRenderer) Render(
 		return KindModuleInstance, nil, fmt.Errorf("rendering module instance: %w", err)
 	}
 
-	result, err := resultFromRender(out, rec.Identity)
+	// The demand is computed here too, though no ModulePackage status field
+	// consumes it today: both renderers fill the same RenderResult, and a
+	// field that is populated down one path and silently empty down the
+	// other is the kind of difference a later reader reads as meaningful.
+	contracts, err := declaredContracts(inst)
+	if err != nil {
+		return KindModuleInstance, nil, fmt.Errorf("reading the instance's contract demand: %w", err)
+	}
+
+	result, err := resultFromRender(out, rec.Identity, contracts)
 	if err != nil {
 		return KindModuleInstance, nil, err
 	}

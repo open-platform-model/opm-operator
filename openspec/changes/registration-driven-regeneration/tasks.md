@@ -23,10 +23,10 @@ active set is always empty and every test here is vacuous.
 
 ## 3. Platform status carries the identity and the union
 
-- [ ] 3.1 Add the package identity and the resolved registry union to `PlatformStatus`, each union entry indicating whether it came from an authored subscription or an active claim. Then `task dev:manifests dev:generate`. Verify: the generated CRD carries both; `zz_generated.deepcopy.go` gains the new types.
-- [ ] 3.2 Write both on every generation, and document in the field's doc comment that the identity — not `status.active` on a claim — is the authoritative answer to what a render is building against, because the two reconcilers are eventually consistent (design.md § the claim reconciler stays the judge). Verify: the union follows the active set in both directions; the doc comment states the consistency caveat.
-- [ ] 3.3 Report the consumed identity on every render, so a render is attributable to an exact registry state. Verify: a render against a superseded package reports the superseded identity, not the current one.
-- [ ] 3.4 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(api): surface the effective registry and its package identity`.
+- [x] 3.1 Add the package identity and the resolved registry union to `PlatformStatus`, each union entry indicating whether it came from an authored subscription or an active claim. Then `task dev:manifests dev:generate`. Verify: the generated CRD carries both; `zz_generated.deepcopy.go` gains the new types.
+- [x] 3.2 Write both on every generation, and document in the field's doc comment that the identity — not `status.active` on a claim — is the authoritative answer to what a render is building against, because the two reconcilers are eventually consistent (design.md § the claim reconciler stays the judge). Verify: the union follows the active set in both directions; the doc comment states the consistency caveat.
+- [x] 3.3 Report the consumed identity on every render, so a render is attributable to an exact registry state. Verify: a render against a superseded package reports the superseded identity, not the current one.
+- [x] 3.4 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(api): surface the effective registry and its package identity`.
 
 ## 4. The acceptance-regeneration loop
 

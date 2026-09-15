@@ -95,7 +95,7 @@ func (r *KernelModuleRenderer) RenderModule(
 		return nil, fmt.Errorf("rendering module instance: %w", err)
 	}
 
-	return resultFromRender(out)
+	return resultFromRender(out, rec.Identity)
 }
 
 // synthesize acquires the module and synthesizes the source-carrying
@@ -179,7 +179,7 @@ func cueFindings(err error) string {
 // entries built through the existing ToUnstructured bridge, the advisory
 // rows worded as warnings (renderWarnings), and the rows themselves
 // (unhandled traits, resolved versions) carried through for the reconciler.
-func resultFromRender(out *kernel.RenderResult) (*RenderResult, error) {
+func resultFromRender(out *kernel.RenderResult, identity platformstore.PackageIdentity) (*RenderResult, error) {
 	resources := make([]*core.Resource, 0, len(out.Compiled))
 	for _, c := range out.Compiled {
 		resources = append(resources, core.ResourceFromCompiled(c))
@@ -196,5 +196,6 @@ func resultFromRender(out *kernel.RenderResult) (*RenderResult, error) {
 		Warnings:         renderWarnings(out.Diagnostics),
 		UnhandledTraits:  out.Diagnostics.UnhandledTraits,
 		ResolvedVersions: out.Diagnostics.ResolvedVersions,
+		PlatformIdentity: identity.String(),
 	}, nil
 }

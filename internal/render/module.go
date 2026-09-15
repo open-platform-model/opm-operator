@@ -40,6 +40,14 @@ type RenderResult struct {
 	// the reconciler logs them at debug level, and a row marked Newer is the
 	// fact behind a skew warning.
 	ResolvedVersions []kernel.ResolvedVersion
+
+	// PlatformIdentity is the identity of the generated platform package this
+	// render built against, in its string form (enhancement 0015 D13, D17):
+	// the Platform CR generation plus a digest of the active claims' catalog
+	// coordinates. A render holds its package under a lease for its whole
+	// duration, so this is the exact registry state the render consumed, even
+	// when a newer package was generated while it ran.
+	PlatformIdentity string
 }
 
 // buildInventoryEntries converts rendered resources to inventory entries.

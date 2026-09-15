@@ -125,6 +125,8 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				"the fixture module must render to at least one resource")
 			Expect(res.Warnings).To(BeEmpty(), "a module pinning the platform's catalog build renders without warnings")
 			Expect(res.ResolvedVersions).NotTo(BeEmpty(), "the build reports the resolved-versions rows (0019 D18)")
+			Expect(res.PlatformIdentity).To(Equal(store.Identity().String()),
+				"the render reports the identity of the package it built against (0015 D13)")
 			Expect(store.Leased()).To(BeEmpty(), "the render releases its lease on return")
 			Expect(configMapMessage(res)).To(Equal("kernel hello"), "the supplied values reach the rendered object")
 
@@ -150,6 +152,54 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			// One inventory entry per rendered resource, built via the existing
 			// ToUnstructured bridge.
 			Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))
+		})
+
+		It("reports the superseded identity when a newer package lands mid-render", func() {
+			renderer := &render.KernelModuleRenderer{
+				Kernel:      k,
+				Store:       store,
+				Registry:    registry,
+				RuntimeName: core.LabelManagedByControllerValue,
+			}
+
+			consumed, ok := store.Generated()
+			Expect(ok).To(BeTrue())
+
+			type outcome struct {
+				res *render.RenderResult
+				err error
+			}
+			results := make(chan outcome, 1)
+			hello := fixtures.Must(GinkgoT(), "hello")
+			go func() {
+				defer GinkgoRecover()
+				res, err := renderer.RenderModule(ctx,
+					"kernel-hello-identity", "default",
+					hello.ModulePath, hello.Tag(),
+					nil)
+				results <- outcome{res: res, err: err}
+			}()
+
+			// Supersede the package once the render has taken its lease, or
+			// once it has already returned: either way it is committed to the
+			// package it started against, which is the whole point of the
+			// lease.
+			Eventually(func() bool {
+				return len(store.Leased()) > 0 || len(results) > 0
+			}).Should(BeTrue(), "the render should lease the package it builds against")
+			superseding := consumed
+			superseding.Identity = platformstore.NewPackageIdentity(
+				consumed.Identity.Generation(),
+				[]platformstore.ClaimCoordinate{{Catalog: "opmodel.dev/catalogs/k8up@v1", Version: "1.0.0"}},
+			)
+			store.SetGenerated(superseding)
+
+			out := <-results
+			Expect(out.err).NotTo(HaveOccurred())
+			Expect(store.Identity()).To(Equal(superseding.Identity), "a newer package is current")
+			Expect(out.res.PlatformIdentity).To(Equal(consumed.Identity.String()),
+				"a render is attributable to the exact registry state it consumed")
+			Expect(out.res.PlatformIdentity).NotTo(Equal(superseding.Identity.String()))
 		})
 
 		It("takes the module's #config defaults when no values are supplied", func() {

@@ -286,6 +286,64 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 				"the active provider's catalog is a registry entry")
 			Expect(registryText(after.Dir)).To(ContainSubstring(claimCatalogVersion),
 				"pinned at the version the claim named")
+
+			// Status is the Platform's own account of what the render builds
+			// against: the identity, and the union with each entry's source.
+			Expect(fetched.Status.PackageIdentity).To(Equal(after.Identity.String()))
+			Expect(fetched.Status.Registry).To(ConsistOf(
+				releasesv1alpha1.ResolvedRegistryEntry{
+					Catalog: testCatalogPath(),
+					Version: fixtures.CatalogVersion(),
+					Enabled: true,
+					Source:  releasesv1alpha1.RegistryEntrySubscription,
+				},
+				releasesv1alpha1.ResolvedRegistryEntry{
+					Catalog: claimCatalogPath,
+					Version: claimCatalogVersion,
+					Enabled: true,
+					Source:  releasesv1alpha1.RegistryEntryRegistration,
+				},
+			), "the union lists both sources, distinguishing which is which")
+		})
+
+		It("follows the active set in both directions on status.registry", func() {
+			k, reg := buildKernelOrSkip()
+			store := platformstore.NewStore()
+			r := newPlatformReconciler(store, k, reg)
+
+			plat := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type:     "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{testCatalogPath(): {Version: fixtures.CatalogVersion()}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+
+			claim := storeActiveClaim("default."+providerInstanceName, claimCatalogPath, claimCatalogVersion)
+			_, err := r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(catalogsInUnion(fetchPlatform())).To(ContainElement(claimCatalogPath))
+			identityWithClaim := fetchPlatform().Status.PackageIdentity
+
+			// The claim stops being active. The union must shed its catalog.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), claim)).To(Succeed())
+			claim.Status.Active = false
+			Expect(k8sClient.Status().Update(ctx, claim)).To(Succeed())
+			Eventually(func(g Gomega) {
+				var stored releasesv1alpha1.TransformerRegistration
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), &stored)).To(Succeed())
+				g.Expect(stored.Status.Active).To(BeFalse())
+			}).Should(Succeed())
+
+			_, err = r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+			shrunk := fetchPlatform()
+			Expect(catalogsInUnion(shrunk)).NotTo(ContainElement(claimCatalogPath),
+				"the union no longer lists a catalog no claim contributes")
+			Expect(catalogsInUnion(shrunk)).To(ConsistOf(testCatalogPath()))
+			Expect(shrunk.Status.PackageIdentity).NotTo(Equal(identityWithClaim))
+			Expect(shrunk.Status.PackageIdentity).To(Equal(platformIdentity(shrunk.Generation).String()))
 		})
 
 		It("computes from current state, so a stale event regenerates what the state implies", func() {
@@ -405,6 +463,15 @@ func claimObject(catalogPath, version string, accepted, active bool) *releasesv1
 	claim.Status.Accepted = accepted
 	claim.Status.Active = active
 	return &claim
+}
+
+// catalogsInUnion lists the catalogs status.registry reports.
+func catalogsInUnion(plat *releasesv1alpha1.Platform) []string {
+	out := make([]string, 0, len(plat.Status.Registry))
+	for _, entry := range plat.Status.Registry {
+		out = append(out, entry.Catalog)
+	}
+	return out
 }
 
 // fetchPlatform reads the singleton back.

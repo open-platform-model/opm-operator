@@ -180,6 +180,21 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// all name the same package.
 	identity := platformstore.NewPackageIdentity(plat.Generation, claimCoordinates(claims))
 
+	entries, err := platformEntries(&plat, claims)
+	if err != nil {
+		// A stored object predating the CRD-required version field. Nothing
+		// external can change this; the stalled recheck keeps the status
+		// honest without hammering anything.
+		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, err.Error())
+	}
+
+	// The identity and the resolved union are what the tuple resolved to, so
+	// they are written on every generation, the no-op one included: together
+	// they are the Platform's own account of what a render is building
+	// against (0015 D13).
+	plat.Status.PackageIdentity = identity.String()
+	plat.Status.Registry = resolvedRegistry(&plat, entries)
+
 	// Level-computed generation makes a repeat of the same tuple a no-op: the
 	// package held is the package this reconcile would produce, byte for
 	// byte. Skipping it is what bounds a burst of claim activations to one
@@ -192,14 +207,6 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		plat.Status.OperatorVersion = version.Full()
 		status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
 		return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
-	}
-
-	entries, err := platformEntries(&plat, claims)
-	if err != nil {
-		// A stored object predating the CRD-required version field. Nothing
-		// external can change this; the stalled recheck keeps the status
-		// honest without hammering anything.
-		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, err.Error())
 	}
 
 	src, err := r.modFiles()
@@ -306,6 +313,28 @@ func claimCoordinates(claims []releasesv1alpha1.TransformerRegistration) []platf
 		})
 	}
 	return coords
+}
+
+// resolvedRegistry maps the generator's entries to the union Platform status
+// carries: every catalog the generated module pins and imports, with the path
+// it took to get there. An entry whose catalog the CR's spec.registry names
+// is an authored subscription; every other entry came from an active claim,
+// which is exactly how platformEntries folded them in.
+func resolvedRegistry(plat *releasesv1alpha1.Platform, entries []platformmodule.Entry) []releasesv1alpha1.ResolvedRegistryEntry {
+	resolved := make([]releasesv1alpha1.ResolvedRegistryEntry, 0, len(entries))
+	for _, entry := range entries {
+		source := releasesv1alpha1.RegistryEntryRegistration
+		if _, authored := plat.Spec.Registry[entry.Path]; authored {
+			source = releasesv1alpha1.RegistryEntrySubscription
+		}
+		resolved = append(resolved, releasesv1alpha1.ResolvedRegistryEntry{
+			Catalog: entry.Path,
+			Version: entry.Version,
+			Enabled: entry.Enable,
+			Source:  source,
+		})
+	}
+	return resolved
 }
 
 // dirExists reports whether path is an existing directory. The store's record

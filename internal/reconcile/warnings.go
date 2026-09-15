@@ -74,13 +74,20 @@ func (t *WarningTracker) Forget(key types.NamespacedName) {
 }
 
 // reportRenderDiagnostics surfaces what a successful render reported beside
-// its objects: the warnings as events (emitRenderWarnings) and the
-// resolved-versions rows (0019 D18, plain data) in the reconcile log at
-// verbosity 1.
+// its objects: the warnings as events (emitRenderWarnings), the identity of
+// the platform package the render consumed (0015 D13, so the render is
+// attributable to an exact registry state) and the resolved-versions rows
+// (0019 D18, plain data) in the reconcile log.
 func reportRenderDiagnostics(ctx context.Context, tracker *WarningTracker, recorder events.EventRecorder, obj client.Object, result *render.RenderResult) {
 	emitRenderWarnings(tracker, recorder, obj, keyOf(obj), result)
+	log := logf.FromContext(ctx)
+	if result.PlatformIdentity != "" {
+		key := keyOf(obj)
+		log.Info("Rendered against platform package",
+			"name", key.Name, "namespace", key.Namespace, "platformIdentity", result.PlatformIdentity)
+	}
 	if len(result.ResolvedVersions) > 0 {
-		logf.FromContext(ctx).V(1).Info("Resolved module versions", "resolvedVersions", result.ResolvedVersions)
+		log.V(1).Info("Resolved module versions", "resolvedVersions", result.ResolvedVersions)
 	}
 }
 

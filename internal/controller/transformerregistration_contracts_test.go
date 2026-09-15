@@ -79,9 +79,9 @@ func contractReconciler(
 	r := acceptanceReconciler(catalogs)
 	store := platformstore.NewStore()
 	store.SetGenerated(platformstore.Generated{
-		Generation: 1,
-		Dir:        platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
-		Platform:   platformProviding(byCatalog),
+		Identity: platformIdentity(1),
+		Dir:      platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
+		Platform: platformProviding(byCatalog),
 	})
 	r.Store = store
 	return r
@@ -142,8 +142,8 @@ var _ = Describe("TransformerRegistration acceptance: D2 — one provider per co
 			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(contract)})
 			store := platformstore.NewStore()
 			store.SetGenerated(platformstore.Generated{
-				Generation: 1,
-				Dir:        platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
+				Identity: platformIdentity(1),
+				Dir:      platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
 			})
 			r.Store = store
 

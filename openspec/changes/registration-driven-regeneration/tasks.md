@@ -9,10 +9,10 @@ active set is always empty and every test here is vacuous.
 
 ## 1. The store holds one package per identity
 
-- [ ] 1.1 Introduce the package identity — the `Platform` CR generation plus the sorted `catalog@version` list of active claims — as a value type with a stable string form, and unit-test that the same inputs yield the same identity and any change yields a different one. Verify: ordering of the input claim list does not change the identity.
-- [ ] 1.2 Re-key `internal/platform.Store`: `generated`, the current-package lookup and `leases` move from `generation int64` to the identity. Move all four callers in the same commit — `platform_controller.go` (`SetGenerated`), both renderers (`Lease`) and `transformerregistration_controller.go` (`Lease`) — because `Generated.Generation` and `Leased() []int64` are read by callers, so the key is not encapsulated (design.md § The store's key is load-bearing in four places). Verify: lease semantics are unchanged — a superseded package stays readable while held and is reclaimed when released; the render-path tests pass untouched.
-- [ ] 1.3 Follow the Platform reconciler's prune to the new key, so a superseded package's directory survives while leased. Verify: a test regenerates while a lease is open and asserts the old directory is not removed.
-- [ ] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `refactor(platform): hold one generated package per identity`.
+- [x] 1.1 Introduce the package identity — the `Platform` CR generation plus the sorted `catalog@version` list of active claims — as a value type with a stable string form, and unit-test that the same inputs yield the same identity and any change yields a different one. Verify: ordering of the input claim list does not change the identity.
+- [x] 1.2 Re-key `internal/platform.Store`: `generated`, the current-package lookup and `leases` move from `generation int64` to the identity. Move all four callers in the same commit — `platform_controller.go` (`SetGenerated`), both renderers (`Lease`) and `transformerregistration_controller.go` (`Lease`) — because `Generated.Generation` and `Leased() []int64` are read by callers, so the key is not encapsulated (design.md § The store's key is load-bearing in four places). Verify: lease semantics are unchanged — a superseded package stays readable while held and is reclaimed when released; the render-path tests pass untouched.
+- [x] 1.3 Follow the Platform reconciler's prune to the new key, so a superseded package's directory survives while leased. Verify: a test regenerates while a lease is open and asserts the old directory is not removed.
+- [x] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `refactor(platform): hold one generated package per identity`.
 
 ## 2. Regeneration reads the active-claim set
 

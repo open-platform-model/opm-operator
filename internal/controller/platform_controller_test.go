@@ -48,10 +48,27 @@ import (
 // clusterRequest is the reconcile request for the singleton Platform.
 var clusterRequest = ctrl.Request{NamespacedName: client.ObjectKey{Name: platformSingletonName}}
 
+// platformIdentity is the identity the reconciler generates a package under
+// for a CR generation, with no claim active: the whole of this suite, which
+// creates none.
+func platformIdentity(gen int64) platformstore.PackageIdentity {
+	return platformstore.NewPackageIdentity(gen, nil)
+}
+
+// platformIdentities maps generations to the directory names their packages
+// occupy, for comparing against Layout.Packages.
+func platformIdentities(gens ...int64) []string {
+	out := make([]string, 0, len(gens))
+	for _, gen := range gens {
+		out = append(out, platformIdentity(gen).String())
+	}
+	return out
+}
+
 // generatedMarker returns a distinct generated-module record usable as a store
 // sentinel for identity assertions.
 func generatedMarker(gen int64) platformstore.Generated {
-	return platformstore.Generated{Generation: gen, Dir: "/nonexistent/gen-marker", Platform: &platform.Platform{}}
+	return platformstore.Generated{Identity: platformIdentity(gen), Dir: "/nonexistent/gen-marker", Platform: &platform.Platform{}}
 }
 
 // newPlatformReconciler builds a PlatformReconciler over the given store with a
@@ -197,7 +214,7 @@ var _ = Describe("Platform Controller", func() {
 
 			_, ok := store.Generated()
 			Expect(ok).To(BeFalse(), "store should report no held platform after the Platform is gone")
-			Expect(store.Generation()).To(BeZero())
+			Expect(store.Identity().IsZero()).To(BeTrue())
 		})
 	})
 
@@ -239,9 +256,9 @@ var _ = Describe("Platform Controller", func() {
 			rec, ok := store.Generated()
 			Expect(ok).To(BeTrue(), "store should hold the generated platform")
 			Expect(rec.Platform).NotTo(BeNil())
-			Expect(rec.Generation).To(Equal(fetched.Generation))
-			Expect(rec.Dir).To(Equal(r.Layout.Dir(fetched.Generation)))
-			Expect(store.Generation()).To(Equal(fetched.Generation))
+			Expect(rec.Identity).To(Equal(platformIdentity(fetched.Generation)))
+			Expect(rec.Dir).To(Equal(r.Layout.Dir(platformIdentity(fetched.Generation))))
+			Expect(store.Identity()).To(Equal(platformIdentity(fetched.Generation)))
 
 			files := readModule(rec.Dir)
 			mf, err := modfile.Parse(files[platformmodule.ModuleFileName], platformmodule.ModuleFileName)
@@ -291,14 +308,14 @@ var _ = Describe("Platform Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			second, ok := store.Generated()
 			Expect(ok).To(BeTrue())
-			Expect(second.Generation).To(Equal(first.Generation))
+			Expect(second.Identity).To(Equal(first.Identity))
 			Expect(second.Dir).To(Equal(first.Dir))
 			after := readModule(second.Dir)
 			Expect(after).To(Equal(before), "the same generation must regenerate byte-identical content")
 
-			gens, err := r.Layout.Generations()
+			pkgs, err := r.Layout.Packages()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(gens).To(Equal([]int64{first.Generation}), "a same-generation rewrite leaves one directory")
+			Expect(pkgs).To(Equal([]string{first.Identity.String()}), "a same-identity rewrite leaves one directory")
 		})
 
 		It("prunes every superseded generation no render leases once the next generation builds", func() {
@@ -328,8 +345,8 @@ var _ = Describe("Platform Controller", func() {
 				Expect(ready.Status).To(Equal(metav1.ConditionTrue), "reason=%s message=%s", ready.Reason, ready.Message)
 				rec, ok := store.Generated()
 				Expect(ok).To(BeTrue())
-				Expect(rec.Generation).To(Equal(fetched.Generation))
-				return rec.Generation
+				Expect(rec.Identity).To(Equal(platformIdentity(fetched.Generation)))
+				return rec.Identity.Generation()
 			}
 			// bumpSpec applies mutate to the stored spec; a spec change advances
 			// metadata.generation, which is what the retention keys on.
@@ -356,11 +373,11 @@ var _ = Describe("Platform Controller", func() {
 			gen3 := reconcileGeneration()
 			Expect(gen3).To(BeNumerically(">", gen2))
 
-			gens, err := r.Layout.Generations()
+			pkgs, err := r.Layout.Packages()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(gens).To(Equal([]int64{gen3}), "only the current generation stays when no render leases an earlier one")
+			Expect(pkgs).To(Equal(platformIdentities(gen3)), "only the current package stays when no render leases an earlier one")
 			for _, gen := range []int64{gen1, gen2} {
-				_, statErr := os.Stat(r.Layout.Dir(gen))
+				_, statErr := os.Stat(r.Layout.Dir(platformIdentity(gen)))
 				Expect(os.IsNotExist(statErr)).To(BeTrue(), "gen-%d should have been pruned", gen)
 			}
 		})
@@ -386,7 +403,7 @@ var _ = Describe("Platform Controller", func() {
 				Expect(err).NotTo(HaveOccurred())
 				rec, ok := store.Generated()
 				Expect(ok).To(BeTrue())
-				Expect(rec.Generation).To(Equal(plat.Generation))
+				Expect(rec.Identity).To(Equal(platformIdentity(plat.Generation)))
 				generations = append(generations, plat.Generation)
 			}
 			bumpGeneration := func(typ string) {
@@ -401,27 +418,27 @@ var _ = Describe("Platform Controller", func() {
 			// when generation 2 lands.
 			leased, release, ok := store.Lease()
 			Expect(ok).To(BeTrue())
-			Expect(leased.Generation).To(Equal(generations[0]))
+			Expect(leased.Identity).To(Equal(platformIdentity(generations[0])))
 
 			bumpGeneration("kubernetes-2")
 			reconcileCurrent()
 			Expect(generations).To(HaveLen(2))
 			Expect(generations[1]).To(BeNumerically(">", generations[0]))
-			onDisk, err := r.Layout.Generations()
+			onDisk, err := r.Layout.Packages()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(onDisk).To(Equal(generations), "a leased superseded generation survives the swap")
-			Expect(store.Leased()).To(Equal([]int64{generations[0]}))
+			Expect(onDisk).To(Equal(platformIdentities(generations...)), "a leased superseded package survives the swap")
+			Expect(store.Leased()).To(Equal([]platformstore.PackageIdentity{platformIdentity(generations[0])}))
 
 			// The render finishes; the next reconcile prunes the released
-			// generation along with the now-unleased generation 2.
+			// package along with the now-unleased generation 2.
 			release()
 			Expect(store.Leased()).To(BeEmpty())
 			bumpGeneration("kubernetes-3")
 			reconcileCurrent()
 			Expect(generations).To(HaveLen(3))
-			onDisk, err = r.Layout.Generations()
+			onDisk, err = r.Layout.Packages()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(onDisk).To(Equal(generations[2:]), "once released, a superseded generation is pruned by the next reconcile")
+			Expect(onDisk).To(Equal(platformIdentities(generations[2:]...)), "once released, a superseded package is pruned by the next reconcile")
 		})
 
 		It("surfaces a nonexistent pin as Ready=False/BuildFailed naming path and version, keeping the last good record", func() {
@@ -459,11 +476,11 @@ var _ = Describe("Platform Controller", func() {
 			held, ok := store.Generated()
 			Expect(ok).To(BeTrue())
 			Expect(held.Platform).To(BeIdenticalTo(lastGood.Platform))
-			Expect(store.Generation()).To(Equal(int64(1)))
+			Expect(store.Identity()).To(Equal(platformIdentity(1)))
 
-			gens, gerr := r.Layout.Generations()
+			pkgs, gerr := r.Layout.Packages()
 			Expect(gerr).NotTo(HaveOccurred())
-			Expect(gens).To(BeEmpty(), "a closure failure writes no module directory")
+			Expect(pkgs).To(BeEmpty(), "a closure failure writes no module directory")
 		})
 
 		It("surfaces a generation defect as Ready=False/BuildFailed naming the registry entry", func() {

@@ -71,9 +71,9 @@ func buildCompatReconciler(cat *catalog.Catalog, platformDeps map[string]string)
 	r := acceptanceReconciler(&stubCatalogs{cat: cat})
 	store := platformstore.NewStore()
 	store.SetGenerated(platformstore.Generated{
-		Generation: 1,
-		Dir:        platformDirWith(platformDeps),
-		Platform:   platformProviding(nil),
+		Identity: platformIdentity(1),
+		Dir:      platformDirWith(platformDeps),
+		Platform: platformProviding(nil),
 	})
 	r.Store = store
 	return r

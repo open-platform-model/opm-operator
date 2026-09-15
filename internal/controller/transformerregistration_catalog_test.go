@@ -108,9 +108,9 @@ func catalogSourceRequiring(deps map[string]string) *catalog.Source {
 func acceptanceReconciler(catalogs CatalogAcquirer) *TransformerRegistrationReconciler {
 	store := platformstore.NewStore()
 	store.SetGenerated(platformstore.Generated{
-		Generation: 1,
-		Dir:        platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
-		Platform:   platformProviding(nil),
+		Identity: platformIdentity(1),
+		Dir:      platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
+		Platform: platformProviding(nil),
 	})
 	return &TransformerRegistrationReconciler{
 		Client:        k8sClient,

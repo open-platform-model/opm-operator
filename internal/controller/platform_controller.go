@@ -159,6 +159,13 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// pre-reconcile status.
 	patcher := patch.NewSerialPatcher(&plat, r.Client)
 
+	// The identity of the package this reconcile will generate: what the
+	// package is a function of (enhancement 0015 D13), computed before any
+	// work so the write, the store record and the prune keep set all name the
+	// same package. No claim contributes yet; the active-claim set joins the
+	// tuple with the claim watch.
+	identity := platformstore.NewPackageIdentity(plat.Generation, nil)
+
 	entries, err := platformEntries(&plat)
 	if err != nil {
 		// A stored object predating the CRD-required version field. Nothing
@@ -193,9 +200,9 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// (library ADR-007), so the build below runs concurrently with the render
 	// paths' acquisitions and syntheses. Render builds read the module
 	// directory under their lease: the prune keep set below covers every
-	// leased generation.
+	// leased identity.
 
-	dir, err := r.Layout.Write(plat.Generation, files)
+	dir, err := r.Layout.Write(identity, files)
 	if err != nil {
 		return r.failReconcile(ctx, patcher, &plat, status.GenerateFailedReason, err, fmt.Sprintf("writing platform module: %v", err))
 	}
@@ -210,19 +217,19 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
 	}
 
-	// Success: record the generated module under the generation key with the
+	// Success: record the generated module under its identity with the
 	// resolved skew policy, then prune every directory no render can still
-	// be reading: keep the current generation plus every generation a render
+	// be reading: keep the current identity plus every identity a render
 	// holds a lease on (exact, replacing the "current plus previous"
-	// approximation). A generation leased now is pruned by the next reconcile
+	// approximation). A package leased now is pruned by the next reconcile
 	// once released.
 	r.Store.SetGenerated(platformstore.Generated{
-		Generation: plat.Generation,
-		Dir:        dir,
-		Platform:   p,
-		Skew:       skewPolicy(&plat),
+		Identity: identity,
+		Dir:      dir,
+		Platform: p,
+		Skew:     skewPolicy(&plat),
 	})
-	keep := append([]int64{plat.Generation}, r.Store.Leased()...)
+	keep := append([]platformstore.PackageIdentity{identity}, r.Store.Leased()...)
 	if err := r.Layout.Prune(keep...); err != nil {
 		log.Error(err, "Failed to prune superseded platform modules", "dir", r.Layout.Root)
 	}

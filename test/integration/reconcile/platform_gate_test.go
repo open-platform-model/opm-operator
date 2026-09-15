@@ -162,7 +162,10 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		// renderer succeeds and the resources are applied. The watch enqueues
 		// every release on any Platform change, independent of the Platform's
 		// contents.
-		store.SetGenerated(platformstore.Generated{Generation: 1, Platform: &platform.Platform{}})
+		store.SetGenerated(platformstore.Generated{
+			Identity: platformstore.NewPackageIdentity(1, nil),
+			Platform: &platform.Platform{},
+		})
 		platform := &releasesv1alpha1.Platform{
 			ObjectMeta: metav1.ObjectMeta{Name: platformName},
 			Spec:       releasesv1alpha1.PlatformSpec{Type: "kubernetes"},

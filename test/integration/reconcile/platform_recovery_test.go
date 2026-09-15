@@ -205,9 +205,10 @@ var _ = Describe("Platform build recovery (registry-backed)", func() {
 
 		got, held := store.Generated()
 		Expect(held).To(BeTrue(), "the recovered platform must be recorded in the store")
+		identity := platformstore.NewPackageIdentity(generation, nil)
 		Expect(got.Platform).NotTo(BeNil())
-		Expect(got.Generation).To(Equal(generation))
-		Expect(got.Dir).To(Equal(r.Layout.Dir(generation)))
-		Expect(store.Generation()).To(Equal(generation))
+		Expect(got.Identity).To(Equal(identity))
+		Expect(got.Dir).To(Equal(r.Layout.Dir(identity)))
+		Expect(store.Identity()).To(Equal(identity))
 	})
 })

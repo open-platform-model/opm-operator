@@ -304,16 +304,23 @@ var _ = Describe("Concurrent kernel renders (manager-driven, registry-backed)", 
 		for _, ns := range []string{namespaceA, namespaceB} {
 			nn := types.NamespacedName{Name: instanceName, Namespace: ns}
 			var current releasesv1alpha1.ModuleInstance
+			// The conditions and the rest of the status are two separate
+			// writes: the patch helper sends .status.conditions first and the
+			// remaining status (inventory included) after, so Ready=True is
+			// briefly observable while inventory is still nil. Poll for both
+			// together rather than treating Ready as the settled signal.
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
 				ready := meta.FindStatusCondition(current.Status.Conditions, status.ReadyCondition)
 				g.Expect(ready).NotTo(BeNil())
 				g.Expect(ready.Status).To(Equal(metav1.ConditionTrue), "reason=%s message=%s", ready.Reason, ready.Message)
+
+				// The inventory names what the render applied.
+				g.Expect(current.Status.Inventory).NotTo(BeNil(), "the instance in %s records its inventory", ns)
+				g.Expect(current.Status.Inventory.Entries).NotTo(BeEmpty())
 			}).WithTimeout(2 * time.Minute).WithPolling(250 * time.Millisecond).Should(Succeed())
 
-			// The inventory names what the render applied; the object is there.
-			Expect(current.Status.Inventory).NotTo(BeNil(), "the instance in %s records its inventory", ns)
-			Expect(current.Status.Inventory.Entries).NotTo(BeEmpty())
+			// The objects the inventory names are there.
 			for _, entry := range current.Status.Inventory.Entries {
 				if entry.Kind != "ConfigMap" {
 					continue

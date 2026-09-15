@@ -198,6 +198,16 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  observedGeneration is the .metadata.generation this claim was last
+                  reconciled for, whether or not that reconcile reached a verdict: a claim
+                  waiting on the platform or on its provider's inventory records the
+                  generation it observed rather than reading as un-reconciled. A claim
+                  whose generation is ahead of this has been edited since, so whatever
+                  conditions report is stale.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

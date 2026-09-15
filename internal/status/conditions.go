@@ -50,6 +50,45 @@ const (
 	DependenciesNotReadyReason = "DependenciesNotReady"
 	PlatformNotReadyReason     = "PlatformNotReady"
 
+	// TransformerRegistration-specific reasons (enhancement 0015 D3: a claim
+	// carries a verdict). Every refusal gets a reason of its own: a claimant
+	// acts on the reason, and collapsing two causes into one sends them to
+	// the wrong fix.
+	// AcceptedReason: Ready=True, the claim passed every check. It is not
+	// active: acceptance changes what a claim reports, not what it does.
+	AcceptedReason = "Accepted"
+
+	// CatalogUnresolvedReason: the claimed coordinate resolves to nothing. A
+	// registry or coordinate problem, distinct from CatalogWrongKind, which
+	// is an authoring one — collapsing the two sends the claimant to the
+	// wrong fix (enhancement 0015 D10).
+	CatalogUnresolvedReason = "CatalogUnresolved"
+	CatalogWrongKindReason  = "CatalogWrongKind"
+
+	// ProvidesMismatchReason: the contract set re-derived from the catalog is
+	// not exactly what the claim lists (enhancement 0015 D11).
+	ProvidesMismatchReason = "ProvidesMismatch"
+
+	// ProviderMismatchReason: the claim did not come from the ModuleInstance
+	// its providerRef names — the instance is absent, or its inventory
+	// settled without this claim (enhancement 0015 D11).
+	ProviderMismatchReason = "ProviderMismatch"
+
+	// ProviderInventoryPendingReason: Ready=Unknown, the naming instance has
+	// not written an inventory yet. A race, not a verdict.
+	ProviderInventoryPendingReason = "ProviderInventoryPending"
+
+	// BuildIncompatibleReason: the claimed catalog requires a shared
+	// OPM-namespace path at a version the platform did not resolve to
+	// (enhancement 0015 D8). Refused at acceptance rather than at render,
+	// where the failure would name an unrelated module instance.
+	BuildIncompatibleReason = "BuildIncompatible"
+
+	// DuplicateClaimReason: another claim already holds this provider catalog
+	// (enhancement 0015 D12). The message names the holder, so an operator
+	// can see which object to remove.
+	DuplicateClaimReason = "DuplicateClaim"
+
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
 	PrunedReason  = "Pruned"

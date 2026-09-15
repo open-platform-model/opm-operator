@@ -37,6 +37,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -472,6 +473,15 @@ func (r *TransformerRegistrationReconciler) refuse(
 	claim.Status.ObservedGeneration = claim.Generation
 	claim.Status.Accepted = false
 	status.MarkStalled(claim, reason, "%s", msg)
+
+	// A claim accepted on an earlier reconcile and waiting on its provider
+	// carries Active=False saying so. Once it is refused that is the wrong
+	// account of why it is inactive, so the condition goes rather than
+	// standing as a stale one. An ACTIVE claim keeps its condition: it is
+	// still active, and the latch says only deletion ends that.
+	if !claim.Status.Active {
+		conditions.Delete(claim, status.ActiveCondition)
+	}
 	return ctrl.Result{RequeueAfter: opmreconcile.StalledRecheckInterval}, r.patchStatus(ctx, patcher, claim)
 }
 
@@ -541,6 +551,7 @@ func (r *TransformerRegistrationReconciler) SetupWithManager(mgr ctrl.Manager) e
 		Watches(
 			&releasesv1alpha1.ModuleInstance{},
 			handler.EnqueueRequestsFromMapFunc(r.mapInstanceToRegistrations),
+			builder.WithPredicates(providerFactsChanged()),
 		).
 		Named("transformerregistration").
 		Complete(r)
@@ -595,4 +606,57 @@ func (r *TransformerRegistrationReconciler) mapInstanceToRegistrations(ctx conte
 		})
 	}
 	return requests
+}
+
+// providerFacts is the pair of facts about a provider instance that a claim's
+// verdict depends on: whether it reports Ready, which the activation gate
+// reads, and the digest of the inventory the provider-identity check looks
+// the claim up in.
+type providerFacts struct {
+	ready           metav1.ConditionStatus
+	inventoryDigest string
+}
+
+// readProviderFacts projects a watched object down to the facts a verdict
+// reads, reporting false for anything that is not a ModuleInstance.
+func readProviderFacts(obj client.Object) (providerFacts, bool) {
+	instance, ok := obj.(*releasesv1alpha1.ModuleInstance)
+	if !ok {
+		return providerFacts{}, false
+	}
+	var facts providerFacts
+	if ready := apimeta.FindStatusCondition(instance.Status.Conditions, status.ReadyCondition); ready != nil {
+		facts.ready = ready.Status
+	}
+	if instance.Status.Inventory != nil {
+		facts.inventoryDigest = instance.Status.Inventory.Digest
+	}
+	return facts, true
+}
+
+// providerFactsChanged passes a ModuleInstance UPDATE only when one of those
+// facts moved.
+//
+// Without it the watch re-judges a claim on every write to its provider's
+// status, and a verdict is not cheap: it re-acquires the claimed catalog from
+// the registry, which holds no in-process cache and builds a cue.Context per
+// call. A provider that is applying, drifting or retrying writes its status
+// repeatedly, recording history entries, failure counters and retry
+// timestamps, and none of those writes can change a verdict.
+//
+// Only updates are filtered. A create, a delete or a generic event still
+// enqueues: each of them is rare and each can change a verdict. An object the
+// predicate cannot read as a ModuleInstance enqueues too, because dropping an
+// event this cannot judge is the worse failure.
+func providerFactsChanged() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			before, okBefore := readProviderFacts(e.ObjectOld)
+			after, okAfter := readProviderFacts(e.ObjectNew)
+			if !okBefore || !okAfter {
+				return true
+			}
+			return before != after
+		},
+	}
 }

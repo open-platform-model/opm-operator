@@ -23,6 +23,12 @@ An accepted claim SHALL become active when the `ModuleInstance` named by `spec.p
 - **WHEN** a refused claim's provider reports `Ready=True`
 - **THEN** `status.active` stays false
 
+#### Scenario: A refused claim reports no waiting-on-provider state
+
+- **WHEN** a claim that was accepted and waiting on its provider is later refused
+- **THEN** it no longer reports that it is waiting on its provider, because the refusal is why it is inactive
+- **AND** a claim refused while already active keeps reporting that it is active
+
 ### Requirement: Activation latches against provider health
 
 Once active, a claim SHALL NOT be deactivated because its provider's readiness regressed. The readiness gate SHALL govern initial activation only. A claim leaves the active state by deletion, never by its provider becoming unhealthy.

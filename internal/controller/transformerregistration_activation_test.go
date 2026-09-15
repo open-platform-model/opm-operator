@@ -1,0 +1,198 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/status"
+)
+
+// setProviderReadiness sets the Ready condition of the provider instance in
+// the given namespace, which is what the activation gate reads. The reason
+// varies with the status so a transition back to ready is a real condition
+// change rather than a no-op the flux setter would collapse.
+func setProviderReadiness(ctx context.Context, namespace string, ready bool) {
+	var instance releasesv1alpha1.ModuleInstance
+	Expect(k8sClient.Get(ctx, types.NamespacedName{
+		Namespace: namespace, Name: providerInstanceName,
+	}, &instance)).To(Succeed())
+
+	condition := metav1.Condition{
+		Type:               status.ReadyCondition,
+		Status:             metav1.ConditionTrue,
+		Reason:             status.ReconciliationSucceededReason,
+		Message:            "Reconciliation succeeded",
+		ObservedGeneration: instance.Generation,
+	}
+	if !ready {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = status.ApplyFailedReason
+		condition.Message = "Apply failed"
+	}
+	apimeta.SetStatusCondition(&instance.Status.Conditions, condition)
+	Expect(k8sClient.Status().Update(ctx, &instance)).To(Succeed())
+}
+
+// activeOf returns the claim's Active condition, which carries the activation
+// transition. It is absent until the claim has been through acceptance.
+func activeOf(claim releasesv1alpha1.TransformerRegistration) *metav1.Condition {
+	active := apimeta.FindStatusCondition(claim.Status.Conditions, status.ActiveCondition)
+	Expect(active).NotTo(BeNil())
+	return active
+}
+
+var _ = Describe("TransformerRegistration activation: D3 — the readiness gate", func() {
+	Context("the ModuleInstance watch", func() {
+		It("enqueues only the claims whose providerRef names the changed instance", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			claim := createClaim(ctx, ns)
+			ownProvidedInventory(ctx, ns, claim.Name)
+
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+
+			var provider releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: ns, Name: providerInstanceName,
+			}, &provider)).To(Succeed())
+
+			requests := r.mapInstanceToRegistrations(ctx, &provider)
+			Expect(requests).To(HaveLen(1))
+			Expect(requests[0].Name).To(Equal(claim.Name))
+		})
+
+		It("enqueues no claim for an instance no claim names", func() {
+			ctx := context.Background()
+
+			// The suite's other specs have left claims in the cluster, so a
+			// list-all-and-enqueue map func would return them all here.
+			unrelated := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "not-a-provider", Namespace: "default"},
+			}
+
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+			Expect(r.mapInstanceToRegistrations(ctx, unrelated)).To(BeEmpty())
+		})
+	})
+
+	Context("an accepted claim", func() {
+		It("stays inactive while its provider is not ready, saying what it waits on", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			claim := createClaim(ctx, ns)
+			ownProvidedInventory(ctx, ns, claim.Name)
+
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+			judged := judge(ctx, r, claim.Name)
+
+			Expect(judged.Status.Accepted).To(BeTrue())
+			Expect(judged.Status.Active).To(BeFalse())
+			Expect(readyOf(judged).Reason).To(Equal(status.AcceptedReason),
+				"waiting on the provider is not a refusal of the claim")
+
+			active := activeOf(judged)
+			Expect(active.Status).To(Equal(metav1.ConditionFalse))
+			Expect(active.Reason).To(Equal(status.ProviderNotReadyReason))
+			Expect(active.Message).To(ContainSubstring(ns + "/" + providerInstanceName))
+		})
+
+		It("activates when its provider becomes ready, with no change to its own spec", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			claim := createClaim(ctx, ns)
+			ownProvidedInventory(ctx, ns, claim.Name)
+
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+
+			inactive := judge(ctx, r, claim.Name)
+			Expect(inactive.Status.Active).To(BeFalse())
+			generation := inactive.Generation
+
+			setProviderReadiness(ctx, ns, true)
+			activated := judge(ctx, r, claim.Name)
+
+			Expect(activated.Status.Active).To(BeTrue())
+			Expect(activated.Generation).To(Equal(generation),
+				"the claim activated without being edited")
+
+			active := activeOf(activated)
+			Expect(active.Status).To(Equal(metav1.ConditionTrue))
+			Expect(active.Reason).To(Equal(status.ProviderReadyReason))
+		})
+	})
+
+	Context("a claim that is not accepted", func() {
+		It("stays inactive even though its provider is ready", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			claim := createClaim(ctx, ns) // claims backupTrait
+			ownProvidedInventory(ctx, ns, claim.Name)
+			setProviderReadiness(ctx, ns, true)
+
+			// A catalog implementing nothing: the claim is refused on D11
+			// before the gate is anywhere near.
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog()})
+			judged := judge(ctx, r, claim.Name)
+
+			Expect(judged.Status.Accepted).To(BeFalse())
+			Expect(judged.Status.Active).To(BeFalse())
+			Expect(readyOf(judged).Reason).To(Equal(status.ProvidesMismatchReason))
+			Expect(apimeta.FindStatusCondition(judged.Status.Conditions, status.ActiveCondition)).To(BeNil(),
+				"a refused claim never reaches the gate, so it records no activation state")
+		})
+	})
+
+	Context("the latch", func() {
+		It("keeps an active claim active through a provider outage and recovery", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			claim := createClaim(ctx, ns)
+			ownProvidedInventory(ctx, ns, claim.Name)
+			setProviderReadiness(ctx, ns, true)
+
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+
+			activated := judge(ctx, r, claim.Name)
+			Expect(activated.Status.Active).To(BeTrue())
+			transition := activeOf(activated).LastTransitionTime
+
+			// The provider goes away. Its CRDs did not.
+			setProviderReadiness(ctx, ns, false)
+			duringOutage := judge(ctx, r, claim.Name)
+			Expect(duringOutage.Status.Active).To(BeTrue(),
+				"a flapping provider must not toggle the active-claim set")
+			Expect(activeOf(duringOutage).Reason).To(Equal(status.ProviderReadyReason))
+			Expect(activeOf(duringOutage).LastTransitionTime).To(Equal(transition))
+
+			// It recovers. The gate does not run again, so nothing transitions.
+			setProviderReadiness(ctx, ns, true)
+			afterRecovery := judge(ctx, r, claim.Name)
+			Expect(afterRecovery.Status.Active).To(BeTrue())
+			Expect(activeOf(afterRecovery).LastTransitionTime).To(Equal(transition),
+				"the claim never left the active state, so it never re-entered it")
+		})
+	})
+})

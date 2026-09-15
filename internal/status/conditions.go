@@ -13,6 +13,14 @@ const (
 	StalledCondition        = meta.StalledCondition     // "Stalled"
 	ModuleResolvedCondition = "ModuleResolved"
 	DriftedCondition        = "Drifted"
+
+	// ActiveCondition reports whether an accepted TransformerRegistration's
+	// provider is serving, the second of the three states enhancement 0015 D3
+	// defines. It is a separate condition from Ready because the two axes are
+	// independent: Ready carries the acceptance verdict, and a claim can be
+	// accepted and not yet active. Once Active=True it never goes False again
+	// (see the latch in transformerregistration_controller.go).
+	ActiveCondition = "Active"
 )
 
 // Condition reasons.
@@ -83,6 +91,18 @@ const (
 	// (enhancement 0015 D8). Refused at acceptance rather than at render,
 	// where the failure would name an unrelated module instance.
 	BuildIncompatibleReason = "BuildIncompatible"
+
+	// ProviderReadyReason: Active=True, the provider ModuleInstance the claim
+	// names reports Ready=True, so its CRDs exist and its transformers can be
+	// rendered against (enhancement 0015 D3). Latched: the claim keeps this
+	// condition through a later provider outage.
+	ProviderReadyReason = "ProviderReady"
+
+	// ProviderNotReadyReason: Active=False, the claim is accepted and its
+	// provider has not reported Ready yet. An install-ordering state, not a
+	// health report — a claim only ever waits here before its first
+	// activation.
+	ProviderNotReadyReason = "ProviderNotReady"
 
 	// DuplicateClaimReason: another claim already holds this provider catalog
 	// (enhancement 0015 D12). The message names the holder, so an operator

@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/runtime/patch"
 	"github.com/open-platform-model/library/opm/catalog"
 	oerrors "github.com/open-platform-model/library/opm/errors"
@@ -76,8 +77,14 @@ const claimGroup = "opmodel.dev"
 // the Platform reconciler has generated one is requeued, because a verdict
 // that depends on reconcile order is not a verdict.
 //
-// Acceptance does not activate: status.active stays false, and an accepted
-// claim changes what the object reports, not what the cluster renders.
+// An accepted claim activates when the ModuleInstance its providerRef names
+// reports Ready=True (enhancement 0015 D3), and activation latches: nothing
+// here clears status.active, because the gate exists for install ordering —
+// a provider's CRDs do not exist YET — and not for steady-state health. See
+// gateActivation for what a live-tracking implementation would cost.
+//
+// Activation is reported and inert: an active claim changes what the object
+// reports, not what the cluster renders.
 type TransformerRegistrationReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
@@ -162,7 +169,8 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 		return r.refuse(ctx, patcher, &claim, status.ProvidesMismatchReason, msg)
 	}
 
-	switch verdict, msg := r.checkProviderIdentity(ctx, &claim); verdict {
+	verdict, provider, msg := r.checkProviderIdentity(ctx, &claim)
+	switch verdict {
 	case identityPending:
 		return r.deferVerdict(ctx, patcher, &claim, status.ProviderInventoryPendingReason, msg)
 	case identityRefused:
@@ -198,7 +206,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 			holder, claim.Spec.Catalog))
 	}
 
-	return ctrl.Result{}, r.accept(ctx, patcher, &claim)
+	return ctrl.Result{}, r.accept(ctx, patcher, &claim, provider)
 }
 
 // holderOf returns the name of the claim that holds this claim's provider
@@ -303,59 +311,110 @@ const (
 // An instance whose inventory has not been written yet is pending, not
 // refused: the claim can reach the API server before its owner's status does,
 // and a race is not a verdict.
+//
+// The resolved instance is returned with an identityOK verdict, so the
+// activation gate reads the provider's readiness off the object this check
+// already fetched rather than issuing a second Get for it. It is nil with
+// every other verdict, where there is no provider to speak of.
 func (r *TransformerRegistrationReconciler) checkProviderIdentity(
 	ctx context.Context,
 	claim *releasesv1alpha1.TransformerRegistration,
-) (identityVerdict, string) {
+) (identityVerdict, *releasesv1alpha1.ModuleInstance, string) {
 	ref := claim.Spec.ProviderRef
 
 	var instance releasesv1alpha1.ModuleInstance
 	key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
 	if err := r.Get(ctx, key, &instance); err != nil {
 		if apierrors.IsNotFound(err) {
-			return identityRefused, fmt.Sprintf(
+			return identityRefused, nil, fmt.Sprintf(
 				"Claim names provider ModuleInstance %s/%s, which does not exist, so the claim is not rendered output",
 				ref.Namespace, ref.Name)
 		}
-		return identityPending, fmt.Sprintf(
+		return identityPending, nil, fmt.Sprintf(
 			"Provider ModuleInstance %s/%s could not be read: %v", ref.Namespace, ref.Name, err)
 	}
 
 	if instance.Status.Inventory == nil {
-		return identityPending, fmt.Sprintf(
+		return identityPending, nil, fmt.Sprintf(
 			"Provider ModuleInstance %s/%s has not written an inventory yet", ref.Namespace, ref.Name)
 	}
 
 	for _, entry := range instance.Status.Inventory.Entries {
 		if entry.Group == claimGroup && entry.Kind == claimKind && entry.Name == claim.Name {
-			return identityOK, ""
+			return identityOK, &instance, ""
 		}
 	}
 
-	return identityRefused, fmt.Sprintf(
+	return identityRefused, nil, fmt.Sprintf(
 		"Claim %s names provider ModuleInstance %s/%s, whose inventory does not own it, so the claim did not come from the instance it names",
 		claim.Name, ref.Namespace, ref.Name)
 }
 
-// accept records the claim as accepted. It does not activate: status.active
-// stays false until an accepted claim's provider is reported serving, which
-// is a later change.
+// accept records the claim as accepted and runs the activation gate over the
+// provider it was judged against, so acceptance and activation reach the API
+// server as one status patch rather than as two writes a reader could observe
+// between.
+//
+// Acceptance and activation are separate axes: Ready carries the verdict, the
+// Active condition carries whether the provider is serving, and a claim is
+// routinely accepted and inactive.
 //
 // No requeue: an accepted claim is re-judged when its own spec changes (the
-// generation predicate) or when the platform it was judged against is
-// regenerated (the Platform watch), and nothing else can invalidate the
-// verdict. A newly created competitor cannot take the provider from it,
-// because a claim created later cannot carry an earlier creationTimestamp.
+// generation predicate), when the platform it was judged against is
+// regenerated (the Platform watch), or when its provider's readiness changes
+// (the ModuleInstance watch), and nothing else can invalidate the verdict. A
+// newly created competitor cannot take the provider from it, because a claim
+// created later cannot carry an earlier creationTimestamp.
 func (r *TransformerRegistrationReconciler) accept(
 	ctx context.Context,
 	patcher *patch.SerialPatcher,
 	claim *releasesv1alpha1.TransformerRegistration,
+	provider *releasesv1alpha1.ModuleInstance,
 ) error {
 	claim.Status.ObservedGeneration = claim.Generation
 	claim.Status.Accepted = true
 	status.MarkReadyWithReason(claim, status.AcceptedReason,
 		"Claim accepted for catalog %s at %s", claim.Spec.Catalog, claim.Spec.Version)
+	gateActivation(claim, provider)
 	return r.patchStatus(ctx, patcher, claim)
+}
+
+// gateActivation flips an accepted claim to active once the ModuleInstance it
+// names reports Ready=True (enhancement 0015 D3), and never flips it back.
+//
+// The latch is structural, not a rule to remember: status.active is read
+// first and an already-active claim returns before the readiness check runs,
+// so there is no path through this function that can clear the field or
+// record a second activation. A later edit to the readiness check therefore
+// cannot introduce flapping.
+//
+// It latches because the active-claim set is an input to platform-package
+// regeneration: a provider whose pods restarted would toggle the set, the
+// platform would be regenerated without the provider's catalog, and every
+// dependent instance's render would fail for the duration. The gate exists
+// for install ordering — the provider's CRDs do not exist YET — and
+// established CRDs outlive the pods that installed them, so a claim staying
+// active through a provider outage is the correct reading and not an
+// oversight. A claim leaves the active state by deletion.
+//
+// Only accept calls this, which is what makes "an unaccepted claim never
+// activates" structural as well: every refusal and every deferred verdict
+// returns before reaching it.
+func gateActivation(claim *releasesv1alpha1.TransformerRegistration, provider *releasesv1alpha1.ModuleInstance) {
+	if claim.Status.Active {
+		return
+	}
+
+	ref := claim.Spec.ProviderRef
+	if !apimeta.IsStatusConditionTrue(provider.Status.Conditions, status.ReadyCondition) {
+		conditions.MarkFalse(claim, status.ActiveCondition, status.ProviderNotReadyReason,
+			"Waiting for provider ModuleInstance %s/%s to report Ready", ref.Namespace, ref.Name)
+		return
+	}
+
+	claim.Status.Active = true
+	conditions.MarkTrue(claim, status.ActiveCondition, status.ProviderReadyReason,
+		"Provider ModuleInstance %s/%s is Ready", ref.Namespace, ref.Name)
 }
 
 // refuse records a refusal naming what failed and the value that failed it.
@@ -411,7 +470,7 @@ func (r *TransformerRegistrationReconciler) deferVerdict(
 }
 
 // patchStatus commits the claim's status via the serial patcher, declaring the
-// Ready/Reconciling/Stalled conditions this controller owns.
+// Ready/Reconciling/Stalled/Active conditions this controller owns.
 func (r *TransformerRegistrationReconciler) patchStatus(
 	ctx context.Context,
 	patcher *patch.SerialPatcher,
@@ -423,6 +482,7 @@ func (r *TransformerRegistrationReconciler) patchStatus(
 				status.ReadyCondition,
 				status.ReconcilingCondition,
 				status.StalledCondition,
+				status.ActiveCondition,
 			},
 		},
 	)
@@ -430,16 +490,22 @@ func (r *TransformerRegistrationReconciler) patchStatus(
 
 // SetupWithManager wires the controller into mgr. The generation predicate
 // sits on For() rather than as a global filter so it does not suppress the
-// Platform watch, whose trigger (the Platform reconciler's status update)
-// does not bump a generation. That watch is what lets a claim parked on
-// PlatformNotReady recover as soon as the platform is generated, instead of
-// waiting out the interval requeue.
+// two cross-object watches, whose triggers (the Platform reconciler's status
+// update, a provider instance becoming Ready) do not bump a generation. The
+// Platform watch is what lets a claim parked on PlatformNotReady recover as
+// soon as the platform is generated; the ModuleInstance watch is what lets an
+// accepted claim activate as soon as its provider is serving, instead of
+// either waiting out the interval requeue.
 func (r *TransformerRegistrationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.TransformerRegistration{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
 			&releasesv1alpha1.Platform{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToRegistrations),
+		).
+		Watches(
+			&releasesv1alpha1.ModuleInstance{},
+			handler.EnqueueRequestsFromMapFunc(r.mapInstanceToRegistrations),
 		).
 		Named("transformerregistration").
 		Complete(r)
@@ -456,6 +522,39 @@ func (r *TransformerRegistrationReconciler) mapPlatformToRegistrations(ctx conte
 	}
 	requests := make([]reconcile.Request, 0, len(list.Items))
 	for i := range list.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
+		})
+	}
+	return requests
+}
+
+// mapInstanceToRegistrations enqueues the claims whose spec.providerRef names
+// the ModuleInstance that changed, and nothing else.
+//
+// Unlike the Platform map func above, this one filters rather than enqueuing
+// every claim: the Platform is a cluster singleton whose changes are rare,
+// while a fleet holds many instances and every one of them reconciles often,
+// so an unrelated instance's reconcile must not re-judge every claim in the
+// cluster.
+//
+// The filter is a scan of the listed claims rather than a field index on
+// spec.providerRef. Claims are one per provider instance — tens on a fleet,
+// not thousands — so the scan runs over a small cached list, and an index can
+// replace it later without changing what this function promises.
+func (r *TransformerRegistrationReconciler) mapInstanceToRegistrations(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list releasesv1alpha1.TransformerRegistrationList
+	if err := r.List(ctx, &list); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list TransformerRegistrations for ModuleInstance-triggered re-enqueue")
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range list.Items {
+		ref := list.Items[i].Spec.ProviderRef
+		if ref.Namespace != obj.GetNamespace() || ref.Name != obj.GetName() {
+			continue
+		}
 		requests = append(requests, reconcile.Request{
 			NamespacedName: client.ObjectKeyFromObject(&list.Items[i]),
 		})

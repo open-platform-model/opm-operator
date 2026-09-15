@@ -8,6 +8,7 @@ resources:
 - bases/opmodel.dev_moduleinstances.yaml
 - bases/opmodel.dev_modulepackages.yaml
 - bases/opmodel.dev_platforms.yaml
+- bases/opmodel.dev_transformerregistrations.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

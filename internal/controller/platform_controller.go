@@ -112,6 +112,14 @@ type PlatformReconciler struct {
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms,verbs=get;list;watch
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms/status,verbs=get;update;patch
 
+// TransformerRegistration claims are the platform's second transformer path
+// (enhancement 0015 D3), so the reconciler that builds the platform module
+// reads them and reports on them. Read and status verbs only: the operator
+// judges claims, it never creates one. Creating a claim is platform-admin
+// RBAC (config/rbac/transformerregistration_admin_role.yaml).
+// +kubebuilder:rbac:groups=opmodel.dev,resources=transformerregistrations,verbs=get;list;watch
+// +kubebuilder:rbac:groups=opmodel.dev,resources=transformerregistrations/status,verbs=get;update;patch
+
 // Reconcile generates and builds the platform module for the
 // cluster-singleton Platform and records the outcome on its status. It
 // reconciles only the object named "cluster"; any other name is ignored

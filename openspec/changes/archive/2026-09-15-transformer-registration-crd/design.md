@@ -17,7 +17,7 @@ Current state, read 2026-09-15:
 
 **Goals**
 
-- The kind exists, is cluster-scoped, and matches the catalog renderer's literals exactly.
+- The kind exists, is cluster-scoped, and carries `apiVersion: opmodel.dev/v1alpha1`, the literals the catalog renderer is corrected to emit.
 - The API server refuses a malformed claim on its own terms, without trusting the authoring catalog.
 - D3's RBAC gate becomes a shipped artifact rather than an assumption about the cluster's own roles.
 
@@ -80,6 +80,26 @@ type TransformerRegistrationStatus struct {
 `Provides` is `+required` but MAY be empty: a provider catalog that implements no provider-fulfilled contract is a claim acceptance refuses on its merits, not a malformed object. The distinction matters because the CRD is the wrong place to encode a rule the reconciler states better.
 
 `ProviderReference` is a two-field namespace/name struct. `common_types.go` already carries reference types; this change adds one there rather than inventing a parallel shape, unless an existing one fits verbatim.
+
+### The group is the operator's flat `opmodel.dev`, and the catalog moves to it
+
+The kind lands in `api/v1alpha1` alongside the other three types, so its group is
+`opmodel.dev` and the generated manifest is `config/crd/bases/opmodel.dev_transformerregistrations.yaml`.
+
+`catalog_opm` `opm` 4.3.0 renders `apiVersion: opm.opmodel.dev/v1alpha1`, a different
+group, and issue 132 records that spelling as the literal to match. It is wrong on the
+operator's side of the contract, not a constraint on it: enhancement 0002 D5 moved this
+repo from `releases.opmodel.dev` to a flat, kind-agnostic `opmodel.dev` and explicitly
+rejected kind-specific and prefixed groups, at the cost of a full cluster migration.
+Honouring the catalog's literal would reopen that decision and add a second API group
+package, a second scheme registration and an ADR, to avoid changing two lines.
+
+No enhancement decision pins the group. D3, D9 and D12 name the kind, its scope, its
+RBAC gate and its name shape, and none names a group; the prefixed spelling entered
+through the pre-drafted shape at `0015/contracts/contracts.cue:145`. So the catalog's
+renderer and its golden fixture move to `opmodel.dev/v1alpha1` in a change of their own,
+and issue 132's recorded JSON is corrected with it. The two sides are independent and no
+module renders a registration today, so neither repo waits on the other.
 
 ### The name rule is a CEL rule, not a regex
 

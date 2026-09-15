@@ -1,0 +1,41 @@
+# The platform-admin half of enhancement 0015 D3's gate.
+#
+# A TransformerRegistration is a provider module's claim that its catalog
+# implements platform contracts. Granting create on it is granting the ability
+# to change how another team's traits render, because a transformer is
+# arbitrary CUE producing arbitrary Kubernetes objects. That is a
+# platform-team privilege, not a tenant one.
+#
+# THIS ROLE SHIPS DELIBERATELY UNBOUND. Do not add a ClusterRoleBinding here
+# as a fix for a claim being refused.
+#
+# The gate works by absence. Rendered objects reach the cluster through a
+# ServiceAccount the operator impersonates per tenant, and this repo ships no
+# tenant-facing role granting create on this kind, so a module applied under a
+# tenant identity cannot register a transformer. Binding this role is the
+# cluster administrator's decision, made against their own tenancy model;
+# shipping a binding would decide that model for them.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: opm-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: transformerregistration-admin-role
+rules:
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - transformerregistrations
+  verbs:
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - transformerregistrations/status
+  verbs:
+  - get

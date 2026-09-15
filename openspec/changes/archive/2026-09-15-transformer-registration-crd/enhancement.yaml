@@ -1,0 +1,10 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+implements:
+  - enhancement: "0015"
+    # D15 (one registration per module) was declared here at planning time but
+    # is NOT delivered by this change: its refusal site is module vet or
+    # render-output validation, before apply, which lives in the cli. The CRD's
+    # name rule implements D12's collision-free name, not D15's per-module cap.
+    decisions: [D3, D12]
+    resolves: []

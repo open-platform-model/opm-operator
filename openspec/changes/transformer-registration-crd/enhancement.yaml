@@ -1,6 +1,0 @@
-# Declares which enhancement decisions this change implements. Consumed by
-# `task enhancements:delivery:log` at archive time.
-implements:
-  - enhancement: "0015"
-    decisions: [D3, D12, D15]
-    resolves: []

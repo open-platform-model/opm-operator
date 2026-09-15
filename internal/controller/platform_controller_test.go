@@ -182,6 +182,12 @@ func (s requiringSource) ModFile(ctx context.Context, mv module.Version) (*modfi
 }
 
 var _ = Describe("Platform Controller", func() {
+	// The generated package is a function of the active-claim set as well as
+	// the CR, and TransformerRegistration is cluster-scoped, so the
+	// acceptance specs' leftovers would otherwise put unresolvable catalogs
+	// in every package generated here.
+	BeforeEach(deleteAllClaims)
+
 	AfterEach(func() {
 		deletePlatform(platformSingletonName)
 	})

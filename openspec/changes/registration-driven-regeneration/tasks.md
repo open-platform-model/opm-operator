@@ -16,10 +16,10 @@ active set is always empty and every test here is vacuous.
 
 ## 2. Regeneration reads the active-claim set
 
-- [ ] 2.1 Add a `TransformerRegistration` watch to the Platform reconciler, waking regeneration when any claim changes. Verify: activating a claim regenerates without the `Platform` CR being edited.
-- [ ] 2.2 Compute the generated package from the tuple — the CR spec plus the accepted-and-active claims — reading current state rather than the waking event's content, and add an import and a `#registry` entry per active claim. Verify: an active claim's catalog is a registry entry at the claim's version; a stale or duplicated event yields the package the current state implies; with no active claims the package is byte-identical to what the spec alone produces today.
-- [ ] 2.3 Cover the burst case: several claims activating together converge in one or a few regenerations, not one per claim. Verify: the test asserts a bound on regeneration count, and that the final package reflects every claim.
-- [ ] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): regenerate the platform from the active-claim set`.
+- [x] 2.1 Add a `TransformerRegistration` watch to the Platform reconciler, waking regeneration when any claim changes. Verify: activating a claim regenerates without the `Platform` CR being edited.
+- [x] 2.2 Compute the generated package from the tuple — the CR spec plus the accepted-and-active claims — reading current state rather than the waking event's content, and add an import and a `#registry` entry per active claim. Verify: an active claim's catalog is a registry entry at the claim's version; a stale or duplicated event yields the package the current state implies; with no active claims the package is byte-identical to what the spec alone produces today.
+- [x] 2.3 Cover the burst case: several claims activating together converge in one or a few regenerations, not one per claim. Verify: the test asserts a bound on regeneration count, and that the final package reflects every claim.
+- [x] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): regenerate the platform from the active-claim set`.
 
 ## 3. Platform status carries the identity and the union
 

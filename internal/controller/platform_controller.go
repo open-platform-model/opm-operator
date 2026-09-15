@@ -38,6 +38,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -159,14 +161,40 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// pre-reconcile status.
 	patcher := patch.NewSerialPatcher(&plat, r.Client)
 
-	// The identity of the package this reconcile will generate: what the
-	// package is a function of (enhancement 0015 D13), computed before any
-	// work so the write, the store record and the prune keep set all name the
-	// same package. No claim contributes yet; the active-claim set joins the
-	// tuple with the claim watch.
-	identity := platformstore.NewPackageIdentity(plat.Generation, nil)
+	// The generated package is a function of exactly one tuple (enhancement
+	// 0015 D13): this CR's spec and the set of accepted-and-active claims,
+	// both read here as current state. Nothing is read from the event that
+	// woke the reconcile, so a stale, duplicated or reordered event yields
+	// the package the current state implies, and a burst of activations
+	// converges instead of producing one package per claim.
+	claims, err := r.activeClaims(ctx)
+	if err != nil {
+		// A transient read against the API server says nothing about the
+		// platform: retry with the controller's backoff rather than writing a
+		// verdict the next list would contradict.
+		return ctrl.Result{}, err
+	}
 
-	entries, err := platformEntries(&plat)
+	// The identity of the package this reconcile will generate, computed
+	// before any work so the write, the store record and the prune keep set
+	// all name the same package.
+	identity := platformstore.NewPackageIdentity(plat.Generation, claimCoordinates(claims))
+
+	// Level-computed generation makes a repeat of the same tuple a no-op: the
+	// package held is the package this reconcile would produce, byte for
+	// byte. Skipping it is what bounds a burst of claim activations to one
+	// build rather than one per claim. The directory is checked because the
+	// render path reads it, so a record whose module is gone must be rebuilt.
+	if held, ok := r.Store.Generated(); ok && held.Identity == identity && dirExists(held.Dir) {
+		log.V(1).Info("Platform module already current, skipping regeneration",
+			"name", plat.Name, "identity", identity, "dir", held.Dir)
+		plat.Status.ObservedGeneration = plat.Generation
+		plat.Status.OperatorVersion = version.Full()
+		status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
+		return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
+	}
+
+	entries, err := platformEntries(&plat, claims)
 	if err != nil {
 		// A stored object predating the CRD-required version field. Nothing
 		// external can change this; the stalled recheck keeps the status
@@ -239,8 +267,57 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
 	r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeNormal, status.GeneratedReason, "Generate", "Platform module generated and built for generation %d", plat.Generation)
 
-	log.Info("Platform module generated and built", "name", plat.Name, "generation", plat.Generation, "dir", dir)
+	log.Info("Platform module generated and built",
+		"name", plat.Name, "generation", plat.Generation, "identity", identity, "activeClaims", len(claims), "dir", dir)
 	return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
+}
+
+// activeClaims returns the TransformerRegistrations that are both accepted
+// and active, in name order, which is the half of the tuple the Platform CR
+// does not carry. Judging claims is not this reconciler's job: the claim
+// reconciler owns acceptance and activation and this only consumes the
+// verdict (design.md § the claim reconciler stays the judge). A claim being
+// deleted is dropped: its provider is on its way out, so its catalog should
+// not enter the next package.
+func (r *PlatformReconciler) activeClaims(ctx context.Context) ([]releasesv1alpha1.TransformerRegistration, error) {
+	var list releasesv1alpha1.TransformerRegistrationList
+	if err := r.List(ctx, &list); err != nil {
+		return nil, fmt.Errorf("listing transformer registrations: %w", err)
+	}
+	active := make([]releasesv1alpha1.TransformerRegistration, 0, len(list.Items))
+	for _, claim := range list.Items {
+		if !claim.DeletionTimestamp.IsZero() || !claim.Status.Accepted || !claim.Status.Active {
+			continue
+		}
+		active = append(active, claim)
+	}
+	sort.Slice(active, func(i, j int) bool { return active[i].Name < active[j].Name })
+	return active, nil
+}
+
+// claimCoordinates maps active claims to the catalog coordinates the package
+// identity is built from.
+func claimCoordinates(claims []releasesv1alpha1.TransformerRegistration) []platformstore.ClaimCoordinate {
+	coords := make([]platformstore.ClaimCoordinate, 0, len(claims))
+	for _, claim := range claims {
+		coords = append(coords, platformstore.ClaimCoordinate{
+			Catalog: claim.Spec.Catalog,
+			Version: claim.Spec.Version,
+		})
+	}
+	return coords
+}
+
+// dirExists reports whether path is an existing directory. The store's record
+// names a module directory the render path reads, so a record whose directory
+// has gone (an ephemeral volume replaced under a running manager) must not be
+// treated as current.
+func dirExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // modFiles returns the module-file source for closure derivation,
@@ -346,14 +423,27 @@ func skewPolicy(plat *releasesv1alpha1.Platform) kernel.SkewPolicy {
 	return kernel.SkewWarn
 }
 
-// platformEntries maps the CR's registry to the generator's entries, in
-// sorted path order. The CRD was authored as a 1:1 projection of the core
-// #Platform surface, so the mapping is mechanical: a nil Enable resolves to
-// the schema default (true). A subscription without a version (a stored
-// object predating the CRD-required field, which validation ratcheting keeps
-// status-patchable) is refused naming the path.
-func platformEntries(plat *releasesv1alpha1.Platform) ([]platformmodule.Entry, error) {
-	entries := make([]platformmodule.Entry, 0, len(plat.Spec.Registry))
+// platformEntries maps the tuple to the generator's entries, in sorted path
+// order: one entry per subscription the CR authored, plus one per active
+// claim, so the provider catalogs a render needs are imported beside the
+// subscribed ones (enhancement 0015 D13).
+//
+// The CRD was authored as a 1:1 projection of the core #Platform surface, so
+// the subscription mapping is mechanical: a nil Enable resolves to the schema
+// default (true). A subscription without a version (a stored object predating
+// the CRD-required field, which validation ratcheting keeps status-patchable)
+// is refused naming the path.
+//
+// A catalog path contributes exactly one entry, because it is one #registry
+// key. An authored subscription wins over a claim naming the same catalog:
+// the platform admin's pin and enable decision is the deliberate one, and a
+// disabled subscription must not be re-enabled by a provider registering
+// against it. Claims are consumed in the name order activeClaims sorted them
+// into, so two claims naming one catalog resolve deterministically; the claim
+// reconciler is what keeps that pair from arising (D2, D12).
+func platformEntries(plat *releasesv1alpha1.Platform, claims []releasesv1alpha1.TransformerRegistration) ([]platformmodule.Entry, error) {
+	entries := make([]platformmodule.Entry, 0, len(plat.Spec.Registry)+len(claims))
+	seen := make(map[string]bool, len(plat.Spec.Registry)+len(claims))
 	for path, sub := range plat.Spec.Registry {
 		if sub.Version == "" {
 			return nil, fmt.Errorf("registry entry %q: version is required (stored object predates the required field)", path)
@@ -363,16 +453,80 @@ func platformEntries(plat *releasesv1alpha1.Platform) ([]platformmodule.Entry, e
 			Version: sub.Version,
 			Enable:  sub.Enable == nil || *sub.Enable,
 		})
+		seen[path] = true
+	}
+	for _, claim := range claims {
+		if seen[claim.Spec.Catalog] {
+			continue
+		}
+		entries = append(entries, platformmodule.Entry{
+			Path:    claim.Spec.Catalog,
+			Version: claim.Spec.Version,
+			Enable:  true,
+		})
+		seen[claim.Spec.Catalog] = true
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	return entries, nil
 }
 
-// SetupWithManager wires the controller into mgr, watching the Platform
-// singleton with a generation-change predicate.
+// SetupWithManager wires the controller into mgr, watching both inputs of the
+// tuple the generated package is a function of: the Platform singleton under
+// a generation-change predicate, and every TransformerRegistration whose
+// contribution to the active set changes, so a claim activating regenerates
+// the platform without the CR being edited (enhancement 0015 D13).
 func (r *PlatformReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.Platform{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(
+			&releasesv1alpha1.TransformerRegistration{},
+			handler.EnqueueRequestsFromMapFunc(mapClaimToPlatform),
+			builder.WithPredicates(claimContributionPredicate()),
+		).
 		Named("platform").
 		Complete(r)
+}
+
+// mapClaimToPlatform enqueues the singleton whatever claim changed. The
+// reconcile recomputes the whole tuple from current state, so the event is a
+// wake-up and never an input: which claim woke it, and what it said, are
+// deliberately discarded.
+func mapClaimToPlatform(_ context.Context, _ client.Object) []ctrl.Request {
+	return []ctrl.Request{{NamespacedName: client.ObjectKey{Name: platformSingletonName}}}
+}
+
+// claimContribution returns the coordinate a claim contributes to the active
+// set, and whether it contributes at all. A claim only contributes once the
+// claim reconciler has both accepted it and found its provider serving.
+func claimContribution(obj client.Object) (platformstore.ClaimCoordinate, bool) {
+	claim, ok := obj.(*releasesv1alpha1.TransformerRegistration)
+	if !ok || !claim.Status.Accepted || !claim.Status.Active {
+		return platformstore.ClaimCoordinate{}, false
+	}
+	return platformstore.ClaimCoordinate{Catalog: claim.Spec.Catalog, Version: claim.Spec.Version}, true
+}
+
+// claimContributionPredicate passes only the claim events that can move the
+// active set: a claim arriving or leaving while contributing, and an update
+// that starts, stops or repoints a contribution. Everything else — an
+// un-judged claim being stored, a condition message changing, a cache resync
+// of a claim that contributes nothing — would wake a reconcile that computes
+// the identity it already holds, so it is dropped here rather than absorbed
+// by the no-op skip.
+func claimContributionPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			_, contributes := claimContribution(e.Object)
+			return contributes
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			_, contributed := claimContribution(e.Object)
+			return contributed
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			was, wasContributing := claimContribution(e.ObjectOld)
+			is, isContributing := claimContribution(e.ObjectNew)
+			return wasContributing != isContributing || was != is
+		},
+	}
 }

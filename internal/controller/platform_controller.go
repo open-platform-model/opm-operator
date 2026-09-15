@@ -278,9 +278,16 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // and active, in name order, which is the half of the tuple the Platform CR
 // does not carry. Judging claims is not this reconciler's job: the claim
 // reconciler owns acceptance and activation and this only consumes the
-// verdict (design.md § the claim reconciler stays the judge). A claim being
-// deleted is dropped: its provider is on its way out, so its catalog should
-// not enter the next package.
+// verdict (design.md § the claim reconciler stays the judge).
+//
+// A claim being deleted is dropped only once its removal guard has released
+// it (enhancement 0015 D3). A deletion timestamp alone does not drop it: the
+// guard blocks removal precisely while instances are still rendering against
+// that catalog, so dropping it here would take the catalog out of the next
+// generated package and abandon those instances through the door the block
+// was closing — with the claim still reporting that it was protecting them.
+// Once the finalizer is gone nothing is depending on the claim any more and
+// it leaves the set, which is what it has always done.
 func (r *PlatformReconciler) activeClaims(ctx context.Context) ([]releasesv1alpha1.TransformerRegistration, error) {
 	var list releasesv1alpha1.TransformerRegistrationList
 	if err := r.List(ctx, &list); err != nil {
@@ -288,7 +295,10 @@ func (r *PlatformReconciler) activeClaims(ctx context.Context) ([]releasesv1alph
 	}
 	active := make([]releasesv1alpha1.TransformerRegistration, 0, len(list.Items))
 	for _, claim := range list.Items {
-		if !claim.DeletionTimestamp.IsZero() || !claim.Status.Accepted || !claim.Status.Active {
+		if !claim.Status.Accepted || !claim.Status.Active {
+			continue
+		}
+		if !claim.DeletionTimestamp.IsZero() && !claimContributesAfterDeletion(&claim) {
 			continue
 		}
 		active = append(active, claim)
@@ -537,10 +547,23 @@ func mapClaimToPlatform(_ context.Context, _ client.Object) []ctrl.Request {
 
 // claimContribution returns the coordinate a claim contributes to the active
 // set, and whether it contributes at all. A claim only contributes once the
-// claim reconciler has both accepted it and found its provider serving.
+// claim reconciler has both accepted it and found its provider serving, and
+// it keeps contributing through a blocked deletion for as long as
+// activeClaims keeps it — the two read the same rule, so the predicate never
+// suppresses an event the reconcile would have acted on, nor wakes one it
+// would not.
+//
+// The practical effect of the deletion clause is that stamping a deletion
+// timestamp wakes nothing (the claim still contributes, so nothing moved),
+// and the guard releasing it does (the contribution stops). That is the
+// correct pair of edges: the package should change when the provider actually
+// leaves, not when someone asks it to.
 func claimContribution(obj client.Object) (platformstore.ClaimCoordinate, bool) {
 	claim, ok := obj.(*releasesv1alpha1.TransformerRegistration)
 	if !ok || !claim.Status.Accepted || !claim.Status.Active {
+		return platformstore.ClaimCoordinate{}, false
+	}
+	if !claim.DeletionTimestamp.IsZero() && !claimContributesAfterDeletion(claim) {
 		return platformstore.ClaimCoordinate{}, false
 	}
 	return platformstore.ClaimCoordinate{Catalog: claim.Spec.Catalog, Version: claim.Spec.Version}, true

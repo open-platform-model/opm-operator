@@ -120,6 +120,15 @@ const (
 	// can see which object to remove.
 	DuplicateClaimReason = "DuplicateClaim"
 
+	// DependentsRemainReason: the claim's deletion is blocked because
+	// instances still demand contracts it provides (enhancement 0015 D3).
+	// The message names how many, so the operator's next action is to
+	// remove those instances rather than to guess what is holding the
+	// object. It is not an acceptance verdict: a blocked claim stays
+	// accepted and active, because it is still serving the dependents the
+	// block exists to protect.
+	DependentsRemainReason = "DependentsRemain"
+
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
 	PrunedReason  = "Pruned"

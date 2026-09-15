@@ -59,6 +59,7 @@ rules:
   - moduleinstances/status
   - modulepackages/status
   - platforms/status
+  - transformerregistrations/status
   verbs:
   - get
   - patch
@@ -67,6 +68,7 @@ rules:
   - opmodel.dev
   resources:
   - platforms
+  - transformerregistrations
   verbs:
   - get
   - list

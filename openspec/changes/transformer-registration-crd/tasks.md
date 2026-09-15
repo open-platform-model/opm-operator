@@ -11,10 +11,10 @@ Three sections. design.md carries no unverified assumption about this repo; its 
 
 ## 2. RBAC
 
-- [ ] 2.1 Add `+kubebuilder:rbac` markers for `transformerregistrations` and `transformerregistrations/status` (get;list;watch and the status verbs) beside the existing Platform markers in `internal/controller/platform_controller.go`, then regenerate. Verify: `config/rbac/role.yaml` gains the rules and is not hand-edited.
-- [ ] 2.2 Add `config/rbac/transformerregistration_admin_role.yaml` granting create, update, patch and delete on the kind, and list it in `config/rbac/kustomization.yaml`. Do NOT add a binding. Verify: `task operator:installer` renders `dist/install.yaml` containing the ClusterRole and no ClusterRoleBinding for it.
-- [ ] 2.3 Doc-comment the role file with why it ships unbound (design.md § RBAC ships the platform-admin half only), so a later reader does not add a binding as a fix. Verify: the file states that binding it is the cluster administrator's decision.
-- [ ] 2.4 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(rbac): ship the platform-admin role for transformer registrations`.
+- [x] 2.1 Add `+kubebuilder:rbac` markers for `transformerregistrations` and `transformerregistrations/status` (get;list;watch and the status verbs) beside the existing Platform markers in `internal/controller/platform_controller.go`, then regenerate. Verify: `config/rbac/role.yaml` gains the rules and is not hand-edited.
+- [x] 2.2 Add `config/rbac/transformerregistration_admin_role.yaml` granting create, update, patch and delete on the kind, and list it in `config/rbac/kustomization.yaml`. Do NOT add a binding. Verify: `task operator:installer` renders `dist/install.yaml` containing the ClusterRole and no ClusterRoleBinding for it.
+- [x] 2.3 Doc-comment the role file with why it ships unbound (design.md § RBAC ships the platform-admin half only), so a later reader does not add a binding as a fix. Verify: the file states that binding it is the cluster administrator's decision.
+- [x] 2.4 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(rbac): ship the platform-admin role for transformer registrations`.
 
 ## 3. Admission tests
 

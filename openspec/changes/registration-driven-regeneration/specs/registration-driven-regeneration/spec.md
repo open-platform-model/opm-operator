@@ -55,12 +55,17 @@ Each generated package SHALL carry an identity derived from the `Platform` CR's 
 
 ### Requirement: The effective registry is readable from the Platform
 
-`Platform` status SHALL carry the resolved union of the registry the platform is running: the subscriptions its spec authored and the catalogs its active claims contributed. An entry SHALL indicate which of the two it came from, so an operator can tell an authored subscription from one a provider registered.
+`Platform` status SHALL carry the resolved union of the registry the platform is running: the subscriptions its spec authored and the catalogs its active claims contributed. An entry SHALL indicate which of the two it came from, so an operator can tell an authored subscription from one a provider registered. An entry SHALL also carry the version the package pins it at and whether its transformers register, because a disabled subscription belongs in the union — it is still pinned and imported — but contributes no transformer, and a union read without that distinction overstates what the platform runs.
 
 #### Scenario: The union shows both sources
 
 - **WHEN** a platform has an authored subscription and an active claim
 - **THEN** the status union lists both, distinguishing which is which
+
+#### Scenario: A disabled subscription is listed as not registering
+
+- **WHEN** a platform authors a subscription with transformer registration disabled
+- **THEN** the status union lists its catalog and marks it as contributing no transformer
 
 #### Scenario: The union follows the active set
 

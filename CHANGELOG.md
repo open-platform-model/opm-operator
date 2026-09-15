@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-alpha.17](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.16...v1.0.0-alpha.17) (2026-09-14)
+
+
+### Bug Fixes
+
+* **deps:** bump the sample platform catalogs and library to v1.0.0-alpha.30 ([#131](https://github.com/open-platform-model/opm-operator/issues/131)) ([01dd271](https://github.com/open-platform-model/opm-operator/commit/01dd271386f63227450e97dd7fceac8c4a1fdfe2))
+
+
+### Code Refactoring
+
+* **pkg:** delete unused pkg/errors and pkg/resourceorder copies ([#130](https://github.com/open-platform-model/opm-operator/issues/130)) ([3d7a85f](https://github.com/open-platform-model/opm-operator/commit/3d7a85f66da59847c333438bb9621c91685ca82d))
+* **render:** migrate to library alpha.28 kernel api and verdicts ([#127](https://github.com/open-platform-model/opm-operator/issues/127)) ([e4cfc0a](https://github.com/open-platform-model/opm-operator/commit/e4cfc0a5a7d46fe2e0c7b72ae1622dd51d57ae08))
+
 ## [1.0.0-alpha.16](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.15...v1.0.0-alpha.16) (2026-09-04)
 
 

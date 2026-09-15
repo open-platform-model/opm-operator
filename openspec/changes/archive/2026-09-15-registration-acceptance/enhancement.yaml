@@ -17,5 +17,13 @@
 # section and drop anything it names.
 implements:
   - enhancement: "0015"
-    decisions: [D8, D10, D11, D12]
+    # D11 dropped at archive, by the check this file's header names. Its
+    # decision statement has a catalog half: "The provider catalog exports a
+    # pre-bound registration value ... provides derives as a fold over the
+    # catalog's own transformers (#PreBoundRegistration)". Verified on
+    # catalog_opm main at opm 4.3.1: provides! is still authored, its own doc
+    # comment says the fold has not shipped, and no #PreBoundRegistration
+    # exists. The operator re-derives and verifies, which is its half; the
+    # change that ships the catalog fold completes D11.
+    decisions: [D8, D10, D12]
     resolves: []

@@ -198,6 +198,13 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  observedGeneration is the .metadata.generation the recorded verdict was
+                  reached for. A claim whose generation is ahead of this has been edited
+                  since it was judged, so its verdict is stale.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

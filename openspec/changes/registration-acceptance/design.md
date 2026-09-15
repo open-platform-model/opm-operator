@@ -78,6 +78,14 @@ The refusal message states the comparison is conservative — a `cue.mod` requir
 **Decision**: ground the check in `status.inventory` instead (above).
 **Rationale**: the fixture asserts exactly four labels and none of them carries a namespace or a uuid, while the operator only ever reads the uuid label and never stamps one. So the label set available on a claim identifies an instance *name*, which is not unique across namespaces. The inventory is unambiguous and is already this repo's ownership record by constitutional principle.
 
+**Measured against a live claim (task 1.1, confirming the above).** The finding was re-taken end to end rather than from the fixture alone: `internal/controller/transformerregistration_identity_test.go` drives a rendered-shape claim through the real `ModuleInstance` pipeline under envtest — render result, server-side apply, inventory write — and reads back both the stored object and the instance status. It stays as the regression that pins the finding.
+
+- **Labels on the applied claim**: exactly the fixture's four. `module-instance.opmodel.dev/name` is present; `module-instance.opmodel.dev/namespace` and `module-instance.opmodel.dev/uuid` are both absent, and `metadata.namespace` is empty because the kind is cluster-scoped. The label-based check D11 suggested is therefore not implementable as written, exactly as the fixture predicted.
+- **Nothing adds a label after render.** `pkg/core/labels.go` defines `LabelModuleInstanceNamespace`, but no code path stamps it: the apply path writes the rendered object's labels unchanged, so the CUE side is the whole label story. A label check could not be rescued operator-side without a `catalog_opm` change.
+- **What the inventory records**: one entry, `{Group: "opmodel.dev", Kind: "TransformerRegistration", Namespace: "", Name: "<namespace>.<name>", Version: "v1alpha1", Component: ""}`. `Namespace` is empty (the kind is cluster-scoped) and `Component` is empty (the rendered claim carries no `component.opmodel.dev/name` label), so the entry is matched on Group, Kind and Name. The name is the dot-joined instance identity, which carries the namespace the labels omit.
+
+The inventory route is confirmed viable and the recorded fallback stays unused.
+
 ### A claim arriving before the platform is generated is a requeue
 
 **Context**: D8 and any contract lookup need `Generated.Platform`, which is absent until the Platform reconciler has run.

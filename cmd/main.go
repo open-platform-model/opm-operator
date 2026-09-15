@@ -331,6 +331,16 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "Platform")
 		os.Exit(1)
 	}
+	if err := (&controller.TransformerRegistrationReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: mgr.GetEventRecorder("opm-controller"),
+		Kernel:        k,
+		Store:         platformStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "TransformerRegistration")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

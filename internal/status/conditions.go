@@ -50,6 +50,13 @@ const (
 	DependenciesNotReadyReason = "DependenciesNotReady"
 	PlatformNotReadyReason     = "PlatformNotReady"
 
+	// TransformerRegistration-specific reasons (enhancement 0015 D3: a claim
+	// carries a verdict). Every refusal gets a reason of its own: a claimant
+	// acts on the reason, and collapsing two causes into one sends them to
+	// the wrong fix.
+	NotYetJudgedReason = "NotYetJudged" // Ready=Unknown: the claim has not been judged yet.
+	AcceptedReason     = "Accepted"     // Ready=True: the claim passed every check.
+
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
 	PrunedReason  = "Pruned"

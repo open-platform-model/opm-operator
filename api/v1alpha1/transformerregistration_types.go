@@ -68,10 +68,16 @@ type TransformerRegistrationSpec struct {
 // TransformerRegistration.
 //
 // Acceptance and activation are separate states (enhancement 0015 D3): a
-// stored claim is not yet judged, accepted but inactive, or active. Nothing
-// sets these fields yet; no controller watches the kind, so an applied claim
-// is stored with empty status and is inert.
+// stored claim is not yet judged, accepted but inactive, or active. The
+// acceptance reconciler writes conditions, accepted and observedGeneration;
+// active stays false until an accepted claim's provider is serving.
 type TransformerRegistrationStatus struct {
+	// observedGeneration is the .metadata.generation the recorded verdict was
+	// reached for. A claim whose generation is ahead of this has been edited
+	// since it was judged, so its verdict is stale.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// conditions represent the current state of the TransformerRegistration
 	// resource.
 	// +listType=map

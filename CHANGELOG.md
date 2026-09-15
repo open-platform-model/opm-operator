@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-alpha.20](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.19...v1.0.0-alpha.20) (2026-09-15)
+
+
+### Features
+
+* **controller:** activate accepted claims, one provider per contract ([#139](https://github.com/open-platform-model/opm-operator/issues/139)) ([07d9ff2](https://github.com/open-platform-model/opm-operator/commit/07d9ff2af9a9bcc21c7528cf4f17520fcc3a9144))
+* **controller:** regenerate the platform from the active-claim set ([#141](https://github.com/open-platform-model/opm-operator/issues/141)) ([caf7c49](https://github.com/open-platform-model/opm-operator/commit/caf7c499a691f82899478b1334f31ccb2576d2b4))
+
 ## [1.0.0-alpha.19](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.18...v1.0.0-alpha.19) (2026-09-15)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-alpha.19](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.18...v1.0.0-alpha.19) (2026-09-15)
+
+
+### Features
+
+* **controller:** give TransformerRegistration claims a verdict ([#137](https://github.com/open-platform-model/opm-operator/issues/137)) ([e14fcc4](https://github.com/open-platform-model/opm-operator/commit/e14fcc471f82484a8a2b8e72e39e69cba98eca3d))
+
+
+### Bug Fixes
+
+* **deps:** bump library to v1.0.0-alpha.31 ([561531d](https://github.com/open-platform-model/opm-operator/commit/561531d91679f65b0d624829d1e89736ff51d0d3))
+
 ## [1.0.0-alpha.18](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.17...v1.0.0-alpha.18) (2026-09-15)
 
 

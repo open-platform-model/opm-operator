@@ -1,0 +1,16 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+#
+# D14 is NOT claimed. Its readiness exclusion has nothing to exclude from:
+# ModulePackage.Ready is set from the reconcile outcome alone, and the only
+# waiting is Flux's WaitForSet on the cluster-definition and class stages,
+# never the general resource stage. The deadlock D14 predicts becomes
+# reachable when someone adds a general-stage wait; the exclusion belongs to
+# that change.
+#
+# Before logging, diff this list against proposal.md's "Not in this change"
+# section and drop anything it names.
+implements:
+  - enhancement: "0015"
+    decisions: [D13, D17]
+    resolves: []

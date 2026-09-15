@@ -6,7 +6,7 @@ Define the cluster-scoped `TransformerRegistration` custom resource: the shape a
 
 ### Requirement: Cluster-scoped TransformerRegistration resource
 
-The operator SHALL define a `TransformerRegistration` custom resource in group `opmodel.dev`, version `v1alpha1`, with `scope: Cluster` and a status subresource. The kind SHALL join the operator's single flat API group, which enhancement 0002 D5 chose over any kind-specific or prefixed group; `apiVersion: opmodel.dev/v1alpha1`, `kind: TransformerRegistration`. The `catalog_opm` renderer emits these three literals because nothing in a catalog can derive a CRD this repo owns, so the two sides must agree exactly; `opm` 4.3.0 shipped `opm.opmodel.dev/v1alpha1` and is corrected to match in its own change. No enhancement decision pins the group: the prefixed spelling entered through a pre-drafted shape in `0015/contracts/contracts.cue`, not through D3, D9 or D12. The types SHALL be registered in the runtime scheme.
+The operator SHALL define a `TransformerRegistration` custom resource in group `opmodel.dev`, version `v1alpha1`, with `scope: Cluster` and a status subresource — `apiVersion: opmodel.dev/v1alpha1`, `kind: TransformerRegistration`. Nothing in a catalog can derive a CRD this repo owns, so the `catalog_opm` renderer SHALL emit these three literals exactly; the operator's group is authoritative. The types SHALL be registered in the runtime scheme.
 
 #### Scenario: The kind is installable and cluster-scoped
 

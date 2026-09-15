@@ -173,7 +173,7 @@ var _ = Describe("TransformerRegistration acceptance: the catalog checks", func(
 			Expect(ready.Reason).To(Equal(status.CatalogUnresolvedReason))
 			Expect(ready.Reason).NotTo(Equal(status.CatalogWrongKindReason),
 				"a registry problem and an authoring problem send the claimant to different fixes")
-			Expect(ready.Message).To(ContainSubstring("opmodel.dev/catalogs/k8up@v1"))
+			Expect(ready.Message).To(ContainSubstring(claim.Spec.Catalog))
 			Expect(ready.Message).To(ContainSubstring("1.0.0"))
 		})
 
@@ -230,19 +230,10 @@ var _ = Describe("TransformerRegistration acceptance: the catalog checks", func(
 
 			// The claim lists restore before backup; Provides derives them
 			// sorted, so the two lists arrive in opposite orders.
-			claimName := fmt.Sprintf("%s.%s", ns, "k8up")
-			claim := &releasesv1alpha1.TransformerRegistration{
-				ObjectMeta: metav1.ObjectMeta{Name: claimName},
-				Spec: releasesv1alpha1.TransformerRegistrationSpec{
-					Catalog:  "opmodel.dev/catalogs/k8up@v1",
-					Version:  "1.0.0",
-					Provides: []string{restoreTrait, backupTrait},
-					ProviderRef: releasesv1alpha1.ProviderReference{
-						Namespace: ns, Name: "k8up",
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+			claim := createClaim(ctx, ns)
+			claim.Spec.Provides = []string{restoreTrait, backupTrait}
+			Expect(k8sClient.Update(ctx, claim)).To(Succeed())
+			claimName := claim.Name
 			ownProvidedInventory(ctx, ns, claimName)
 
 			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait, restoreTrait)})

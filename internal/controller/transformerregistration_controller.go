@@ -163,7 +163,69 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	case identityOK:
 	}
 
+	holder, err := r.holderOf(ctx, &claim)
+	if err != nil {
+		return r.deferVerdict(ctx, patcher, &claim, status.DuplicateClaimReason,
+			fmt.Sprintf("Competing claims for catalog %s could not be listed: %v", claim.Spec.Catalog, err))
+	}
+	if holder != "" {
+		return r.refuse(ctx, patcher, &claim, status.DuplicateClaimReason, fmt.Sprintf(
+			"Claim %s already holds provider catalog %s; remove one of the two claims",
+			holder, claim.Spec.Catalog))
+	}
+
 	return r.accept(ctx, patcher, &claim)
+}
+
+// holderOf returns the name of the claim that holds this claim's provider
+// catalog, or the empty string when this claim is the holder. At most one
+// claim for a provider is accepted (enhancement 0015 D12); two instances of
+// one provider module produce two distinct CRs, and the loser is refused here
+// naming the winner.
+//
+// The holder is the claim with the earliest creationTimestamp, ties broken by
+// name. Both fields are immutable, so the decision does not move when either
+// claim is re-reconciled and does not depend on which one the informer
+// happened to deliver first — which a first-accepted-wins rule recorded in
+// status would, handing acceptance to the other claim after a manager
+// restart.
+func (r *TransformerRegistrationReconciler) holderOf(
+	ctx context.Context,
+	claim *releasesv1alpha1.TransformerRegistration,
+) (string, error) {
+	var list releasesv1alpha1.TransformerRegistrationList
+	if err := r.List(ctx, &list); err != nil {
+		return "", err
+	}
+
+	holder := claim
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.Name == claim.Name || other.Spec.Catalog != claim.Spec.Catalog {
+			continue
+		}
+		// A claim on its way out is not competing for the provider.
+		if !other.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if olderClaim(other, holder) {
+			holder = other
+		}
+	}
+
+	if holder.Name == claim.Name {
+		return "", nil
+	}
+	return holder.Name, nil
+}
+
+// olderClaim reports whether a should hold the provider ahead of b: the
+// earlier creationTimestamp, and on a tie the lower name.
+func olderClaim(a, b *releasesv1alpha1.TransformerRegistration) bool {
+	if a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.Name < b.Name
+	}
+	return a.CreationTimestamp.Before(&b.CreationTimestamp)
 }
 
 // providesDrift compares the contract set re-derived from the catalog against

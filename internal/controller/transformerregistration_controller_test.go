@@ -44,19 +44,28 @@ const providerInstanceName = "k8up"
 // specs sharing a name would share an object.
 var claimCounter int
 
-// createClaim applies a well-formed claim from the named instance. The CRD
-// requires the dot-joined name, so the object name is derived rather than
-// chosen.
+// createClaim applies a well-formed claim naming a provider catalog of its
+// own. The specs share one API server, so claims outlive the spec that made
+// them; a shared catalog path would make every acceptance after the first a
+// D12 duplicate. A spec that wants two claims competing passes the same path
+// to createClaimFor.
 func createClaim(ctx context.Context, namespace string) *releasesv1alpha1.TransformerRegistration {
+	return createClaimFor(ctx, namespace, fmt.Sprintf("opmodel.dev/catalogs/%s@v1", namespace))
+}
+
+// createClaimFor applies a well-formed claim for the named provider catalog.
+// The CRD requires the dot-joined name, so the object name is derived from
+// the provider instance rather than chosen.
+func createClaimFor(ctx context.Context, namespace, catalogPath string) *releasesv1alpha1.TransformerRegistration {
 	const name = providerInstanceName
 	claim := &releasesv1alpha1.TransformerRegistration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s.%s", namespace, name),
 		},
 		Spec: releasesv1alpha1.TransformerRegistrationSpec{
-			Catalog:  "opmodel.dev/catalogs/k8up@v1",
+			Catalog:  catalogPath,
 			Version:  "1.0.0",
-			Provides: []string{"opmodel.dev/catalogs/opm/traits/backup@v1alpha1"},
+			Provides: []string{backupTrait},
 			ProviderRef: releasesv1alpha1.ProviderReference{
 				Namespace: namespace,
 				Name:      name,
@@ -68,10 +77,13 @@ func createClaim(ctx context.Context, namespace string) *releasesv1alpha1.Transf
 }
 
 // nextClaimNamespace creates and returns a namespace unique to the calling
-// spec, so a claim's providerRef can name an instance that really lives there.
+// spec, so a claim's providerRef can name an instance that really lives
+// there. The counter is zero-padded so namespaces sort in creation order:
+// creationTimestamp has one-second granularity, so two claims made in one
+// spec usually tie and D12's holder falls to the name tie-break.
 func nextClaimNamespace() string {
 	claimCounter++
-	name := fmt.Sprintf("claim-ns-%d", claimCounter)
+	name := fmt.Sprintf("claim-ns-%03d", claimCounter)
 	Expect(k8sClient.Create(context.Background(), &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	})).To(Succeed())

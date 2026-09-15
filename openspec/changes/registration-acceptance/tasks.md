@@ -20,8 +20,8 @@ label was measured in `catalog_opm`'s fixture rather than in a live cluster.
 
 ## 3. The duplicate refusal — D12
 
-- [ ] 3.1 Refuse every claim for a provider catalog another claim already holds, naming the holder by name. The holder is the earliest `metadata.creationTimestamp`, ties broken by name (design.md § D12's holder). Verify: the refusal names the accepted claim, and repeated reconciles with no spec change never move acceptance.
-- [ ] 3.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): refuse a second claim for one provider naming the holder`.
+- [x] 3.1 Refuse every claim for a provider catalog another claim already holds, naming the holder by name. The holder is the earliest `metadata.creationTimestamp`, ties broken by name (design.md § D12's holder). Verify: the refusal names the accepted claim, and repeated reconciles with no spec change never move acceptance.
+- [x] 3.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): refuse a second claim for one provider naming the holder`.
 
 ## 4. The build-compatibility refusal — D8
 

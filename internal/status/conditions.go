@@ -78,6 +78,11 @@ const (
 	// not written an inventory yet. A race, not a verdict.
 	ProviderInventoryPendingReason = "ProviderInventoryPending"
 
+	// DuplicateClaimReason: another claim already holds this provider catalog
+	// (enhancement 0015 D12). The message names the holder, so an operator
+	// can see which object to remove.
+	DuplicateClaimReason = "DuplicateClaim"
+
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
 	PrunedReason  = "Pruned"

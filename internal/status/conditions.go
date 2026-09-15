@@ -78,6 +78,12 @@ const (
 	// not written an inventory yet. A race, not a verdict.
 	ProviderInventoryPendingReason = "ProviderInventoryPending"
 
+	// BuildIncompatibleReason: the claimed catalog requires a shared
+	// OPM-namespace path at a version the platform did not resolve to
+	// (enhancement 0015 D8). Refused at acceptance rather than at render,
+	// where the failure would name an unrelated module instance.
+	BuildIncompatibleReason = "BuildIncompatible"
+
 	// DuplicateClaimReason: another claim already holds this provider catalog
 	// (enhancement 0015 D12). The message names the holder, so an operator
 	// can see which object to remove.

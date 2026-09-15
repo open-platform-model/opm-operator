@@ -120,7 +120,8 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	// pre-reconcile status.
 	patcher := patch.NewSerialPatcher(&claim, r.Client)
 
-	if _, ok := r.Store.Generated(); !ok {
+	generated, ok := r.Store.Generated()
+	if !ok {
 		// No platform to judge against. Not a refusal: the platform's absence
 		// says nothing about the claim, and writing a verdict here would make
 		// acceptance depend on which reconciler ran first. The Platform watch
@@ -161,6 +162,23 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	case identityRefused:
 		return r.refuse(ctx, patcher, &claim, status.ProviderMismatchReason, msg)
 	case identityOK:
+	}
+
+	// D8 compares the catalog's committed requirements against the platform's
+	// resolved versions, here rather than at render: a render failure would
+	// name whichever unrelated module instance triggered the build, while
+	// this names the provider that is incompatible.
+	platformReqs, err := platformRequirements(generated.Dir)
+	if err != nil {
+		return r.deferVerdict(ctx, patcher, &claim, status.PlatformNotReadyReason,
+			fmt.Sprintf("The generated platform's resolution could not be read: %v", err))
+	}
+	switch msg, err := buildIncompatibility(cat, platformReqs); {
+	case err != nil:
+		return r.refuse(ctx, patcher, &claim, status.BuildIncompatibleReason,
+			fmt.Sprintf("Claimed catalog's committed requirements could not be read: %v", err))
+	case msg != "":
+		return r.refuse(ctx, patcher, &claim, status.BuildIncompatibleReason, msg)
 	}
 
 	holder, err := r.holderOf(ctx, &claim)

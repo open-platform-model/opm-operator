@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -78,14 +79,37 @@ metadata: {
 	Expect(v.Err()).NotTo(HaveOccurred())
 	cat, err := catalog.NewCatalogFromValue(v)
 	Expect(err).NotTo(HaveOccurred())
+
+	// Every acquired catalog carries its committed module file, which the
+	// build-compatibility check reads. This one requires nothing, so it is
+	// compatible with any platform; the D8 specs supply their own.
+	cat.Source = catalogSourceRequiring(nil)
 	return cat
+}
+
+// catalogSourceRequiring builds the overlay source of a catalog whose
+// committed cue.mod/module.cue declares the given dependencies.
+func catalogSourceRequiring(deps map[string]string) *catalog.Source {
+	const root = "/synthetic/catalog"
+	return &catalog.Source{
+		Root: root,
+		Overlay: map[string][]byte{
+			filepath.Join(root, "cue.mod", "module.cue"): []byte(
+				modFile("opmodel.dev/catalogs/k8up@v1", deps)),
+		},
+	}
 }
 
 // acceptanceReconciler returns a reconciler with a platform in its store, so
 // the specs below reach the checks rather than parking on PlatformNotReady.
+// The platform resolves core, which the default provider catalog does not
+// require, so nothing here refuses on build compatibility.
 func acceptanceReconciler(catalogs CatalogAcquirer) *TransformerRegistrationReconciler {
 	store := platformstore.NewStore()
-	store.SetGenerated(platformstore.Generated{Generation: 1, Dir: "/does-not-matter"})
+	store.SetGenerated(platformstore.Generated{
+		Generation: 1,
+		Dir:        platformDirWith(map[string]string{"opmodel.dev/core@v2": "v2.0.0"}),
+	})
 	return &TransformerRegistrationReconciler{
 		Client:        k8sClient,
 		Scheme:        k8sClient.Scheme(),

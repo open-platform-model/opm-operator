@@ -270,8 +270,13 @@ func (r *TransformerRegistrationReconciler) holderOf(
 		if other.Name == claim.Name || other.Spec.Catalog != claim.Spec.Catalog {
 			continue
 		}
-		// A claim on its way out is not competing for the provider.
-		if !other.DeletionTimestamp.IsZero() {
+		// A claim on its way out is not competing for the provider — but a
+		// claim whose deletion is BLOCKED is not on its way out. It is still
+		// accepted, still active, and its catalog is still in the generated
+		// platform (activeClaims), so a second claim for the same catalog is
+		// the duplicate D12 refuses. The two reads agree deliberately: see
+		// the change's design.md for what that costs a provider migration.
+		if !other.DeletionTimestamp.IsZero() && !claimContributesAfterDeletion(other) {
 			continue
 		}
 		if olderClaim(other, holder) {

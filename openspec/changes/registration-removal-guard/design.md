@@ -80,6 +80,23 @@ It is not immediate. `claimContributionPredicate` reads only `Accepted`, `Active
 
 **Section 3 therefore carries a second edit the tasks did not name:** a claim whose deletion is blocked keeps contributing to the active set, and `activeClaims` drops a terminating claim only once the block has released. Section 2.1 is where this is written into tasks.md before anything is built on it.
 
+### A blocked claim holds everything, or it holds nothing coherently
+
+Keeping a blocked claim in the active set forced a second question the tasks did not name: the two "is this claim still competing" reads — `holderOf` (D12, same catalog) and `activeContractHolder` (D2, same contract) — both skipped any claim carrying a deletion timestamp. Left alone they would disagree with `activeClaims`, and the disagreement is reachable by the exact sequence a blocked delete creates: delete the old provider, watch it block, install the replacement.
+
+What that produced, measured against the code rather than imagined:
+
+- **Same catalog, new version.** Both claims land in `activeClaims`; `platformEntries` dedupes by catalog path and keeps whichever claim sorts first by name, so the platform can silently pin the *dying* claim's version.
+- **Different catalog, same contract.** Both entries are enabled, two registry entries supply one provider-fulfilled contract, and the render's single-provider guard (0010 D32/D37) refuses — cluster-wide, for every instance, attributed to nothing in particular.
+
+So all three reads now use `claimContributesAfterDeletion`: a blocked claim holds its provider slot and its contracts exactly as long as it holds its place in the platform.
+
+**What this costs, stated rather than discovered later.** A provider migration cannot overlap a blocked delete. The replacement is refused naming the claim that holds the contract, and that claim is held open by its dependents, so the operator's path is: remove the dependent instances, let the old claim go, install the replacement, recreate the instances. That is an outage for every consumer of the contract.
+
+The alternative is not "no outage" — it is the over-subscribed platform above, which is an outage for everyone *and* misattributed. A clear refusal naming both ends is the better failure.
+
+**The real fix is out of scope here and worth recording.** The deadlock exists because the dependent count asks "which instances demand a contract this claim provides" and never asks "is anyone else able to provide it". A count that discounted contracts another active claim already serves would let a replacement take over and release the old claim on its own. That is a change to what the count means, on top of a count that does not exist yet at the time of writing; it belongs to whichever slice revisits provider migration, not to the slice that introduced the block.
+
 ### The refusal site is chosen after the count — and it turned out to be its own change
 
 D16 fixes one constraint — the refusal must land while the previously accepted claim is still effective — and leaves the mechanics to this slice. Two doors:

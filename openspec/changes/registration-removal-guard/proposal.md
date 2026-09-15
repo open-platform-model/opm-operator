@@ -35,7 +35,8 @@ The refusal-site question was deliberately sequenced after the spike, on the rea
 ## Impact
 
 - **API types**: one status field on `ModuleInstance`, `status.requiredContracts`, derived and never authored. `TransformerRegistration` gains a finalizer, which is metadata rather than schema.
-- **Controllers**: `TransformerRegistrationReconciler` gains deletion handling; the `ModuleInstance` reconciler gains a status write beside the existing `status.instanceUUID` one; `PlatformReconciler.activeClaims` stops dropping a claim whose deletion is blocked.
+- **Controllers**: `TransformerRegistrationReconciler` gains deletion handling; the `ModuleInstance` reconciler gains a status write beside the existing `status.instanceUUID` one; `PlatformReconciler.activeClaims` stops dropping a claim whose deletion is blocked, and the D12/D2 holder checks follow the same rule so all three reads agree on what a terminating claim is.
+- **Provider migration**: a replacement provider cannot be accepted while the claim it replaces is blocked. design.md states the cost and why the alternative (an over-subscribed platform refusing generation cluster-wide) is worse.
 - **Render**: `render.RenderResult` gains `RequiredContracts`, computed from the instance the renderer has already synthesized. No extra acquisition, no extra build, no read of the platform.
 - **Deletion behaviour**: a `TransformerRegistration` stops being freely deletable. An operator who wants one gone while dependents exist must remove the dependents first, which is the point.
 - **SemVer**: MINOR. The install surface is unchanged; the webhook question left with D16.
@@ -51,6 +52,7 @@ The refusal-site question was deliberately sequenced after the spike, on the rea
 
 - `reconcile-loop-assembly`: the `ModuleInstance` status patch gains `requiredContracts`, written on every successful render and left untouched on every path that does not render.
 - `registration-driven-regeneration`: the active-claim set no longer drops a claim the instant it carries a deletion timestamp; a claim whose deletion is blocked keeps contributing until the block releases.
+- `registration-acceptance`: D12's provider slot and D2's contract slot follow the same rule — a claim whose deletion is blocked keeps holding both, because its catalog is still supplying the generated platform and a second provider would over-subscribe rather than replace it.
 
 ## Impact on existing behaviour
 

@@ -108,12 +108,14 @@ var _ = Describe("ModuleInstance contract demand", func() {
 			"a failed render must not clear the last known demand")
 	})
 
-	It("follows the demand when a later render reports a different set", func() {
+	It("refreshes the demand on a no-op reconcile", func() {
 		ctx := context.Background()
 		nn := newInstance(ctx, "demand-follows-render")
 
 		reconcileTwice(ctx, newReconciler(&stubRenderer{}), nn)
 		Expect(read(ctx, nn).Status.RequiredContracts).To(Equal([]string{stubContract}))
+		attemptedBefore := read(ctx, nn).Status.LastAttemptedAt
+		Expect(attemptedBefore).NotTo(BeNil())
 
 		// The same instance, re-rendered against a platform whose catalogs
 		// moved: a no-op for apply (the rendered objects are identical) but
@@ -127,10 +129,46 @@ var _ = Describe("ModuleInstance contract demand", func() {
 		_, err := shifted.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(read(ctx, nn).Status.RequiredContracts).To(Equal(moved.RequiredContracts),
+		after := read(ctx, nn)
+		// Pin the path: the NoOp branch of the deferred patch is bounded and
+		// leaves lastAttempted* alone, so an unchanged timestamp is what
+		// proves this reconcile went through it. Without this the spec would
+		// still pass from the apply path if a digest ever moved, and the
+		// scenario it exists for would go uncovered silently.
+		Expect(after.Status.LastAttemptedAt).To(Equal(attemptedBefore),
+			"this reconcile must be the no-op path, not a re-apply")
+		Expect(after.Status.RequiredContracts).To(Equal(moved.RequiredContracts),
 			"a no-op reconcile still refreshes the demand the render reported")
-		Expect(read(ctx, nn).Status.RequiredContracts).NotTo(ContainElement(stubContract),
+		Expect(after.Status.RequiredContracts).NotTo(ContainElement(stubContract),
 			"a contract the instance stopped demanding leaves the status")
+	})
+
+	It("follows the spec when the instance's module changes", func() {
+		ctx := context.Background()
+		nn := newInstance(ctx, "demand-follows-spec")
+
+		reconcileTwice(ctx, newReconciler(&stubRenderer{}), nn)
+		Expect(read(ctx, nn).Status.RequiredContracts).To(Equal([]string{stubContract}))
+
+		// A real spec edit, not a swapped stub: the instance is pointed at a
+		// module whose components declare a different contract set, which is
+		// the shape the requirement's scenario names.
+		mi := read(ctx, nn)
+		mi.Spec.Module.Version = "v0.2.0"
+		Expect(k8sClient.Update(ctx, mi)).To(Succeed())
+
+		rewritten := stubRenderResult(namespace, nil)
+		rewritten.RequiredContracts = []string{
+			"opmodel.dev/catalogs/opm/resources/secrets@v1beta1",
+		}
+		_, err := newReconciler(&stubRenderer{result: rewritten}).
+			Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+
+		after := read(ctx, nn)
+		Expect(after.Status.RequiredContracts).To(Equal(rewritten.RequiredContracts))
+		Expect(after.Status.RequiredContracts).NotTo(ContainElement(stubContract),
+			"the previous module's contracts no longer appear")
 	})
 
 	It("leaves the demand untouched on a suspended instance", func() {

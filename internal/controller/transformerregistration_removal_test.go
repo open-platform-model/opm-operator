@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
@@ -271,6 +272,107 @@ var _ = Describe("TransformerRegistration removal guard: D3 — a claim with dep
 			_, contributes := claimContribution(&blocked)
 			Expect(contributes).To(BeTrue(),
 				"a blocked claim still supplies the catalog its dependents render against")
+
+			// The predicate above only decides whether to WAKE a reconcile.
+			// activeClaims is the function that decides what the generated
+			// package is built from, so the guarantee is asserted there and
+			// on the entries it produces.
+			p := newPlatformReconciler(platformstore.NewStore(), nil, "")
+			active, err := p.activeClaims(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			names := make([]string, 0, len(active))
+			for i := range active {
+				names = append(names, active[i].Name)
+			}
+			Expect(names).To(ContainElement(claim.Name),
+				"the blocked claim is still an input to platform generation")
+
+			entries, err := platformEntries(&releasesv1alpha1.Platform{}, active)
+			Expect(err).NotTo(HaveOccurred())
+			paths := make([]string, 0, len(entries))
+			for _, e := range entries {
+				paths = append(paths, e.Path)
+			}
+			Expect(paths).To(ContainElement(claim.Spec.Catalog),
+				"the regenerated package still carries the blocked claim's catalog")
+		})
+
+		It("drops a terminating claim from activeClaims once the guard released it", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			contract := claimContract(ns)
+
+			claim := activatedClaim(ctx, ns, contract)
+			// No dependents, so the first deletion reconcile releases it and
+			// the object goes. What must not survive is its contribution.
+			Expect(k8sClient.Delete(ctx, &claim)).To(Succeed())
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(contract)})
+			_, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: claim.Name},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimExists(ctx, claim.Name)).To(BeFalse())
+
+			p := newPlatformReconciler(platformstore.NewStore(), nil, "")
+			active, err := p.activeClaims(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			for i := range active {
+				Expect(active[i].Name).NotTo(Equal(claim.Name))
+			}
+		})
+
+		It("still holds its provider catalog and its contracts while blocked", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			contract := claimContract(ns)
+
+			// A blocked claim is in the generated platform, so a second
+			// provider arriving now would over-subscribe the contract and
+			// refuse generation cluster-wide. Both competing-claim reads
+			// therefore treat it as still holding — see design.md for what
+			// that costs a provider migration.
+			held := activatedClaim(ctx, ns, contract)
+			dependentDemanding(ctx, ns, "consumer", contract)
+			Expect(k8sClient.Delete(ctx, &held)).To(Succeed())
+
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(contract)})
+			judge(ctx, r, held.Name)
+
+			// D12: another claim for the same catalog.
+			rival := nextClaimNamespace()
+			sameCatalog := createClaimListing(ctx, rival, held.Spec.Catalog, contract)
+			ownProvidedInventory(ctx, rival, sameCatalog.Name)
+			refused := judge(ctx, acceptanceReconciler(
+				&stubCatalogs{cat: providerCatalog(contract)}), sameCatalog.Name)
+
+			Expect(refused.Status.Accepted).To(BeFalse())
+			Expect(readyOf(refused).Reason).To(Equal(status.DuplicateClaimReason))
+			Expect(readyOf(refused).Message).To(ContainSubstring(held.Name),
+				"the refusal names the blocked claim that still holds the provider")
+		})
+
+		It("still holds its contracts against a different catalog while blocked", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			contract := claimContract(ns)
+
+			held := activatedClaim(ctx, ns, contract)
+			dependentDemanding(ctx, ns, "consumer", contract)
+			Expect(k8sClient.Delete(ctx, &held)).To(Succeed())
+			judge(ctx, acceptanceReconciler(
+				&stubCatalogs{cat: providerCatalog(contract)}), held.Name)
+
+			// D2: a DIFFERENT catalog offering the same contract.
+			rival := nextClaimNamespace()
+			other := createClaimProviding(ctx, rival, contract)
+			ownProvidedInventory(ctx, rival, other.Name)
+			refused := judge(ctx, acceptanceReconciler(
+				&stubCatalogs{cat: providerCatalog(contract)}), other.Name)
+
+			Expect(refused.Status.Accepted).To(BeFalse())
+			Expect(readyOf(refused).Reason).To(Equal(status.ContractClaimedReason))
+			Expect(readyOf(refused).Message).To(ContainSubstring(held.Name))
 		})
 
 		It("drops the claim once the guard has released it", func() {

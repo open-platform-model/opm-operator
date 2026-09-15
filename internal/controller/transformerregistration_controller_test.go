@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +35,11 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
+// providerInstanceName is the instance every spec's claim is rendered by. The
+// namespace is what varies between specs, so the dot-joined claim names stay
+// distinct on a cluster-scoped kind.
+const providerInstanceName = "k8up"
+
 // claimCounter names each spec's claim apart. The kind is cluster-scoped, so
 // specs sharing a name would share an object.
 var claimCounter int
@@ -41,7 +47,8 @@ var claimCounter int
 // createClaim applies a well-formed claim from the named instance. The CRD
 // requires the dot-joined name, so the object name is derived rather than
 // chosen.
-func createClaim(ctx context.Context, namespace, name string) *releasesv1alpha1.TransformerRegistration {
+func createClaim(ctx context.Context, namespace string) *releasesv1alpha1.TransformerRegistration {
+	const name = providerInstanceName
 	claim := &releasesv1alpha1.TransformerRegistration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s.%s", namespace, name),
@@ -60,10 +67,15 @@ func createClaim(ctx context.Context, namespace, name string) *releasesv1alpha1.
 	return claim
 }
 
-// nextClaimNamespace returns a namespace string unique to the calling spec.
+// nextClaimNamespace creates and returns a namespace unique to the calling
+// spec, so a claim's providerRef can name an instance that really lives there.
 func nextClaimNamespace() string {
 	claimCounter++
-	return fmt.Sprintf("claim-ns-%d", claimCounter)
+	name := fmt.Sprintf("claim-ns-%d", claimCounter)
+	Expect(k8sClient.Create(context.Background(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+	})).To(Succeed())
+	return name
 }
 
 var _ = Describe("TransformerRegistration Controller", func() {
@@ -71,7 +83,7 @@ var _ = Describe("TransformerRegistration Controller", func() {
 		It("requeues without writing a verdict", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
-			claim := createClaim(ctx, ns, "k8up")
+			claim := createClaim(ctx, ns)
 
 			reconciler := &TransformerRegistrationReconciler{
 				Client:        k8sClient,
@@ -100,33 +112,19 @@ var _ = Describe("TransformerRegistration Controller", func() {
 	})
 
 	Context("When a platform has been generated", func() {
-		It("patches status and records the generation it observed", func() {
+		It("records the generation the verdict was reached for", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
-			claim := createClaim(ctx, ns, "k8up")
+			claim := createClaim(ctx, ns)
+			ownProvidedInventory(ctx, ns, claim.Name)
 
-			store := platformstore.NewStore()
-			store.SetGenerated(platformstore.Generated{Generation: 1, Dir: "/does-not-matter"})
-
-			reconciler := &TransformerRegistrationReconciler{
-				Client:        k8sClient,
-				Scheme:        k8sClient.Scheme(),
-				EventRecorder: events.NewFakeRecorder(10),
-				Store:         store,
-			}
-
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: claim.Name},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			var judged releasesv1alpha1.TransformerRegistration
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: claim.Name}, &judged)).To(Succeed())
+			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(backupTrait)})
+			judged := judge(ctx, r, claim.Name)
 
 			Expect(judged.Status.ObservedGeneration).To(Equal(judged.Generation))
 			ready := apimeta.FindStatusCondition(judged.Status.Conditions, status.ReadyCondition)
 			Expect(ready).NotTo(BeNil())
-			Expect(ready.Reason).To(Equal(status.NotYetJudgedReason))
+			Expect(ready.ObservedGeneration).To(Equal(judged.Generation))
 
 			// Acceptance does not activate.
 			Expect(judged.Status.Active).To(BeFalse())

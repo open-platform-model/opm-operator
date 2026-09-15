@@ -13,10 +13,10 @@ label was measured in `catalog_opm`'s fixture rather than in a live cluster.
 
 ## 2. The catalog checks — D10 and D11
 
-- [ ] 2.1 Acquire `spec.catalog` at `spec.version` through `Kernel.AcquireCatalogFromRegistry` and refuse a non-`#Catalog` on the library's `ErrWrongKind`, naming the kind found. Refuse an unresolvable coordinate distinguishably, naming the coordinate. Verify: the two refusals carry different reasons; the wrong-kind case asserts the sentinel with `errors.Is`, not a message match.
-- [ ] 2.2 Compare `Catalog.Provides()` to `spec.provides` for exact equality, refusing drift in either direction and naming both lists. Verify: tests cover a claim naming an unimplemented contract, a claim omitting an implemented one, and an exact match; the match case passes regardless of the order the two lists were produced in.
-- [ ] 2.3 Implement the identity check the spike settled (inventory-based per design.md, or the recorded fallback if 1.1 overturned it): refuse unless the `ModuleInstance` named by `spec.providerRef` exists and its `status.inventory` holds this claim. Requeue, do not refuse, while that instance's inventory has not settled. Verify: a claim whose `providerRef` names another instance is refused naming both identities; a claim applied before its instance's inventory is written is requeued.
-- [ ] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): accept a claim only against the catalog it names`.
+- [x] 2.1 Acquire `spec.catalog` at `spec.version` through `Kernel.AcquireCatalogFromRegistry` and refuse a non-`#Catalog` on the library's `ErrWrongKind`, naming the kind found. Refuse an unresolvable coordinate distinguishably, naming the coordinate. Verify: the two refusals carry different reasons; the wrong-kind case asserts the sentinel with `errors.Is`, not a message match.
+- [x] 2.2 Compare `Catalog.Provides()` to `spec.provides` for exact equality, refusing drift in either direction and naming both lists. Verify: tests cover a claim naming an unimplemented contract, a claim omitting an implemented one, and an exact match; the match case passes regardless of the order the two lists were produced in.
+- [x] 2.3 Implement the identity check the spike settled (inventory-based per design.md, or the recorded fallback if 1.1 overturned it): refuse unless the `ModuleInstance` named by `spec.providerRef` exists and its `status.inventory` holds this claim. Requeue, do not refuse, while that instance's inventory has not settled. Verify: a claim whose `providerRef` names another instance is refused naming both identities; a claim applied before its instance's inventory is written is requeued.
+- [x] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): accept a claim only against the catalog it names`.
 
 ## 3. The duplicate refusal — D12
 

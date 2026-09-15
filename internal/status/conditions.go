@@ -54,8 +54,29 @@ const (
 	// carries a verdict). Every refusal gets a reason of its own: a claimant
 	// acts on the reason, and collapsing two causes into one sends them to
 	// the wrong fix.
-	NotYetJudgedReason = "NotYetJudged" // Ready=Unknown: the claim has not been judged yet.
-	AcceptedReason     = "Accepted"     // Ready=True: the claim passed every check.
+	// AcceptedReason: Ready=True, the claim passed every check. It is not
+	// active: acceptance changes what a claim reports, not what it does.
+	AcceptedReason = "Accepted"
+
+	// CatalogUnresolvedReason: the claimed coordinate resolves to nothing. A
+	// registry or coordinate problem, distinct from CatalogWrongKind, which
+	// is an authoring one — collapsing the two sends the claimant to the
+	// wrong fix (enhancement 0015 D10).
+	CatalogUnresolvedReason = "CatalogUnresolved"
+	CatalogWrongKindReason  = "CatalogWrongKind"
+
+	// ProvidesMismatchReason: the contract set re-derived from the catalog is
+	// not exactly what the claim lists (enhancement 0015 D11).
+	ProvidesMismatchReason = "ProvidesMismatch"
+
+	// ProviderMismatchReason: the claim did not come from the ModuleInstance
+	// its providerRef names — the instance is absent, or its inventory
+	// settled without this claim (enhancement 0015 D11).
+	ProviderMismatchReason = "ProviderMismatch"
+
+	// ProviderInventoryPendingReason: Ready=Unknown, the naming instance has
+	// not written an inventory yet. A race, not a verdict.
+	ProviderInventoryPendingReason = "ProviderInventoryPending"
 
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"

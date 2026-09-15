@@ -18,11 +18,20 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/fluxcd/pkg/runtime/patch"
-	"github.com/open-platform-model/library/opm/kernel"
+	"github.com/open-platform-model/library/opm/catalog"
+	oerrors "github.com/open-platform-model/library/opm/errors"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -37,6 +46,20 @@ import (
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
+
+// CatalogAcquirer acquires a published catalog by coordinate. The manager
+// passes the shared library Kernel, whose AcquireCatalogFromRegistry both
+// fetches and shape-gates: an artifact of another kind is refused by the
+// library, not by a rule this repo maintains (enhancement 0015 D10).
+type CatalogAcquirer interface {
+	AcquireCatalogFromRegistry(ctx context.Context, modPath, version string) (*catalog.Catalog, error)
+}
+
+// claimKind is the inventory Kind a rendered claim is recorded under.
+const claimKind = "TransformerRegistration"
+
+// claimGroup is the inventory Group a rendered claim is recorded under.
+const claimGroup = "opmodel.dev"
 
 // TransformerRegistrationReconciler judges a provider module's claim that its
 // catalog implements platform contracts (enhancement 0015 D3). It decides one
@@ -60,9 +83,9 @@ type TransformerRegistrationReconciler struct {
 	Scheme        *runtime.Scheme
 	EventRecorder events.EventRecorder
 
-	// Kernel is the shared, long-lived library Kernel constructed once at
-	// manager startup. Acquiring the claimed catalog runs on it.
-	Kernel *kernel.Kernel
+	// Catalogs acquires the catalog a claim names. The manager passes the
+	// shared, long-lived library Kernel constructed once at startup.
+	Catalogs CatalogAcquirer
 
 	// Store holds the platform the Platform reconciler generated and built.
 	// Read-only here: acceptance judges against it and never writes it.
@@ -108,11 +131,175 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 			"No platform has been generated yet, so the claim cannot be judged")
 	}
 
-	// Every check is still to come. Until then a claim reconciles to the
-	// first of the three states enhancement 0015 D3 defines.
-	return r.deferVerdict(ctx, patcher, &claim,
-		status.NotYetJudgedReason,
-		"The claim is recorded and awaiting acceptance")
+	// Acceptance re-derives every fact it judges: nothing on the claim is
+	// trusted (enhancement 0015 D11). The catalog is the first operand, so it
+	// is acquired before anything is compared.
+	cat, err := r.Catalogs.AcquireCatalogFromRegistry(ctx, claim.Spec.Catalog, claim.Spec.Version)
+	if err != nil {
+		if errors.Is(err, oerrors.ErrWrongKind) {
+			// The artifact resolved and is not a catalog. An authoring
+			// problem: the claimant named the wrong module path. The
+			// library's message carries the kind it found.
+			return r.refuse(ctx, patcher, &claim, status.CatalogWrongKindReason,
+				fmt.Sprintf("Claimed artifact %s at %s is not a catalog: %v",
+					claim.Spec.Catalog, claim.Spec.Version, err))
+		}
+		// Nothing resolved. A registry or coordinate problem, which a
+		// claimant fixes somewhere else entirely, so it gets its own reason.
+		return r.refuse(ctx, patcher, &claim, status.CatalogUnresolvedReason,
+			fmt.Sprintf("Claimed catalog %s at %s could not be resolved: %v",
+				claim.Spec.Catalog, claim.Spec.Version, err))
+	}
+
+	if msg, ok := providesDrift(cat, claim.Spec.Provides); !ok {
+		return r.refuse(ctx, patcher, &claim, status.ProvidesMismatchReason, msg)
+	}
+
+	switch verdict, msg := r.checkProviderIdentity(ctx, &claim); verdict {
+	case identityPending:
+		return r.deferVerdict(ctx, patcher, &claim, status.ProviderInventoryPendingReason, msg)
+	case identityRefused:
+		return r.refuse(ctx, patcher, &claim, status.ProviderMismatchReason, msg)
+	case identityOK:
+	}
+
+	return r.accept(ctx, patcher, &claim)
+}
+
+// providesDrift compares the contract set re-derived from the catalog against
+// the set the claim lists, for exact equality in both directions. A subset is
+// not accepted: partial registration would leave the remainder reported as
+// unfulfilled with no indication that the provider withheld it
+// (enhancement 0015 D11). The message names both lists, because a claimant
+// cannot act on "they differ".
+//
+// Both sides are sorted before comparison, so the verdict does not depend on
+// the order either list was produced in.
+func providesDrift(cat *catalog.Catalog, claimed []string) (string, bool) {
+	derived, err := cat.Provides()
+	if err != nil {
+		return fmt.Sprintf("Claimed catalog's provider contracts could not be derived: %v", err), false
+	}
+
+	want := slices.Clone(claimed)
+	slices.Sort(want)
+	got := slices.Clone(derived)
+	slices.Sort(got)
+
+	if slices.Equal(want, got) {
+		return "", true
+	}
+	return fmt.Sprintf(
+		"Claim lists provider contracts [%s] but the catalog implements [%s]; acceptance requires them to match exactly",
+		strings.Join(want, ", "), strings.Join(got, ", ")), false
+}
+
+// identityVerdict is the outcome of the provider-identity check.
+type identityVerdict int
+
+const (
+	identityOK identityVerdict = iota
+	identityPending
+	identityRefused
+)
+
+// checkProviderIdentity verifies the claim came from the ModuleInstance its
+// providerRef names, by looking the claim up in that instance's inventory.
+//
+// The inventory rather than the claim's labels: measured, a rendered claim
+// carries an instance NAME label and no namespace or uuid label, so a
+// label-only check would accept a stray claim from any instance sharing the
+// provider's name in another namespace — the exact spoof the check exists to
+// stop. CONSTITUTION Principle III already makes the inventory this repo's
+// ownership record, so this reuses that answer rather than inventing a weaker
+// second one. See the change's design.md for the measurement.
+//
+// An instance whose inventory has not been written yet is pending, not
+// refused: the claim can reach the API server before its owner's status does,
+// and a race is not a verdict.
+func (r *TransformerRegistrationReconciler) checkProviderIdentity(
+	ctx context.Context,
+	claim *releasesv1alpha1.TransformerRegistration,
+) (identityVerdict, string) {
+	ref := claim.Spec.ProviderRef
+
+	var instance releasesv1alpha1.ModuleInstance
+	key := types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}
+	if err := r.Get(ctx, key, &instance); err != nil {
+		if apierrors.IsNotFound(err) {
+			return identityRefused, fmt.Sprintf(
+				"Claim names provider ModuleInstance %s/%s, which does not exist, so the claim is not rendered output",
+				ref.Namespace, ref.Name)
+		}
+		return identityPending, fmt.Sprintf(
+			"Provider ModuleInstance %s/%s could not be read: %v", ref.Namespace, ref.Name, err)
+	}
+
+	if instance.Status.Inventory == nil {
+		return identityPending, fmt.Sprintf(
+			"Provider ModuleInstance %s/%s has not written an inventory yet", ref.Namespace, ref.Name)
+	}
+
+	for _, entry := range instance.Status.Inventory.Entries {
+		if entry.Group == claimGroup && entry.Kind == claimKind && entry.Name == claim.Name {
+			return identityOK, ""
+		}
+	}
+
+	return identityRefused, fmt.Sprintf(
+		"Claim %s names provider ModuleInstance %s/%s, whose inventory does not own it, so the claim did not come from the instance it names",
+		claim.Name, ref.Namespace, ref.Name)
+}
+
+// accept records the claim as accepted. It does not activate: status.active
+// stays false until an accepted claim's provider is reported serving, which
+// is a later change.
+func (r *TransformerRegistrationReconciler) accept(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	claim *releasesv1alpha1.TransformerRegistration,
+) (ctrl.Result, error) {
+	claim.Status.ObservedGeneration = claim.Generation
+	claim.Status.Accepted = true
+	status.MarkReadyWithReason(claim, status.AcceptedReason,
+		"Claim accepted for catalog %s at %s", claim.Spec.Catalog, claim.Spec.Version)
+	return ctrl.Result{}, r.patchStatus(ctx, patcher, claim)
+}
+
+// refuse records a refusal naming what failed and the value that failed it.
+// Acceptance is whole or it is a refusal, so status.accepted is set false
+// rather than left at whatever a previous generation reached.
+//
+// The recheck is periodic rather than terminal: every refusal here resolves
+// against mutable external state (a registry, another claim, the platform's
+// resolution), so none of them is permanent. The warning event fires only on
+// transition, so a recheck of an unchanged refusal does not spam events.
+func (r *TransformerRegistrationReconciler) refuse(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	claim *releasesv1alpha1.TransformerRegistration,
+	reason, msg string,
+) (ctrl.Result, error) {
+	if r.transitioned(claim, reason, msg) {
+		r.EventRecorder.Eventf(claim, nil, corev1.EventTypeWarning, reason, "Accept", "%s", msg)
+	}
+	claim.Status.ObservedGeneration = claim.Generation
+	claim.Status.Accepted = false
+	status.MarkStalled(claim, reason, "%s", msg)
+	return ctrl.Result{RequeueAfter: opmreconcile.StalledRecheckInterval}, r.patchStatus(ctx, patcher, claim)
+}
+
+// transitioned reports whether the claim is newly entering this refusal, or
+// entering it with a different reason or message than it already carries.
+func (r *TransformerRegistrationReconciler) transitioned(
+	claim *releasesv1alpha1.TransformerRegistration,
+	reason, msg string,
+) bool {
+	prior := apimeta.FindStatusCondition(claim.Status.Conditions, status.ReadyCondition)
+	return prior == nil ||
+		prior.Status != metav1.ConditionFalse ||
+		prior.Reason != reason ||
+		prior.Message != msg
 }
 
 // deferVerdict records that no verdict has been reached for this generation

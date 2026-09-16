@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Drift detection via SSA dry-run
 The controller MUST perform SSA dry-run in Phase 4 to detect whether live cluster state differs from desired state.

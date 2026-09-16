@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Suspended reconciliation is skipped
 When `spec.suspend` is `true`, the controller MUST skip all reconcile phases and return without requeueing.

@@ -356,8 +356,17 @@ func ReconcileModuleInstance(
 
 	// Drift detection runs on every reconcile, including no-ops.
 	// Uses SSA dry-run to compare desired state against live cluster state.
+	//
+	// It compares the apply list, not the full rendered set, so a withheld
+	// resource is excluded. Drift reports that the cluster diverged from what
+	// the operator asserts; a withheld resource is one the operator is
+	// deliberately not asserting, so reporting it would name a difference the
+	// operator created on purpose and intends not to close — a condition that
+	// never clears, burying real drift on the same instance behind it. The
+	// refusal carries that signal instead. A resource that stops being
+	// withheld re-enters the apply list and is compared again from then on.
 	phases.driftRan = true
-	phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, resources)
+	phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, applyList)
 
 	if isNoOp {
 		log.Info("No changes detected, skipping apply")

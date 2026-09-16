@@ -23,5 +23,5 @@ No API types change, so no section runs `task dev:manifests dev:generate`.
 
 ## 3. Drift
 
-- [ ] 3.1 Exclude a withheld resource from drift detection, so the difference the refusal created on purpose does not set `Drifted`. Verify: an instance with a withheld claim and no other divergence reports no drift; an instance with a withheld claim and a genuinely drifted resource reports drift for that resource alone; a resource that stops being withheld is included again.
-- [ ] 3.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): keep a withheld resource out of drift detection`.
+- [x] 3.1 Exclude a withheld resource from drift detection, so the difference the refusal created on purpose does not set `Drifted`. Verify: an instance with a withheld claim and no other divergence reports no drift; an instance with a withheld claim and a genuinely drifted resource reports drift for that resource alone; a resource that stops being withheld is included again.
+- [x] 3.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): keep a withheld resource out of drift detection`.

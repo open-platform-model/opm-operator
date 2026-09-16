@@ -43,6 +43,16 @@ import (
 const (
 	contractStorage = "opmodel.dev/contract.Storage"
 	contractBackup  = "opmodel.dev/contract.Backup"
+
+	// storedVersion is the accepted claim's catalog build; upgradedVersion is
+	// the one the provider re-renders at. A refusal must leave the first in
+	// place, and an allowed upgrade must reach the second.
+	storedVersion   = "1.0.0"
+	upgradedVersion = "2.0.0"
+
+	// upgradedPayload is what the sidecar carries after the upgrade, so an
+	// applied sidecar proves the refusal withheld the claim alone.
+	upgradedPayload = "upgraded"
 )
 
 // claimResource builds the TransformerRegistration a provider module renders,
@@ -101,9 +111,9 @@ func claimResource(
 
 // providerRenderResult is what a provider module renders: its claim plus one
 // ordinary resource, so a refusal can be shown to withhold the claim alone.
-func providerRenderResult(claimName, providerName, version, payload string, provides ...string) *render.RenderResult {
-	claim, claimEntry := claimResource(claimName, providerName, version, provides...)
-	sidecar, sidecarEntry := configMapResource(providerName+"-cm", payload)
+func providerRenderResult(claimName, providerName string, provides ...string) *render.RenderResult {
+	claim, claimEntry := claimResource(claimName, providerName, upgradedVersion, provides...)
+	sidecar, sidecarEntry := configMapResource(providerName+"-cm", upgradedPayload)
 	return &render.RenderResult{
 		Resources:        []*core.Resource{claim, sidecar},
 		InventoryEntries: []releasesv1alpha1.InventoryEntry{claimEntry, sidecarEntry},
@@ -117,7 +127,7 @@ func storeClaim(claimName, providerName string, provides ...string) *releasesv1a
 		ObjectMeta: metav1.ObjectMeta{Name: claimName},
 		Spec: releasesv1alpha1.TransformerRegistrationSpec{
 			Catalog:  "opmodel.dev/catalogs/example@v1",
-			Version:  "1.0.0",
+			Version:  storedVersion,
 			Provides: provides,
 			ProviderRef: releasesv1alpha1.ProviderReference{
 				Namespace: namespace,
@@ -178,7 +188,7 @@ var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 		params.EventRecorder = rec
 		params.APIReader = k8sClient
 		params.Renderer = &stubRenderer{result: providerRenderResult(
-			claimName, providerName, "2.0.0", "upgraded", contractStorage,
+			claimName, providerName, contractStorage,
 		)}
 		ensureFinalizer(params, nn)
 
@@ -202,7 +212,7 @@ var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 		var cm corev1.ConfigMap
 		Expect(k8sClient.Get(ctx,
 			types.NamespacedName{Name: providerName + "-cm", Namespace: namespace}, &cm)).To(Succeed())
-		Expect(cm.Data).To(HaveKeyWithValue("payload", "upgraded"))
+		Expect(cm.Data).To(HaveKeyWithValue("payload", upgradedPayload))
 
 		By("the instance reports not ready, naming the claim, the contract and the count")
 		var mi releasesv1alpha1.ModuleInstance
@@ -240,7 +250,7 @@ var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 		params.EventRecorder = events.NewFakeRecorder(30)
 		params.APIReader = k8sClient
 		params.Renderer = &stubRenderer{result: providerRenderResult(
-			claimName, providerName, "2.0.0", "upgraded", contractStorage,
+			claimName, providerName, contractStorage,
 		)}
 		ensureFinalizer(params, nn)
 
@@ -263,7 +273,7 @@ var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 		var after releasesv1alpha1.TransformerRegistration
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: claimName}, &after)).To(Succeed())
 		Expect(after.Spec.Provides).To(ConsistOf(contractStorage))
-		Expect(after.Spec.Version).To(Equal("2.0.0"))
+		Expect(after.Spec.Version).To(Equal(upgradedVersion))
 
 		var mi releasesv1alpha1.ModuleInstance
 		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
@@ -292,7 +302,7 @@ var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 		params.EventRecorder = events.NewFakeRecorder(30)
 		params.APIReader = k8sClient
 		params.Renderer = &stubRenderer{result: providerRenderResult(
-			claimName, providerName, "2.0.0", "upgraded", contractStorage, contractBackup,
+			claimName, providerName, contractStorage, contractBackup,
 		)}
 		ensureFinalizer(params, nn)
 
@@ -302,7 +312,7 @@ var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 
 		var after releasesv1alpha1.TransformerRegistration
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: claimName}, &after)).To(Succeed())
-		Expect(after.Spec.Version).To(Equal("2.0.0"))
+		Expect(after.Spec.Version).To(Equal(upgradedVersion))
 		Expect(after.Spec.Provides).To(ConsistOf(contractStorage, contractBackup))
 
 		var mi releasesv1alpha1.ModuleInstance

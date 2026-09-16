@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Success history entry construction
 The `internal/status` package MUST provide a `NewSuccessEntry` function that creates a `HistoryEntry` with action, phase, digests, inventory count, and auto-populated timestamps.

@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Failure counters initialized
 The controller MUST initialize `status.failureCounters` if nil on first status update.

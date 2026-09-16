@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Reconcile outcome counter
 The controller MUST expose a `opm_controller_reconcile_total` counter metric labeled by outcome.

@@ -6,7 +6,7 @@ kernel-backed renderer (`KernelModuleRenderer`) while tests inject a stub that
 returns pre-built `*RenderResult` values, so downstream phases (apply, prune,
 drift, impersonation) can be exercised without a live OCI registry.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: ModuleRenderer interface
 The `internal/render` package MUST export a `ModuleRenderer` interface whose

@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Exponential backoff for transient failures
 The controller MUST compute an exponential backoff delay from `failureCounters.reconcile` when the reconcile outcome is `FailedTransient`, using the formula `min(baseDelay * 2^(failures-1), maxDelay)` with `baseDelay=5s` and `maxDelay=5m`.

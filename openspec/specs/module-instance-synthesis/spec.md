@@ -6,7 +6,7 @@ temporary CUE module on each reconcile and resolving the target module via
 CUE-native OCI registry resolution. It replaces Flux source-controller based
 artifact fetching for `ModuleRelease`.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: ModuleRelease CR spec shape
 

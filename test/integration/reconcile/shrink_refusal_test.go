@@ -169,6 +169,61 @@ func demandContracts(name string, contracts ...string) types.NamespacedName {
 }
 
 var _ = Describe("Reconcile Provides Shrink Refusal", func() {
+	// The refusal must not cost the instance its ownership of the claim. The
+	// general invariant is pinned in withhold_invariant_test.go; this pins the
+	// refusal's own path, where the reconcile returns before both the
+	// inventory commit and the prune, so an inventory committed by an earlier
+	// successful reconcile is retained rather than rewritten.
+	It("keeps the claim in the inventory and unpruned across a refusal", func() {
+		providerName := "shrink-owned-mr"
+		claimName := namespace + "." + providerName
+		consumer := demandContracts("shrink-owned-consumer-mr", contractBackup)
+
+		storeClaim(claimName, providerName, contractStorage, contractBackup)
+		createModuleInstance(providerName)
+		nn := types.NamespacedName{Name: providerName, Namespace: namespace}
+
+		params := reconcileParams()
+		params.EventRecorder = events.NewFakeRecorder(30)
+		params.APIReader = k8sClient
+
+		By("a successful reconcile first, so the instance owns a committed inventory")
+		params.Renderer = &stubRenderer{result: providerRenderResult(
+			claimName, providerName, contractStorage, contractBackup,
+		)}
+		ensureFinalizer(params, nn)
+		result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeZero())
+
+		var mi releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		Expect(mi.Status.Inventory).NotTo(BeNil())
+		inventoryBefore := mi.Status.Inventory.DeepCopy()
+		Expect(inventoryBefore.Entries).To(ContainElement(HaveField("Kind", "TransformerRegistration")))
+
+		By("then the shrinking upgrade, which is refused")
+		params.Renderer = &stubRenderer{result: providerRenderResult(
+			claimName, providerName, contractStorage,
+		)}
+		result, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+
+		By("the inventory still lists the claim, unchanged")
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		Expect(mi.Status.Inventory).NotTo(BeNil())
+		Expect(mi.Status.Inventory.Entries).To(Equal(inventoryBefore.Entries))
+		Expect(mi.Status.Inventory.Revision).To(Equal(inventoryBefore.Revision))
+
+		By("and the prune did not delete it")
+		var claim releasesv1alpha1.TransformerRegistration
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: claimName}, &claim)).To(Succeed())
+		Expect(claim.Spec.Provides).To(ConsistOf(contractStorage, contractBackup))
+
+		cleanupShrinkFixtures(claimName, providerName, nn, consumer)
+	})
+
 	// registration-shrink-refusal section 2 (enhancement 0015 D16): a provider
 	// upgrade that drops a still-demanded contract is withheld from apply
 	// while the accepted claim keeps serving.

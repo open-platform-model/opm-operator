@@ -1,12 +1,17 @@
 # Declares which enhancement decisions this change implements. Consumed by
 # `task enhancements:delivery:log` at archive time.
 #
-# D16 is the whole of this change: refusing a removal, whether it arrives as
-# a delete or as an update that shrinks `provides`.
+# D3 is the whole of this change: a finalizer refusing to let a registration
+# be deleted while instances still demand contracts it provides.
+#
+# D16 — the same refusal through the update door, when a provider upgrade
+# shrinks `provides` — was section 4 and left with its own change,
+# `registration-shrink-refusal`. It is named in proposal.md's "Not in this
+# change" list and must not be claimed here.
 #
 # Before logging, diff this list against proposal.md's "Not in this change"
 # section and drop anything it names.
 implements:
   - enhancement: "0015"
-    decisions: [D16]
+    decisions: [D3]
     resolves: []

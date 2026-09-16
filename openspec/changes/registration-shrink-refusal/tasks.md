@@ -9,9 +9,9 @@ No API types change, so no section runs `task dev:manifests dev:generate`.
 
 ## 1. Spike — withholding one resource perturbs nothing else
 
-- [ ] 1.1 Prove the inventory invariant against the real reconcile: render an instance, drop one resource from the apply list, and assert the inventory entry for it is unchanged and `ComputeStaleSet` reports it as not stale. Verify: the assertion is on the entry and the stale set, not on `NewEntryFromResource` in isolation — the claim under test is that the reconcile's own inventory path is indifferent to what was applied.
-- [ ] 1.2 Establish what a withheld resource does to the reconcile's outcome and digests today, before any refusal exists: whether the render digest still differs from the applied digest, and whether the next reconcile backs off rather than hot-looping. Verify: the behaviour is measured and written into design.md's Risks section, replacing the "worth confirming" note with what was observed.
-- [ ] 1.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(reconcile): pin the inventory invariant a withheld apply depends on`.
+- [x] 1.1 Prove the inventory invariant against the real reconcile: render an instance, drop one resource from the apply list, and assert the inventory entry for it is unchanged and `ComputeStaleSet` reports it as not stale. Verify: the assertion is on the entry and the stale set, not on `NewEntryFromResource` in isolation — the claim under test is that the reconcile's own inventory path is indifferent to what was applied.
+- [x] 1.2 Establish what a withheld resource does to the reconcile's outcome and digests today, before any refusal exists: whether the render digest still differs from the applied digest, and whether the next reconcile backs off rather than hot-looping. Verify: the behaviour is measured and written into design.md's Risks section, replacing the "worth confirming" note with what was observed.
+- [x] 1.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(reconcile): pin the inventory invariant a withheld apply depends on`.
 
 ## 2. The refusal
 

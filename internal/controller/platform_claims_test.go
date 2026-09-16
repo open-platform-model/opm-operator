@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -73,9 +74,28 @@ func storeActiveClaim(name, catalogPath, version string) *releasesv1alpha1.Trans
 // deliberately leave active claims behind, so a platform spec — whose
 // generated package is now a function of the active set — has to start from a
 // known one.
+//
+// The guard finalizer is stripped first. An accepted claim carries it, and
+// nothing in this suite runs the claim reconciler that would release it, so a
+// plain delete would leave every such claim terminating forever and this wait
+// would never finish. Stripping it here is the suite standing in for the
+// reaper, not a statement about what the guard should do.
 func deleteAllClaims() {
 	GinkgoHelper()
 	Expect(k8sClient.DeleteAllOf(ctx, &releasesv1alpha1.TransformerRegistration{})).To(Succeed())
+
+	var terminating releasesv1alpha1.TransformerRegistrationList
+	Expect(k8sClient.List(ctx, &terminating)).To(Succeed())
+	for i := range terminating.Items {
+		claim := &terminating.Items[i]
+		if !controllerutil.ContainsFinalizer(claim, ClaimFinalizerName) {
+			continue
+		}
+		mergePatch := client.MergeFrom(claim.DeepCopy())
+		controllerutil.RemoveFinalizer(claim, ClaimFinalizerName)
+		Expect(client.IgnoreNotFound(k8sClient.Patch(ctx, claim, mergePatch))).To(Succeed())
+	}
+
 	Eventually(func(g Gomega) {
 		var list releasesv1alpha1.TransformerRegistrationList
 		g.Expect(k8sClient.List(ctx, &list)).To(Succeed())

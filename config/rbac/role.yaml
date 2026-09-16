@@ -51,6 +51,7 @@ rules:
   resources:
   - moduleinstances/finalizers
   - modulepackages/finalizers
+  - transformerregistrations/finalizers
   verbs:
   - update
 - apiGroups:
@@ -68,10 +69,19 @@ rules:
   - opmodel.dev
   resources:
   - platforms
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - opmodel.dev
+  resources:
   - transformerregistrations
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - source.toolkit.fluxcd.io

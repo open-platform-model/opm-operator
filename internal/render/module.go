@@ -41,6 +41,17 @@ type RenderResult struct {
 	// fact behind a skew warning.
 	ResolvedVersions []kernel.ResolvedVersion
 
+	// RequiredContracts is every contract FQN the instance's components
+	// declare, sorted and deduplicated (enhancement 0015 D3, D16): the
+	// instance's demand, in the keyspace TransformerRegistration.spec.provides
+	// carries. The reconciler persists it on status.requiredContracts, where
+	// the claim reconciler's removal guard intersects it with a claim's
+	// provides to count that claim's dependents.
+	//
+	// Read off the synthesized instance, never off the platform, so it is a
+	// property of the instance alone and does not move when the platform does.
+	RequiredContracts []string
+
 	// PlatformIdentity is the identity of the generated platform package this
 	// render built against, in its string form (enhancement 0015 D13, D17):
 	// the Platform CR generation plus a digest of the active claims' catalog

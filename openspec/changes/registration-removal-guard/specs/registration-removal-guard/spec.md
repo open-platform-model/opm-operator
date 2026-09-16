@@ -1,8 +1,10 @@
 ## Purpose
 
-Define what stops a provider abandoning its dependents: when a `TransformerRegistration` may not be deleted, when an update to its `provides` may not be applied, and what each refusal tells the operator. Enhancement 0015 D3 and D16 treat deletion and shrinking as the same act through two doors, so both are governed here.
+Define what stops a provider abandoning its dependents: when a `TransformerRegistration` may not be deleted, and what the refusal tells the operator. Enhancement 0015 D3 and D16 treat deletion and shrinking as the same act through two doors; this capability governs the deletion door.
 
-The mechanism by which dependents are counted is deliberately not specified: D16 leaves the refusal site and mechanics implementation-grade, and this capability states the guarantee rather than the machinery.
+**The shrinking door (D16) is deliberately not here.** It needs a refusal site that takes effect before the new spec replaces the accepted claim, and both candidates — a validating webhook, and D16's hold-last-good fallback — cost more than one section: a webhook changes the install surface this operator ships, and hold-last-good gives a claim two answers to what it provides. It is its own change, and the requirement lands in this capability when it does. Until then a shrinking `provides` is accepted, and this capability does not claim otherwise.
+
+The mechanism by which dependents are counted is deliberately not specified: this capability states the guarantee rather than the machinery.
 
 ## ADDED Requirements
 
@@ -24,32 +26,6 @@ The operator SHALL prevent deletion of a `TransformerRegistration` while instanc
 
 - **WHEN** a claim with no dependents is deleted
 - **THEN** it is removed without a block
-
-### Requirement: Shrinking provides with dependents is refused before it takes effect
-
-The operator SHALL refuse an update that removes a contract from `spec.provides` while instances still demand that contract, and the refusal SHALL take effect while the previously accepted claim is still effective. A refusal that arrives after the new spec has replaced the accepted claim SHALL NOT be considered to satisfy this requirement: by then the old claim is gone and dependents are broken regardless of the reason reported.
-
-The refusal SHALL name the dropped contracts and the dependent count, matching the blocked delete's shape, since both are the same act through different doors.
-
-#### Scenario: A shrinking upgrade is refused
-
-- **WHEN** a provider upgrade re-renders its claim with a contract dropped from `provides`, and instances still demand that contract
-- **THEN** the change does not take effect, and the refusal names the dropped contracts and the dependent count
-
-#### Scenario: The previously accepted claim survives the refusal
-
-- **WHEN** such an update is refused
-- **THEN** the claim that was accepted before the update is still the effective one, and dependents continue to render
-
-#### Scenario: A non-shrinking upgrade passes untouched
-
-- **WHEN** a provider upgrade re-renders its claim with the same contract set at a new catalog version
-- **THEN** this requirement does not refuse it
-
-#### Scenario: Dropping a contract nobody demands is allowed
-
-- **WHEN** an update removes a contract from `provides` that no instance demands
-- **THEN** it is accepted
 
 ### Requirement: The dependent count is derived, never authored
 

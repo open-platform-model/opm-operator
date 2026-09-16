@@ -217,6 +217,11 @@ func (in *ModuleInstanceStatus) DeepCopyInto(out *ModuleInstanceStatus) {
 		*out = new(Inventory)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.RequiredContracts != nil {
+		in, out := &in.RequiredContracts, &out.RequiredContracts
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.History != nil {
 		in, out := &in.History, &out.History
 		*out = make([]HistoryEntry, len(*in))

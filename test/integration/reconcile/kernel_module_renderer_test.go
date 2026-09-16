@@ -18,6 +18,7 @@ package reconcile_test
 
 import (
 	"os"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -201,6 +202,42 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				"a render is attributable to the exact registry state it consumed")
 			Expect(out.res.PlatformIdentity).NotTo(Equal(superseding.Identity.String()))
 		})
+
+		// The instance side of the removal guard (enhancement 0015 D3, D16).
+		// The assertion is on the exact FQN sets rather than on "not empty":
+		// the guard's whole correctness is that these strings are the same
+		// keyspace TransformerRegistration.spec.provides carries, so a
+		// derivation that produced plausible-looking keys of another shape
+		// would pass a weaker check and count no dependents in production.
+		DescribeTable("reports the contracts the instance's components declare",
+			func(fixtureName string, want []string) {
+				renderer := &render.KernelModuleRenderer{
+					Kernel:      k,
+					Store:       store,
+					Registry:    registry,
+					RuntimeName: core.LabelManagedByControllerValue,
+				}
+
+				f := fixtures.Must(GinkgoT(), fixtureName)
+				res, err := renderer.RenderModule(ctx,
+					"demand-"+strings.ReplaceAll(fixtureName, "_", "-"), "default",
+					f.ModulePath, f.Tag(), nil)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(res.RequiredContracts).To(Equal(want))
+			},
+			Entry("a single-resource module", "hello", []string{
+				"opmodel.dev/catalogs/opm/resources/config-maps@v1beta1",
+			}),
+			Entry("a workload module with traits", "hello_web", []string{
+				"opmodel.dev/catalogs/opm/resources/container@v1beta1",
+				"opmodel.dev/catalogs/opm/traits/init-containers@v1beta1",
+				"opmodel.dev/catalogs/opm/traits/restart-policy@v1beta1",
+				"opmodel.dev/catalogs/opm/traits/scaling@v1beta1",
+				"opmodel.dev/catalogs/opm/traits/sidecar-containers@v1beta1",
+				"opmodel.dev/catalogs/opm/traits/update-strategy@v1beta1",
+			}),
+		)
 
 		It("takes the module's #config defaults when no values are supplied", func() {
 			renderer := &render.KernelModuleRenderer{

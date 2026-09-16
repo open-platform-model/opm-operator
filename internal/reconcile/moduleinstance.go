@@ -27,6 +27,7 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmmetrics "github.com/open-platform-model/opm-operator/internal/metrics"
 	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/internal/shrink"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
@@ -272,11 +273,7 @@ func ReconcileModuleInstance(
 		// Platform (the regeneration emits no status event), leaving the
 		// bounded backoff as the real recovery path. Genuinely stalled
 		// render/resolution errors keep the long recheck.
-		if outcome == FailedTransient {
-			retryAfter = ComputeBackoff(reconcileFailureCount(mi.Status.FailureCounters) + 1)
-		} else {
-			retryAfter = StalledRecheckInterval
-		}
+		retryAfter = retryIntervalFor(outcome, reconcileFailureCount(mi.Status.FailureCounters))
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 
@@ -296,7 +293,9 @@ func ReconcileModuleInstance(
 
 	// Phase 4: Plan actions — no-op detection, drift detection, compute stale set.
 	//
-	// Convert resources early — needed for both drift detection and apply.
+	// Convert the full rendered set early: the instance UUID and the shrink
+	// verdict below are read from it, and the apply list every later phase
+	// uses is derived from it.
 	resources, err := toUnstructuredSlice(renderResult.Resources)
 	if err != nil {
 		status.MarkStalled(&mi, status.ApplyFailedReason, "converting resources: %s", err)
@@ -327,6 +326,27 @@ func ReconcileModuleInstance(
 	// have proceeded. That is the direction a guard should fail in.
 	mi.Status.RequiredContracts = renderResult.RequiredContracts
 
+	// Phase 4a: judge the rendered claims before anything reaches the cluster
+	// (enhancement 0015 D16). A provider upgrade whose re-rendered
+	// TransformerRegistration drops a contract instances still demand is
+	// withheld from the apply list, so the accepted claim keeps serving its
+	// dependents. Every other rendered resource applies as usual, and the
+	// inventory below is still built from the full rendered set.
+	//
+	// This runs before drift detection and before the no-op return: what was
+	// withheld is a fact the phases after it read.
+	applyList, refused, err := withholdRefused(ctx, shrinkDecider(params), resources)
+	if err != nil {
+		// The verdict could not be reached, so the apply cannot proceed:
+		// applying on an unreadable answer is the abandonment the refusal
+		// exists to prevent. Transient — it is an API read that failed.
+		status.MarkNotReady(&mi, status.ApplyFailedReason, "%s", err)
+		outcome = FailedTransient
+		errMsg = err.Error()
+		retryAfter = ComputeBackoff(reconcileFailureCount(mi.Status.FailureCounters) + 1)
+		return ctrl.Result{RequeueAfter: retryAfter}, nil
+	}
+
 	lastApplied := status.DigestSet{
 		Source:    mi.Status.LastAppliedSourceDigest,
 		Config:    mi.Status.LastAppliedConfigDigest,
@@ -334,12 +354,21 @@ func ReconcileModuleInstance(
 		Inventory: inventoryDigest(mi.Status.Inventory),
 	}
 
-	isNoOp := status.IsNoOp(digests, lastApplied)
+	isNoOp := noOp(digests, lastApplied, refused)
 
 	// Drift detection runs on every reconcile, including no-ops.
 	// Uses SSA dry-run to compare desired state against live cluster state.
+	//
+	// It compares the apply list, not the full rendered set, so a withheld
+	// resource is excluded. Drift reports that the cluster diverged from what
+	// the operator asserts; a withheld resource is one the operator is
+	// deliberately not asserting, so reporting it would name a difference the
+	// operator created on purpose and intends not to close — a condition that
+	// never clears, burying real drift on the same instance behind it. The
+	// refusal carries that signal instead. A resource that stops being
+	// withheld re-enters the apply list and is compared again from then on.
 	phases.driftRan = true
-	phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, resources)
+	phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, applyList)
 
 	if isNoOp {
 		log.Info("No changes detected, skipping apply")
@@ -369,21 +398,13 @@ func ReconcileModuleInstance(
 	phases.applyRan = true
 	force := mi.Spec.Rollout != nil && mi.Spec.Rollout.ForceConflicts
 	effectiveSA, _ := resolveEffectiveSA(mi.Spec.ServiceAccountName, params.DefaultServiceAccount)
-	applyResult, err := apply.Apply(ctx, applyRM, resources, force)
+	applyResult, err := apply.Apply(ctx, applyRM, applyList, force)
 	if err != nil {
 		phases.applyFailed = true
 		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", err)
-		if effectiveSA != "" && isForbidden(err) {
-			status.MarkStalled(&mi, status.ImpersonationFailedReason, "%s", err)
-			outcome = FailedStalled
-			errMsg = err.Error()
-			retryAfter = StalledRecheckInterval
-			return ctrl.Result{RequeueAfter: retryAfter}, nil
-		}
-		status.MarkNotReady(&mi, status.ApplyFailedReason, "%s", err)
-		outcome = FailedTransient
+		outcome = markApplyFailure(&mi, err, effectiveSA)
 		errMsg = err.Error()
-		retryAfter = ComputeBackoff(reconcileFailureCount(mi.Status.FailureCounters) + 1)
+		retryAfter = retryIntervalFor(outcome, reconcileFailureCount(mi.Status.FailureCounters))
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 
@@ -397,6 +418,38 @@ func ReconcileModuleInstance(
 
 	// Record apply metrics.
 	opmmetrics.RecordApply(mi.Name, mi.Namespace, applyResult.Created, applyResult.Updated, applyResult.Unchanged)
+
+	// A refused upgrade is reported here, on the instance whose render
+	// produced the claim, because the instance's apply is what was refused
+	// (enhancement 0015 D16). The claim's own conditions are left alone:
+	// acceptance owns them, and a claim whose stored spec was never replaced
+	// has nothing new to report.
+	//
+	// The return sits before ClearDrifted and before the prune on purpose.
+	// Clearing drift would claim an apply resolved a divergence this
+	// reconcile deliberately left standing, and pruning while refusing would
+	// delete on the strength of a render the operator just declined to
+	// assert. Leaving reconciled false is what keeps the refusal alive: the
+	// applied digests stay behind the rendered ones, so the next reconcile is
+	// not a no-op and the refusal is re-decided rather than forgotten.
+	//
+	// Transient, not stalled: the block clears the moment the dependents stop
+	// demanding the contract, with no action on this object, and no watch
+	// re-enqueues the provider when a dependent's demand moves. The bounded
+	// backoff (capped at five minutes) is the real recovery path, the same
+	// reasoning PlatformNotReady above is classified by.
+	if len(refused) > 0 {
+		msg := refusalMessage(refused)
+		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeWarning,
+			status.DependentsRemainReason, "Apply", "%s", msg)
+		status.MarkNotReady(&mi, status.DependentsRemainReason, "%s", msg)
+		log.Info("Refused a provides shrink that would abandon dependents",
+			"claims", len(refused), "message", msg)
+		outcome = FailedTransient
+		errMsg = msg
+		retryAfter = ComputeBackoff(reconcileFailureCount(mi.Status.FailureCounters) + 1)
+		return ctrl.Result{RequeueAfter: retryAfter}, nil
+	}
 
 	// Successful apply resolves any drift.
 	status.ClearDrifted(&mi)
@@ -428,6 +481,42 @@ func ReconcileModuleInstance(
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
 	return ctrl.Result{}, nil
+}
+
+// markApplyFailure records a failed apply on the instance and returns the
+// outcome it should be reported as.
+//
+// A forbidden error under an impersonated identity is an RBAC problem the
+// tenant's ServiceAccount cannot retry its way out of, so it stalls and names
+// impersonation; every other apply error is transient and retries.
+func markApplyFailure(mi *releasesv1alpha1.ModuleInstance, err error, effectiveSA string) Outcome {
+	if effectiveSA != "" && isForbidden(err) {
+		status.MarkStalled(mi, status.ImpersonationFailedReason, "%s", err)
+		return FailedStalled
+	}
+	status.MarkNotReady(mi, status.ApplyFailedReason, "%s", err)
+	return FailedTransient
+}
+
+// retryIntervalFor maps a failed outcome to the interval it should be retried
+// on: a transient failure walks the bounded exponential backoff, a stalled one
+// waits for the long safety recheck that guards against misclassification.
+func retryIntervalFor(outcome Outcome, failures int64) time.Duration {
+	if outcome == FailedTransient {
+		return ComputeBackoff(failures + 1)
+	}
+	return StalledRecheckInterval
+}
+
+// noOp reports whether this reconcile has nothing to do.
+//
+// A reconcile that withheld a resource never has nothing to do: the cluster
+// does not hold what the render produced. The digests say the same thing on
+// their own — a refusal commits none of them — but stating it here keeps the
+// requirement readable instead of leaving it to be re-derived from where the
+// refusal returns.
+func noOp(digests, lastApplied status.DigestSet, refused []shrink.Decision) bool {
+	return len(refused) == 0 && status.IsNoOp(digests, lastApplied)
 }
 
 // phaseOutcomes tracks which phases ran and whether they failed,

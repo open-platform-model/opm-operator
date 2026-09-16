@@ -127,6 +127,13 @@ const (
 	// object. It is not an acceptance verdict: a blocked claim stays
 	// accepted and active, because it is still serving the dependents the
 	// block exists to protect.
+	//
+	// The same reason reports a refused provider upgrade on the provider's
+	// ModuleInstance (enhancement 0015 D16): a re-rendered claim dropping a
+	// still-demanded contract is withheld from apply, and the instance is
+	// Ready=False naming the claim, the contracts and the count. Both doors
+	// refuse the same act — taking a contract away from instances that
+	// depend on it — so they report it under one reason.
 	DependentsRemainReason = "DependentsRemain"
 
 	// Event-only reasons (no corresponding condition).

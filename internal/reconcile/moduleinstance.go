@@ -293,7 +293,9 @@ func ReconcileModuleInstance(
 
 	// Phase 4: Plan actions — no-op detection, drift detection, compute stale set.
 	//
-	// Convert resources early — needed for both drift detection and apply.
+	// Convert the full rendered set early: the instance UUID and the shrink
+	// verdict below are read from it, and the apply list every later phase
+	// uses is derived from it.
 	resources, err := toUnstructuredSlice(renderResult.Resources)
 	if err != nil {
 		status.MarkStalled(&mi, status.ApplyFailedReason, "converting resources: %s", err)

@@ -36,8 +36,8 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 )
 
-// ClaimKind is the kind of the rendered resource this package judges.
-const ClaimKind = "TransformerRegistration"
+// claimKind is the kind of the rendered resource this package judges.
+const claimKind = "TransformerRegistration"
 
 // Decision is the verdict on one rendered TransformerRegistration.
 // The zero value refuses nothing, which is the verdict for every resource
@@ -64,11 +64,11 @@ func (d Decision) Refused() bool {
 	return len(d.Dropped) > 0
 }
 
-// IsClaim reports whether a rendered resource is a TransformerRegistration,
+// isClaim reports whether a rendered resource is a TransformerRegistration,
 // the only kind this package judges.
-func IsClaim(resource *unstructured.Unstructured) bool {
+func isClaim(resource *unstructured.Unstructured) bool {
 	gvk := resource.GroupVersionKind()
-	return gvk.Group == releasesv1alpha1.GroupVersion.Group && gvk.Kind == ClaimKind
+	return gvk.Group == releasesv1alpha1.GroupVersion.Group && gvk.Kind == claimKind
 }
 
 // Decider judges a rendered claim against what the cluster holds.
@@ -96,7 +96,7 @@ func (d *Decider) Decide(
 	ctx context.Context,
 	rendered *unstructured.Unstructured,
 ) (Decision, error) {
-	if !IsClaim(rendered) {
+	if !isClaim(rendered) {
 		return Decision{}, nil
 	}
 
@@ -124,10 +124,10 @@ func (d *Decider) Decide(
 		return Decision{}, fmt.Errorf("listing module instances: %w", err)
 	}
 
-	return Evaluate(rendered.GetName(), removed, list.Items), nil
+	return evaluate(rendered.GetName(), removed, list.Items), nil
 }
 
-// Evaluate is the decision itself, over facts already read: the claim's name,
+// evaluate is the decision itself, over facts already read: the claim's name,
 // the contracts its rendered provides removed, and the instances whose demand
 // decides whether removing them abandons anyone.
 //
@@ -142,7 +142,7 @@ func (d *Decider) Decide(
 // blocks itself once. That reconcile commits the fresh demand along with the
 // refusal, so the next one releases: over-blocking that heals itself, rather
 // than a second definition of demand.
-func Evaluate(
+func evaluate(
 	claim string,
 	removed []string,
 	instances []releasesv1alpha1.ModuleInstance,

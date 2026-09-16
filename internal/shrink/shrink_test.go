@@ -43,7 +43,7 @@ const claimName = "team-a.provider"
 func renderedClaim(provides ...string) *unstructured.Unstructured {
 	u := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": releasesv1alpha1.GroupVersion.String(),
-		"kind":       ClaimKind,
+		"kind":       claimKind,
 		"metadata":   map[string]any{"name": claimName},
 		"spec": map[string]any{
 			"catalog": "opmodel.dev/catalogs/example@v1",
@@ -201,7 +201,7 @@ func TestDecide(t *testing.T) {
 // A dropped contract several instances demand names all of them, so the
 // reported count is the count an operator has to act on.
 func TestEvaluate_NamesEveryDependent(t *testing.T) {
-	decision := Evaluate(
+	decision := evaluate(
 		"team-a.provider",
 		[]string{"opmodel.dev/contract.Backup"},
 		[]releasesv1alpha1.ModuleInstance{
@@ -222,7 +222,7 @@ func TestEvaluate_NamesEveryDependent(t *testing.T) {
 
 // An instance demanding a dropped contract twice is one dependent, not two.
 func TestEvaluate_CountsAnInstanceOnce(t *testing.T) {
-	decision := Evaluate(
+	decision := evaluate(
 		"team-a.provider",
 		[]string{"opmodel.dev/contract.Backup", "opmodel.dev/contract.Storage"},
 		[]releasesv1alpha1.ModuleInstance{
@@ -242,7 +242,7 @@ func TestEvaluate_CountsAnInstanceOnce(t *testing.T) {
 // Only the demanded half of a multi-contract shrink is reported: the rest is
 // an ordinary removal and naming it would send an operator after nothing.
 func TestEvaluate_ReportsOnlyDemandedContracts(t *testing.T) {
-	decision := Evaluate(
+	decision := evaluate(
 		"team-a.provider",
 		[]string{"opmodel.dev/contract.Backup", "opmodel.dev/contract.Unused"},
 		[]releasesv1alpha1.ModuleInstance{

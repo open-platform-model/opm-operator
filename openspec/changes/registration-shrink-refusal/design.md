@@ -117,6 +117,13 @@ So a withheld resource is excluded from the drift comparison, and the refusal co
 - [The instance reconcile learns a `TransformerRegistration` fact] -> the check lives behind its own seam that the reconcile calls, so the reconcile orchestrates a decision it does not implement (Principle II).
 - [Two guards now share one dependent count] -> the delete guard and this one both read `status.requiredContracts`. A change to what the count means moves both, which is a reason to keep the count's definition in one place rather than a reason to duplicate it.
 
-## Open Questions
+## Resolved Questions
 
-1. **Does a withheld apply interact with `spec.rollout.forceConflicts`?** The force path recreates objects on immutable-field conflict; a withheld object never reaches it. Expected to be a non-question, and it changes no spec or task if it is not — section 2 confirms while writing the tests.
+1. **Does a withheld apply interact with `spec.rollout.forceConflicts`?** No, and structurally so. Confirmed in section 2: `withholdRefused` filters the list before `apply.Apply(ctx, applyRM, applyList, force)`, and `force` is only ever read inside that call. A withheld object is not in `applyList`, so it never reaches the force path at all — there is no ordering or interaction to reason about, and no spec or task changed as a result.
+
+## What the tests do not assert
+
+Two clauses of the capability specs are true of the implementation but are not directly asserted, recorded here so the gap is deliberate rather than discovered later.
+
+- **"the instances demanding its contracts continue to render"** (registration-removal-guard, *The previously accepted claim keeps serving*). What the tests assert is the mechanism: the stored claim is unchanged down to its `resourceVersion`, and its `accepted` and `active` verdicts are untouched, so it stays in the platform's active set exactly as before the refused upgrade. Asserting the rendering itself needs a consumer driven through platform generation, which is a different subsystem from the one this change touches; the requirement stands, the coverage is bounded.
+- **The refusal path's half of "the inventory still lists it, and the prune does not delete it"** is asserted twice over, but by two different mechanisms. `withhold_invariant_test.go` pins the general invariant — inventory built from the full rendered set is indifferent to what was applied — and `shrink_refusal_test.go` pins the refusal's own path, where the reconcile returns before both the inventory commit and the prune, so the previously committed inventory is retained rather than rewritten.

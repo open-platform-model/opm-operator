@@ -82,11 +82,60 @@ Every render also logs the resolved-versions rows (each OPM path the module
 requires, the build it asked for and the build the platform carries) at
 verbosity 1.
 
+## The contract gate on the Platform
+
+A generated platform module that builds is not yet a package renders may
+consume. The reconciler reads the built platform's contract inventory first,
+and two of its reports withhold the package (enhancement 0015 D5, D18):
+
+- `OverSubscribedContracts`: a provider-fulfilled contract is required by
+  transformers from more than one enabled catalog, so the platform cannot
+  route it. The Ready message names each such contract, the catalog that
+  defines it and every transformer that requires it. Fix it by disabling one
+  of the competing catalogs in `spec.registry` or removing its
+  TransformerRegistration.
+- `ComparablePredicates`: two enabled transformers have comparable match
+  predicates over a contract they share, so every component the narrower one
+  matches is also matched by the broader one and both would render. The Ready
+  message names the broader transformer, the narrower transformer and the
+  shared contracts for each pair. Nothing is arbitrated: there is no
+  most-specific-wins rule. Fix it by narrowing one predicate or withdrawing
+  one transformer.
+
+When a platform is both over-subscribed and undiscriminated the reason is
+`OverSubscribedContracts` and the message carries both findings, so one pass
+over the message shows both problems.
+
+A refusal behaves as a failed build toward everything but the Ready
+condition. The last good package stays in the store and keeps serving renders,
+`status.packageIdentity` and `status.registry` keep describing it, and the
+reconcile requeues on the long stalled interval. There is nothing to clear by
+hand: the verdict is computed from current state, and a Platform edit or a
+claim change wakes the reconciler through its existing watches. A platform
+refused on its first generation holds no package at all, so every workload
+waits at `PlatformNotReady` while the cause sits on the Platform.
+
+Wherever a package is recorded, a fresh build or a skipped regeneration, the
+reconciler also writes the non-gating `ContractsFulfilled` condition from that
+package's inventory:
+
+| `ContractsFulfilled` | Reason | Meaning |
+| --- | --- | --- |
+| `False` | `UnfulfilledContracts` | The package defines provider-fulfilled contracts that nothing on the platform implements. The message names each and its defining catalog. A module demanding one will not resolve until a provider registers |
+| `True` | `ContractsFulfilled` | Every provider-fulfilled contract the enabled catalogs define has a provider |
+| `True` | `NoContractsDefined` | The enabled catalogs define no contract, so nothing was verified. Vacuous, not a pass |
+
+The condition never moves Ready, and a refused generation does not rewrite it:
+it describes the package renders consume, alongside `status.registry`.
+
+A platform that builds but carries no readable inventory reports Ready=False
+with reason `BuildFailed`, and the message names the field the read failed on.
+
 ## Error reasons
 
 | Ready reason | Cause | Recovery |
 | --- | --- | --- |
-| `PlatformNotReady` | no platform module is recorded yet | automatic once the Platform is `Generated` |
+| `PlatformNotReady` | no platform module is recorded yet | automatic once the Platform is `Generated`; if the Platform's own Ready reason is `OverSubscribedContracts` or `ComparablePredicates`, its first generation was refused, so fix the platform per the contract gate above |
 | `ResolutionFailed` | a module identity mismatch, an unresolved platform demand, or a component no transformer matched | change the module or the platform's catalogs |
 | `SkewRefused` | catalog skew under `Refuse` | bump the platform pin or downgrade the module |
-| `RenderFailed` | a transformer failed, two enabled catalogs provide the same provider-fulfilled contract, or any other evaluation error | fix the module or the platform |
+| `RenderFailed` | a transformer failed, or any other evaluation error. Over-subscription also reaches here as a fallback, for a package recorded before the contract gate existed; the gate refuses it at the Platform now, so a fresh package cannot reach a render over-subscribed | fix the module or the platform |

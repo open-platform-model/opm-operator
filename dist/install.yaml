@@ -845,11 +845,30 @@ spec:
                 description: |-
                   conditions represent the current state of the Platform resource. The
                   PlatformReconciler summarizes module generation on the Ready condition:
-                  Ready=True (reason Generated) when the generated platform module built,
-                  Ready=False with reason BuildFailed (a pinned build does not exist, a
-                  key disagrees with its imported catalog, or the module did not build;
-                  the message names the dependency or entry) or GenerateFailed (the
-                  module could not be written to the operator's disk).
+                  Ready=True (reason Generated) when the generated platform module built
+                  and its contract inventory was accepted, Ready=False with reason
+                  BuildFailed (a pinned build does not exist, a key disagrees with its
+                  imported catalog, the module did not build, or its contract inventory
+                  could not be read; the message names the dependency, the entry or the
+                  field), GenerateFailed (the module could not be written to the
+                  operator's disk), OverSubscribedContracts (the module built, but a
+                  provider-fulfilled contract is required by transformers from more than
+                  one enabled catalog, so the platform cannot route it; the message names
+                  each contract, its defining catalog and the requiring transformers) or
+                  ComparablePredicates (the module built, but two enabled transformers
+                  have comparable match predicates over a shared catalog-fulfilled
+                  contract, so both would render every component the narrower matches;
+                  the message names each pair and the contracts it shares). A refused
+                  module is not recorded: the last good package keeps serving renders.
+
+                  The ContractsFulfilled condition is a separate, non-gating report on
+                  the package renders are consuming, written whenever one is recorded:
+                  False with reason UnfulfilledContracts when the package defines
+                  provider-fulfilled contracts nothing on the platform implements (the
+                  message names each and its defining catalog), True with reason
+                  ContractsFulfilled when every defined contract has a provider, and True
+                  with reason NoContractsDefined when the enabled catalogs list no
+                  contract at all, so nothing was verified. It never moves Ready.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

@@ -131,7 +131,7 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 	BeforeEach(deleteAllClaims)
 	AfterEach(func() {
 		deleteAllClaims()
-		deletePlatform(platformSingletonName)
+		deletePlatform()
 	})
 
 	Context("the tuple, without a registry", func() {

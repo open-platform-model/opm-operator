@@ -21,6 +21,16 @@ const (
 	// accepted and not yet active. Once Active=True it never goes False again
 	// (see the latch in transformerregistration_controller.go).
 	ActiveCondition = "Active"
+
+	// ContractsFulfilledCondition reports whether every provider-fulfilled
+	// contract the effective platform package defines has a provider
+	// (enhancement 0015 D18). It is a separate condition from Ready because
+	// D18 makes an unfulfilled contract a report and never a refusal: the
+	// package is generated, recorded and rendered against either way, so
+	// folding this into Ready would turn a report into a gate. It describes
+	// the package renders consume, which is why it is written on both
+	// success paths and left untouched by a failure or a refusal.
+	ContractsFulfilledCondition = "ContractsFulfilled"
 )
 
 // Condition reasons.
@@ -46,7 +56,54 @@ const (
 	// and builds the platform module).
 	GeneratedReason      = "Generated"      // Ready=True: the platform module was generated and built.
 	GenerateFailedReason = "GenerateFailed" // Ready=False: the module could not be written to disk.
-	BuildFailedReason    = "BuildFailed"    // Ready=False: a dependency did not resolve or the module did not build.
+	BuildFailedReason    = "BuildFailed"    // Ready=False: a dependency did not resolve, the module did not build, or its contract inventory could not be read.
+
+	// Inventory reasons (enhancement 0015 D5, D18: the reconciler reads the
+	// built platform's contract inventory before recording the package).
+	// The two refusals carry a reason each rather than one shared
+	// "inventory" reason because the fix differs: over-subscription is
+	// resolved by disabling a competing catalog or removing its claim, a
+	// comparable pair by narrowing or withdrawing a transformer.
+
+	// OverSubscribedContractsReason: Ready=False, the built platform's
+	// inventory is not routable — a provider-fulfilled contract is required
+	// by transformers from more than one enabled catalog, so no routing
+	// exists for it (0010 D37, kept by 0015 D2; D18 makes this the one
+	// inventory report that refuses generation). Reported first when the
+	// inventory is also undiscriminated, with both findings in the message,
+	// so one fix pass sees both.
+	OverSubscribedContractsReason = "OverSubscribedContracts"
+
+	// ComparablePredicatesReason: Ready=False, the built platform's
+	// inventory is not discriminated — two enabled transformers have
+	// comparable match predicates over a shared catalog-fulfilled contract,
+	// so every component the narrower matches is also matched by the
+	// broader and both would render (enhancement 0015 D5). Distinct from
+	// OverSubscribedContracts because nothing is over-subscribed: the
+	// catalogs route fine and the transformers cannot be told apart.
+	// Refused rather than arbitrated: D5 takes no most-specific-wins rule.
+	ComparablePredicatesReason = "ComparablePredicates"
+
+	// UnfulfilledContractsReason: ContractsFulfilled=False, the effective
+	// package defines provider-fulfilled contracts nothing on the platform
+	// implements (enhancement 0015 D18). Never moves Ready — it names what
+	// a future module demanding the contract would wait for, not a fault in
+	// the package that was generated.
+	UnfulfilledContractsReason = "UnfulfilledContracts"
+
+	// ContractsFulfilledReason: ContractsFulfilled=True, the effective
+	// package defines provider-fulfilled contracts and every one has a
+	// provider.
+	ContractsFulfilledReason = "ContractsFulfilled"
+
+	// NoContractsDefinedReason: ContractsFulfilled=True, the enabled
+	// catalogs list no contract at all, so nothing was verified. Distinct
+	// from ContractsFulfilled because the two are not the same statement:
+	// this one is vacuous, and 0015's operational notes warn against
+	// reading it as a pass. True rather than Unknown because a
+	// raw-passthrough-only platform legitimately defines nothing, and an
+	// Unknown there would read as a fault forever.
+	NoContractsDefinedReason = "NoContractsDefined"
 
 	// ModulePackage-specific reasons.
 	SourceNotReadyReason = "SourceNotReady"

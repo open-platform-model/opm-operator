@@ -10,9 +10,9 @@ Three sections per design.md. Section 1 is the spike (design.md § Section 1 is 
 
 ## 2. The condition and the reasons (internal/status, api/v1alpha1)
 
-- [ ] 2.1 In `internal/status/conditions.go`, add `ContractsFulfilledCondition = "ContractsFulfilled"` and the reasons `OverSubscribedContractsReason`, `ComparablePredicatesReason`, `UnfulfilledContractsReason`, `ContractsFulfilledReason`, `NoContractsDefinedReason`, each with the doc comment style the file uses (what state it reports, and why it is distinct). Verify: `go vet ./internal/status/...` passes and every reason names the enhancement decision it serves.
-- [ ] 2.2 Update the `PlatformStatus.Conditions` doc comment in `api/v1alpha1/platform_types.go`: Ready's two new `False` reasons and the non-gating `ContractsFulfilled` condition with its three reasons. Then `task dev:manifests dev:generate` and `task operator:installer`. Verify: `config/crd/bases/opmodel.dev_platforms.yaml` and `dist/install.yaml` carry the new description text and no other diff.
-- [ ] 2.3 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(api): declare the ContractsFulfilled condition and the inventory refusal reasons`.
+- [x] 2.1 In `internal/status/conditions.go`, add `ContractsFulfilledCondition = "ContractsFulfilled"` and the reasons `OverSubscribedContractsReason`, `ComparablePredicatesReason`, `UnfulfilledContractsReason`, `ContractsFulfilledReason`, `NoContractsDefinedReason`, each with the doc comment style the file uses (what state it reports, and why it is distinct). Verify: `go vet ./internal/status/...` passes and every reason names the enhancement decision it serves.
+- [x] 2.2 Update the `PlatformStatus.Conditions` doc comment in `api/v1alpha1/platform_types.go`: Ready's two new `False` reasons and the non-gating `ContractsFulfilled` condition with its three reasons. Then `task dev:manifests dev:generate` and `task operator:installer`. Verify: `config/crd/bases/opmodel.dev_platforms.yaml` and `dist/install.yaml` carry the new description text and no other diff.
+- [x] 2.3 `task dev:manifests dev:generate`, then `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(api): declare the ContractsFulfilled condition and the inventory refusal reasons`.
 
 ## 3. The gate and the report (internal/controller, docs)
 

@@ -138,4 +138,4 @@ with reason `BuildFailed`, and the message names the field the read failed on.
 | `PlatformNotReady` | no platform module is recorded yet | automatic once the Platform is `Generated`; if the Platform's own Ready reason is `OverSubscribedContracts` or `ComparablePredicates`, its first generation was refused, so fix the platform per the contract gate above |
 | `ResolutionFailed` | a module identity mismatch, an unresolved platform demand, or a component no transformer matched | change the module or the platform's catalogs |
 | `SkewRefused` | catalog skew under `Refuse` | bump the platform pin or downgrade the module |
-| `RenderFailed` | a transformer failed, two enabled catalogs provide the same provider-fulfilled contract, or any other evaluation error | fix the module or the platform |
+| `RenderFailed` | a transformer failed, or any other evaluation error. Over-subscription also reaches here as a fallback, for a package recorded before the contract gate existed; the gate refuses it at the Platform now, so a fresh package cannot reach a render over-subscribed | fix the module or the platform |

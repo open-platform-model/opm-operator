@@ -4,9 +4,9 @@ Three sections per design.md. Section 1 is the spike (design.md § Section 1 is 
 
 ## 1. Library pin to v1.0.0-alpha.32 (go.mod)
 
-- [ ] 1.1 `go get github.com/open-platform-model/library@v1.0.0-alpha.32 && go mod tidy`, then `go build ./...`. Verify: `go.mod` names alpha.32 and `platform.ContractInventory` exposes `Comparable` and `Discriminated` (`go doc github.com/open-platform-model/library/opm/platform.ContractInventory`).
-- [ ] 1.2 Spike the read: with `buildKernelOrSkip`, generate and build the test platform (`testCatalogPath()` at `fixtures.CatalogVersion()`) and read `Contracts()` off it in a throwaway spec (deleted before the commit); record `len(DefinedBy)`, `Unfulfilled`, `OverSubscribed`, `Comparable`, `Routable` and `Discriminated` in design.md § Context beside the measured state. Verify: the finding is written, and the generated module's core pin reads alpha.10 with no operator constant involved.
-- [ ] 1.3 `task dev:fmt dev:vet dev:lint dev:test` green (the live specs run against `CUE_REGISTRY` or skip), then commit `fix(deps): bump library to v1.0.0-alpha.32`.
+- [x] 1.1 `go get github.com/open-platform-model/library@v1.0.0-alpha.32 && go mod tidy`, then `go build ./...`. Verify: `go.mod` names alpha.32 and `platform.ContractInventory` exposes `Comparable` and `Discriminated` (`go doc github.com/open-platform-model/library/opm/platform.ContractInventory`).
+- [x] 1.2 Spike the read: with `buildKernelOrSkip`, generate and build the test platform (`testCatalogPath()` at `fixtures.CatalogVersion()`) and read `Contracts()` off it in a throwaway spec (deleted before the commit); record `len(DefinedBy)`, `Unfulfilled`, `OverSubscribed`, `Comparable`, `Routable` and `Discriminated` in design.md § Context beside the measured state. Verify: the finding is written, and the generated module's core pin reads alpha.10 with no operator constant involved.
+- [x] 1.3 `task dev:fmt dev:vet dev:lint dev:test` green (the live specs run against `CUE_REGISTRY` or skip), then commit `fix(deps): bump library to v1.0.0-alpha.32`.
 
 ## 2. The condition and the reasons (internal/status, api/v1alpha1)
 

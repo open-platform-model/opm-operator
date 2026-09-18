@@ -78,11 +78,14 @@ const transientRecheckInterval = time.Minute
 // platform-module helper (one importing #registry entry per subscription,
 // the CR's version stamped as the expected-version tripwire, core pinned at
 // the library's verified release), writes it under a per-generation
-// directory, builds it through the kernel's shape-gated platform loader, and
-// records the result together with the resolved skew policy
-// (spec.skewPolicy, 0019 D7/D18) in the process-local store for the render
-// path. The outcome surfaces on the CR's Ready condition: Generated,
-// GenerateFailed or BuildFailed.
+// directory, builds it through the kernel's shape-gated platform loader,
+// reads the built platform's contract inventory as the gate on recording it
+// (enhancement 0015 D5, D18), and records the result together with the
+// resolved skew policy (spec.skewPolicy, 0019 D7/D18) in the process-local
+// store for the render path. The outcome surfaces on the CR's Ready
+// condition: Generated, GenerateFailed, BuildFailed, OverSubscribedContracts
+// or ComparablePredicates, with the non-gating ContractsFulfilled report
+// beside it wherever a package was recorded.
 type PlatformReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
@@ -194,13 +197,25 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// build rather than one per claim. The directory is checked because the
 	// render path reads it, so a record whose module is gone must be rebuilt.
 	if held, ok := r.Store.Generated(); ok && held.Identity == identity && dirExists(held.Dir) {
-		log.V(1).Info("Platform module already current, skipping regeneration",
-			"name", plat.Name, "identity", identity, "dir", held.Dir)
-		plat.Status.ObservedGeneration = plat.Generation
-		plat.Status.OperatorVersion = version.Full()
-		recordEffectiveRegistry(&plat, identity, entries)
-		status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
-		return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
+		// The condition describes the package renders consume, so the skip
+		// path refreshes it from the held package rather than leaving a
+		// report that only the last regeneration ever wrote. A held record
+		// that cannot describe itself is treated as stale: fall through to
+		// regeneration, where the same read error surfaces as BuildFailed.
+		inv, err := held.Platform.Contracts()
+		if err != nil {
+			log.Error(err, "Held platform module's contract inventory is unreadable, regenerating",
+				"name", plat.Name, "identity", identity, "dir", held.Dir)
+		} else {
+			log.V(1).Info("Platform module already current, skipping regeneration",
+				"name", plat.Name, "identity", identity, "dir", held.Dir)
+			plat.Status.ObservedGeneration = plat.Generation
+			plat.Status.OperatorVersion = version.Full()
+			recordEffectiveRegistry(&plat, identity, entries)
+			setContractsFulfilled(&plat, inv)
+			status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
+			return ctrl.Result{}, r.patchStatus(ctx, patcher, &plat)
+		}
 	}
 
 	src, err := r.modFiles()
@@ -246,6 +261,27 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
 	}
 
+	// The gate (enhancement 0015 D5, D18): the built platform's own contract
+	// inventory decides whether this package may be recorded. It sits
+	// between the build and the store write so a refused package is never
+	// the one renders consume. A module that built but carries no readable
+	// inventory is a build failure, never a silent pass: the refusal names
+	// the field, and the message tells an operator which core release
+	// derives it.
+	inv, err := p.Contracts()
+	if err != nil {
+		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("reading the platform's contract inventory: %v", err))
+	}
+	// A refusal is not transient (nil classify error), so it requeues on the
+	// stalled interval. Nothing else is needed to recover it: the fix is a
+	// Platform edit or a claim change, and both already wake the reconciler
+	// through the generation predicate and the claim watch. The module
+	// directory just written is left on disk for the next successful
+	// generation's prune, as every superseded directory is.
+	if reason, msg, refused := inventoryRefusal(inv); refused {
+		return r.failReconcile(ctx, patcher, &plat, reason, nil, msg)
+	}
+
 	// Success: record the generated module under its identity with the
 	// resolved skew policy, then prune every directory no render can still
 	// be reading: keep the current identity plus every identity a render
@@ -266,6 +302,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	plat.Status.ObservedGeneration = plat.Generation
 	plat.Status.OperatorVersion = version.Full()
 	recordEffectiveRegistry(&plat, identity, entries)
+	setContractsFulfilled(&plat, inv)
 	status.MarkReadyWithReason(&plat, status.GeneratedReason, "Platform module generated and built for generation %d", plat.Generation)
 	r.EventRecorder.Eventf(&plat, nil, corev1.EventTypeNormal, status.GeneratedReason, "Generate", "Platform module generated and built for generation %d", plat.Generation)
 
@@ -449,8 +486,12 @@ func isTransientFailure(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded)
 }
 
-// patchStatus commits the Platform status via the serial patcher, declaring the
-// Ready/Reconciling/Stalled conditions this controller owns.
+// patchStatus commits the Platform status via the serial patcher, declaring
+// the Ready/Reconciling/Stalled conditions this controller owns, plus the
+// ContractsFulfilled report it writes on the success paths. Declaring the
+// report as owned is what lets the patcher diff it as this reconciler's own;
+// a failure or a refusal leaves it as it stood, still describing the package
+// renders consume.
 func (r *PlatformReconciler) patchStatus(ctx context.Context, patcher *patch.SerialPatcher, plat *releasesv1alpha1.Platform) error {
 	return patcher.Patch(ctx, plat,
 		patch.WithOwnedConditions{
@@ -458,6 +499,7 @@ func (r *PlatformReconciler) patchStatus(ctx context.Context, patcher *patch.Ser
 				status.ReadyCondition,
 				status.ReconcilingCondition,
 				status.StalledCondition,
+				status.ContractsFulfilledCondition,
 			},
 		},
 	)

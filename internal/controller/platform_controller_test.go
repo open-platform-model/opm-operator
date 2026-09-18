@@ -132,13 +132,16 @@ func testCatalogPath() string {
 	return "opmodel.dev/catalogs/opm@v4"
 }
 
-func deletePlatform(name string) {
-	plat := &releasesv1alpha1.Platform{ObjectMeta: metav1.ObjectMeta{Name: name}}
+// deletePlatform removes the singleton and waits for it to be gone. It takes
+// no name: "cluster" is the only Platform any spec creates, because it is the
+// only one the reconciler acts on.
+func deletePlatform() {
+	plat := &releasesv1alpha1.Platform{ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName}}
 	Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, plat))).To(Succeed())
 	Eventually(func() bool {
-		err := k8sClient.Get(ctx, client.ObjectKey{Name: name}, &releasesv1alpha1.Platform{})
+		err := k8sClient.Get(ctx, client.ObjectKey{Name: platformSingletonName}, &releasesv1alpha1.Platform{})
 		return client.IgnoreNotFound(err) == nil && err != nil
-	}).Should(BeTrue(), "Platform %q should be fully deleted", name)
+	}).Should(BeTrue(), "Platform %q should be fully deleted", platformSingletonName)
 }
 
 func readyCondition(plat *releasesv1alpha1.Platform) *metav1.Condition {
@@ -189,7 +192,7 @@ var _ = Describe("Platform Controller", func() {
 	BeforeEach(deleteAllClaims)
 
 	AfterEach(func() {
-		deletePlatform(platformSingletonName)
+		deletePlatform()
 	})
 
 	Context("singleton guard", func() {
@@ -288,6 +291,65 @@ var _ = Describe("Platform Controller", func() {
 			Expect(rec.Platform.Source).NotTo(BeNil(), "the built platform must carry its source for Kernel.Render")
 			Expect(rec.Platform.Source.Root).To(Equal(rec.Dir))
 			Expect(rec.Skew).To(Equal(kernel.SkewWarn), "an unset spec.skewPolicy resolves to Warn")
+		})
+
+		It("reports ContractsFulfilled from the held package, on the fresh build and on the skip", func() {
+			k, reg := buildKernelOrSkip()
+			catalogPath := testCatalogPath()
+
+			store := platformstore.NewStore()
+			r := newPlatformReconciler(store, k, reg)
+
+			plat := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type: "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{
+						catalogPath: {Version: fixtures.CatalogVersion()},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+
+			_, err := r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+
+			rec, ok := store.Generated()
+			Expect(ok).To(BeTrue(), "a routable, discriminated platform must be recorded")
+
+			// The expected report is whatever the held package's own
+			// inventory implies, never a literal: the fixtures may pin a
+			// catalog build that defines contracts and one that defines
+			// none, and both are correct here. The three reason states are
+			// pinned by the table tests instead.
+			inv, err := rec.Platform.Contracts()
+			Expect(err).NotTo(HaveOccurred())
+			want := &releasesv1alpha1.Platform{}
+			setContractsFulfilled(want, inv)
+			expected := apimeta.FindStatusCondition(want.Status.Conditions, status.ContractsFulfilledCondition)
+			Expect(expected).NotTo(BeNil())
+
+			fetched := fetchPlatform()
+			Expect(readyCondition(fetched).Reason).To(Equal(status.GeneratedReason))
+			report := apimeta.FindStatusCondition(fetched.Status.Conditions, status.ContractsFulfilledCondition)
+			Expect(report).NotTo(BeNil(), "a recorded package must carry the contract report")
+			Expect(report.Status).To(Equal(expected.Status))
+			Expect(report.Reason).To(Equal(expected.Reason))
+			Expect(report.Message).To(Equal(expected.Message))
+
+			// A second reconcile of the same tuple takes the skip path,
+			// which rewrites the report off the held package rather than
+			// leaving one only a regeneration ever wrote.
+			markPackage(rec.Dir)
+			_, err = r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(packageWasRegenerated(rec.Dir)).To(BeFalse(), "the same tuple must take the skip path")
+
+			skipped := apimeta.FindStatusCondition(fetchPlatform().Status.Conditions, status.ContractsFulfilledCondition)
+			Expect(skipped).NotTo(BeNil(), "the skip path must keep the report current")
+			Expect(skipped.Status).To(Equal(expected.Status))
+			Expect(skipped.Reason).To(Equal(expected.Reason))
+			Expect(skipped.Message).To(Equal(expected.Message))
 		})
 
 		It("regenerates byte-identical module content for the same generation", func() {

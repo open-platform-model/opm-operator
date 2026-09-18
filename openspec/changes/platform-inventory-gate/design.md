@@ -159,6 +159,7 @@ On the skip path, if `held.Platform.Contracts()` errors, the held record is trea
 - [Message churn re-fires the warning event] → every list is sorted; the table tests pin the wording and compare two orderings of the same inventory to one message.
 - [Seeded CI pins a catalog build whose inventory is non-empty] → the live spec asserts against the held platform's inventory, not a literal.
 - [Reading `Contracts()` on every reconcile] → measured by core at roughly +0.01 s for the shipped catalog; the skip path reads it off the already built value.
+- [The `BuildFailed`-on-unreadable-inventory branch is not covered end to end] → accepted. Reaching it needs a built platform whose core predates the library's pin, and the library's generator owns that pin, so the operator cannot produce one; the only way to drive the branch from a spec is a build seam whose sole caller is a test, which § How the refusals are tested rejected for the inventory reader itself. Covered instead by `TestInventoryUnreadableIsAnErrorNotAnEmptyInventory`, which pins the half of the contract that could regress silently: the library returning an error and a nil inventory rather than a partial one. A zero-value `ContractInventory` would refuse rather than pass (both verdict booleans false), so a regression there surfaces as a refusal naming nothing, not as a silent acceptance.
 
 ## Migration Plan
 

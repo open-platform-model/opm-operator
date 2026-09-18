@@ -222,7 +222,7 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		}
 	}
 
-	comparable := func() *platform.ContractInventory {
+	comparablePair := func() *platform.ContractInventory {
 		return &platform.ContractInventory{
 			DefinedBy:  map[string]string{containerResource: opmCatalog},
 			RequiredBy: map[string][]string{containerResource: {mirrorTransformer, deployTransformer}},
@@ -268,7 +268,7 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		r, _ := failureReconciler(platformstore.NewStore())
 		plat := createSingleton()
 
-		refuse(r, plat, comparable())
+		refuse(r, plat, comparablePair())
 
 		ready := readyCondition(fetchPlatform())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))

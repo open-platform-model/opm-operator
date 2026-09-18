@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -35,7 +36,6 @@ import (
 // (transformerregistration_catalog_test.go).
 const (
 	opmCatalog    = "opmodel.dev/catalogs/opm@v4"
-	k8upCatalog   = "opmodel.dev/catalogs/k8up@v1"
 	veleroCatalog = "opmodel.dev/catalogs/velero@v1"
 
 	k8upSchedule   = "opmodel.dev/catalogs/k8up/transformers/schedule@1.0.0"
@@ -57,10 +57,16 @@ func TestInventoryRefusal(t *testing.T) {
 		wantMessage string
 	}{
 		{
-			name: "routable and discriminated is not refused",
+			// Several transformers sharing one contract is the ordinary
+			// case, not a refusal: discrimination is about predicates
+			// being comparable, never about how many transformers a
+			// contract has.
+			name: "routable and discriminated is not refused, however many transformers share a contract",
 			inv: &platform.ContractInventory{
-				DefinedBy:     map[string]string{backupTrait: opmCatalog},
-				RequiredBy:    map[string][]string{backupTrait: {k8upSchedule}},
+				DefinedBy: map[string]string{backupTrait: opmCatalog},
+				RequiredBy: map[string][]string{
+					backupTrait: {k8upSchedule, mirrorTransformer, deployTransformer},
+				},
 				Fulfilled:     true,
 				Routable:      true,
 				Discriminated: true,
@@ -189,12 +195,43 @@ func TestInventoryRefusal(t *testing.T) {
 	}
 }
 
+// TestInventoryUnreadableIsAnErrorNotAnEmptyInventory pins the library
+// contract the reconciler's BuildFailed branch rests on
+// (platform_controller.go, the gate): a platform carrying no readable
+// #contracts must come back as an error, never as a zero-value inventory.
+//
+// The distinction is the whole of "never a silent pass". A zero-value
+// ContractInventory has Routable and Discriminated false, so it would refuse
+// rather than pass — but with an empty OverSubscribed list, producing a
+// refusal message naming nothing. If the library ever softened this to a
+// partial inventory, that is what an operator would see, and this test is
+// what catches it.
+//
+// The reconciler's own branch is not exercised end to end: reaching it needs
+// a built platform whose core predates the library's pin, which the library's
+// generator cannot produce, and stubbing the build seam is the seam-whose-
+// only-caller-is-a-test that design.md § How the refusals are tested rejected.
+// design.md § Risks records the accepted gap.
+func TestInventoryUnreadableIsAnErrorNotAnEmptyInventory(t *testing.T) {
+	inv, err := (&platform.Platform{}).Contracts()
+
+	if err == nil {
+		t.Fatalf("a platform with no #contracts must not read as an inventory, got %+v", inv)
+	}
+	if inv != nil {
+		t.Errorf("a failed read must return no inventory, got %+v", inv)
+	}
+	if !strings.Contains(err.Error(), "contracts") {
+		t.Errorf("the error must name the field the read failed on, got %q", err)
+	}
+}
+
 // TestInventoryRefusal_MessageIsOrderIndependent is the event-gating
 // guarantee: failReconcile emits its warning event only when the message
 // changes, so two builds reporting the same problem in different
 // comprehension orders must produce one message, not two.
 func TestInventoryRefusal_MessageIsOrderIndependent(t *testing.T) {
-	definedBy := map[string]string{
+	definedByCatalog := map[string]string{
 		backupTrait:       opmCatalog,
 		restoreTrait:      veleroCatalog,
 		containerResource: opmCatalog,
@@ -206,7 +243,7 @@ func TestInventoryRefusal_MessageIsOrderIndependent(t *testing.T) {
 	}
 
 	one := &platform.ContractInventory{
-		DefinedBy:      definedBy,
+		DefinedBy:      definedByCatalog,
 		RequiredBy:     requiredBy,
 		OverSubscribed: []string{backupTrait, restoreTrait},
 		Comparable: []platform.ComparablePredicates{
@@ -217,7 +254,7 @@ func TestInventoryRefusal_MessageIsOrderIndependent(t *testing.T) {
 		Discriminated: false,
 	}
 	other := &platform.ContractInventory{
-		DefinedBy: definedBy,
+		DefinedBy: definedByCatalog,
 		RequiredBy: map[string][]string{
 			backupTrait:       {k8upSchedule, veleroSchedule},
 			restoreTrait:      {veleroSchedule, k8upSchedule},

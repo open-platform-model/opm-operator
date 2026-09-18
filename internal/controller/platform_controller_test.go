@@ -352,6 +352,59 @@ var _ = Describe("Platform Controller", func() {
 			Expect(skipped.Message).To(Equal(expected.Message))
 		})
 
+		It("recovers on the next reconcile once the refused tuple is fixed", func() {
+			k, reg := buildKernelOrSkip()
+			catalogPath := testCatalogPath()
+
+			store := platformstore.NewStore()
+			r := newPlatformReconciler(store, k, reg)
+
+			plat := &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
+				Spec: releasesv1alpha1.PlatformSpec{
+					Type: "kubernetes",
+					Registry: map[string]releasesv1alpha1.Subscription{
+						catalogPath: {Version: fixtures.CatalogVersion()},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+
+			// A previous reconcile refused this platform. Nothing but the
+			// Ready condition records that, which is exactly the property
+			// under test: there is no latch to clear.
+			reason, msg, refused := inventoryRefusal(&platform.ContractInventory{
+				DefinedBy:      map[string]string{backupTrait: opmCatalog},
+				RequiredBy:     map[string][]string{backupTrait: {veleroSchedule, k8upSchedule}},
+				OverSubscribed: []string{backupTrait},
+				Routable:       false,
+				Discriminated:  true,
+			})
+			Expect(refused).To(BeTrue())
+			_, err := r.failReconcile(ctx, freshPatcher(plat), plat, reason, nil, msg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(readyCondition(fetchPlatform()).Reason).To(Equal(status.OverSubscribedContractsReason))
+			_, recorded := store.Generated()
+			Expect(recorded).To(BeFalse(), "a refusal records no package")
+
+			// The competing catalog is gone, so the same tuple now builds
+			// routable and discriminated. The gate is level-computed: this
+			// reconcile is the whole of the recovery.
+			res, err := r.Reconcile(ctx, clusterRequest)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.RequeueAfter).To(BeZero(), "a recovered platform does not requeue")
+
+			recovered := fetchPlatform()
+			ready := readyCondition(recovered)
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue), "reason=%s message=%s", ready.Reason, ready.Message)
+			Expect(ready.Reason).To(Equal(status.GeneratedReason))
+			Expect(apimeta.FindStatusCondition(recovered.Status.Conditions, status.StalledCondition)).To(BeNil(),
+				"the refusal's Stalled condition must not survive the recovery")
+
+			_, ok := store.Generated()
+			Expect(ok).To(BeTrue(), "the recovered tuple must be recorded")
+		})
+
 		It("regenerates byte-identical module content for the same generation", func() {
 			k, reg := buildKernelOrSkip()
 			store := platformstore.NewStore()

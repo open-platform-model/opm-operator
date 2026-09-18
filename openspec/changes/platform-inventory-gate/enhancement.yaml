@@ -1,0 +1,13 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+implements:
+  - enhancement: "0015"
+    # D5: the platform is REFUSED at platform-package generation when two
+    # transformers carry comparable predicates over a shared catalog-fulfilled
+    # contract. core derives the report and library decodes it; this change is
+    # the refusal, so it is the one that completes the decision.
+    # D18: an unfulfilled contract is a non-gating ContractsFulfilled report
+    # and only over-subscription refuses generation. The report arms landed in
+    # core, library and cli; the operator's refusal and condition complete it.
+    decisions: [D5, D18]
+    resolves: []

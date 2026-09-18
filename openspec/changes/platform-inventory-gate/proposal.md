@@ -1,0 +1,36 @@
+## Why
+
+The Platform reconciler builds the generated platform module and consults its contract inventory nowhere. Two refusals enhancement 0015 places at platform-package generation therefore do not exist. Over-subscription (0010 D37, kept by D2; D18: "only over-subscription refuses platform-package generation") generates today and fails later, at the kernel's render gate, naming the instance that demanded the contract rather than the platform that cannot route it, the misattribution D8 refused for registrations. Comparable predicates (D5, two enabled catalogs both shipping an adapter for one catalog-fulfilled contract) generate today and render every matching component twice, silently. D18's report half is missing too: no `ContractsFulfilled` condition, so a platform whose subscribed catalog defines a provider-fulfilled contract that nothing implements says nothing until the first module demands it. Library `v1.0.0-alpha.32` (released 2026-09-18) puts all three behind one read, `Contracts()` on the platform the reconciler already builds: `Routable`, `Discriminated` with its `Comparable` rows, `Unfulfilled` with `DefinedBy`.
+
+## What Changes
+
+- **Library pin to `v1.0.0-alpha.32`.** The first release whose `ContractInventory` carries `Comparable` and `Discriminated` beside the six fields alpha.30 introduced. The generated module's core pin follows the library (alpha.10), with no operator constant involved.
+- **The generation gate.** After the build succeeds and before the store is written, the reconciler reads the inventory. A platform that is not routable is refused with `Ready=False`, reason `OverSubscribedContracts`, the message naming each over-subscribed contract, the catalog defining it and every transformer requiring it. A platform that is not discriminated is refused with `Ready=False`, reason `ComparablePredicates`, the message naming each row's broader and narrower transformer and the contracts they share. When both hold, over-subscription is reported first and the message carries both. A refusal leaves the store, `status.packageIdentity` and `status.registry` untouched, exactly as a failed build does: renders keep consuming the last good package, and status keeps describing it. The refused module directory is left for the next successful generation's prune. The refusal requeues on the stalled interval; the fix is a Platform edit or a claim change, and both already wake the reconciler.
+- **The `ContractsFulfilled` condition.** Non-gating, written on both success paths (a fresh build and the current-package skip) from the effective package's inventory: `False` with reason `UnfulfilledContracts` naming each provider-fulfilled contract nothing implements and the catalog defining it; `True` with reason `ContractsFulfilled` when every defined provider-fulfilled contract has a provider; `True` with reason `NoContractsDefined` when the enabled catalogs list no contract at all, so the vacuous case 0015's operational notes warn about is visible on the condition rather than read as a pass. It never moves `Ready`, and the reconciler declares it among the conditions it owns.
+- **An unreadable inventory is a build failure.** A built platform whose inventory lacks a field (a core older than the library's pin) reports `BuildFailed` naming the field. Unreachable through the operator's own generator, and never a silent pass.
+- **API documentation and generated files.** `PlatformStatus.conditions`'s doc comment gains the two reasons and the condition; the CRD and `dist/install.yaml` regenerate. No schema field changes.
+- **`docs/RENDERING.md`.** The Platform section gains the two refusals and the condition, and the `PlatformNotReady` row's remedy names them: a platform refused on first boot holds no package, so every instance waits at `PlatformNotReady` with the cause on the Platform.
+- **Not in this change.** D14's readiness exclusion: there is still no general-stage wait to exclude the registration from. A render-time tripwire on `discriminated`: D5 fixes the gate at generation and calls tripwires defense in depth. `opm platform check`'s `discriminated` refusal: the cli's slice. Retiring the kernel's render-time over-subscription gate now that generation refuses first: a follow-up decision recorded in the library's `read-contract-inventory` design, not taken here.
+
+## Impact
+
+- **API types:** `api/v1alpha1/platform_types.go` doc comment only; `config/crd/bases/opmodel.dev_platforms.yaml` and `dist/install.yaml` regenerate from it.
+- **Internal packages:** `internal/status/conditions.go` gains the `ContractsFulfilled` condition type and four reasons (`OverSubscribedContracts`, `ComparablePredicates`, `UnfulfilledContracts`, `NoContractsDefined`); the verdict and the condition are pure functions of a `platform.ContractInventory` in `internal/controller`, so their wording is unit-tested without a registry.
+- **Controllers:** `PlatformReconciler.Reconcile` gains the gate between the build and the store write, the condition on both success paths, and `ContractsFulfilled` in its owned-conditions patch. Nothing else changes: `failReconcile` already carries the retry, observed-generation and event-gating behaviour a refusal needs.
+- **Tests:** the refusal paths are exercised directly through the reconciler's helper with hand-built inventories, the pattern `platform_failure_test.go` set for `failReconcile`, because no published catalog pair produces either refusal and a fixture catalog pair is not worth its publish pipeline for two messages. The live-registry specs assert the condition on the healthy platform against the inventory read off the held package, so the assertion holds at whichever catalog build the fixtures pin.
+- **Downstream consumers:** the cli reads none of this. A cluster whose platform was over-subscribed or undiscriminated stops generating; it never produced a usable package (renders failed or doubled), so the change is the refusal arriving where 0015 puts it, not a regression.
+- **SemVer:** MINOR. One additive condition, two additive `Ready=False` reasons, no field or existing reason changes.
+- **Complexity (Principle VII):** one inventory read the build already paid for, and two pure functions. Justified because no other site can name the platform: the render gate names an instance, and the cli's check is offline and optional.
+- **Release:** `feat`.
+
+## Capabilities
+
+### New Capabilities
+
+- `platform-inventory-gate`: what the Platform reconciler reads off the built platform's contract inventory, which reports refuse generation and which only report, and how each surfaces on `Platform.status`.
+
+### Modified Capabilities
+
+- `platform-reconciler`: the "Surface materialize outcome on status" requirement gains the two refusal reasons and the `ContractsFulfilled` condition, and states that a refusal preserves the last good module like a failed build.
+- `platform-crd`: the "PlatformStatus carries conditions and observedGeneration" requirement lists the new `Ready` reasons and the `ContractsFulfilled` condition.
+- `platform-module-generation`: the "The generated module is validated by building it" requirement gains the inventory gate as the step after a successful build, with the built-but-refused outcome.

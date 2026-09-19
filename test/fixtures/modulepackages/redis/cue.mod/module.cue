@@ -13,6 +13,6 @@ deps: {
 		v: "v2.0.0-alpha.6"
 	}
 	"testing.opmodel.dev/modules/operator/redis@v0": {
-		v: "v0.1.12"
+		v: "v0.1.13"
 	}
 }

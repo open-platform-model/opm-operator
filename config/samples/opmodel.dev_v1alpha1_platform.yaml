@@ -9,7 +9,7 @@ metadata:
 spec:
   type: kubernetes
   registry:
-    # Subscription keys carry the catalog's major (enhancement 0010 D14);
+    # Subscription keys carry the catalog's major (0010:D14);
     # `version` names exactly one published build of that major — the
     # platform file IS the resolution, there is no range/allow/deny filter.
     opmodel.dev/catalogs/opm@v4:

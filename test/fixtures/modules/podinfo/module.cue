@@ -17,7 +17,7 @@ import (
 m.#Module
 
 // Module metadata — modulePath and version are the identity package's values,
-// and name is the path's leaf (enhancements 0010 D8, 0011 D12). Edit
+// and name is the path's leaf (0010:D8, 0011:D12). Edit
 // identity/identity.cue, not this block.
 metadata: {
 	_segments:   strings.Split(strings.SplitN(id.ModulePath, "@", 2)[0], "/")

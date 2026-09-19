@@ -23,7 +23,7 @@ outright.
 
 Each module declares its own path and semver in its `identity/identity.cue`
 package — the single source of both (core `#IdentityPackage`; enhancements 0010
-D38 / 0011 D12) — and `module.cue`'s `metadata` block derives from it. Edit the
+D38 / 0011:D12) — and `module.cue`'s `metadata` block derives from it. Edit the
 identity package, never the metadata block. Versions are independent of the
 operator's release version.
 

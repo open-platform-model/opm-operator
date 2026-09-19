@@ -13,6 +13,6 @@ deps: {
 		v: "v2.0.0-alpha.6"
 	}
 	"testing.opmodel.dev/modules/operator/hello@v0": {
-		v: "v0.0.10"
+		v: "v0.0.11"
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	cueerrors "cuelang.org/go/cue/errors"
 
+	"github.com/open-platform-model/library/opm/helper/objectset"
 	"github.com/open-platform-model/library/opm/kernel"
 	"github.com/open-platform-model/library/opm/module"
 
@@ -185,6 +186,14 @@ func cueFindings(err error) string {
 // rows worded as warnings (renderWarnings), and the rows themselves
 // (unhandled traits, resolved versions) carried through for the reconciler.
 //
+// The duplicate-identity check runs first, before any resource, inventory
+// entry or warning is built: two objects sharing one apply identity reach
+// apply as two writes to one object and the last silently overwrites the
+// first, so a refused render must leave no resource, no inventory entry and
+// no digest for either loop to act on (0015:D15). The library's error is
+// returned bare so both classifiers find its type and status carries its
+// message verbatim.
+//
 // contracts is the instance's declared demand, computed by the caller from
 // the instance rather than from this output: the kernel reports matched
 // PAIRS, which name transformers, and turning a transformer back into the
@@ -194,6 +203,10 @@ func resultFromRender(
 	identity platformstore.PackageIdentity,
 	contracts []string,
 ) (*RenderResult, error) {
+	if dups := objectset.Duplicates(out.Compiled); len(dups) > 0 {
+		return nil, &objectset.DuplicateIdentitiesError{Duplicates: dups}
+	}
+
 	resources := make([]*core.Resource, 0, len(out.Compiled))
 	for _, c := range out.Compiled {
 		resources = append(resources, core.ResourceFromCompiled(c))

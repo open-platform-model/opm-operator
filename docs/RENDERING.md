@@ -31,6 +31,10 @@ created for that call and dropped with it, so renders of different objects
 overlap freely and nothing serialises them but the limit below. No platform
 value is held between renders and nothing grows with render count.
 
+Before the rendered objects become resources, the adapter checks their apply
+identities and refuses the whole render when two objects share one
+(0015:D15), so nothing partial is ever applied.
+
 ## `--max-concurrent-renders`
 
 The flag (default `1`) sets the maximum concurrent reconciles of the
@@ -138,4 +142,5 @@ with reason `BuildFailed`, and the message names the field the read failed on.
 | `PlatformNotReady` | no platform module is recorded yet | automatic once the Platform is `Generated`; if the Platform's own Ready reason is `OverSubscribedContracts` or `ComparablePredicates`, its first generation was refused, so fix the platform per the contract gate above |
 | `ResolutionFailed` | a module identity mismatch, an unresolved platform demand, or a component no transformer matched | change the module or the platform's catalogs |
 | `SkewRefused` | catalog skew under `Refuse` | bump the platform pin or downgrade the module |
+| `DuplicateIdentities` | two rendered objects share one `apiVersion`, `kind`, `namespace` and `name`, so the last apply would silently overwrite the first | remove or rename one of the components the message names |
 | `RenderFailed` | a transformer failed, or any other evaluation error. Over-subscription also reaches here as a fallback, for a package recorded before the contract gate existed; the gate refuses it at the Platform now, so a fresh package cannot reach a render over-subscribed | fix the module or the platform |

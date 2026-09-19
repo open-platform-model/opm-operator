@@ -69,7 +69,7 @@ Placed after skew (a skew refusal happens before evaluation, so nothing was rend
 // DuplicateIdentitiesReason: Ready=False, two or more rendered objects share
 // one Kubernetes apply identity (apiVersion, kind, namespace, name), so the
 // render is refused before apply and the message names each identity and
-// every producing component and transformer (enhancement 0015 D15). Distinct
+// every producing component and transformer (0015:D15). Distinct
 // from RenderFailed because nothing failed to evaluate and the platform is
 // not at fault: the module author removes or renames a component.
 DuplicateIdentitiesReason = "DuplicateIdentities"

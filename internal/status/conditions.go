@@ -42,7 +42,16 @@ const (
 	// the module requires a newer catalog build than the platform pins
 	// (0019:D7/D18). The fix is a platform pin bump or a module
 	// downgrade, so it is distinct from RenderFailed.
-	SkewRefusedReason             = "SkewRefused"
+	SkewRefusedReason = "SkewRefused"
+	// DuplicateIdentitiesReason: Ready=False, two or more rendered objects
+	// share one Kubernetes apply identity (apiVersion, kind, namespace,
+	// name), so the render is refused before apply and the message names
+	// each identity and every producing component and transformer
+	// (0015:D15). Distinct from RenderFailed because nothing failed to
+	// evaluate and the platform is not at fault: the module author removes
+	// or renames a component.
+	DuplicateIdentitiesReason = "DuplicateIdentities"
+
 	ApplyFailedReason             = "ApplyFailed"
 	PruneFailedReason             = "PruneFailed"
 	ImpersonationFailedReason     = "ImpersonationFailed"

@@ -8,7 +8,10 @@ import (
 
 	"k8s.io/client-go/tools/events"
 
+	"github.com/fluxcd/pkg/runtime/conditions"
+
 	oerrors "github.com/open-platform-model/library/opm/errors"
+	"github.com/open-platform-model/library/opm/helper/objectset"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -51,6 +54,22 @@ func overSubscribed() error {
 
 func transformFailure() error {
 	return &oerrors.TransformError{Component: "web", Transformer: "deployment", Cause: errors.New("boom")}
+}
+
+// duplicateIdentities mirrors the render adapter's refusal: the library's
+// error returned bare, carrying one shared identity and both producers.
+func duplicateIdentities() error {
+	return &objectset.DuplicateIdentitiesError{Duplicates: []objectset.Duplicate{{
+		Identity: objectset.Identity{
+			APIVersion: "opmodel.dev/v1alpha1",
+			Kind:       "TransformerRegistration",
+			Name:       "web",
+		},
+		Producers: []objectset.Producer{
+			{Component: "registration", Transformer: "opmodel.dev/catalogs/opm/transformers/transformer-registration@v4"},
+			{Component: "registration-copy", Transformer: "opmodel.dev/catalogs/opm/transformers/transformer-registration@v4"},
+		},
+	}}}
 }
 
 // skewRefused mirrors the kernel's pre-evaluation refusal under SkewRefuse:
@@ -104,6 +123,18 @@ func TestClassifyRenderError(t *testing.T) {
 			err:         skewRefused(),
 			wantOutcome: FailedStalled,
 			wantReason:  status.SkewRefusedReason,
+		},
+		{
+			name:        "duplicate identities bare from the adapter",
+			err:         duplicateIdentities(),
+			wantOutcome: FailedStalled,
+			wantReason:  status.DuplicateIdentitiesReason,
+		},
+		{
+			name:        "duplicate identities wrapped once",
+			err:         fmt.Errorf("rendering module instance: %w", duplicateIdentities()),
+			wantOutcome: FailedStalled,
+			wantReason:  status.DuplicateIdentitiesReason,
 		},
 		{
 			name:        "over-subscribed provider contract is a render failure",
@@ -174,6 +205,52 @@ func TestClassifyRenderError_SkewMessageNamesPathAndVersions(t *testing.T) {
 	}
 }
 
+// A duplicate-identity refusal surfaces identically on both reconcile
+// loops: the ModuleInstance loop writes Ready=False / Stalled=True under
+// DuplicateIdentities with the library's message verbatim, and the
+// ModulePackage classifier returns the same reason for the same error, so
+// the two cannot drift.
+func TestClassifyRenderError_DuplicateIdentitiesStallsBothLoops(t *testing.T) {
+	err := duplicateIdentities()
+
+	mi := &releasesv1alpha1.ModuleInstance{}
+	outcome, msg := classifyRenderError(mi, events.NewFakeRecorder(2), err)
+
+	if outcome != FailedStalled {
+		t.Errorf("outcome = %v, want %v", outcome, FailedStalled)
+	}
+	if !conditions.IsFalse(mi, status.ReadyCondition) {
+		t.Errorf("Ready = %v, want False", conditions.Get(mi, status.ReadyCondition))
+	}
+	if !conditions.IsTrue(mi, status.StalledCondition) {
+		t.Errorf("Stalled = %v, want True", conditions.Get(mi, status.StalledCondition))
+	}
+	for _, cond := range []string{status.ReadyCondition, status.StalledCondition} {
+		if got := conditions.GetReason(mi, cond); got != status.DuplicateIdentitiesReason {
+			t.Errorf("%s reason = %q, want %q", cond, got, status.DuplicateIdentitiesReason)
+		}
+		if got := conditions.GetMessage(mi, cond); got != err.Error() {
+			t.Errorf("%s message = %q, want the library's wording %q", cond, got, err.Error())
+		}
+	}
+	if msg != err.Error() {
+		t.Errorf("message = %q, want %q", msg, err.Error())
+	}
+	for _, want := range []string{
+		"opmodel.dev/v1alpha1 TransformerRegistration web",
+		`component "registration"`,
+		`component "registration-copy"`,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("DuplicateIdentities message %q must name %q", msg, want)
+		}
+	}
+
+	if got := renderErrorReason(err); got != status.DuplicateIdentitiesReason {
+		t.Errorf("the ModulePackage classifier returned %q, want %q", got, status.DuplicateIdentitiesReason)
+	}
+}
+
 func TestRenderErrorReason(t *testing.T) {
 	tests := []struct {
 		name string
@@ -194,6 +271,16 @@ func TestRenderErrorReason(t *testing.T) {
 			name: "skew refused under the Refuse policy",
 			err:  skewRefused(),
 			want: status.SkewRefusedReason,
+		},
+		{
+			name: "duplicate identities bare from the adapter",
+			err:  duplicateIdentities(),
+			want: status.DuplicateIdentitiesReason,
+		},
+		{
+			name: "duplicate identities wrapped once",
+			err:  fmt.Errorf("rendering module instance: %w", duplicateIdentities()),
+			want: status.DuplicateIdentitiesReason,
 		},
 		{
 			name: "over-subscribed provider contract is a render failure",

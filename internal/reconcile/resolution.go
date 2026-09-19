@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	oerrors "github.com/open-platform-model/library/opm/errors"
+	"github.com/open-platform-model/library/opm/helper/objectset"
 
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
@@ -41,15 +42,31 @@ func isSkewRefusal(err error) bool {
 	return ok
 }
 
+// isDuplicateIdentities reports whether err is the adapter's refusal of a
+// render whose objects share one Kubernetes apply identity
+// (*objectset.DuplicateIdentitiesError, 0015:D15). The render adapter
+// returns it bare, and errors.AsType still finds it through a wrap.
+func isDuplicateIdentities(err error) bool {
+	_, ok := errors.AsType[*objectset.DuplicateIdentitiesError](err)
+	return ok
+}
+
 // renderFailureReason maps a failed render to its Ready-condition reason by
-// the typed cause the kernel attached, in precedence order: a skew refusal is
-// SkewRefused; unresolved demands, unmatched components and identity
-// mismatches are ResolutionFailed; a transform failure, an over-subscribed
-// provider contract (*oerrors.TransformError, *oerrors.OverSubscribedContractsError)
-// and every other refusal or evaluation error are RenderFailed. The
-// pre-evaluation refusals that indicate an operator defect (a missing Source,
-// an uncovered OPM path) fall through to RenderFailed with the kernel's
-// message verbatim.
+// the typed cause, in precedence order:
+//
+//  1. SkewRefused — the Refuse skew policy stopped the render before
+//     evaluation, so nothing was rendered.
+//  2. DuplicateIdentities — two rendered objects share one apply identity, a
+//     verdict on the render's own output that must not be mistaken for a
+//     platform problem.
+//  3. ResolutionFailed — unresolved demands, unmatched components and
+//     identity mismatches.
+//  4. RenderFailed — a transform failure, an over-subscribed provider
+//     contract (*oerrors.TransformError,
+//     *oerrors.OverSubscribedContractsError) and every other refusal or
+//     evaluation error. The pre-evaluation refusals that indicate an operator
+//     defect (a missing Source, an uncovered OPM path) fall through to here
+//     with the kernel's message verbatim.
 //
 // A string fallback classifies loader-path errors that carry no type
 // (matchers supplied by the caller: the two reconcile loops wrap different
@@ -58,6 +75,8 @@ func renderFailureReason(err error, isResolutionMsg func(error) bool) string {
 	switch {
 	case isSkewRefusal(err):
 		return status.SkewRefusedReason
+	case isDuplicateIdentities(err):
+		return status.DuplicateIdentitiesReason
 	case isTypedResolutionError(err), isResolutionMsg(err):
 		return status.ResolutionFailedReason
 	default:

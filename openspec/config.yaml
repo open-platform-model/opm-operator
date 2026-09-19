@@ -154,7 +154,7 @@ rules:
       Commit to make, e.g. `- [ ] 1.4 task dev:fmt dev:vet dev:lint dev:test green, then commit feat(controller): add the source grant phase`
       (types and scopes per Principle VI). The commit task is the pause point; nothing uncommitted is carried across
       a section boundary."
-    - "CRITICAL: Cut the change into at most about five sections, each a coherent unit that
+    - "CRITICAL: Cut the change into at most about seven sections, each a coherent unit that
       leaves main releasable by itself. If it needs more, or a section cannot end green on its
       own, split into a new OpenSpec change. Section 1 is a spike whenever design.md carries an
       unverified assumption; its commit task lands what the spike produced (a test, a fixture,

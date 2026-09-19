@@ -173,7 +173,7 @@ var _ = Describe("Platform Controller failure handling", func() {
 // routes them, with hand-built inventories: no published catalog pair is
 // over-subscribed or undiscriminated, and a fixture catalog pair is not worth
 // a second fixture kind in a shared publish pipeline for two messages
-// (design.md § How the refusals are tested without a refusing catalog pair).
+// (the refusals are tested without a refusing catalog pair).
 // The wording itself is pinned by the table tests in
 // platform_inventory_test.go; these specs pin what a refusal does to the
 // object and the store.

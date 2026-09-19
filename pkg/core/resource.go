@@ -29,7 +29,6 @@ type Resource struct {
 	Value cue.Value
 
 	// Instance is the name of the ModuleInstance that produced this resource.
-	// Was: Release (enhancement 0002 D10/D12).
 	Instance string
 
 	// Component is the source component name within the instance.

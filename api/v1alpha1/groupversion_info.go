@@ -17,7 +17,6 @@ limitations under the License.
 // Package v1alpha1 contains API Schema definitions for the opmodel.dev v1alpha1 API group.
 // +kubebuilder:object:generate=true
 // +groupName=opmodel.dev
-// Was: +groupName=releases.opmodel.dev (enhancement 0002 D5)
 package v1alpha1
 
 import (
@@ -28,7 +27,6 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	// Was: Group "releases.opmodel.dev" (enhancement 0002 D5).
 	GroupVersion = schema.GroupVersion{Group: "opmodel.dev", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.

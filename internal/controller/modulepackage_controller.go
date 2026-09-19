@@ -46,7 +46,6 @@ import (
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 )
 
-// Was: ReleaseReconciler
 // ModulePackageReconciler reconciles a ModulePackage object.
 type ModulePackageReconciler struct {
 	client.Client
@@ -83,7 +82,7 @@ type ModulePackageReconciler struct {
 	MaxConcurrentRenders int
 
 	// warnings remembers each package's last render warnings so RenderWarning
-	// events are emitted on transition only (0019 D18).
+	// events are emitted on transition only (0019:D18).
 	warnings opmreconcile.WarningTracker
 }
 
@@ -210,7 +209,6 @@ func fluxSourceCRDsInstalled(mgr ctrl.Manager) bool {
 	return true
 }
 
-// Was: mapSourceToReleases
 // mapSourceToModulePackages returns a handler that enqueues all ModulePackage CRs whose
 // spec.sourceRef matches the given source kind and the reconciled object's
 // name+namespace.
@@ -245,7 +243,6 @@ func (r *ModulePackageReconciler) mapSourceToModulePackages(kind string) handler
 	}
 }
 
-// Was: mapPlatformToReleases
 // mapPlatformToModulePackages enqueues every ModulePackage in the cluster when the
 // (singleton) Platform changes. This unblocks packages sitting in
 // PlatformNotReady the moment the platform is generated, rather than waiting

@@ -30,7 +30,7 @@ import (
 )
 
 // The FQNs below model the shapes the refusals name; no published catalog
-// pair produces either (design.md § How the refusals are tested without a
+// pair produces either (the refusals are tested without a
 // refusing catalog pair), so the inventories are hand-built.
 // backupTrait and restoreTrait are the package's existing contract FQNs
 // (transformerregistration_catalog_test.go).
@@ -125,7 +125,7 @@ func TestInventoryRefusal(t *testing.T) {
 			wantRefused: true,
 			wantReason:  status.ComparablePredicatesReason,
 			wantMessage: "platform is not discriminated: 1 comparable transformer pair; " +
-				"every component the narrower transformer matches is also matched by the broader one, so both would render (enhancement 0015 D5):" +
+				"every component the narrower transformer matches is also matched by the broader one, so both would render (0015:D5):" +
 				"\n  " + mirrorTransformer + " (broader) and " + deployTransformer + " (narrower) over " + containerResource + ", " + volumeResource,
 		},
 		{
@@ -153,7 +153,7 @@ func TestInventoryRefusal(t *testing.T) {
 				"\n  " + backupTrait + " (defined by " + opmCatalog + ") required by " + k8upSchedule + ", " + veleroSchedule +
 				"\n\n" +
 				"platform is not discriminated: 1 comparable transformer pair; " +
-				"every component the narrower transformer matches is also matched by the broader one, so both would render (enhancement 0015 D5):" +
+				"every component the narrower transformer matches is also matched by the broader one, so both would render (0015:D5):" +
 				"\n  " + mirrorTransformer + " (broader) and " + deployTransformer + " (narrower) over " + containerResource,
 		},
 		{
@@ -210,8 +210,8 @@ func TestInventoryRefusal(t *testing.T) {
 // The reconciler's own branch is not exercised end to end: reaching it needs
 // a built platform whose core predates the library's pin, which the library's
 // generator cannot produce, and stubbing the build seam is the seam-whose-
-// only-caller-is-a-test that design.md § How the refusals are tested rejected.
-// design.md § Risks records the accepted gap.
+// only-caller-is-a-test that the refusal-testing rule rejected. The change's
+// own risk list records the accepted gap.
 func TestInventoryUnreadableIsAnErrorNotAnEmptyInventory(t *testing.T) {
 	inv, err := (&platform.Platform{}).Contracts()
 
@@ -409,7 +409,7 @@ func TestInventoryContractsFulfilled(t *testing.T) {
 	}
 }
 
-// TestInventoryContractsFulfilled_NeverTouchesReady is the D18 guarantee in
+// TestInventoryContractsFulfilled_NeverTouchesReady is the 0015:D18 guarantee in
 // its narrowest form: the report is not a gate.
 func TestInventoryContractsFulfilled_NeverTouchesReady(t *testing.T) {
 	plat := &releasesv1alpha1.Platform{}

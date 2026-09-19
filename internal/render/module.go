@@ -21,12 +21,12 @@ type RenderResult struct {
 	InventoryEntries []releasesv1alpha1.InventoryEntry
 
 	// Warnings are the render's advisory findings, worded by the operator
-	// (renderWarnings) from the diagnostics' rows: effectively-optional
-	// unhandled traits and, under the Warn skew policy, catalog version
-	// skew. Unresolved demands (undemandable resources, unhandled
-	// load-bearing traits) refuse the render instead of landing here (0010
-	// D28). The reconciler emits them as RenderWarning events on transition,
-	// keyed on the rows below rather than on these strings.
+	// (renderWarnings) from the diagnostics' rows: effectively-optional unhandled
+	// traits and, under the Warn skew policy, catalog version skew. Unresolved
+	// demands (undemandable resources, unhandled load-bearing traits) refuse the
+	// render instead of landing here (0010:D28). The reconciler emits them as
+	// RenderWarning events on transition, keyed on the rows below rather than on
+	// these strings.
 	Warnings []string
 
 	// UnhandledTraits maps a component to the effectively-optional traits no
@@ -35,14 +35,14 @@ type RenderResult struct {
 	UnhandledTraits map[string][]string
 
 	// ResolvedVersions are the per-path version rows the build reports
-	// (0019 D18): for every OPM-namespace path the instance module requires,
+	// (0019:D18): for every OPM-namespace path the instance module requires,
 	// the build it asked for and the build the platform carries. Plain data;
 	// the reconciler logs them at debug level, and a row marked Newer is the
 	// fact behind a skew warning.
 	ResolvedVersions []kernel.ResolvedVersion
 
 	// RequiredContracts is every contract FQN the instance's components
-	// declare, sorted and deduplicated (enhancement 0015 D3, D16): the
+	// declare, sorted and deduplicated (0015:D3, D16): the
 	// instance's demand, in the keyspace TransformerRegistration.spec.provides
 	// carries. The reconciler persists it on status.requiredContracts, where
 	// the claim reconciler's removal guard intersects it with a claim's
@@ -53,7 +53,7 @@ type RenderResult struct {
 	RequiredContracts []string
 
 	// PlatformIdentity is the identity of the generated platform package this
-	// render built against, in its string form (enhancement 0015 D13, D17):
+	// render built against, in its string form (0015:D13, D17):
 	// the Platform CR generation plus a digest of the active claims' catalog
 	// coordinates. A render holds its package under a lease for its whole
 	// duration, so this is the exact registry state the render consumed, even

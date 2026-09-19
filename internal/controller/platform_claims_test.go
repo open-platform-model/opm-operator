@@ -47,7 +47,7 @@ const claimCatalogVersion = "1.0.0-alpha.2"
 // storeActiveClaim stores a claim already accepted and active — the verdict
 // the claim reconciler writes and this capability only consumes. The platform
 // specs never run acceptance: judging a claim is not this reconciler's job
-// (design.md § the claim reconciler stays the judge).
+// (the claim reconciler stays the judge).
 func storeActiveClaim(name, catalogPath, version string) *releasesv1alpha1.TransformerRegistration {
 	GinkgoHelper()
 	claim := &releasesv1alpha1.TransformerRegistration{

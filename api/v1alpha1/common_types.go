@@ -54,7 +54,7 @@ type ModuleReference struct {
 // cluster-scoped, so it has no namespace of its own to fall back to and an
 // omitted namespace would name nothing findable. Both fields are required
 // here. The operator stamps them from the rendering instance rather than
-// accepting them from a module author (enhancement 0015 D11).
+// accepting them from a module author (0015:D11).
 type ProviderReference struct {
 	// Namespace of the claiming ModuleInstance.
 	// +kubebuilder:validation:MinLength=1

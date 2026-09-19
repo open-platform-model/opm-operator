@@ -116,7 +116,7 @@ func containerToolAvailable() bool {
 
 // generatedPlatformStore seeds a store the way the PlatformReconciler does:
 // it derives the dependency closure of one catalog subscription (the exact
-// build the fixture modules target, 0010 D14), generates the platform module
+// build the fixture modules target, 0010:D14), generates the platform module
 // into a per-spec temporary Layout, builds it through the kernel's
 // source-carrying platform acquisition (the record Kernel.Render imports the
 // platform from) and records it as generation 1 under the Warn skew policy

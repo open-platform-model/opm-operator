@@ -86,7 +86,7 @@ verbosity 1.
 
 A generated platform module that builds is not yet a package renders may
 consume. The reconciler reads the built platform's contract inventory first,
-and two of its reports withhold the package (enhancement 0015 D5, D18):
+and two of its reports withhold the package (0015:D5, D18):
 
 - `OverSubscribedContracts`: a provider-fulfilled contract is required by
   transformers from more than one enabled catalog, so the platform cannot

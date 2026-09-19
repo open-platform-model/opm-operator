@@ -186,7 +186,7 @@ var _ = Describe("TransformerRegistration acceptance: D8 — build compatibility
 		)
 		msg := readyOf(judge(ctx, r, claim.Name)).Message
 
-		// D8 requires the wording, not just the refusal.
+		// 0015:D8 requires the wording, not just the refusal.
 		Expect(msg).To(ContainSubstring("opmodel.dev/core"), "the path")
 		Expect(msg).To(ContainSubstring("v2.1.0"), "what the catalog requires")
 		Expect(msg).To(ContainSubstring("v2.0.0"), "what the platform resolved")

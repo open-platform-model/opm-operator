@@ -172,7 +172,7 @@ var _ = Describe("TransformerRegistration activation: D3 — the readiness gate"
 			ownProvidedInventory(ctx, ns, claim.Name)
 			setProviderReadiness(ctx, ns, true)
 
-			// A catalog implementing nothing: the claim is refused on D11,
+			// A catalog implementing nothing: the claim is refused on 0015:D11,
 			// long before the gate.
 			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog()})
 			judged := judge(ctx, r, claim.Name)
@@ -365,7 +365,7 @@ var _ = Describe("TransformerRegistration activation: a refusal is not an activa
 		Expect(activeOf(accepted).Reason).To(Equal(status.ProviderNotReadyReason))
 
 		// The catalog stops implementing the contract, so the claim is refused
-		// on D11. What it was waiting on is no longer why it is inactive.
+		// on 0015:D11. What it was waiting on is no longer why it is inactive.
 		refused := judge(ctx, acceptanceReconciler(&stubCatalogs{cat: providerCatalog()}), claim.Name)
 		Expect(refused.Status.Accepted).To(BeFalse())
 		Expect(readyOf(refused).Reason).To(Equal(status.ProvidesMismatchReason))

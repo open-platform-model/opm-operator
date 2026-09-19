@@ -37,8 +37,8 @@
 
 ### Features
 
-* **controller:** generate the platform module from the Platform CR (0019 D6) ([#118](https://github.com/open-platform-model/opm-operator/issues/118)) ([3b0d126](https://github.com/open-platform-model/opm-operator/commit/3b0d126c8dd9f84cc1763f14b81031bff0f03101))
-* **render:** render through the single-build kernel path against the generated platform (0019 D7/D8/D18) ([#119](https://github.com/open-platform-model/opm-operator/issues/119)) ([8fd1e5f](https://github.com/open-platform-model/opm-operator/commit/8fd1e5f2099782d85d088f1548aa74c2a0f14cb4))
+* **controller:** generate the platform module from the Platform CR (0019:D6) ([#118](https://github.com/open-platform-model/opm-operator/issues/118)) ([3b0d126](https://github.com/open-platform-model/opm-operator/commit/3b0d126c8dd9f84cc1763f14b81031bff0f03101))
+* **render:** render through the single-build kernel path against the generated platform (0019:D7/D8/D18) ([#119](https://github.com/open-platform-model/opm-operator/issues/119)) ([8fd1e5f](https://github.com/open-platform-model/opm-operator/commit/8fd1e5f2099782d85d088f1548aa74c2a0f14cb4))
 
 
 ### Bug Fixes

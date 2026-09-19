@@ -70,7 +70,7 @@ func TestLayout_WriteCreatesPackageDirectory(t *testing.T) {
 	}
 }
 
-// Two identities for one CR generation — the case D17 exists for — must not
+// Two identities for one CR generation — the case 0015:D17 exists for — must not
 // share a directory, or the second write would overwrite the module a render
 // holding the first is still reading.
 func TestLayout_TwoIdentitiesOneGenerationGetSeparateDirectories(t *testing.T) {

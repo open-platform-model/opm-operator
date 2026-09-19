@@ -17,7 +17,6 @@ type ModuleRenderer interface {
 	) (*RenderResult, error)
 }
 
-// Was: ReleaseRenderer
 // PackageRenderer loads a CUE package from a local directory (already
 // extracted from a Flux artifact) and returns its kind plus render output.
 // Production wires KernelPackageRenderer; tests inject a stub.

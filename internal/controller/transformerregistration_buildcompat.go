@@ -34,7 +34,7 @@ import (
 // to the directory the Platform reconciler wrote it to.
 const platformModFileName = "cue.mod/module.cue"
 
-// opmNamespacePrefixes are the module-path prefixes D8's comparison covers. A
+// opmNamespacePrefixes are the module-path prefixes 0015:D8's comparison covers. A
 // catalog's third-party dependencies are not the platform's business: only a
 // path both sides could share can make a provider build-incompatible with the
 // platform it would run in.
@@ -47,7 +47,7 @@ var opmNamespacePrefixes = []string{"opmodel.dev/", "testing.opmodel.dev/"}
 // This is the platform's RESOLVED side, not what its CR asked for:
 // Platform.spec.registry records the subscriptions, while the generated
 // module records the closure they resolved to, which is what a provider's
-// transformers will actually build against (enhancement 0019 D18's
+// transformers will actually build against (0019:D18's
 // committed-resolution discipline).
 func platformRequirements(dir string) (map[string]string, error) {
 	path := filepath.Join(dir, filepath.FromSlash(platformModFileName))
@@ -73,7 +73,7 @@ func platformRequirements(dir string) (map[string]string, error) {
 // buildIncompatibility compares the catalog's committed requirements against
 // the platform's resolved versions and returns the refusal message for the
 // first incompatible shared OPM-namespace path, or the empty string when
-// every shared path is compatible (enhancement 0015 D8).
+// every shared path is compatible (0015:D8).
 //
 // Per shared base path: a requirement in a different major than the platform
 // carries is refused without comparing versions, because majors do not
@@ -150,7 +150,7 @@ func buildIncompatibility(cat *catalog.Catalog, platformReqs map[string]string) 
 	return "", nil
 }
 
-// conservativeRefusal words a D8 refusal. D8 requires the wording, not just
+// conservativeRefusal words a 0015:D8 refusal. 0015:D8 requires the wording, not just
 // the refusal: the message names the path and both versions, says the
 // comparison is conservative, and says what the author does about it.
 func conservativeRefusal(base, qualified, catalogVersion, platformVersion, why string) string {

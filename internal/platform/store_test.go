@@ -68,7 +68,7 @@ func TestStore_GeneratedRecord(t *testing.T) {
 }
 
 // A claim activating leaves the CR generation untouched, so the store must
-// treat it as a different package: this is the bug D17 exists to prevent.
+// treat it as a different package: this is the bug 0015:D17 exists to prevent.
 func TestStore_ClaimChangeReplacesTheRecordAtTheSameGeneration(t *testing.T) {
 	s := NewStore()
 	bare := gen(6)

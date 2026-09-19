@@ -30,15 +30,12 @@ const (
 	LabelComponentName = "component.opmodel.dev/name"
 
 	// LabelModuleInstanceName is the instance name label.
-	// Was: LabelModuleReleaseName = "module-release.opmodel.dev/name" (enhancement 0002 D4).
 	LabelModuleInstanceName = "module-instance.opmodel.dev/name"
 
 	// LabelModuleInstanceNamespace is the instance namespace label.
-	// Was: LabelModuleReleaseNamespace = "module-release.opmodel.dev/namespace" (enhancement 0002 D4).
 	LabelModuleInstanceNamespace = "module-instance.opmodel.dev/namespace"
 
 	// LabelModuleInstanceUUID is the instance identity UUID label for resource discovery.
-	// Was: LabelModuleReleaseUUID = "module-release.opmodel.dev/uuid" (enhancement 0002 D4).
 	LabelModuleInstanceUUID = "module-instance.opmodel.dev/uuid"
 )
 

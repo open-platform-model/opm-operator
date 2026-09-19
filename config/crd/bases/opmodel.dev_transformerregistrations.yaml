@@ -36,10 +36,10 @@ spec:
           TransformerRegistration is the Schema for the transformerregistrations API.
           It is the cluster-scoped claim a provider module ships among its rendered
           resources, the second path by which transformers reach a platform
-          (enhancement 0015 D3); the first is a subscription in Platform.spec.registry.
+          (0015:D3); the first is a subscription in Platform.spec.registry.
 
           metadata.name is the dot-joined "<namespace>.<name>" of the claiming
-          instance (enhancement 0015 D12). A namespace cannot contain a dot, so the
+          instance (0015:D12). A namespace cannot contain a dot, so the
           join is collision-free and two instances of one provider module produce two
           distinct claims, the second refused at acceptance naming the claimant,
           rather than contending for one object.
@@ -76,14 +76,14 @@ spec:
                   (e.g. "opmodel.dev/catalogs/k8up@v1"). It names a catalog, never a
                   module: a catalog is what carries transformers, so a claim naming a
                   module names nothing that could implement a contract. Acceptance
-                  refuses a non-catalog artifact structurally (enhancement 0015 D10).
+                  refuses a non-catalog artifact structurally (0015:D10).
                 minLength: 1
                 type: string
               providerRef:
                 description: |-
                   ProviderRef identifies the ModuleInstance that rendered this claim. It
                   is stamped from the rendering instance and never authored, so a module
-                  cannot claim to be another provider (enhancement 0015 D11).
+                  cannot claim to be another provider (0015:D11).
                 properties:
                   name:
                     description: Name of the claiming ModuleInstance.

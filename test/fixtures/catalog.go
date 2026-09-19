@@ -6,7 +6,7 @@ package fixtures
 import "os"
 
 // CatalogVersion is the exact catalog build the registry-backed specs
-// subscribe to (enhancement 0010 D14: a subscription names one published
+// subscribe to (0010:D14: a subscription names one published
 // build; there is no range vocabulary). Overridable via
 // OPM_TEST_CATALOG_VERSION so a fixture republish does not require a code
 // edit; the default tracks the pin in config/samples. Single source for

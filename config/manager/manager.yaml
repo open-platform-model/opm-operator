@@ -87,7 +87,7 @@ spec:
           periodSeconds: 10
         # Memory scales with the CATALOG SET, not with the number of workloads.
         # The generated platform module pins one build per subscribed catalog
-        # (enhancement 0019 D6), and every render evaluates the platform's
+        # (0019:D6), and every render evaluates the platform's
         # catalogs together with the module's whole CUE tree — modules that
         # vendor CRDs carry megabytes of it.
         #

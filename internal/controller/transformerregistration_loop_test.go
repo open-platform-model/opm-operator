@@ -29,7 +29,7 @@ import (
 
 // Acceptance and regeneration form a loop: claims feed the platform, and the
 // platform feeds the already-provided check a claim is judged against
-// (design.md § Regeneration and acceptance form a loop that must not
+// (regeneration and acceptance form a loop that must not
 // oscillate). These specs pin the two properties that keep it from
 // oscillating — arbitration that does not depend on event order, and a check
 // that cannot refuse a claim against itself.
@@ -113,7 +113,7 @@ var _ = Describe("TransformerRegistration acceptance: the regeneration loop", fu
 			ownProvidedInventory(ctx, firstNS, first.Name)
 			setProviderReadiness(ctx, firstNS, true)
 
-			// A second provider, from a catalog of its own: not a D12
+			// A second provider, from a catalog of its own: not a 0015:D12
 			// duplicate, and a contract still has exactly one provider.
 			secondNS := nextClaimNamespace()
 			second := createClaimProviding(ctx, secondNS, contested)

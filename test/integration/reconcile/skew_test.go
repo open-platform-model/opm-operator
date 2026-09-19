@@ -41,7 +41,7 @@ import (
 
 // skewedCatalogVersion is a published build of the test catalog older than
 // the one the fixture modules pin (fixtures.CatalogVersion), so a platform
-// pinned to it puts the fixtures in catalog version skew (0019 D7/D18: the
+// pinned to it puts the fixtures in catalog version skew (0019:D7/D18: the
 // module requires a NEWER build than the platform carries).
 // OPM_TEST_SKEWED_CATALOG_VERSION overrides it for a seeded registry.
 func skewedCatalogVersion() string {
@@ -51,7 +51,7 @@ func skewedCatalogVersion() string {
 	return "4.0.0"
 }
 
-// Catalog version skew end to end (0019 D7/D18): the fixture module pins a
+// Catalog version skew end to end (0019:D7/D18): the fixture module pins a
 // newer catalog build than the platform carries. Under Refuse the render is
 // refused before evaluation with the typed skew error and the ModuleInstance
 // reports SkewRefused; under Warn the render proceeds and the skew is a

@@ -32,7 +32,7 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 )
 
-// The instance side of the removal guard (enhancement 0015 D3, D16):
+// The instance side of the removal guard (0015:D3, D16):
 // status.requiredContracts records what the instance's components demand, so
 // a TransformerRegistration can count its dependents without re-rendering
 // anything at deletion time.

@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package shrink answers one question about a rendered
 // TransformerRegistration: does applying it take a contract away from
-// instances that still demand it (enhancement 0015 D16)?
+// instances that still demand it (0015:D16)?
 //
 // The answer is a decision, not an action. The caller decides what to do with
 // a refusal; this package neither reads nor writes anything beyond the two

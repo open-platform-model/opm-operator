@@ -1,4 +1,4 @@
-# The platform-admin half of enhancement 0015 D3's gate.
+# The platform-admin half of 0015:D3's gate.
 #
 # A TransformerRegistration is a provider module's claim that its catalog
 # implements platform contracts. Granting create on it is granting the ability

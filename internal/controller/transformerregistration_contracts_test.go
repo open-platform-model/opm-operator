@@ -41,11 +41,11 @@ import (
 // are one per subscribed catalog, each requiring that catalog's contracts with
 // provider fulfilment.
 //
-// #composedTransformers is the shape the D2 check folds, and it is core's fold
+// #composedTransformers is the shape the 0015:D2 check folds, and it is core's fold
 // over the ENABLED entries only, so a platform built here carries exactly the
 // providers a real one would after the disabled entries dropped out. A nil map
 // is a platform whose subscriptions provide nothing, which is what every spec
-// that is not about D2 wants.
+// that is not about 0015:D2 wants.
 func platformProviding(byCatalog map[string][]string) *platform.Platform {
 	var body strings.Builder
 	body.WriteString(`kind: "Platform"
@@ -173,7 +173,7 @@ var _ = Describe("TransformerRegistration acceptance: D2 — one provider per co
 			activatedClaim(ctx, holderNS, contested)
 
 			// A second provider, from a catalog of its own, for the same
-			// contract: not a D12 duplicate, and refused all the same.
+			// contract: not a 0015:D12 duplicate, and refused all the same.
 			ns := nextClaimNamespace()
 			claim := createClaimProviding(ctx, ns, contested)
 			ownProvidedInventory(ctx, ns, claim.Name)

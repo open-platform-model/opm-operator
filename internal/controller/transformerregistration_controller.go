@@ -52,7 +52,7 @@ import (
 // CatalogAcquirer acquires a published catalog by coordinate. The manager
 // passes the shared library Kernel, whose AcquireCatalogFromRegistry both
 // fetches and shape-gates: an artifact of another kind is refused by the
-// library, not by a rule this repo maintains (enhancement 0015 D10).
+// library, not by a rule this repo maintains (0015:D10).
 type CatalogAcquirer interface {
 	AcquireCatalogFromRegistry(ctx context.Context, modPath, version string) (*catalog.Catalog, error)
 }
@@ -64,7 +64,7 @@ const claimKind = "TransformerRegistration"
 const claimGroup = "opmodel.dev"
 
 // TransformerRegistrationReconciler judges a provider module's claim that its
-// catalog implements platform contracts (enhancement 0015 D3). It decides one
+// catalog implements platform contracts (0015:D3). It decides one
 // transition — whether a claim is accepted — and records the verdict on the
 // claim's own status as conditions, accepted and observedGeneration.
 //
@@ -79,7 +79,7 @@ const claimGroup = "opmodel.dev"
 // that depends on reconcile order is not a verdict.
 //
 // An accepted claim activates when the ModuleInstance its providerRef names
-// reports Ready=True (enhancement 0015 D3), and activation latches: nothing
+// reports Ready=True (0015:D3), and activation latches: nothing
 // here clears status.active, because the gate exists for install ordering —
 // a provider's CRDs do not exist YET — and not for steady-state health. See
 // gateActivation for what a live-tracking implementation would cost.
@@ -107,7 +107,7 @@ type TransformerRegistrationReconciler struct {
 
 // Reconcile records a verdict on one claim, and guards its removal. A claim
 // carrying a deletion timestamp goes to reconcileDeletion, which blocks while
-// instances still demand contracts it provides (enhancement 0015 D3) and
+// instances still demand contracts it provides (0015:D3) and
 // releases the finalizer once they are gone.
 func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -149,7 +149,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	defer release()
 
 	// Acceptance re-derives every fact it judges: nothing on the claim is
-	// trusted (enhancement 0015 D11). The catalog is the first operand, so it
+	// trusted (0015:D11). The catalog is the first operand, so it
 	// is acquired before anything is compared.
 	cat, err := r.Catalogs.AcquireCatalogFromRegistry(ctx, claim.Spec.Catalog, claim.Spec.Version)
 	if err != nil {
@@ -181,7 +181,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	case identityOK:
 	}
 
-	// D8 compares the catalog's committed requirements against the platform's
+	// 0015:D8 compares the catalog's committed requirements against the platform's
 	// resolved versions, here rather than at render: a render failure would
 	// name whichever unrelated module instance triggered the build, while
 	// this names the provider that is incompatible.
@@ -209,7 +209,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 			holder, claim.Spec.Catalog))
 	}
 
-	// D2's second arm: one contract, one provider. Distinct from the D12
+	// 0015:D2's second arm: one contract, one provider. Distinct from the 0015:D12
 	// refusal above, which is about two claims naming the same CATALOG; this
 	// one is about two providers of the same CONTRACT, which can arrive from
 	// different catalogs entirely.
@@ -245,7 +245,7 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 
 // holderOf returns the name of the claim that holds this claim's provider
 // catalog, or the empty string when this claim is the holder. At most one
-// claim for a provider is accepted (enhancement 0015 D12); two instances of
+// claim for a provider is accepted (0015:D12); two instances of
 // one provider module produce two distinct CRs, and the loser is refused here
 // naming the winner.
 //
@@ -274,7 +274,7 @@ func (r *TransformerRegistrationReconciler) holderOf(
 		// claim whose deletion is BLOCKED is not on its way out. It is still
 		// accepted, still active, and its catalog is still in the generated
 		// platform (activeClaims), so a second claim for the same catalog is
-		// the duplicate D12 refuses. The two reads agree deliberately: see
+		// the duplicate 0015:D12 refuses. The two reads agree deliberately: see
 		// the change's design.md for what that costs a provider migration.
 		if !other.DeletionTimestamp.IsZero() && !claimContributesAfterDeletion(other) {
 			continue
@@ -303,7 +303,7 @@ func olderClaim(a, b *releasesv1alpha1.TransformerRegistration) bool {
 // the set the claim lists, for exact equality in both directions. A subset is
 // not accepted: partial registration would leave the remainder reported as
 // unfulfilled with no indication that the provider withheld it
-// (enhancement 0015 D11). The message names both lists, because a claimant
+// (0015:D11). The message names both lists, because a claimant
 // cannot act on "they differ".
 //
 // Both sides are sorted before comparison, so the verdict does not depend on
@@ -425,7 +425,7 @@ func (r *TransformerRegistrationReconciler) accept(
 }
 
 // gateActivation flips an accepted claim to active once the ModuleInstance it
-// names reports Ready=True (enhancement 0015 D3), and never flips it back.
+// names reports Ready=True (0015:D3), and never flips it back.
 //
 // The latch is structural, not a rule to remember: status.active is read
 // first and an already-active claim returns before the readiness check runs,

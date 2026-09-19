@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// Was: ReleaseSpec
 // ModulePackageSpec defines the desired state of ModulePackage.
 // A ModulePackage points to a Flux source artifact containing a CUE package.
 // The controller fetches the artifact, navigates to spec.path,
@@ -67,7 +66,6 @@ type ModulePackageSpec struct {
 	Rollout *RolloutSpec `json:"rollout,omitempty"`
 }
 
-// Was: ReleaseStatus
 // ModulePackageStatus defines the observed state of ModulePackage.
 type ModulePackageStatus struct {
 	// +optional
@@ -137,7 +135,6 @@ type ModulePackageStatus struct {
 // +kubebuilder:printcolumn:name="Revision",type=string,JSONPath=".status.source.artifactRevision",priority=1
 // +kubebuilder:printcolumn:name="Retry",type=date,JSONPath=".status.nextRetryAt",priority=1
 
-// Was: Release
 // ModulePackage is the Schema for the modulepackages API.
 type ModulePackage struct {
 	metav1.TypeMeta `json:",inline"`
@@ -157,7 +154,6 @@ type ModulePackage struct {
 
 // +kubebuilder:object:root=true
 
-// Was: ReleaseList
 // ModulePackageList contains a list of ModulePackage.
 type ModulePackageList struct {
 	metav1.TypeMeta `json:",inline"`

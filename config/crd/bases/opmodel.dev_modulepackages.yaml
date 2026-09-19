@@ -37,9 +37,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: |-
-          Was: Release
-          ModulePackage is the Schema for the modulepackages API.
+        description: ModulePackage is the Schema for the modulepackages API.
         properties:
           apiVersion:
             description: |-

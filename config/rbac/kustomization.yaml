@@ -25,7 +25,7 @@ resources:
 - moduleinstance_admin_role.yaml
 - moduleinstance_editor_role.yaml
 - moduleinstance_viewer_role.yaml
-# The platform-admin role for transformer registrations (enhancement 0015 D3).
+# The platform-admin role for transformer registrations (0015:D3).
 # Shipped unbound on purpose — see the file's own header.
 - transformerregistration_admin_role.yaml
 

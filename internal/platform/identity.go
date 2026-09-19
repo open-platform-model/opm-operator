@@ -21,9 +21,9 @@ type ClaimCoordinate struct {
 func (c ClaimCoordinate) String() string { return c.Catalog + "@" + c.Version }
 
 // PackageIdentity identifies one generated platform package by the two inputs
-// the package is a function of (enhancement 0015 D13): the Platform CR's
+// the package is a function of (0015:D13): the Platform CR's
 // .metadata.generation and the sorted set of active claims' catalog
-// coordinates. Enhancement 0015 D17 makes it the unit the operator holds,
+// coordinates. Enhancement 0015:D17 makes it the unit the operator holds,
 // because a claim activating changes the package while leaving the generation
 // untouched: keying on the generation alone would leave a render consuming a
 // platform that does not contain the provider just accepted.

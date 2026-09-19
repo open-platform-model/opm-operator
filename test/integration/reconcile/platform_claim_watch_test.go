@@ -46,7 +46,7 @@ import (
 // it runs a real manager so PlatformReconciler.SetupWithManager's
 // TransformerRegistration watch actually fires, proving a claim activating
 // regenerates the platform on its own rather than waiting for an unrelated
-// reconcile or an edit to the Platform CR (enhancement 0015 D13).
+// reconcile or an edit to the Platform CR (0015:D13).
 //
 // It is registry-backed: the regenerated package has to pin, import and build
 // the claim's catalog, which is the half a fake store cannot exercise.

@@ -108,7 +108,7 @@ func TestDecide(t *testing.T) {
 			},
 		},
 		{
-			// The common case D16 names explicitly: same set, new build.
+			// The common case 0015:D16 names explicitly: same set, new build.
 			name:     "the same contract set at a new version is allowed",
 			rendered: renderedClaim("opmodel.dev/contract.Backup", "opmodel.dev/contract.Storage"),
 			objects: []runtime.Object{

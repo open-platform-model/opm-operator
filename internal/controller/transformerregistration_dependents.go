@@ -35,7 +35,7 @@ import (
 )
 
 // ClaimFinalizerName is the finalizer that holds a TransformerRegistration
-// while instances still demand contracts it provides (enhancement 0015 D3).
+// while instances still demand contracts it provides (0015:D3).
 // It is distinct from the ModuleInstance cleanup finalizer: this one deletes
 // nothing on release, it only decides when release is allowed.
 const ClaimFinalizerName = "opmodel.dev/dependents"

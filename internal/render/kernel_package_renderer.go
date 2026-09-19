@@ -12,7 +12,6 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 )
 
-// Was: KernelReleaseRenderer
 // KernelPackageRenderer renders a Flux-fetched ModulePackage through the
 // library kernel behind the PackageRenderer seam: for a kind: ModuleInstance
 // package it acquires the instance from its directory as a source-carrying

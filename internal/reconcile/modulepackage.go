@@ -30,12 +30,10 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
-// Was: DefaultReleaseInterval
 // DefaultModulePackageInterval is the fallback requeue interval when spec.interval
 // is not set.
 const DefaultModulePackageInterval = 5 * time.Minute
 
-// Was: ReleaseParams
 // ModulePackageParams holds the dependencies for the ModulePackage reconcile loop.
 type ModulePackageParams struct {
 	Client client.Client
@@ -65,7 +63,6 @@ type ModulePackageParams struct {
 	Warnings *WarningTracker
 }
 
-// Was: ReconcileRelease
 // ReconcileModulePackage runs the full ModulePackage reconcile loop: source resolution,
 // artifact fetch, path navigation, CUE load, kind detection, render, apply,
 // prune, and status commit. Mirrors the ModuleInstance loop but sources the
@@ -570,7 +567,6 @@ func checkDependsOn(
 	return "", nil
 }
 
-// Was: updateReleaseFailureCounters
 // updateModulePackageFailureCounters applies counter increments and resets for a
 // ModulePackage based on phase outcomes and overall reconcile result.
 func updateModulePackageFailureCounters(
@@ -628,7 +624,6 @@ func removeModulePackageFinalizer(ctx context.Context, c client.Client, pkg *rel
 	return c.Patch(ctx, pkg, mergePatch)
 }
 
-// Was: handleReleaseDeletion
 // handleModulePackageDeletion runs the deletion cleanup path. Mirrors
 // handleDeletion in moduleinstance.go — both share the same SA-missing-at-delete
 // bug class and are kept symmetric on purpose. See that function's doc and

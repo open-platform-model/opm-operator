@@ -29,7 +29,7 @@ import (
 )
 
 // The two verdicts the Platform reconciler reads off a built platform's
-// contract inventory (enhancement 0015 D5, D18). Both are pure functions of
+// contract inventory (0015:D5, D18). Both are pure functions of
 // the inventory: they decide and they word, they never read a registry or
 // touch the store, which is what lets every message be pinned by a table
 // test without a live catalog pair producing it.
@@ -50,11 +50,11 @@ import (
 // the lists are what the message enumerates.
 //
 // When both refusals hold the reason is OverSubscribedContracts and the
-// message carries both findings. One condition carries one reason, and 0015
-// D18 fixes over-subscription as the generation refusal with D5 joining it;
-// reporting both findings means an operator fixing the routing problem sees
-// the discrimination problem in the same message rather than one reconcile
-// later.
+// message carries both findings. One condition carries one reason, and
+// 0015:D18 fixes over-subscription as the generation refusal with 0015:D5
+// joining it; reporting both findings means an operator fixing the routing
+// problem sees the discrimination problem in the same message rather than one
+// reconcile later.
 func inventoryRefusal(inv *platform.ContractInventory) (reason, msg string, refused bool) {
 	var findings []string
 	if !inv.Routable {
@@ -75,7 +75,7 @@ func inventoryRefusal(inv *platform.ContractInventory) (reason, msg string, refu
 
 // overSubscribedFinding words the routing refusal: each over-subscribed
 // contract, the catalog defining it and every transformer requiring it
-// (0010 D37, kept by enhancement 0015 D2).
+// (0010:D37, kept by 0015:D2).
 func overSubscribedFinding(inv *platform.ContractInventory) string {
 	contracts := slices.Sorted(slices.Values(inv.OverSubscribed))
 
@@ -91,7 +91,7 @@ func overSubscribedFinding(inv *platform.ContractInventory) string {
 
 // comparableFinding words the discrimination refusal: each comparable pair's
 // broader transformer, narrower transformer and the contracts they share
-// (enhancement 0015 D5). No arbitration is offered because D5 takes none —
+// (0015:D5). No arbitration is offered because 0015:D5 takes none —
 // the pair is refused, not ordered.
 func comparableFinding(inv *platform.ContractInventory) string {
 	rows := slices.Clone(inv.Comparable)
@@ -103,7 +103,7 @@ func comparableFinding(inv *platform.ContractInventory) string {
 	})
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "platform is not discriminated: %s; every component the narrower transformer matches is also matched by the broader one, so both would render (enhancement 0015 D5):",
+	fmt.Fprintf(&b, "platform is not discriminated: %s; every component the narrower transformer matches is also matched by the broader one, so both would render (0015:D5):",
 		counted(len(rows), "comparable transformer pair", "comparable transformer pairs"))
 	for _, row := range rows {
 		shared := slices.Sorted(slices.Values(row.Contracts))
@@ -112,7 +112,7 @@ func comparableFinding(inv *platform.ContractInventory) string {
 	return b.String()
 }
 
-// setContractsFulfilled writes the non-gating D18 report on plat from the
+// setContractsFulfilled writes the non-gating 0015:D18 report on plat from the
 // inventory of the package renders are consuming. It is called only where
 // such a package exists — after a fresh build is recorded, and on the
 // current-package skip — never on a failure or a refusal, which leave the

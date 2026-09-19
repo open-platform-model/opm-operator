@@ -401,7 +401,7 @@ var _ = Describe("Prune", func() {
 	})
 
 	Context("When live resource still carries the CLI manager identity", func() {
-		It("should delete the resource (post-handoff window, enhancement 0006 D40)", func() {
+		It("should delete the resource (post-handoff window, 0006:D40)", func() {
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "prune-cli-handoff-cm",

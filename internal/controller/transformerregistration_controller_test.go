@@ -47,7 +47,7 @@ var claimCounter int
 // createClaim applies a well-formed claim naming a provider catalog of its
 // own. The specs share one API server, so claims outlive the spec that made
 // them; a shared catalog path would make every acceptance after the first a
-// D12 duplicate. A spec that wants two claims competing passes the same path
+// 0015:D12 duplicate. A spec that wants two claims competing passes the same path
 // to createClaimFor.
 func createClaim(ctx context.Context, namespace string) *releasesv1alpha1.TransformerRegistration {
 	return createClaimFor(ctx, namespace, claimCatalogFor(namespace))
@@ -63,7 +63,7 @@ func createClaimFor(ctx context.Context, namespace, catalogPath string) *release
 // of its own and listing the given contracts.
 //
 // A spec that leaves an ACTIVE claim behind must list contracts of its own
-// (claimContract): the suite shares one API server, D2 gives a contract
+// (claimContract): the suite shares one API server, 0015:D2 gives a contract
 // exactly one provider cluster-wide, and an active claim holding the shared
 // contract would refuse every later spec that claims it.
 func createClaimProviding(ctx context.Context, namespace string, provides ...string) *releasesv1alpha1.TransformerRegistration {
@@ -113,7 +113,7 @@ func createClaimListing(
 // spec, so a claim's providerRef can name an instance that really lives
 // there. The counter is zero-padded so namespaces sort in creation order:
 // creationTimestamp has one-second granularity, so two claims made in one
-// spec usually tie and D12's holder falls to the name tie-break.
+// spec usually tie and 0015:D12's holder falls to the name tie-break.
 func nextClaimNamespace() string {
 	claimCounter++
 	name := fmt.Sprintf("claim-ns-%03d", claimCounter)

@@ -38,8 +38,6 @@ const (
 )
 
 // ModuleInstanceSpec defines the desired state of ModuleInstance
-//
-// Was: ModuleReleaseSpec
 type ModuleInstanceSpec struct {
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
@@ -136,7 +134,7 @@ type ModuleInstanceStatus struct {
 	// RequiredContracts lists every contract FQN this instance's components
 	// declare, sorted and deduplicated, as the last successful render
 	// reported them. It is the instance side of the removal guard
-	// (enhancement 0015 D3, D16): a TransformerRegistration counts its
+	// (0015:D3, D16): a TransformerRegistration counts its
 	// dependents by intersecting this with its own spec.provides, so a
 	// provider cannot be deleted, or shrink its provides, out from under
 	// the instances still demanding what it serves.
@@ -170,8 +168,6 @@ type ModuleInstanceStatus struct {
 // +kubebuilder:printcolumn:name="Retry",type=date,JSONPath=".status.nextRetryAt",priority=1
 
 // ModuleInstance is the Schema for the moduleinstances API
-//
-// Was: ModuleRelease
 type ModuleInstance struct {
 	metav1.TypeMeta `json:",inline"`
 

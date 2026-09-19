@@ -88,7 +88,7 @@ var _ = Describe("TransformerRegistration removal guard: D3 — a claim with dep
 			claim := createClaimProviding(ctx, ns, claimContract(ns))
 			ownProvidedInventory(ctx, ns, claim.Name)
 
-			// A catalog implementing nothing: refused on D11, so the claim is
+			// A catalog implementing nothing: refused on 0015:D11, so the claim is
 			// never accepted and never held.
 			judged := judge(ctx, acceptanceReconciler(&stubCatalogs{cat: providerCatalog()}), claim.Name)
 
@@ -339,7 +339,7 @@ var _ = Describe("TransformerRegistration removal guard: D3 — a claim with dep
 			r := acceptanceReconciler(&stubCatalogs{cat: providerCatalog(contract)})
 			judge(ctx, r, held.Name)
 
-			// D12: another claim for the same catalog.
+			// 0015:D12: another claim for the same catalog.
 			rival := nextClaimNamespace()
 			sameCatalog := createClaimListing(ctx, rival, held.Spec.Catalog, contract)
 			ownProvidedInventory(ctx, rival, sameCatalog.Name)
@@ -363,7 +363,7 @@ var _ = Describe("TransformerRegistration removal guard: D3 — a claim with dep
 			judge(ctx, acceptanceReconciler(
 				&stubCatalogs{cat: providerCatalog(contract)}), held.Name)
 
-			// D2: a DIFFERENT catalog offering the same contract.
+			// 0015:D2: a DIFFERENT catalog offering the same contract.
 			rival := nextClaimNamespace()
 			other := createClaimProviding(ctx, rival, contract)
 			ownProvidedInventory(ctx, rival, other.Name)

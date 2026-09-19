@@ -125,9 +125,9 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			Expect(res.Resources).NotTo(BeEmpty(),
 				"the fixture module must render to at least one resource")
 			Expect(res.Warnings).To(BeEmpty(), "a module pinning the platform's catalog build renders without warnings")
-			Expect(res.ResolvedVersions).NotTo(BeEmpty(), "the build reports the resolved-versions rows (0019 D18)")
+			Expect(res.ResolvedVersions).NotTo(BeEmpty(), "the build reports the resolved-versions rows (0019:D18)")
 			Expect(res.PlatformIdentity).To(Equal(store.Identity().String()),
-				"the render reports the identity of the package it built against (0015 D13)")
+				"the render reports the identity of the package it built against (0015:D13)")
 			Expect(store.Leased()).To(BeEmpty(), "the render releases its lease on return")
 			Expect(configMapMessage(res)).To(Equal("kernel hello"), "the supplied values reach the rendered object")
 
@@ -203,7 +203,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			Expect(out.res.PlatformIdentity).NotTo(Equal(superseding.Identity.String()))
 		})
 
-		// The instance side of the removal guard (enhancement 0015 D3, D16).
+		// The instance side of the removal guard (0015:D3, D16).
 		// The assertion is on the exact FQN sets rather than on "not empty":
 		// the guard's whole correctness is that these strings are the same
 		// keyspace TransformerRegistration.spec.provides carries, so a

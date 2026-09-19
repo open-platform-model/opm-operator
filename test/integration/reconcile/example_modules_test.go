@@ -35,15 +35,15 @@ import (
 
 // These specs render the published example modules (redis here) through the
 // real KernelModuleRenderer against CUE_REGISTRY and assert the modelled
-// workload/storage/probe contract, complementing the podinfo e2e (which
-// proves the probes actually pass on a live cluster). They skip automatically
-// without a registry mapping.
+// workload/storage/probe contract, complementing the podinfo e2e (which proves
+// the probes actually pass on a live cluster). They skip automatically without
+// a registry mapping.
 //
-// The platform subscription names exactly one published catalog build (0010
-// D14) — matching the cluster Platform sample and avoiding catalog-version
-// skew. Resource and transformer FQNs embed the catalog version, so the
-// generated platform MUST pin the same catalog build the modules pin; any
-// other build yields "no matching transformer".
+// The platform subscription names exactly one published catalog build
+// (0010:D14) — matching the cluster Platform sample and avoiding
+// catalog-version skew. Resource and transformer FQNs embed the catalog
+// version, so the generated platform MUST pin the same catalog build the
+// modules pin; any other build yields "no matching transformer".
 var _ = Describe("Example module rendering", func() {
 	var (
 		k        *kernel.Kernel

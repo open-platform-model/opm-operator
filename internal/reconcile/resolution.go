@@ -34,7 +34,7 @@ func isTypedResolutionError(err error) bool {
 }
 
 // isSkewRefusal reports whether err is a render refused before evaluation by
-// the Refuse skew policy (*oerrors.SkewError, enhancement 0019 D7/D18). The
+// the Refuse skew policy (*oerrors.SkewError, 0019:D7/D18). The
 // kernel joins one SkewError per skewed path; the first is enough to classify.
 func isSkewRefusal(err error) bool {
 	_, ok := errors.AsType[*oerrors.SkewError](err)

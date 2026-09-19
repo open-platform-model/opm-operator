@@ -5,7 +5,7 @@ version: '3'
 # Modules under test/fixtures/modules/<m>/ are published as CUE modules to
 # testing.opmodel.dev/modules/operator/<m> at each module's OWN declared version,
 # independent of the operator's release version. The version lives in
-# identity/identity.cue (core #IdentityPackage; enhancements 0010 D38 / 0011 D12),
+# identity/identity.cue (core #IdentityPackage; 0010:D38 / 0011:D12),
 # never in module.cue.
 #
 # Publishing, seeding and the publish gates live in hack/fixtures.sh (one script,

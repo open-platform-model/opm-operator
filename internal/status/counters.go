@@ -18,7 +18,6 @@ func EnsureCounters(status *releasesv1alpha1.ModuleInstanceStatus) *releasesv1al
 	return ensureCountersField(&status.FailureCounters)
 }
 
-// Was: EnsureReleaseCounters
 // EnsureModulePackageCounters is the ModulePackage equivalent of EnsureCounters.
 func EnsureModulePackageCounters(status *releasesv1alpha1.ModulePackageStatus) *releasesv1alpha1.FailureCounters {
 	return ensureCountersField(&status.FailureCounters)

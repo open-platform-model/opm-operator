@@ -92,6 +92,14 @@ context: |
   2. External packages (including Flux)
   3. Internal packages
   
+  ### Comments
+  - Default to no enhancement reference: say what the code does and why, in the comment's own words.
+  - When the rationale genuinely lives in an enhancement, cite it once at the symbol as `0011:D9` — enhancement id, colon, decision id, no space. One enhancement, several decisions: `0011:D16/D18/D21`. Across enhancements: `0011:D9, 0010:D34`. A bare `D9` names nothing, because decision numbers restart per enhancement.
+  - Never cite a section, slice, phase, task or design-doc-local id (`§8.1`, `slice C2`, `task 4.2`, `design LD3`). They are not stable identifiers.
+  - Never put a reference in a scaffold template, a generated file, a fixture a user copies, or a CLI output string. Those reach people with no access to the enhancements repo.
+  - No `Was:` rename history in comments; `git log` owns it.
+  - In CUE, the reference goes in a `// WHY` block separated from the doc comment by one blank line, never in the doc comment itself: `cue lsp` hover, `Value.Doc()` and `cue def` replay a doc comment verbatim.
+  
   ## Validation Gates (before merge)
   1. `task dev:manifests dev:generate` — CRDs and DeepCopy code are up-to-date.
   2. `task dev:fmt dev:vet` — Code is formatted and passes go vet.

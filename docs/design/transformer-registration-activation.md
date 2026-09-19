@@ -3,7 +3,7 @@
 Status: Current (2026-09-15). Implemented in
 `internal/controller/transformerregistration_controller.go` (`gateActivation`).
 
-A `TransformerRegistration` reports three states, from enhancement 0015 D3: not
+A `TransformerRegistration` reports three states, from 0015:D3: not
 yet judged, accepted but inactive, and active. It becomes active when the
 `ModuleInstance` its `spec.providerRef` names reports `Ready=True`. It never
 becomes inactive again. A claim leaves the active state by deletion, and by
@@ -34,7 +34,7 @@ reporting the truth.
 ## What live-tracking would cost
 
 The set of active claims is an input to platform-package regeneration
-(enhancement 0015 D13): the generated platform carries the catalog of every
+(0015:D13): the generated platform carries the catalog of every
 active claim, and every module instance in the fleet renders against that
 package.
 
@@ -70,6 +70,6 @@ condition churn either.
 
 - Acceptance and its refusals: the same file's `Reconcile`, and the
   `registration-acceptance` capability
-- Regeneration keyed on the active set: enhancement 0015 D13, delivered
+- Regeneration keyed on the active set: 0015:D13, delivered
   separately
-- Removal of an active claim: enhancement 0015 D16, delivered separately
+- Removal of an active claim: 0015:D16, delivered separately

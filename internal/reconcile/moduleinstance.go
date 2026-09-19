@@ -35,13 +35,10 @@ import (
 const (
 	// FinalizerName is the finalizer registered on ModuleInstance resources
 	// to ensure owned resources are cleaned up before deletion completes.
-	// Was: "releases.opmodel.dev/cleanup" (enhancement 0002 D5 group move).
 	FinalizerName = "opmodel.dev/cleanup"
 )
 
 // ModuleInstanceParams holds the dependencies injected into the reconcile loop.
-//
-// Was: ModuleReleaseParams
 type ModuleInstanceParams struct {
 	Client client.Client
 	// APIReader is an uncached reader used for one-off reads (e.g. ServiceAccount
@@ -65,8 +62,6 @@ type ModuleInstanceParams struct {
 // ReconcileModuleInstance orchestrates all phases of the reconcile loop.
 // Phases run sequentially; errors halt progression.
 // Status is always patched at the end via deferred function.
-//
-// Was: ReconcileModuleRelease
 func ReconcileModuleInstance(
 	ctx context.Context,
 	params *ModuleInstanceParams,
@@ -314,7 +309,7 @@ func ReconcileModuleInstance(
 	}
 
 	// Persist the contracts this instance's components demand (enhancement
-	// 0015 D3, D16). Written here rather than in the success path because
+	// 0015:D3, D16). Written here rather than in the success path because
 	// the demand is a fact about the render, not about the apply: a
 	// regenerated platform re-enqueues every instance, and the render that
 	// follows is frequently a no-op for apply while being the only evidence
@@ -327,7 +322,7 @@ func ReconcileModuleInstance(
 	mi.Status.RequiredContracts = renderResult.RequiredContracts
 
 	// Phase 4a: judge the rendered claims before anything reaches the cluster
-	// (enhancement 0015 D16). A provider upgrade whose re-rendered
+	// (0015:D16). A provider upgrade whose re-rendered
 	// TransformerRegistration drops a contract instances still demand is
 	// withheld from the apply list, so the accepted claim keeps serving its
 	// dependents. Every other rendered resource applies as usual, and the
@@ -421,7 +416,7 @@ func ReconcileModuleInstance(
 
 	// A refused upgrade is reported here, on the instance whose render
 	// produced the claim, because the instance's apply is what was refused
-	// (enhancement 0015 D16). The claim's own conditions are left alone:
+	// (0015:D16). The claim's own conditions are left alone:
 	// acceptance owns them, and a claim whose stored spec was never replaced
 	// has nothing new to report.
 	//

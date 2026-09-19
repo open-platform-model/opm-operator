@@ -36,7 +36,7 @@ import (
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
-// This spec is the measurement behind design.md § The rendered claim carries
+// This spec is the measurement behind the rule that the rendered claim carries
 // no namespace-bearing identity label: it drives a rendered-shape claim
 // through the real ModuleInstance pipeline and records what reaches the
 // cluster and what reaches the inventory. It stays as the regression that

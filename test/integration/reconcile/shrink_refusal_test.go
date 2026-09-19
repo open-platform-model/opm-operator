@@ -224,7 +224,7 @@ var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 		cleanupShrinkFixtures(claimName, providerName, nn, consumer)
 	})
 
-	// registration-shrink-refusal section 2 (enhancement 0015 D16): a provider
+	// registration-shrink-refusal section 2 (0015:D16): a provider
 	// upgrade that drops a still-demanded contract is withheld from apply
 	// while the accepted claim keeps serving.
 	It("withholds the shrinking claim, applies everything else and reports why", func() {

@@ -122,7 +122,7 @@ func namedConfigMapResult(name, namespace string) *render.RenderResult {
 	}
 }
 
-// The manager-driven proof of --max-concurrent-renders (0019 D8, spec
+// The manager-driven proof of --max-concurrent-renders (0019:D8, spec
 // library-kernel-runtime "Two renders overlap"): with MaxConcurrentRenders 2
 // two ModuleInstances render at the same time and both reach Ready. The
 // renderer is a barrier, so the spec fails rather than passes vacuously if

@@ -70,7 +70,6 @@ func RecordHistory(
 	recordHistoryEntry(&status.History, entry)
 }
 
-// Was: RecordReleaseHistory
 // RecordModulePackageHistory is the ModulePackage equivalent of RecordHistory.
 func RecordModulePackageHistory(
 	status *releasesv1alpha1.ModulePackageStatus,

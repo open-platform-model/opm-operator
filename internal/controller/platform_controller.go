@@ -52,11 +52,11 @@ import (
 
 // platformSingletonName is the only permitted name for the cluster-scoped
 // Platform singleton. The CRD enforces this via a CEL rule; the reconciler
-// guards on it again as defense-in-depth (enhancement 0001 §8.1).
+// guards on it again as defense-in-depth.
 const platformSingletonName = "cluster"
 
 // PlatformModulePath is the generated platform module's own identity: the
-// reserved, never-published platforms namespace (enhancement 0019 D6). Fixed
+// reserved, never-published platforms namespace (0019:D6). Fixed
 // rather than derived per generation so generated files are byte-stable
 // across generations of the same spec, and distinct from every instance
 // module path the render build could pair it with. Operator input to the
@@ -72,7 +72,7 @@ const PlatformModulePath = "opmodel.dev/platforms/cluster@v0"
 const transientRecheckInterval = time.Minute
 
 // PlatformReconciler reconciles the singleton Platform CR into a platform CUE
-// module on the operator's own disk (enhancement 0019 D6). Per CR generation
+// module on the operator's own disk (0019:D6). Per CR generation
 // it derives the module's dependency closure from the pinned catalogs'
 // published module files and generates the module through the library's
 // platform-module helper (one importing #registry entry per subscription,
@@ -80,8 +80,8 @@ const transientRecheckInterval = time.Minute
 // the library's verified release), writes it under a per-generation
 // directory, builds it through the kernel's shape-gated platform loader,
 // reads the built platform's contract inventory as the gate on recording it
-// (enhancement 0015 D5, D18), and records the result together with the
-// resolved skew policy (spec.skewPolicy, 0019 D7/D18) in the process-local
+// (0015:D5, D18), and records the result together with the
+// resolved skew policy (spec.skewPolicy, 0019:D7/D18) in the process-local
 // store for the render path. The outcome surfaces on the CR's Ready
 // condition: Generated, GenerateFailed, BuildFailed, OverSubscribedContracts
 // or ComparablePredicates, with the non-gating ContractsFulfilled report
@@ -118,7 +118,7 @@ type PlatformReconciler struct {
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms/status,verbs=get;update;patch
 
 // TransformerRegistration claims are the platform's second transformer path
-// (enhancement 0015 D3), so the reconciler that builds the platform module
+// (0015:D3), so the reconciler that builds the platform module
 // reads them and reports on them. Read and status verbs only: the operator
 // judges claims, it never creates one. Creating a claim is platform-admin
 // RBAC (config/rbac/transformerregistration_admin_role.yaml).
@@ -128,8 +128,8 @@ type PlatformReconciler struct {
 // Reconcile generates and builds the platform module for the
 // cluster-singleton Platform and records the outcome on its status. It
 // reconciles only the object named "cluster"; any other name is ignored
-// without error. On delete it clears the store (workloads are untouched:
-// §8.4 freeze-don't-teardown); the module directories are left for the next
+// without error. On delete it clears the store: workloads are frozen, never
+// torn down, and the module directories are left for the next
 // generation's prune or the next manager start.
 func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -165,7 +165,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	patcher := patch.NewSerialPatcher(&plat, r.Client)
 
 	// The generated package is a function of exactly one tuple (enhancement
-	// 0015 D13): this CR's spec and the set of accepted-and-active claims,
+	// 0015:D13): this CR's spec and the set of accepted-and-active claims,
 	// both read here as current state. Nothing is read from the event that
 	// woke the reconcile, so a stale, duplicated or reordered event yields
 	// the package the current state implies, and a burst of activations
@@ -261,7 +261,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.failReconcile(ctx, patcher, &plat, status.BuildFailedReason, err, fmt.Sprintf("building platform module: %v", err))
 	}
 
-	// The gate (enhancement 0015 D5, D18): the built platform's own contract
+	// The gate (0015:D5, D18): the built platform's own contract
 	// inventory decides whether this package may be recorded. It sits
 	// between the build and the store write so a refused package is never
 	// the one renders consume. A module that built but carries no readable
@@ -315,10 +315,10 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // and active, in name order, which is the half of the tuple the Platform CR
 // does not carry. Judging claims is not this reconciler's job: the claim
 // reconciler owns acceptance and activation and this only consumes the
-// verdict (design.md § the claim reconciler stays the judge).
+// verdict (the claim reconciler stays the judge).
 //
 // A claim being deleted is dropped only once its removal guard has released
-// it (enhancement 0015 D3). A deletion timestamp alone does not drop it: the
+// it (0015:D3). A deletion timestamp alone does not drop it: the
 // guard blocks removal precisely while instances are still rendering against
 // that catalog, so dropping it here would take the catalog out of the next
 // generated package and abandon those instances through the door the block
@@ -506,7 +506,7 @@ func (r *PlatformReconciler) patchStatus(ctx context.Context, patcher *patch.Ser
 }
 
 // skewPolicy resolves spec.skewPolicy to the kernel's policy: Refuse maps to
-// SkewRefuse, anything else (Warn, unset) to SkewWarn, the D18 default. The
+// SkewRefuse, anything else (Warn, unset) to SkewWarn, the 0019:D18 default. The
 // CRD enum keeps other values out at admission.
 func skewPolicy(plat *releasesv1alpha1.Platform) kernel.SkewPolicy {
 	if plat.Spec.SkewPolicy != nil && *plat.Spec.SkewPolicy == releasesv1alpha1.SkewPolicyRefuse {
@@ -518,7 +518,7 @@ func skewPolicy(plat *releasesv1alpha1.Platform) kernel.SkewPolicy {
 // platformEntries maps the tuple to the generator's entries, in sorted path
 // order: one entry per subscription the CR authored, plus one per active
 // claim, so the provider catalogs a render needs are imported beside the
-// subscribed ones (enhancement 0015 D13).
+// subscribed ones (0015:D13).
 //
 // The CRD was authored as a 1:1 projection of the core #Platform surface, so
 // the subscription mapping is mechanical: a nil Enable resolves to the schema
@@ -532,7 +532,7 @@ func skewPolicy(plat *releasesv1alpha1.Platform) kernel.SkewPolicy {
 // disabled subscription must not be re-enabled by a provider registering
 // against it. Claims are consumed in the name order activeClaims sorted them
 // into, so two claims naming one catalog resolve deterministically; the claim
-// reconciler is what keeps that pair from arising (D2, D12).
+// reconciler is what keeps that pair from arising (0015:D2, D12).
 func platformEntries(plat *releasesv1alpha1.Platform, claims []releasesv1alpha1.TransformerRegistration) ([]platformmodule.Entry, error) {
 	entries := make([]platformmodule.Entry, 0, len(plat.Spec.Registry)+len(claims))
 	seen := make(map[string]bool, len(plat.Spec.Registry)+len(claims))
@@ -566,7 +566,7 @@ func platformEntries(plat *releasesv1alpha1.Platform, claims []releasesv1alpha1.
 // tuple the generated package is a function of: the Platform singleton under
 // a generation-change predicate, and every TransformerRegistration whose
 // contribution to the active set changes, so a claim activating regenerates
-// the platform without the CR being edited (enhancement 0015 D13).
+// the platform without the CR being edited (0015:D13).
 func (r *PlatformReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.Platform{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).

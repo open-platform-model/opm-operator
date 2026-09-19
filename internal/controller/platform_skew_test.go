@@ -25,9 +25,9 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 )
 
-// The skew policy the reconciler records beside the generated module (0019
-// D7/D18): Refuse maps to the kernel's SkewRefuse, everything else (Warn,
-// unset) to the SkewWarn default. The CRD enum keeps other values out.
+// The skew policy the reconciler records beside the generated module
+// (0019:D7/D18): Refuse maps to the kernel's SkewRefuse, everything else
+// (Warn, unset) to the SkewWarn default. The CRD enum keeps other values out.
 var _ = Describe("Platform skew policy resolution", func() {
 	ptr := func(s string) *string { return &s }
 

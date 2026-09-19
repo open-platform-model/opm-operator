@@ -33,7 +33,7 @@ const valuesOrigin = "spec.values"
 // kernel behind the ModuleRenderer seam: it leases the generated platform
 // record from the store, acquires the target module from the registry,
 // synthesizes the instance, and renders it against the platform module through
-// the kernel's single-build render (enhancement 0019 D9).
+// the kernel's single-build render (0019:D9).
 type KernelModuleRenderer struct {
 	// Kernel is the shared, long-lived library Kernel (one per process).
 	Kernel *kernel.Kernel

@@ -44,8 +44,6 @@ import (
 
 // ModuleInstanceReconciler reconciles a ModuleInstance object.
 // Dependencies are injected via struct fields at manager setup time.
-//
-// Was: ModuleReleaseReconciler
 type ModuleInstanceReconciler struct {
 	client.Client
 	// APIReader is an uncached reader (manager.GetAPIReader()) used for one-off
@@ -73,7 +71,7 @@ type ModuleInstanceReconciler struct {
 	MaxConcurrentRenders int
 
 	// warnings remembers each instance's last render warnings so RenderWarning
-	// events are emitted on transition only (0019 D18).
+	// events are emitted on transition only (0019:D18).
 	warnings opmreconcile.WarningTracker
 }
 

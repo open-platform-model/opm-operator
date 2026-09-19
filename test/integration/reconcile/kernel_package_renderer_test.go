@@ -82,7 +82,7 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 			k = kernel.New(kernel.WithRegistry(registry))
 			// Generate and build the platform module the way the
 			// PlatformReconciler does, pinned to the exact catalog build the
-			// authored packages target (0010 D14: one version, no ranges).
+			// authored packages target (0010:D14: one version, no ranges).
 			// Resource/transformer FQNs are version-qualified, so a different
 			// catalog build would leave the components unmatched.
 			store = generatedPlatformStore(k, registry)

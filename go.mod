@@ -6,7 +6,7 @@ require (
 	cuelang.org/go v0.17.1
 	github.com/fluxcd/cli-utils v1.2.2
 	github.com/fluxcd/pkg/apis/meta v1.31.0
-	github.com/fluxcd/pkg/runtime v0.111.0
+	github.com/fluxcd/pkg/runtime v0.112.0
 	github.com/fluxcd/pkg/ssa v0.77.0
 	github.com/fluxcd/source-controller/api v1.9.4
 	github.com/onsi/ginkgo/v2 v2.32.1

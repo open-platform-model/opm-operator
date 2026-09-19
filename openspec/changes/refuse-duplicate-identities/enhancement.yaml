@@ -1,0 +1,11 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+implements:
+  - enhancement: "0015"
+    # D15: one registration per module, a second refused loudly naming both
+    # carrying components, before apply. The library ships the detector
+    # (opm/helper/objectset, alpha.33); this change is the refusal in the
+    # runtime that applies to the cluster, which is where "before apply" is
+    # decided, so it completes the decision. The cli's refusal is a sibling
+    # change that claims nothing.
+    decisions: [D15]

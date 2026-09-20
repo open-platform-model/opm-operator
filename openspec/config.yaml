@@ -94,8 +94,8 @@ context: |
   
   ### Comments
   - Default to no enhancement reference: say what the code does and why, in the comment's own words.
-  - When the rationale genuinely lives in an enhancement, cite it once at the symbol as `0011:D9` — enhancement id, colon, decision id, no space. One enhancement, several decisions: `0011:D16/D18/D21`. Across enhancements: `0011:D9, 0010:D34`. A bare `D9` names nothing, because decision numbers restart per enhancement.
-  - Never cite a section, slice, phase, task or design-doc-local id (`§8.1`, `slice C2`, `task 4.2`, `design LD3`). They are not stable identifiers.
+  - When the rationale genuinely lives in an enhancement, cite it once at the symbol as `0011:D9` — enhancement id, colon, decision id, no space. One enhancement, several decisions: `0011:D16/D18/D21`. Across enhancements: `0011:D9, 0010:D34`. One requirement of a decision: `0011:D9:R2`; several: `0011:D9:R1/R2`. A bare `D9` names nothing, because decision numbers restart per enhancement.
+  - Never cite a section, slice, phase, task or design-doc-local id (`§8.1`, `slice C2`, `task 4.2`, `design LD3`). They are not stable identifiers; a requirement number (`R2`) is.
   - Never put a reference in a scaffold template, a generated file, a fixture a user copies, or a CLI output string. Those reach people with no access to the enhancements repo.
   - No `Was:` rename history in comments; `git log` owns it.
   - In CUE, the reference goes in a `// WHY` block separated from the doc comment by one blank line, never in the doc comment itself: `cue lsp` hover, `Value.Doc()` and `cue def` replay a doc comment verbatim.
@@ -142,6 +142,9 @@ rules:
     - "Focus: WHAT behavior is changing (not HOW it's implemented)"
     - "Updates when: New or changed requirements emerge"
     - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY).
+    - When a requirement implements an enhancement requirement, cite `NNNN:DN:Rn` in its body
+      (first sentence or a trailing `Source:` line), never inside the `### Requirement:` header,
+      which tools read as the requirement's name.
     - Describe observable behavior (CRD status changes, created resources, logs).
     - Use ADDED/MODIFIED/REMOVED sections to show deltas.
     - Include scenarios demonstrating controller behavior (e.g., Transient Error vs Stalled).

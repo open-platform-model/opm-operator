@@ -215,9 +215,9 @@ Follow the Registry Policy in the root `CLAUDE.md` (reads resolve `opmodel.dev/*
 
 Default is none: a comment says what the code does and why, in its own words.
 
-- When a rationale genuinely lives in an enhancement, cite it **once at the symbol** as `0011:D9` — enhancement id, colon, decision id, no space. Several decisions of one enhancement share a head: `0011:D16/D18/D21`. Across enhancements, repeat the head: `0011:D9, 0010:D34`.
+- When a rationale genuinely lives in an enhancement, cite it **once at the symbol** as `0011:D9` — enhancement id, colon, decision id, no space. Several decisions of one enhancement share a head: `0011:D16/D18/D21`. Across enhancements, repeat the head: `0011:D9, 0010:D34`. A single requirement of a decision is `0011:D9:R2`; several under one decision share it (`0011:D9:R1/R2`).
 - Decision numbers restart per enhancement, so a bare `D9` names nothing. Never write one.
-- Never a section, slice, phase, task or design-doc-local number (`§8.1`, `slice C2`, `task 4.2`, `design LD3`). They are not stable identifiers.
+- Never a section, slice, phase, task or design-doc-local number (`§8.1`, `slice C2`, `task 4.2`, `design LD3`). They are not stable identifiers. A requirement number (`R2` under a decision) is a stable identifier and is allowed.
 - Never in scaffold templates, generated files, fixtures a user copies, or CLI output strings. Those reach people who have no access to the enhancements repo.
 - No `Was:` rename history. `git log` owns it.
 - In CUE files the reference goes in a `// WHY` block separated from the doc comment by one blank line, never in the doc comment itself: `cue lsp` hover, `Value.Doc()` and `cue def` replay a doc comment verbatim.

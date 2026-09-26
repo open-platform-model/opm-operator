@@ -15,9 +15,9 @@ All three hazard facts still hold in code today:
 Describe what exists only. Enhancement 0012 is a draft: never present its proposals (a shared hold, a changed default) as coming.
 
 Check against: opm-operator/api/v1alpha1/moduleinstance_types.go, opm-operator/internal/reconcile/moduleinstance.go, opm-operator/internal/apply/prune.go, cli/internal/cmd/instance/delete.go, cli/internal/kubernetes/delete.go, cli/internal/inventory/stale.go 
-Kubernetes comparison, only if it helps: weave it into the sentence that introduces the concept, or into How it works, never as a section of its own. Researched candidate: Nearest ideas: ownerReferences with the garbage collector (delete the owner and the dependents go), and a finalizer that runs cleanup before its object disappears. For readers from GitOps and Helm: Flux's Kustomization `spec.prune`, and `helm uninstall`, which removes the whole release. Verify: Flux Kustomization's `prune` is a required field with no default.
+Kubernetes comparison, only if it helps: weave it into the sentence that introduces the concept, or into How it works, never as a section of its own. Researched candidate: Nearest ideas: ownerReferences with the garbage collector (delete the owner and the dependents go), and a finalizer that runs cleanup before its object disappears.
 
-Where the comparison stops: neither the CLI nor the operator sets ownerReferences on anything they apply, so the garbage collector never cascades from a ModuleInstance. The only link from an instance to its resources is the list in the ModuleInstance's `status.inventory`. The labels `module-instance.opmodel.dev/name` and `module-instance.opmodel.dev/uuid` identify resources for display and safety checks, but never decide what gets deleted. The operator's finalizer is closer to Flux than to Helm: it deletes only when `spec.prune` is true, and unlike Flux, leaving the field out means false.
+Where the comparison stops: neither the CLI nor the operator sets ownerReferences on anything they apply, so the garbage collector never cascades from a ModuleInstance. The only link from an instance to its resources is the list in the ModuleInstance's `status.inventory`. The labels `module-instance.opmodel.dev/name` and `module-instance.opmodel.dev/uuid` identify resources for display and safety checks, but never decide what gets deleted. The operator's finalizer deletes only when `spec.prune` is true, and leaving the field out means false.
 
 Check against: opm-operator/adr/002-authoritative-inventory-model.md, opm-operator/internal/reconcile/moduleinstance.go, cli/internal/workflow/apply/apply.go, core/src/module_instance.cue -->
 
@@ -66,7 +66,7 @@ Check against: cli/internal/kubernetes/delete.go, cli/internal/inventory/stale.g
 
 ### Why an inventory and not ownerReferences
 
-<!-- The inventory is authoritative because labels can be edited or adopted by other tools, and because a deterministic render lets the operator recompute desired state instead of storing manifests the way Helm does. ownerReferences were not used. Modules render cluster-scoped objects (ClusterRoles, CRDs) that a namespaced ModuleInstance cannot legally own. And an ownerReference garbage-collects its dependent whatever `spec.prune` says; Kubernetes has no reference that does not collect. Rewrite without decision numbers.
+<!-- The inventory is authoritative because labels can be edited or adopted by other tools, and because a deterministic render lets the operator recompute desired state instead of storing manifests. ownerReferences were not used. Modules render cluster-scoped objects (ClusterRoles, CRDs) that a namespaced ModuleInstance cannot legally own. And an ownerReference garbage-collects its dependent whatever `spec.prune` says; Kubernetes has no reference that does not collect. Rewrite without decision numbers.
 
 Check against: opm-operator/adr/002-authoritative-inventory-model.md, enhancements/0012/01-problem.md -->
 
@@ -98,7 +98,7 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/inventory/gates
 
 ### Deleting an operator-managed instance keeps its resources unless spec.prune is true
 
-<!-- Readers expect Helm's uninstall. The finalizer runs, sees no prune, and removes only the ModuleInstance. `opm instance delete` says so ("left running (spec.prune is not set)"); `kubectl delete` says nothing.
+<!-- Readers expect deleting the resource to delete everything it deployed. The finalizer runs, sees no prune, and removes only the ModuleInstance. `opm instance delete` says so ("left running (spec.prune is not set)"); `kubectl delete` says nothing.
 
 Check against: opm-operator/internal/reconcile/moduleinstance.go, cli/internal/cmd/instance/delete.go -->
 

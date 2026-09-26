@@ -8,7 +8,7 @@ sidebar:
 
 <!-- One sentence: installing opm-operator puts a controller in namespace `opm-operator-system` that renders and applies every ModuleInstance whose `spec.owner` is absent or `operator` (the ones created with kubectl or GitOps), plus every ModulePackage. You need it when the cluster should reconcile instances without anyone running `opm`. A cluster where only the CLI deploys needs only the CRDs, which "Deploy a module with the CLI" installs with `opm operator install --crds-only`.
 
-There are two supported install paths, both built from the same release asset `install.yaml`: `opm operator install`, which applies a copy embedded in the CLI, and `kubectl apply` of the GitHub release asset. There is no Helm chart: the README's Helm section is unedited kubebuilder scaffolding, and no `dist/chart` exists. The kustomize tree under `config/` with `task operator:controller:install IMG=...` is the contributor path for a locally built image, not for users.
+There are two supported install paths, both built from the same release asset `install.yaml`: `opm operator install`, which applies a copy embedded in the CLI, and `kubectl apply` of the GitHub release asset. The kustomize tree under `config/` with `task operator:controller:install IMG=...` is the contributor path for a locally built image, not for users.
 
 Check against: opm-operator/README.md, opm-operator/.github/workflows/release.yml, opm-operator/config/default/kustomization.yaml, cli/internal/cmd/operator/install.go, cli/internal/operator/manifest.go -->
 

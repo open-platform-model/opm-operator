@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0-alpha.20](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.19...v1.0.0-alpha.20) (2026-09-26)
+
+
+### Features
+
+* **controller:** activate accepted claims, one provider per contract ([#139](https://github.com/open-platform-model/opm-operator/issues/139)) ([07d9ff2](https://github.com/open-platform-model/opm-operator/commit/07d9ff2af9a9bcc21c7528cf4f17520fcc3a9144))
+* **controller:** block deleting a registration its dependents still need ([#142](https://github.com/open-platform-model/opm-operator/issues/142)) ([51faabf](https://github.com/open-platform-model/opm-operator/commit/51faabf8c5bdabfdc19c4e263c5ad46cd9d1e64a))
+* **controller:** refuse a provides shrink that would abandon dependents ([#145](https://github.com/open-platform-model/opm-operator/issues/145)) ([2931095](https://github.com/open-platform-model/opm-operator/commit/2931095901da985a1ba534fa141236367481d043))
+* **controller:** refuse generation on an over-subscribed or undiscriminated platform ([#146](https://github.com/open-platform-model/opm-operator/issues/146)) ([126e8d3](https://github.com/open-platform-model/opm-operator/commit/126e8d32d6b2827339552746a7e3f44a6ce7106a))
+* **controller:** regenerate the platform from the active-claim set ([#141](https://github.com/open-platform-model/opm-operator/issues/141)) ([caf7c49](https://github.com/open-platform-model/opm-operator/commit/caf7c499a691f82899478b1334f31ccb2576d2b4))
+* **render:** refuse a render whose objects share one apply identity ([#148](https://github.com/open-platform-model/opm-operator/issues/148)) ([214f8fc](https://github.com/open-platform-model/opm-operator/commit/214f8fcc17b7480d1155c9b9622ad86e22555f6d))
+
+
+### Documentation
+
+* drop the Helm chart section and Helm comparisons ([9ba7679](https://github.com/open-platform-model/opm-operator/commit/9ba7679b9caf68577211454f9c51ce8865531f70))
+* **openspec:** allow NNNN:DN:Rn enhancement requirement citations ([5b1601c](https://github.com/open-platform-model/opm-operator/commit/5b1601c20b0199301c1378fdc59c202643962c04))
+* **site:** add the pages the operator owns on the documentation site ([bdc7d11](https://github.com/open-platform-model/opm-operator/commit/bdc7d1167490070235273455dbb82b9cf9008376))
+
 ## [1.0.0-alpha.19](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.18...v1.0.0-alpha.19) (2026-09-15)
 
 

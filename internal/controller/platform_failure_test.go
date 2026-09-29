@@ -223,6 +223,20 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		}
 	}
 
+	// undefinedOverSubscribed is two providers of one contract whose defining
+	// catalog is not enabled: no DefinedBy and no RequiredBy entry names it,
+	// so only ProvidedBy carries the finding.
+	undefinedOverSubscribed := func() *platform.ContractInventory {
+		return &platform.ContractInventory{
+			DefinedBy:      map[string]string{},
+			RequiredBy:     map[string][]string{},
+			ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
+			OverSubscribed: []string{backupTrait},
+			Routable:       false,
+			Discriminated:  true,
+		}
+	}
+
 	comparablePair := func() *platform.ContractInventory {
 		return &platform.ContractInventory{
 			DefinedBy:  map[string]string{containerResource: opmCatalog},
@@ -263,6 +277,26 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		Expect(ready.Message).To(ContainSubstring("defined by " + opmCatalog))
 		Expect(ready.Message).To(ContainSubstring(k8upCatalog))
 		Expect(ready.Message).To(ContainSubstring(veleroCatalog))
+	})
+
+	It("refuses two providers of a contract whose defining catalog is not enabled, holding no package", func() {
+		store := platformstore.NewStore()
+		r, _ := failureReconciler(store)
+		plat := createSingleton()
+
+		refuse(r, plat, undefinedOverSubscribed())
+
+		ready := readyCondition(fetchPlatform())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(status.OverSubscribedContractsReason))
+		Expect(ready.Message).To(ContainSubstring(
+			"\n  " + backupTrait + " provided by " + k8upCatalog + ", " + veleroCatalog))
+		Expect(ready.Message).NotTo(ContainSubstring("(defined by"),
+			"no enabled catalog defines the contract, so the row carries no parenthetical")
+
+		_, ok := store.Generated()
+		Expect(ok).To(BeFalse(), "a refused generation records no package")
+		Expect(store.Identity().IsZero()).To(BeTrue())
 	})
 
 	It("refuses a comparable pair naming broader, narrower and the shared contract", func() {
@@ -352,12 +386,13 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		plat := createSingleton()
 
 		// Two builds of one broken platform, reported in opposite
-		// comprehension orders: the sorted message is the same, so the
-		// stalled recheck must stay quiet.
+		// comprehension orders: the printed provider list is sorted, so the
+		// message is the same and the stalled recheck must stay quiet.
 		refuse(r, plat, overSubscribed())
 
 		reordered := overSubscribed()
 		reordered.RequiredBy[backupTrait] = []string{k8upSchedule, veleroSchedule}
+		reordered.ProvidedBy[backupTrait] = []string{k8upCatalog, veleroCatalog}
 		refuse(r, plat, reordered)
 
 		Expect(recorder.Events).To(HaveLen(1),

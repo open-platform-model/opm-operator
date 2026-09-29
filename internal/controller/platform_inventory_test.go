@@ -17,12 +17,14 @@ limitations under the License.
 package controller
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	oerrors "github.com/open-platform-model/library/opm/errors"
 	"github.com/open-platform-model/library/opm/platform"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -207,6 +209,12 @@ func TestInventoryRefusal(t *testing.T) {
 // partial inventory, that is what an operator would see, and this test is
 // what catches it.
 //
+// A platform predating a field the library reads comes back typed: the error
+// is a *oerrors.PlatformCoreTooOldError naming the missing field and the core
+// release that first derives it. The reconciler words none of it: the
+// BuildFailed branch surfaces the error verbatim, so the kernel's message is
+// what names the field and the release to re-pin to.
+//
 // The reconciler's own branch is not exercised end to end: reaching it needs
 // a built platform whose core predates the library's pin, which the library's
 // generator cannot produce, and stubbing the build seam is the seam-whose-
@@ -223,6 +231,13 @@ func TestInventoryUnreadableIsAnErrorNotAnEmptyInventory(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "contracts") {
 		t.Errorf("the error must name the field the read failed on, got %q", err)
+	}
+	var tooOld *oerrors.PlatformCoreTooOldError
+	if !errors.As(err, &tooOld) {
+		t.Fatalf("a platform carrying no #contracts must come back as a *PlatformCoreTooOldError, got %T: %v", err, err)
+	}
+	if tooOld.Field != "#contracts" {
+		t.Errorf("PlatformCoreTooOldError.Field = %q, want %q", tooOld.Field, "#contracts")
 	}
 }
 

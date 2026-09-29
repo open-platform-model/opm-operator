@@ -41,10 +41,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: |-
-          ModuleInstance is the Schema for the moduleinstances API
-
-          Was: ModuleRelease
+        description: ModuleInstance is the Schema for the moduleinstances API
         properties:
           apiVersion:
             description: |-
@@ -321,7 +318,7 @@ spec:
                   RequiredContracts lists every contract FQN this instance's components
                   declare, sorted and deduplicated, as the last successful render
                   reported them. It is the instance side of the removal guard
-                  (enhancement 0015 D3, D16): a TransformerRegistration counts its
+                  (0015:D3, D16): a TransformerRegistration counts its
                   dependents by intersecting this with its own spec.provides, so a
                   provider cannot be deleted, or shrink its provides, out from under
                   the instances still demanding what it serves.
@@ -384,9 +381,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: |-
-          Was: Release
-          ModulePackage is the Schema for the modulepackages API.
+        description: ModulePackage is the Schema for the modulepackages API.
         properties:
           apiVersion:
             description: |-
@@ -791,12 +786,12 @@ spec:
                       description: |-
                         Version names exactly one published catalog build as a bare SemVer
                         string (e.g. "2.0.0-alpha.3") — the platform module IS the resolution
-                        (enhancement 0010 D14); there is no range or allow/deny vocabulary. The
+                        (0010:D14); there is no range or allow/deny vocabulary. The
                         version's major must agree with the subscription key's `@vN` suffix.
                         The operator uses it twice: as the generated cue.mod pin and as the
                         entry's stamped expected version, which unifies with the imported
                         catalog's own version so wrong bytes fail the build naming the entry
-                        (enhancement 0019 D13).
+                        (0019:D13).
                         CRD-required is safe against the stored pre-reshape singleton: API
                         server validation ratcheting keeps status-subresource patches working
                         against a stored object lacking the field (measured in
@@ -810,13 +805,13 @@ spec:
                   Registry is the set of catalog subscriptions keyed by major-suffixed
                   catalog CUE module path (e.g. "opmodel.dev/catalogs/opm@v2"), projecting
                   core #Platform.#registry. The key's major must agree with the major of
-                  the subscribed version (enhancement 0010 D14).
+                  the subscribed version (0010:D14).
                 type: object
               skewPolicy:
                 description: |-
                   SkewPolicy is the operator's response to catalog version skew: a
                   module whose cue.mod requires a newer build of an OPM-namespace path
-                  (core or a catalog) than the platform pins (enhancement 0019 D7/D18).
+                  (core or a catalog) than the platform pins (0019:D7/D18).
                   "Warn" (the default when unset) renders against the platform's build
                   and reports the skew as a RenderWarning event on the workload; "Refuse"
                   refuses the render before evaluation and the workload reports
@@ -852,9 +847,11 @@ spec:
                   could not be read; the message names the dependency, the entry or the
                   field), GenerateFailed (the module could not be written to the
                   operator's disk), OverSubscribedContracts (the module built, but a
-                  provider-fulfilled contract is required by transformers from more than
-                  one enabled catalog, so the platform cannot route it; the message names
-                  each contract, its defining catalog and the requiring transformers) or
+                  provider-fulfilled contract is provided by more than one enabled
+                  registry entry, counted per entry so two majors of one catalog are
+                  two, and whether or not its defining catalog is enabled; the platform
+                  cannot route it, and the message names each contract, its defining
+                  catalog when one is enabled and the providing registry entries) or
                   ComparablePredicates (the module built, but two enabled transformers
                   have comparable match predicates over a shared catalog-fulfilled
                   contract, so both would render every component the narrower matches;
@@ -934,13 +931,13 @@ spec:
                 description: |-
                   operatorVersion is the version of the operator that last patched this
                   Platform's status, stamped on every reconcile regardless of outcome
-                  (enhancement 0006 D24). The CLI reads it as the version-skew ceiling;
+                  (0006:D24). The CLI reads it as the version-skew ceiling;
                   absence means no operator has reconciled the Platform (solo cluster).
                 type: string
               packageIdentity:
                 description: |-
                   packageIdentity identifies the generated platform package by the two
-                  inputs it is a function of (enhancement 0015 D13): this CR's
+                  inputs it is a function of (0015:D13): this CR's
                   generation and the sorted set of active claims' catalog coordinates.
                   The same inputs always produce the same value and any change to either
                   produces a different one.
@@ -1057,10 +1054,10 @@ spec:
           TransformerRegistration is the Schema for the transformerregistrations API.
           It is the cluster-scoped claim a provider module ships among its rendered
           resources, the second path by which transformers reach a platform
-          (enhancement 0015 D3); the first is a subscription in Platform.spec.registry.
+          (0015:D3); the first is a subscription in Platform.spec.registry.
 
           metadata.name is the dot-joined "<namespace>.<name>" of the claiming
-          instance (enhancement 0015 D12). A namespace cannot contain a dot, so the
+          instance (0015:D12). A namespace cannot contain a dot, so the
           join is collision-free and two instances of one provider module produce two
           distinct claims, the second refused at acceptance naming the claimant,
           rather than contending for one object.
@@ -1097,14 +1094,14 @@ spec:
                   (e.g. "opmodel.dev/catalogs/k8up@v1"). It names a catalog, never a
                   module: a catalog is what carries transformers, so a claim naming a
                   module names nothing that could implement a contract. Acceptance
-                  refuses a non-catalog artifact structurally (enhancement 0015 D10).
+                  refuses a non-catalog artifact structurally (0015:D10).
                 minLength: 1
                 type: string
               providerRef:
                 description: |-
                   ProviderRef identifies the ModuleInstance that rendered this claim. It
                   is stamped from the rendering instance and never authored, so a module
-                  cannot claim to be another provider (enhancement 0015 D11).
+                  cannot claim to be another provider (0015:D11).
                 properties:
                   name:
                     description: Name of the claiming ModuleInstance.

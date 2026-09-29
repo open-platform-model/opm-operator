@@ -75,9 +75,12 @@ const (
 	// comparable pair by narrowing or withdrawing a transformer.
 
 	// OverSubscribedContractsReason: Ready=False, the built platform's
-	// inventory is not routable — a provider-fulfilled contract is required
-	// by transformers from more than one enabled catalog, so no routing
-	// exists for it (0010:D37, kept by 0015:D2; D18 makes this the one
+	// inventory is not routable — a provider-fulfilled contract is provided
+	// by more than one enabled registry entry (counted per entry, so two
+	// majors of one catalog are two, whether or not the defining catalog is
+	// enabled), so no routing exists for it; the message names each
+	// contract, its defining catalog when one is enabled and the providing
+	// registry entries (0010:D37, kept by 0015:D2; D18 makes this the one
 	// inventory report that refuses generation). Reported first when the
 	// inventory is also undiscriminated, with both findings in the message,
 	// so one fix pass sees both.

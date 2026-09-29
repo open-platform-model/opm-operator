@@ -216,6 +216,7 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		return &platform.ContractInventory{
 			DefinedBy:      map[string]string{backupTrait: opmCatalog},
 			RequiredBy:     map[string][]string{backupTrait: {veleroSchedule, k8upSchedule}},
+			ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
 			OverSubscribed: []string{backupTrait},
 			Routable:       false,
 			Discriminated:  true,
@@ -249,7 +250,7 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		deletePlatform()
 	})
 
-	It("refuses an over-subscribed platform naming the contract, its catalog and every requiring transformer", func() {
+	It("refuses an over-subscribed platform naming the contract, its catalog and every providing registry entry", func() {
 		r, _ := failureReconciler(platformstore.NewStore())
 		plat := createSingleton()
 
@@ -260,8 +261,8 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		Expect(ready.Reason).To(Equal(status.OverSubscribedContractsReason))
 		Expect(ready.Message).To(ContainSubstring(backupTrait))
 		Expect(ready.Message).To(ContainSubstring("defined by " + opmCatalog))
-		Expect(ready.Message).To(ContainSubstring(k8upSchedule))
-		Expect(ready.Message).To(ContainSubstring(veleroSchedule))
+		Expect(ready.Message).To(ContainSubstring(k8upCatalog))
+		Expect(ready.Message).To(ContainSubstring(veleroCatalog))
 	})
 
 	It("refuses a comparable pair naming broader, narrower and the shared contract", func() {

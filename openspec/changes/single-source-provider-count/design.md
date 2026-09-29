@@ -33,6 +33,14 @@ State on `origin/main` (5d2a4de, library `v1.0.0-alpha.33`, core pinned through 
 
 ```go
 // transformerregistration_controller.go, the D2 check against enabled entries
+if generated.Platform == nil {
+	// A generated record carrying no built platform. The deleted fold
+	// guarded this (subscriptionProviders(nil) returned "no platform has been
+	// built"); Contracts has a pointer receiver that reads p.Package, so
+	// calling it here would panic.
+	return r.deferVerdict(ctx, patcher, &claim, status.PlatformNotReadyReason,
+		"The generated platform's contract providers could not be read: no platform has been built")
+}
 inv, err := generated.Platform.Contracts()
 if err != nil {
 	// Not a refusal, for the same reason an absent platform is not one.
@@ -47,7 +55,7 @@ if contract, entry := subscribedContract(claim.Spec.Provides, inv.ProvidedBy, cl
 }
 ```
 
-`subscribedContract` keeps its signature and its sorted walk; its comment says the providers are registry keys, so `ownCatalog` (`spec.catalog`) matches the claim's own entry and nothing else, and another major of the same path is another provider. `subscriptionProviders`, `collectProvided`, `composedTransformers` and `transformerModulePath` are deleted, with the `cue` and `schema` imports they need. The reason string, the message text and the deferral message are unchanged; only the value `%s` prints moves from the stamp to the registry key.
+`subscribedContract` keeps its signature and its sorted walk; its comment says the providers are registry keys, so `ownCatalog` (`spec.catalog`) matches the claim's own entry and nothing else, and another major of the same path is another provider. `subscriptionProviders`, `collectProvided`, `composedTransformers` and `transformerModulePath` are deleted, with the `cue` and `schema` imports they need. The reason string, the message text and the deferral message are unchanged; only the value `%s` prints moves from the stamp to the registry key. The nil-platform guard keeps the fold's own nil check: the spec "requeues, not refuses, while no platform has been built" (`transformerregistration_contracts_test.go:133-165`) stores a `Generated` record with no `Platform`, and without the guard the switch dereferences it.
 
 **Alternatives.** Fixing the key inside the operator's fold (strip `/transformers`, re-add the major from the registry): a second copy of core's rule, which is the drift the set removes, and the major is not recoverable from the stamp at all. Reading `ProvidedBy` straight off `Package` by CUE path: duplicates the library's decode and its core floor; `Contracts()` is the library's one read of `#contracts`.
 

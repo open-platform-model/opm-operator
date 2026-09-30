@@ -20,7 +20,7 @@ The release-please workflow SHALL run on every push to the `main` branch. It SHA
 - **THEN** release-please opens a Release PR listing them under Documentation, because the Documentation section is visible
 
 ### Requirement: Manual version override via release-as
-The workflow SHALL support explicit version overrides only through a one-shot `Release-As: <version>` footer in the final footer block of a commit message on `main`, which for a squash-merged PR is the squash commit message. The `release-as` key SHALL NOT appear in `release-please-config.json` at any level: it is re-applied on every run until removed and re-proposes an already-published version. The footer is the required mechanism to cross a release-line boundary (historically 0.x to 1.0.0, now alpha to beta, later beta to GA when the carrier needs an exact version) and MAY override any automated bump decision. It is self-clearing: once the release tag exists, the carrying commit falls out of the commit window and later releases follow the automated bump. When several commits since the last release carry the footer, the newest one wins.
+The workflow SHALL support explicit version overrides only through a one-shot `Release-As: <version>` footer in the final footer block of a commit message on `main`, which for a squash-merged PR is the squash commit message. The `release-as` key SHALL NOT appear in `release-please-config.json` at any level: it is re-applied on every run until removed and re-proposes an already-published version. The footer is the required mechanism to cross a boundary the automated bump cannot reach (historically 0.x to 1.0.0, now changing the prerelease label of a suffixed version from alpha to beta) and MAY pin an exact version at any crossing or override any automated bump decision. GA needs no footer: `prerelease: false` plus a visible carrier commit is enough. It is self-clearing: once the release tag exists, the carrying commit falls out of the commit window and later releases follow the automated bump. When several commits since the last release carry the footer, the newest one wins.
 
 #### Scenario: Manual 1.0.0 cut via release-as
 - **WHEN** a commit whose final footer block carries `Release-As: 1.0.0` is pushed to `main`
@@ -33,6 +33,17 @@ The workflow SHALL support explicit version overrides only through a one-shot `R
 #### Scenario: Config carries no release-as
 - **WHEN** `release-please-config.json` is inspected on `main`
 - **THEN** it SHALL contain no `release-as` key at the root or in any package
+
+### Requirement: Changelog generation
+The workflow SHALL generate and maintain a `CHANGELOG.md` file at the repository root. Entries SHALL be grouped under the visible sections that `release-please-config.json` declares (Features, Bug Fixes, Performance Improvements, Reverts, Dependencies, Documentation, Code Refactoring). Commits of a hidden type (`chore`, `test`, `ci`, `build`) SHALL NOT appear.
+
+#### Scenario: Changelog includes all commit types
+- **WHEN** the Release PR is created or updated
+- **THEN** `CHANGELOG.md` SHALL list every commit since the last release whose type has a visible section in `release-please-config.json`, grouped under that section, with commit messages as entries, and SHALL list no commit of a hidden type
+
+#### Scenario: Changelog preserves history
+- **WHEN** a new release is cut
+- **THEN** the new changelog section SHALL be prepended to existing content, preserving prior release entries
 
 ### Requirement: Release PR bumps the annotated version constant
 The release-please configuration SHALL list `internal/version/version.go` under the root package's `extra-files`, so every Release PR rewrites the `x-release-please-version`-annotated `Version` constant to the proposed version in the same commit the release tag will point at. The constant SHALL NOT be edited by hand; only the Release PR changes it.
@@ -47,10 +58,14 @@ The release-please configuration SHALL list `internal/version/version.go` under 
 **Reason**: Its pre-1.0 scenario asserts that `bump-minor-pre-major` demotes a breaking change to MINOR, which `bump-minor-pre-major: false` in the config contradicts, and the operator is past 0.x. Its MINOR, PATCH and MAJOR scenarios describe a stable line and do not hold on the prerelease line, where every bump advances the counter. MODIFIED cannot retire a scenario name, so the requirement is replaced.
 **Migration**: Superseded by "Version bump determination per release line", which states the prerelease-line and stable-line behavior separately. No config or code migration.
 
+### Requirement: Initial version baseline
+**Reason**: The manifest is past 0.x (`1.0.0-alpha.22` at planning time), so a first release from empty history can no longer happen, and "pre-v1 maturity" contradicts the beta line's promise that the operator is on the path to GA. The beta line supersedes it.
+**Migration**: None.
+
 ## ADDED Requirements
 
 ### Requirement: Version bump determination per release line
-The workflow SHALL determine the proposed version from the commits since the last release tag using Conventional Commits v1 semantics, applied per release line. On the prerelease line (`versioning: prerelease`, `prerelease: true`, current version `X.0.0-beta.N`), every releasable commit, breaking or not, SHALL propose `X.0.0-beta.(N+1)`: the bump never changes the label and never moves the major. On a stable line (after GA, no prerelease suffix), `feat` SHALL propose a MINOR bump, `fix`, `perf` or `deps` alone a PATCH bump, and a breaking change a MAJOR bump.
+The workflow SHALL determine the proposed version from the commits since the last release tag using Conventional Commits v1 semantics, applied per release line. On the prerelease line (`versioning: prerelease`, `prerelease: true`, current version `X.0.0-beta.N`), every releasable commit, breaking or not, SHALL propose `X.0.0-beta.(N+1)`: the bump never changes the label and never moves the major. On a stable line (after GA, no prerelease suffix), `feat` SHALL propose a MINOR bump, a breaking change a MAJOR bump, and any other releasable commit (`fix`, `perf`, `deps`, `docs`, `refactor`, `revert`) a PATCH bump.
 
 #### Scenario: fix commit on the beta line advances the counter
 - **WHEN** the current version is `1.0.0-beta.1` and only `fix` commits are releasable
@@ -77,7 +92,7 @@ The workflow SHALL determine the proposed version from the commits since the las
 - **THEN** the proposed version SHALL be `2.0.0`
 
 ### Requirement: Beta prerelease line
-The release-please package SHALL be configured with `versioning: prerelease`, `prerelease: true` and `prerelease-type: beta` while the operator is on its beta line. From its first beta the operator is on the path to GA: a breaking change is still allowed during beta, but only as a `feat!` commit whose `BREAKING CHANGE:` footer is the migration note the CHANGELOG shows; it advances the `-beta.N` counter and never moves the version to a new major. Every beta GitHub Release SHALL be flagged Pre-release. Changing `prerelease-type` alone SHALL NOT be relied on to change the label of a version that already carries a suffix; a line crossing needs a `Release-As:` footer. GA drops the suffix: `prerelease: false` plus a visible carrier commit, landed in dependency order after the upstream prerelease lines.
+The release-please package SHALL be configured with `versioning: prerelease`, `prerelease: true` and `prerelease-type: beta` while the operator is on its beta line. From its first beta the operator is on the path to GA: a breaking change is still allowed during beta, but only as a `feat!` commit whose `BREAKING CHANGE:` footer is the migration note the CHANGELOG shows; it advances the `-beta.N` counter and never moves the version to a new major. Every beta GitHub Release SHALL be flagged Pre-release. Changing `prerelease-type` alone SHALL NOT be relied on to change the label of a version that already carries a suffix; a label change needs a `Release-As:` footer. GA drops the suffix: `prerelease: false` plus a visible carrier commit, landed in dependency order after the upstream prerelease lines.
 
 #### Scenario: Beta releases are flagged Pre-release
 - **WHEN** the Release PR for `1.0.0-beta.N` is merged

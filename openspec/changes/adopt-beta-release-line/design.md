@@ -23,21 +23,21 @@ The cutover sequence is fixed outside this repo: G1 core `v2.0.0-beta.1`, G2 lib
 ### Crossing the line with a footer, not config `release-as`
 
 **Context**: release-please's prerelease strategy only applies `prerelease-type` when the current version has no suffix. On `1.0.0-alpha.22` a flip to `beta` still proposes `1.0.0-alpha.23`.
-**Explored**: scratchpad `research/release-please.md` (release-please 17.3.0 and 17.6.0 executed; the operator's action v5.0.0 bundles 17.6.0; `src/versioning-strategies/prerelease.ts` identical across both); upstream issue 2447; workspace precedents cli ed9774e and catalog_opm bc778ca (config `release-as` re-proposed a published version and had to be removed); footer precedents core d8db7fe, library c8e2f8d, catalog_opm 37d2771, operator 2d96a46.
+**Explored**: release-please 17.6.0 `src/versioning-strategies/prerelease.ts` (`bumpPrerelease`), executed against 17.3.0 and 17.6.0 with identical results (the operator's action v5.0.0 bundles 17.6.0); upstream issue 2447; workspace precedents cli ed9774e and catalog_opm bc778ca (config `release-as` re-proposed a published version and had to be removed); footer precedents core d8db7fe, library c8e2f8d, catalog_opm 37d2771, operator 2d96a46.
 **Decision**: The squash commit of the work PR MUST end with the footer block `Release-As: 1.0.0-beta.1` followed by the plain co-author trailer. `release-please-config.json` MUST NOT gain a `release-as` key. The manifest and the version constant MUST NOT be hand-edited.
 **Rationale**: The footer is self-clearing (the commit leaves the window once `v1.0.0-beta.1` is tagged) and idempotent (the open Release PR is recomputed on every push). The config key is sticky and has already broken two repos.
 
 ### Beta numbering after beta.1
 
 **Context**: The owner wants every later release on the same 1.0.0 line.
-**Explored**: executed results in `research/release-please.md`: from `X.0.0-beta.N` with `prerelease: true`, fix, feat and breaking commits all propose `X.0.0-beta.(N+1)`; with `prerelease: false` the same base proposes `X.0.0`.
+**Explored**: release-please 17.6.0 `src/versioning-strategies/prerelease.ts` (`bumpPrerelease`), executed: from `X.0.0-beta.N` with `prerelease: true`, fix, feat and breaking commits all propose `X.0.0-beta.(N+1)`; with `prerelease: false` the same base proposes `X.0.0`.
 **Decision**: Keep `versioning: prerelease` and `prerelease: true`; set `prerelease-type: beta` so the config reads what the line is. GA is a later change: `prerelease: false` plus a visible carrier commit.
 **Rationale**: No further config edit is needed during beta, and the GA path is already verified.
 
 ### The library bump PR is the carrier
 
 **Context**: The footer is honoured only in the final commit message on `main`. The supervisor writes the squash message at merge time; inner branch commits are discarded by the squash.
-**Decision**: The single work PR (library bump, config flip, docs, comment fixes, archived change) is squash-merged as `fix(deps): adopt the beta release line on library v1.0.0-beta.1` with the footer. No inner commit carries a `Release-As:` footer, and nothing in the plan relies on one.
+**Decision**: The single work PR (library bump, config flip, docs, archived change) is squash-merged as `fix(deps): adopt the beta release line on library v1.0.0-beta.1` with the footer. No inner commit carries a `Release-As:` footer, and nothing in the plan relies on one.
 **Rationale**: `fix(deps)` releases on its own, so the carrier is a real change, not an empty commit. Folding the docs edits into the same squash keeps them from cutting a separate docs-only release.
 
 ### Release PR held until G4
@@ -49,14 +49,20 @@ The cutover sequence is fixed outside this repo: G1 core `v2.0.0-beta.1`, G2 lib
 ### Retiring the bump-determination requirement
 
 **Context**: `release-automation` scenario "Breaking-change commit pre-1.0 is demoted to MINOR" names behavior that `bump-minor-pre-major: false` disables, and the MINOR/PATCH/MAJOR scenarios do not hold on the prerelease line. A MODIFIED delta may not drop or rename a live scenario.
-**Decision**: REMOVE "Version bump determination from Conventional Commits" and ADD "Version bump determination per release line" plus "Beta prerelease line". MODIFY "Manual version override via release-as", "Release PR creation on push to main" and "Release PR bumps the annotated version constant" with every live scenario heading kept verbatim.
+**Decision**: REMOVE "Version bump determination from Conventional Commits" and "Initial version baseline" (the manifest is past 0.x, and "pre-v1 maturity" contradicts the beta promise); ADD "Version bump determination per release line" plus "Beta prerelease line". MODIFY "Manual version override via release-as", "Release PR creation on push to main", "Changelog generation" (sections as `release-please-config.json` declares them, hidden types excluded) and "Release PR bumps the annotated version constant" with every live scenario heading kept verbatim.
 **Rationale**: The spec matches the config and the executed release-please behavior; heading names stay stable where the behavior they name still holds.
 
 ### README and install page
 
 **Context**: `releases/latest/download/install.yaml` installs v0.7.5, a retired major, while every current release is a Pre-release.
-**Decision**: README shows `opm operator install` and the tagged form `https://github.com/open-platform-model/opm-operator/releases/download/<tag>/install.yaml` with `v1.0.0-beta.1` as the example tag, and says why `releases/latest` must not be used. The `:latest` row notes that it tracks beta builds. The docs page's authoring comments move their pairing and version examples to the beta line.
-**Rationale**: A tagged URL is the only kubectl form that cannot silently resolve an old major.
+**Decision**: README shows `opm operator install` as the primary path and the tagged form `https://github.com/open-platform-model/opm-operator/releases/download/<tag>/install.yaml` with a link to the Releases page to pick `<tag>`, and says why `releases/latest` must not be used. No concrete tag is written: `v1.0.0-beta.1` does not exist until G5, and a burned version would move the target to beta.2. The `:latest` row notes that it tracks beta builds. The docs page's authoring comments move their pairing and version examples to the beta line.
+**Rationale**: A tagged URL is the only kubectl form that cannot silently resolve an old major, and a placeholder never 404s or goes stale.
+
+### Version doc examples stay
+
+**Context**: `internal/version/version.go` and `version_test.go` carry `v1.0.0-alpha.2` as format examples, as does `openspec/specs/operator-version-identity/spec.md`.
+**Decision**: Not touched here. `version.go` is release-tooling-owned, and the examples are format illustrations that remain correct on the beta line. A later non-release docs pass may move all three together.
+**Rationale**: Keeps the carrier to release-relevant files.
 
 ### Fixture pins travel apart
 
@@ -85,7 +91,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 - [Library beta.1 plus the stale fixtures (core `v2.0.0-alpha.6`, catalogs opm `v4.0.1`) may fail a registry-backed spec, an unverified assumption] → Section 1 runs `task dev:test` with the registry exported and no registry-backed spec skipped before anything else lands; a red run stops the change and is reported, since the fixture republish track may have to merge first.
 - [The squash drops or mangles the footer] → The supervisor parses the final message with release-please's own parser before merge and confirms #161's new title after merge; fallback is `BEGIN_COMMIT_OVERRIDE` on the merged PR body and a workflow re-run.
-- [#161 merged early as alpha.23 or before G4] → Hold noted on the PR and in tasks.md; only the supervisor merges.
+- [#161 merged early: now it cuts alpha.23; between the carrier and G4 it ships operator 1.0.0-beta.1 before the cli beta.1 and its ceiling gate exists] → The supervisor posts a hold comment on #161 before any section starts (tasks.md, Hold H1); only the supervisor merges.
 - [A Dependabot Go PR merges between the carrier and #161] → Harmless: it joins the beta.1 changelog, and the footer commit stays in the window.
-- [A docs or fix commit after G5 cuts beta.2 before the cli embeds beta.1] → The cli ceiling gate compares MAJOR.MINOR only (canon decision 3), so an operator `1.0.0-beta.2` does not refuse a cli on `1.0.0-beta.N`.
+- [A docs or fix commit after G5 cuts beta.2 before the cli embeds beta.1] → The cli ceiling gate compares MAJOR.MINOR only (cli change `adopt-beta-release-line`, implementing 0021 OQ14), so an operator `1.0.0-beta.2` does not refuse a cli on `1.0.0-beta.N`.
 - [`:latest` moves to beta builds] → Accepted by the owner; the README states it.
+- [The beta.1 release jobs fail after the tag exists: `image-release` and `publish-examples` run only when the release-please job reports `releases_created`, and a new push does not re-run them] → Use "Re-run failed jobs" on the same workflow run, which keeps the release-please outputs; never push a commit expecting a re-release. A version burned without an image moves the target to beta.2.

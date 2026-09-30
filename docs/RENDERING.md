@@ -90,14 +90,29 @@ verbosity 1.
 
 A generated platform module that builds is not yet a package renders may
 consume. The reconciler reads the built platform's contract inventory first,
-and two of its reports withhold the package (0015:D5, D18):
+and three of its reports withhold the package (0015:D5, D18):
 
-- `OverSubscribedContracts`: a provider-fulfilled contract is required by
-  transformers from more than one enabled catalog, so the platform cannot
-  route it. The Ready message names each such contract, the catalog that
-  defines it and every transformer that requires it. Fix it by disabling one
-  of the competing catalogs in `spec.registry` or removing its
-  TransformerRegistration.
+- `ContractCollisions`: more than one enabled registry entry defines one
+  contract key, most often two majors of one catalog enabled side by side
+  and sharing keys. It is the platform's own report, the one core computes
+  (`collisions` and `collidingEntries` on the inventory) and the render
+  refuses on; the operator reads it and never counts definers. Core folds
+  only keys with exactly one enabled definer, so a colliding key is absent
+  from the defined, required and comparable reports, and `fulfilled` and
+  discriminated can read true while a collision exists; the collision
+  refuses regardless. The Ready message names each colliding key and every
+  registry entry (the catalog path with its major) defining it. Fix it by
+  disabling all but one of the named entries in `spec.registry`.
+- `OverSubscribedContracts`: a provider-fulfilled contract is provided by
+  more than one enabled registry entry, so the platform cannot route it. The
+  count is per registry entry (the catalog path with its major, so two majors
+  of one catalog are two providers) and holds whether or not the catalog
+  defining the contract is enabled. It is the platform's own count, the one
+  core computes and the render refuses on; the operator reads it and never
+  recounts. The Ready message names each such contract, the catalog that
+  defines it when an enabled one does, and every registry entry that provides
+  it. Fix it by disabling one of the named entries in `spec.registry` or
+  removing the TransformerRegistration whose `spec.catalog` names it.
 - `ComparablePredicates`: two enabled transformers have comparable match
   predicates over a contract they share, so every component the narrower one
   matches is also matched by the broader one and both would render. The Ready
@@ -106,9 +121,14 @@ and two of its reports withhold the package (0015:D5, D18):
   most-specific-wins rule. Fix it by narrowing one predicate or withdrawing
   one transformer.
 
-When a platform is both over-subscribed and undiscriminated the reason is
-`OverSubscribedContracts` and the message carries both findings, so one pass
-over the message shows both problems.
+When several refusals hold, the reason is the first of `ContractCollisions`,
+`OverSubscribedContracts` and `ComparablePredicates` that applies, and the
+message carries every finding, the collision first, so one pass over the
+message shows every problem. A collision comes first because it hides its
+keys from the other reports and its fix changes which catalogs are enabled.
+An inventory that reads not routable while naming neither an over-subscribed
+nor a colliding contract is still refused, under `OverSubscribedContracts`,
+with a message saying the inventory names no such contract.
 
 A refusal behaves as a failed build toward everything but the Ready
 condition. The last good package stays in the store and keeps serving renders,
@@ -139,8 +159,8 @@ with reason `BuildFailed`, and the message names the field the read failed on.
 
 | Ready reason | Cause | Recovery |
 | --- | --- | --- |
-| `PlatformNotReady` | no platform module is recorded yet | automatic once the Platform is `Generated`; if the Platform's own Ready reason is `OverSubscribedContracts` or `ComparablePredicates`, its first generation was refused, so fix the platform per the contract gate above |
+| `PlatformNotReady` | no platform module is recorded yet | automatic once the Platform is `Generated`; if the Platform's own Ready reason is `ContractCollisions`, `OverSubscribedContracts` or `ComparablePredicates`, its first generation was refused, so fix the platform per the contract gate above |
 | `ResolutionFailed` | a module identity mismatch, an unresolved platform demand, or a component no transformer matched | change the module or the platform's catalogs |
 | `SkewRefused` | catalog skew under `Refuse` | bump the platform pin or downgrade the module |
 | `DuplicateIdentities` | two rendered objects share one `apiVersion`, `kind`, `namespace` and `name`, so the last apply would silently overwrite the first | remove or rename one of the components the message names |
-| `RenderFailed` | a transformer failed, or any other evaluation error. Over-subscription also reaches here as a fallback, for a package recorded before the contract gate existed; the gate refuses it at the Platform now, so a fresh package cannot reach a render over-subscribed | fix the module or the platform |
+| `RenderFailed` | a transformer failed, or any other evaluation error. Over-subscription also reaches here as a fallback, for a package recorded before the contract gate existed; the gate refuses it at the Platform now, and the gate and the render read one provider count, so a fresh package cannot reach a render over-subscribed | fix the module or the platform |

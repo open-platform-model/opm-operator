@@ -101,16 +101,18 @@ A claim being deleted SHALL NOT compete for the provider — **unless its deleti
 
 Acceptance SHALL refuse a claim whose `provides` names a contract that an enabled entry of the built platform's registry or another **active** claim already provides, naming the holder and the contract (enhancement 0015 D2, keeping 0010 D37's exactly-one-provider rule). This refusal is distinct from the duplicate-claim refusal: that one is about two claims naming the same catalog, this one is about two providers of the same contract, which can arrive from different catalogs entirely.
 
+Which enabled entries provide a contract SHALL be read from the built platform's own provider count (the contract inventory's providers, which core computes once and the render build refuses on), never recounted by the operator. A provider SHALL be identified by its registry entry: the catalog module path with its major, the same string a claim's `spec.catalog` and a `spec.registry` key carry. Two majors of one catalog are two providers. When the built platform's provider count cannot be read, acceptance SHALL defer the verdict (not refuse), as it does when no platform has been built.
+
 An **inactive** accepted claim SHALL NOT hold a contract against a competitor, because a claim that has never served has no dependents to protect.
 
-A claim whose deletion is **blocked** SHALL keep holding its contracts. Its catalog is still supplying them to the generated platform, so admitting a second provider would not replace it — it would over-subscribe the contract and refuse platform generation for every instance in the cluster. Refusing the newcomer names both ends of the problem instead.
+A claim whose deletion is **blocked** SHALL keep holding its contracts. Its catalog is still supplying them to the generated platform, so admitting a second provider would not replace it: it would over-subscribe the contract and refuse platform generation for every instance in the cluster. Refusing the newcomer names both ends of the problem instead.
 
-A claim's **own** catalog SHALL NOT hold a contract against it. Once a claim is active its catalog is an enabled entry of the very platform the next reconcile judges it against (enhancement 0015 D13), so counting the claim's own entry would refuse the claim for providing what it exists to provide, deactivate it, drop its catalog from the next generated package and accept it again — an oscillation, not a verdict. Only ANOTHER provider of the contract is a conflict, and the claim's own catalog being excused SHALL NOT excuse a different catalog providing the same contract.
+A claim's **own** catalog SHALL NOT hold a contract against it. Once a claim is active its catalog is an enabled entry of the very platform the next reconcile judges it against (enhancement 0015 D13), so counting the claim's own entry would refuse the claim for providing what it exists to provide, deactivate it, drop its catalog from the next generated package and accept it again, an oscillation rather than a verdict. The claim's own entry is the registry entry equal to its `spec.catalog`; another major of the same catalog is not its own entry. Only ANOTHER provider of the contract is a conflict, and the claim's own catalog being excused SHALL NOT excuse a different catalog providing the same contract.
 
 #### Scenario: A claim is refused against an enabled subscription
 
 - **WHEN** a claim provides a contract an enabled registry subscription's catalog already provides
-- **THEN** it is refused, naming the contract and the subscribed catalog
+- **THEN** it is refused, naming the contract and the subscribed catalog by its registry entry (path with major)
 
 #### Scenario: A claim is refused against an active claim
 
@@ -124,7 +126,7 @@ A claim's **own** catalog SHALL NOT hold a contract against it. Once a claim is 
 
 #### Scenario: An active claim is not refused against its own catalog
 
-- **WHEN** an active claim is re-judged against a platform whose registry now carries its own catalog
+- **WHEN** an active claim is re-judged against a platform whose registry now carries its own catalog, with transformers stamped the way core stamps them (a major-free module path)
 - **THEN** it is not refused for providing its own contracts
 
 #### Scenario: Another provider still refuses a claim whose catalog is in the registry
@@ -137,9 +139,21 @@ A claim's **own** catalog SHALL NOT hold a contract against it. Once a claim is 
 - **WHEN** a claim from a different catalog providing the same contract is judged while the holder's deletion is blocked
 - **THEN** it is refused, naming the blocked claim
 
+#### Scenario: Another major of the claim's own catalog is another provider
+
+- **WHEN** a claim for one major of a catalog provides a contract that an enabled registry entry for a different major of the same catalog already provides
+- **THEN** it is refused with reason `ContractSubscribed`, naming the contract and the other major's registry entry
+
+#### Scenario: An unreadable provider count defers the verdict
+
+- **WHEN** the built platform's contract inventory cannot be read
+- **THEN** the claim is not refused: it reports `Ready=Unknown` with reason `PlatformNotReady` and is requeued
+
 ### Requirement: A build-incompatible provider is refused at acceptance
 
-Acceptance SHALL compare the catalog's committed requirements against the platform's resolved versions, per shared OPM-namespace path, and SHALL refuse the claim when the catalog requires a version greater than the platform's within the same major, or any version in a different major (enhancement 0015 D8). The refusal SHALL happen here rather than at render, where the failure would name an unrelated module instance. The refusal message SHALL state that the comparison is conservative — a requirement records what the provider was tidied against, not what it uses — and that lowering the requirement is the author's fix.
+Acceptance SHALL compare the catalog's committed requirements against the platform's resolved versions, per shared OPM-namespace path, and SHALL refuse the claim when the catalog requires a version greater than the platform's within the same major, or requires a major the platform does not resolve for that path (enhancement 0015 D8). Two majors of one catalog are two paths: the platform's resolution is every module its generated closure carries, disabled registry entries included, and a provider's requirement SHALL be compared against the resolved entry of the provider's own major. A requirement in a different major SHALL be refused only when no resolved path shares the provider's major, and that refusal SHALL name every major the platform resolves for the path. The verdict and its message SHALL NOT depend on the order in which the platform's resolution is read. The refusal SHALL happen here rather than at render, where the failure would name an unrelated module instance. The refusal message SHALL state that the comparison is conservative (a requirement records what the provider was tidied against, not what it uses) and that lowering the requirement is the author's fix.
+
+Source: 0015:D8, 0026:D7:R2, 0026:D9:R7 (the shared-path comparison).
 
 #### Scenario: A provider requiring a newer build is refused
 
@@ -148,10 +162,20 @@ Acceptance SHALL compare the catalog's committed requirements against the platfo
 
 #### Scenario: A provider on a different major is refused unconditionally
 
-- **WHEN** the claimed catalog requires a shared path in a different major than the platform's
-- **THEN** the claim is refused without comparing versions
+- **WHEN** the claimed catalog requires a shared path in a different major than every major the platform resolves for that path
+- **THEN** the claim is refused without comparing versions, naming every major the platform resolves for that path
 
 #### Scenario: A provider requiring an older build is accepted by this check
 
 - **WHEN** every shared requirement is at or below the platform's resolved version within the same major
 - **THEN** this check does not refuse the claim
+
+#### Scenario: A provider is compared against the resolved entry of its own major
+
+- **WHEN** the platform resolves `opmodel.dev/catalogs/opm@v4` at `v4.2.0` and `opmodel.dev/catalogs/opm@v5` at `v5.0.0` (for example an enabled v4 entry beside a disabled v5 entry), and the claimed catalog requires `opmodel.dev/catalogs/opm@v4` at `v4.1.0`
+- **THEN** this check does not refuse the claim, and a catalog requiring `opmodel.dev/catalogs/opm@v5` at `v5.1.0` is refused as requiring a newer build than `v5.0.0`, never as a major mismatch
+
+#### Scenario: The verdict does not depend on iteration order
+
+- **WHEN** the same claim is judged repeatedly against a platform resolving several majors of a path the claimed catalog requires
+- **THEN** every judgement reaches the same verdict with a byte-identical message

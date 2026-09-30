@@ -376,6 +376,7 @@ var _ = Describe("Platform Controller", func() {
 			reason, msg, refused := inventoryRefusal(&platform.ContractInventory{
 				DefinedBy:      map[string]string{backupTrait: opmCatalog},
 				RequiredBy:     map[string][]string{backupTrait: {veleroSchedule, k8upSchedule}},
+				ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
 				OverSubscribed: []string{backupTrait},
 				Routable:       false,
 				Discriminated:  true,

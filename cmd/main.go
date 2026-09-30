@@ -243,7 +243,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Construct the single long-lived library Kernel. Per library/CLAUDE.md a
+	// Construct the single long-lived library Kernel. Per library/AGENTS.md a
 	// long-running consumer MUST keep one Kernel (and therefore one schema
 	// *Cache) alive for the process lifetime — never reconstruct it per
 	// reconcile. It is configured from the resolved registry value. Every

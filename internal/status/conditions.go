@@ -69,18 +69,36 @@ const (
 
 	// Inventory reasons (0015:D5, D18: the reconciler reads the
 	// built platform's contract inventory before recording the package).
-	// The two refusals carry a reason each rather than one shared
-	// "inventory" reason because the fix differs: over-subscription is
-	// resolved by disabling a competing catalog or removing its claim, a
-	// comparable pair by narrowing or withdrawing a transformer.
+	// The three refusals carry a reason each rather than one shared
+	// "inventory" reason because the fix differs: a collision is resolved by
+	// disabling all but one of the registry entries defining the key,
+	// over-subscription by disabling a competing catalog or removing its
+	// claim, a comparable pair by narrowing or withdrawing a transformer.
+
+	// ContractCollisionsReason: Ready=False, the built platform's inventory
+	// reports contract keys that more than one enabled registry entry
+	// defines (two majors of one catalog sharing keys), so the platform is
+	// not routable: core folds only keys with exactly one enabled definer,
+	// and a colliding key is absent from the defined, required and
+	// comparable reports. The message names each colliding key and the
+	// registry entries defining it, read from the inventory, never counted.
+	// Reported ahead of OverSubscribedContracts and ComparablePredicates,
+	// with every finding in the message, because a collision distorts the
+	// other reports and its fix reshapes them.
+	ContractCollisionsReason = "ContractCollisions"
 
 	// OverSubscribedContractsReason: Ready=False, the built platform's
-	// inventory is not routable — a provider-fulfilled contract is required
-	// by transformers from more than one enabled catalog, so no routing
-	// exists for it (0010:D37, kept by 0015:D2; D18 makes this the one
-	// inventory report that refuses generation). Reported first when the
-	// inventory is also undiscriminated, with both findings in the message,
-	// so one fix pass sees both.
+	// inventory is not routable — a provider-fulfilled contract is provided
+	// by more than one enabled registry entry (counted per entry, so two
+	// majors of one catalog are two, whether or not the defining catalog is
+	// enabled), so no routing exists for it; the message names each
+	// contract, its defining catalog when one is enabled and the providing
+	// registry entries (0010:D37, kept by 0015:D2; D18 makes this the one
+	// inventory report that refuses generation). Reported after
+	// ContractCollisions and ahead of ComparablePredicates, with every
+	// finding in the message, so one fix pass sees them all. Also the
+	// fail-closed reason for an inventory that reads not routable while
+	// naming neither an over-subscribed nor a colliding contract.
 	OverSubscribedContractsReason = "OverSubscribedContracts"
 
 	// ComparablePredicatesReason: Ready=False, the built platform's

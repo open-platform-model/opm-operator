@@ -83,9 +83,9 @@ const transientRecheckInterval = time.Minute
 // (0015:D5, D18), and records the result together with the
 // resolved skew policy (spec.skewPolicy, 0019:D7/D18) in the process-local
 // store for the render path. The outcome surfaces on the CR's Ready
-// condition: Generated, GenerateFailed, BuildFailed, OverSubscribedContracts
-// or ComparablePredicates, with the non-gating ContractsFulfilled report
-// beside it wherever a package was recorded.
+// condition: Generated, GenerateFailed, BuildFailed, ContractCollisions,
+// OverSubscribedContracts or ComparablePredicates, with the non-gating
+// ContractsFulfilled report beside it wherever a package was recorded.
 type PlatformReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme

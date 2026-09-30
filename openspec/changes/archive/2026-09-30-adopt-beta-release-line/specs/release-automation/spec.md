@@ -1,10 +1,4 @@
-## Purpose
-
-Automate versioning and releases with release-please: Release PRs driven by
-Conventional Commits, changelog generation, git tags and GitHub Releases on
-merge, and the source-burned version constant bump.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Release PR creation on push to main
 The release-please workflow SHALL run on every push to the `main` branch. It SHALL open a Release PR if releasable commits exist since the last release tag. Releasable commits are those whose type has a visible changelog section in `release-please-config.json` (`feat`, `fix`, `perf`, `revert`, `deps`, `docs`, `refactor`) and any commit carrying a `Release-As:` footer. `chore`, `test`, `ci` and `build` are hidden and SHALL NOT by themselves open a Release PR. If a Release PR already exists, it SHALL update the PR with the latest accumulated changes.
@@ -51,23 +45,24 @@ The workflow SHALL generate and maintain a `CHANGELOG.md` file at the repository
 - **WHEN** a new release is cut
 - **THEN** the new changelog section SHALL be prepended to existing content, preserving prior release entries
 
-### Requirement: Git tag and GitHub Release on merge
-When the Release PR is merged to `main`, release-please SHALL create a git tag (e.g., `v0.2.0`) and a GitHub Release with the changelog section as release notes.
-
-#### Scenario: Release PR merged
-- **WHEN** the Release PR is merged to `main`
-- **THEN** release-please creates a git tag matching the version (prefixed with `v`) and a GitHub Release with the changelog for that version as the body
-
-#### Scenario: Release PR closed without merge
-- **WHEN** the Release PR is closed without merging
-- **THEN** no tag or release SHALL be created; the next push to `main` re-opens or creates a new Release PR
-
 ### Requirement: Release PR bumps the annotated version constant
 The release-please configuration SHALL list `internal/version/version.go` under the root package's `extra-files`, so every Release PR rewrites the `x-release-please-version`-annotated `Version` constant to the proposed version in the same commit the release tag will point at. The constant SHALL NOT be edited by hand; only the Release PR changes it.
 
 #### Scenario: Release PR includes the constant bump
 - **WHEN** release-please opens or updates a Release PR proposing version `X.Y.Z-beta.N` (or `X.Y.Z` once the line reaches GA)
 - **THEN** the PR's diff sets `internal/version/version.go`'s `Version` constant to exactly that version
+
+## REMOVED Requirements
+
+### Requirement: Version bump determination from Conventional Commits
+**Reason**: Its pre-1.0 scenario asserts that `bump-minor-pre-major` demotes a breaking change to MINOR, which `bump-minor-pre-major: false` in the config contradicts, and the operator is past 0.x. Its MINOR, PATCH and MAJOR scenarios describe a stable line and do not hold on the prerelease line, where every bump advances the counter. MODIFIED cannot retire a scenario name, so the requirement is replaced.
+**Migration**: Superseded by "Version bump determination per release line", which states the prerelease-line and stable-line behavior separately. No config or code migration.
+
+### Requirement: Initial version baseline
+**Reason**: The manifest is past 0.x (`1.0.0-alpha.22` at planning time), so a first release from empty history can no longer happen, and "pre-v1 maturity" contradicts the beta line's promise that the operator is on the path to GA. The beta line supersedes it.
+**Migration**: None.
+
+## ADDED Requirements
 
 ### Requirement: Version bump determination per release line
 The workflow SHALL determine the proposed version from the commits since the last release tag using Conventional Commits v1 semantics, applied per release line. On the prerelease line (`versioning: prerelease`, `prerelease: true`, current version `X.0.0-beta.N`), every releasable commit, breaking or not, SHALL propose `X.0.0-beta.(N+1)`: the bump never changes the label and never moves the major. On a stable line (after GA, no prerelease suffix), `feat` SHALL propose a MINOR bump, a breaking change a MAJOR bump, and any other releasable commit (`fix`, `perf`, `deps`, `docs`, `refactor`, `revert`) a PATCH bump.

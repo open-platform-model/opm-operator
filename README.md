@@ -15,11 +15,19 @@
 
 ### Installing
 
-Install the latest release directly from the GitHub release asset:
+With the opm CLI, install the operator release that CLI embeds:
 
 ```sh
-kubectl apply -f https://github.com/open-platform-model/opm-operator/releases/latest/download/install.yaml
+opm operator install
 ```
+
+Without the CLI, apply the `install.yaml` asset of a tagged release. Pick `<tag>` from the [Releases page](https://github.com/open-platform-model/opm-operator/releases):
+
+```sh
+kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/<tag>/install.yaml
+```
+
+Do not use the `releases/latest` alias: every current release is flagged Pre-release, GitHub's Latest skips Pre-releases, and so it serves the retired v0.7.5 manifest.
 
 The manifest pins the controller image by digest (`ghcr.io/open-platform-model/opm-operator:vX.Y.Z@sha256:...`), so the exact bytes from the release are pulled regardless of future tag movement.
 
@@ -45,7 +53,7 @@ cosign verify ghcr.io/open-platform-model/opm-operator:pr-123 \
 | --- | --- | --- |
 | `:v<version>` | Immutable | Exact release version; points at a specific manifest-list digest. |
 | `:<digest>` (`@sha256:...`) | Immutable | Cryptographic pin, always the same bytes. |
-| `:latest` | Moves | Tracks the newest published release. |
+| `:latest` | Moves | Tracks the newest published release, betas included. |
 | `:pr-<N>` | Mutable | Preview for PR `N`; overwrites on force-push. Not for production. |
 | `:sha-<short7>` | Effectively immutable | Commit-pinned build; published on both PR and release runs. |
 

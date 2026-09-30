@@ -38,6 +38,7 @@ import (
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/internal/version"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // failureReconciler builds a PlatformReconciler with a concrete *FakeRecorder so
@@ -223,6 +224,10 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		}
 	}
 
+	// colliding is two majors of the opm catalog sharing two contract keys
+	// and nothing over-subscribed: the collision-only shape.
+	colliding := collidingPair
+
 	// undefinedOverSubscribed is two providers of one contract whose defining
 	// catalog is not enabled: no DefinedBy and no RequiredBy entry names it,
 	// so only ProvidedBy carries the finding.
@@ -299,6 +304,76 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		Expect(store.Identity().IsZero()).To(BeTrue())
 	})
 
+	It("refuses a colliding platform naming each key and its defining entries, holding no package", func() {
+		store := platformstore.NewStore()
+		r, _ := failureReconciler(store)
+		plat := createSingleton()
+
+		refuse(r, plat, colliding())
+
+		ready := readyCondition(fetchPlatform())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(status.ContractCollisionsReason))
+		for _, key := range []string{backupTrait, containerResource} {
+			Expect(ready.Message).To(ContainSubstring(key + " defined by " + opmCatalog + ", " + opmCatalogV5))
+		}
+		Expect(ready.Message).NotTo(ContainSubstring("over-subscribed"),
+			"a collision-only platform has no competing provider to name")
+
+		_, ok := store.Generated()
+		Expect(ok).To(BeFalse(), "a refused generation records no package")
+	})
+
+	It("recovers from a collision refusal once the rebuilt inventory defines every key once", func() {
+		// The recovery half builds a real platform, so the acceptance specs'
+		// leftover claims must not put unresolvable catalogs in its package.
+		deleteAllClaims()
+		k, reg := buildKernelOrSkip()
+
+		store := platformstore.NewStore()
+		r := newPlatformReconciler(store, k, reg)
+
+		plat := &releasesv1alpha1.Platform{
+			ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
+			Spec: releasesv1alpha1.PlatformSpec{
+				Type: "kubernetes",
+				Registry: map[string]releasesv1alpha1.Subscription{
+					testCatalogPath(): {Version: fixtures.CatalogVersion()},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), plat)).To(Succeed())
+
+		// A previous build enabled a second major defining the same keys and
+		// was refused. Only the Ready condition records that: no latch.
+		refuse(r, plat, colliding())
+		Expect(readyCondition(fetchPlatform()).Reason).To(Equal(status.ContractCollisionsReason))
+		_, recorded := store.Generated()
+		Expect(recorded).To(BeFalse(), "a collision refusal records no package")
+
+		// All but one defining entry is now disabled: the tuple builds a
+		// platform whose inventory names no colliding key, and this
+		// reconcile is the whole of the recovery.
+		res, err := r.Reconcile(ctx, clusterRequest)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res.RequeueAfter).To(BeZero(), "a recovered platform does not requeue")
+
+		held, ok := store.Generated()
+		Expect(ok).To(BeTrue(), "the recovered tuple must be recorded")
+		inv, err := held.Platform.Contracts()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(inv.Collisions).To(BeEmpty(), "the recovery inventory must be collision-free")
+		Expect(inv.CollidingEntries).To(BeEmpty())
+
+		recovered := fetchPlatform()
+		ready := readyCondition(recovered)
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue), "reason=%s message=%s", ready.Reason, ready.Message)
+		Expect(ready.Reason).To(Equal(status.GeneratedReason))
+		Expect(apimeta.FindStatusCondition(recovered.Status.Conditions, status.StalledCondition)).To(BeNil(),
+			"the refusal's Stalled condition must not survive the recovery")
+	})
+
 	It("refuses a comparable pair naming broader, narrower and the shared contract", func() {
 		r, _ := failureReconciler(platformstore.NewStore())
 		plat := createSingleton()
@@ -321,7 +396,7 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 
 		ready := readyCondition(fetchPlatform())
 		Expect(ready.Reason).To(Equal(status.OverSubscribedContractsReason),
-			"over-subscription is the reported reason when both refusals hold")
+			"over-subscription is the reported reason when over-subscription and a comparable pair hold without a collision")
 		Expect(ready.Message).To(ContainSubstring("platform is not routable"))
 		Expect(ready.Message).To(ContainSubstring("platform is not discriminated"))
 	})

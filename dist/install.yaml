@@ -846,7 +846,10 @@ spec:
                   imported catalog, the module did not build, or its contract inventory
                   could not be read; the message names the dependency, the entry or the
                   field), GenerateFailed (the module could not be written to the
-                  operator's disk), OverSubscribedContracts (the module built, but a
+                  operator's disk), ContractCollisions (the module built, but more than
+                  one enabled registry entry defines a contract key, as two majors of one
+                  catalog sharing keys do; the message names each key and the defining
+                  entries), OverSubscribedContracts (the module built, but a
                   provider-fulfilled contract is provided by more than one enabled
                   registry entry, counted per entry so two majors of one catalog are
                   two, and whether or not its defining catalog is enabled; the platform
@@ -855,8 +858,11 @@ spec:
                   ComparablePredicates (the module built, but two enabled transformers
                   have comparable match predicates over a shared catalog-fulfilled
                   contract, so both would render every component the narrower matches;
-                  the message names each pair and the contracts it shares). A refused
-                  module is not recorded: the last good package keeps serving renders.
+                  the message names each pair and the contracts it shares). When several
+                  refusals hold, the reason is the first of ContractCollisions,
+                  OverSubscribedContracts and ComparablePredicates, and the message
+                  carries every finding. A refused module is not recorded: the last good
+                  package keeps serving renders.
 
                   The ContractsFulfilled condition is a separate, non-gating report on
                   the package renders are consuming, written whenever one is recorded:

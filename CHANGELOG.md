@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.1](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.22...v1.0.0-beta.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **deps:** adopt the beta release line on library v1.0.0-beta.1 ([#163](https://github.com/open-platform-model/opm-operator/issues/163)) ([be20a53](https://github.com/open-platform-model/opm-operator/commit/be20a53e599594e63f66e51f9b7a50726aef7ab4))
+
+
+### Documentation
+
+* **site:** adopt the hugo page dialect ([#159](https://github.com/open-platform-model/opm-operator/issues/159)) ([c15d939](https://github.com/open-platform-model/opm-operator/commit/c15d93946d3d067809de4709529f884591b46345))
+* **site:** judge build compatibility against the provider's own major ([#160](https://github.com/open-platform-model/opm-operator/issues/160)) ([4723ddf](https://github.com/open-platform-model/opm-operator/commit/4723ddf415ca55e32715dae1e4e839a3eb74f04b))
+
 ## [1.0.0-alpha.22](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.21...v1.0.0-alpha.22) (2026-09-30)
 
 

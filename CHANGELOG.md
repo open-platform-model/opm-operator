@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.2](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* **deps:** bump grpc, opentelemetry and cel-go past open advisories ([#166](https://github.com/open-platform-model/opm-operator/issues/166)) ([ca40a82](https://github.com/open-platform-model/opm-operator/commit/ca40a825849fbd7e19a04a532338b6aeb2bbe9d2))
+
 ## [1.0.0-beta.1](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.22...v1.0.0-beta.1) (2026-09-30)
 
 

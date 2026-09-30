@@ -7,8 +7,8 @@ Worktree `opm-operator/.claude/worktrees/beta-adopt-beta-release-line`, branch `
 Supervisor ticks each after confirming it; a worker never ticks these. If a gate lands on a different version (burned tag), the recorded gate version replaces it everywhere (task text, commit subjects, PR titles).
 
 - [ ] G1 core `v2.0.0-beta.1` on GHCR (context only; reaches this repo through the library)
-- [ ] G2 library `v1.0.0-beta.1` resolvable on the Go proxy (blocks section 1)
-- [ ] G3 catalogs `k8s-v1.0.0-beta.1` and `opm-v4.4.4` on GHCR (blocks section 5 and the carrier merge)
+- [x] G2 library `v1.0.0-beta.1` resolvable on the Go proxy (blocks section 1). Recorded: `v1.0.0-beta.1` (GitHub release flagged Pre-release)
+- [x] G3 catalogs `k8s-v1.0.0-beta.1` and `opm-v4.4.4` on GHCR (blocks section 5 and the carrier merge). Recorded: opmodel.dev/catalogs/k8s@v1 `v1.0.0-beta.1`, opmodel.dev/catalogs/opm@v4 `v4.4.4`
 - [ ] G4 cli `v1.0.0-beta.1` released with goreleaser assets, templates 1.0.3 on GHCR (blocks merging #161)
 - [ ] G5 opm-operator `v1.0.0-beta.1`: signed image, `install.yaml` asset, GitHub Release flagged Pre-release (produced by merging #161)
 
@@ -18,9 +18,9 @@ Supervisor ticks each after confirming it; a worker never ticks these. If a gate
 
 ## 1. Move to library v1.0.0-beta.1 (go.mod)
 
-- [ ] 1.1 After G2: `go get github.com/open-platform-model/library@v1.0.0-beta.1 && go mod tidy`. Verify: `git diff --stat` touches only `go.mod` and `go.sum`, and `go list -m github.com/open-platform-model/library` prints `v1.0.0-beta.1`.
-- [ ] 1.2 Spike for the design.md risk (library beta.1 against the unrepublished fixtures): `task dev:fmt dev:vet dev:lint dev:test` with the registry exported. Verify: green with no registry-backed spec skipped. A red run stops the change here: report the failing specs and do not work around them. The order then becomes: the supervisor's FX fixture PR (`deps:pins:fixtures` plus the `test/fixtures/catalog.go` edit) merges first, then this carrier.
-- [ ] 1.3 Gates of 1.2 green, then commit `fix(deps): move to library v1.0.0-beta.1` (body: the library beta renders against core v2.0.0-beta.1 through its default schema module).
+- [x] 1.1 After G2: `go get github.com/open-platform-model/library@v1.0.0-beta.1 && go mod tidy`. Verify: `git diff --stat` touches only `go.mod` and `go.sum`, and `go list -m github.com/open-platform-model/library` prints `v1.0.0-beta.1`.
+- [x] 1.2 Spike for the design.md risk (library beta.1 against the unrepublished fixtures): `task dev:fmt dev:vet dev:lint dev:test` with the registry exported. Verify: green with no registry-backed spec skipped. A red run stops the change here: report the failing specs and do not work around them. The order then becomes: the supervisor's FX fixture PR (`deps:pins:fixtures` plus the `test/fixtures/catalog.go` edit) merges first, then this carrier.
+- [x] 1.3 Gates of 1.2 green, then commit `fix(deps): move to library v1.0.0-beta.1` (body: the library beta renders against core v2.0.0-beta.1 through its default schema module).
 
 ## 2. Switch release-please to the beta label
 

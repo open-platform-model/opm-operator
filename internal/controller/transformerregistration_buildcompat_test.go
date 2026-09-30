@@ -130,6 +130,8 @@ var _ = Describe("TransformerRegistration acceptance: D8 — build compatibility
 
 		Expect(judged.Status.Accepted).To(BeFalse())
 		Expect(readyOf(judged).Reason).To(Equal(status.BuildIncompatibleReason))
+		Expect(readyOf(judged).Message).To(ContainSubstring(`resolved "opmodel.dev/core@v2 at v2.0.0"`),
+			"the mismatch names the platform's major with the version it resolved to")
 	})
 
 	It("does not refuse a provider requiring a build at or below the platform's", func() {
@@ -267,15 +269,32 @@ var _ = Describe("TransformerRegistration acceptance: D8 — build compatibility
 		Expect(messages).To(HaveLen(1), "distinct messages over %d calls", judgeRepeats)
 	})
 
+	It("names an unversioned platform major by its path alone", func() {
+		cat := requiringCatalog(map[string]string{"opmodel.dev/catalogs/opm@v6": "v6.0.0"}, backupTrait)
+
+		// A local replacement serves opm@v5 with no version beside a versioned
+		// opm@v4.
+		msg, err := buildIncompatibility(cat, map[string]string{
+			"opmodel.dev/core@v2":         "v2.0.0",
+			"opmodel.dev/catalogs/opm@v4": "v4.2.0",
+			"opmodel.dev/catalogs/opm@v5": "",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg).To(ContainSubstring(
+			`resolved "opmodel.dev/catalogs/opm@v4 at v4.2.0, opmodel.dev/catalogs/opm@v5"`))
+		Expect(msg).To(ContainSubstring("majors are not comparable"))
+	})
+
 	It("accepts an own-major provider on a platform carrying a second major in its closure", func() {
 		ctx := context.Background()
 		ns := nextClaimNamespace()
 		claim := createClaim(ctx, ns)
 		ownProvidedInventory(ctx, ns, claim.Name)
 
-		// Enhancement 0026 experiment 01, case D: an enabled opm@v4 entry beside
-		// a disabled opm@v5 entry. The generated closure roots every registry
-		// entry, disabled ones included, so both majors are resolved.
+		// The platform's closure carries two majors of one catalog, the
+		// provider's own opm@v4 among them, as an enabled opm@v4 entry beside a
+		// disabled opm@v5 entry yields: the generated closure roots every
+		// registry entry, disabled ones included.
 		r := buildCompatReconciler(
 			requiringCatalog(map[string]string{"opmodel.dev/catalogs/opm@v4": "v4.1.0"}, backupTrait),
 			twoMajorPlatform(),

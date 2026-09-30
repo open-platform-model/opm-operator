@@ -111,8 +111,8 @@ func buildIncompatibility(cat *catalog.Catalog, platformReqs map[string]string) 
 		}
 		majorsByBase[base] = append(majorsByBase[base], qualified)
 	}
-	for _, qualified := range majorsByBase {
-		sort.Strings(qualified)
+	for _, paths := range majorsByBase {
+		sort.Strings(paths)
 	}
 
 	paths := make([]string, 0, len(catalogReqs))

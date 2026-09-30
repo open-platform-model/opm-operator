@@ -39,6 +39,7 @@ import (
 // (transformerregistration_catalog_test.go).
 const (
 	opmCatalog    = "opmodel.dev/catalogs/opm@v4"
+	opmCatalogV5  = "opmodel.dev/catalogs/opm@v5"
 	veleroCatalog = "opmodel.dev/catalogs/velero@v1"
 	k8upCatalog   = "opmodel.dev/catalogs/k8up@v1"
 	k8upCatalogV2 = "opmodel.dev/catalogs/k8up@v2"
@@ -51,6 +52,37 @@ const (
 	mirrorTransformer = "testing.opmodel.dev/cat2/transformers/mirror@0.2.0"
 	deployTransformer = "testing.opmodel.dev/cat/transformers/deployment@0.1.0"
 )
+
+// collisionHeader is the fixed opening of the collision finding: the count,
+// then the remedy.
+func collisionHeader(count string) string {
+	return "platform is not routable: " + count + "; " +
+		"a platform package cannot be generated until all but one of the registry entries defining each is disabled:"
+}
+
+// collidingPair is two majors of the opm catalog sharing two contract keys,
+// both lists handed unsorted. A colliding key is in none of DefinedBy,
+// RequiredBy or Comparable, so Fulfilled and Discriminated read true.
+func collidingPair() *platform.ContractInventory {
+	return &platform.ContractInventory{
+		DefinedBy:  map[string]string{},
+		RequiredBy: map[string][]string{},
+		Collisions: []string{containerResource, backupTrait},
+		CollidingEntries: map[string][]string{
+			containerResource: {opmCatalogV5, opmCatalog},
+			backupTrait:       {opmCatalogV5, opmCatalog},
+		},
+		Fulfilled:     true,
+		Routable:      false,
+		Discriminated: true,
+	}
+}
+
+// collidingPairFinding is collidingPair's finding: keys sorted, entries
+// sorted.
+var collidingPairFinding = collisionHeader("2 colliding contracts") +
+	"\n  " + backupTrait + " defined by " + opmCatalog + ", " + opmCatalogV5 +
+	"\n  " + containerResource + " defined by " + opmCatalog + ", " + opmCatalogV5
 
 func TestInventoryRefusal(t *testing.T) {
 	tests := []struct {
@@ -220,11 +252,75 @@ func TestInventoryRefusal(t *testing.T) {
 				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
 				"\n  " + backupTrait + " provided by " + k8upCatalog + ", " + veleroCatalog,
 		},
+		{
+			name:        "a collision only is named with its keys and defining entries, not as over-subscription",
+			inv:         collidingPair(),
+			wantRefused: true,
+			wantReason:  status.ContractCollisionsReason,
+			wantMessage: collidingPairFinding,
+		},
+		{
+			name: "a collision and an over-subscription report under the collision reason, collision first",
+			inv: func() *platform.ContractInventory {
+				inv := collidingPair()
+				inv.DefinedBy[restoreTrait] = veleroCatalog
+				inv.RequiredBy[restoreTrait] = []string{veleroSchedule, k8upSchedule}
+				inv.ProvidedBy = map[string][]string{restoreTrait: {veleroCatalog, k8upCatalog}}
+				inv.OverSubscribed = []string{restoreTrait}
+				return inv
+			}(),
+			wantRefused: true,
+			wantReason:  status.ContractCollisionsReason,
+			wantMessage: collidingPairFinding +
+				"\n\n" +
+				"platform is not routable: 1 over-subscribed contract; " +
+				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
+				"\n  " + restoreTrait + " (defined by " + veleroCatalog + ") provided by " + k8upCatalog + ", " + veleroCatalog,
+		},
+		{
+			name: "a collision and a comparable pair report under the collision reason",
+			inv: func() *platform.ContractInventory {
+				inv := collidingPair()
+				inv.DefinedBy[volumeResource] = opmCatalog
+				inv.RequiredBy[volumeResource] = []string{mirrorTransformer, deployTransformer}
+				inv.Comparable = []platform.ComparablePredicates{
+					{Broader: mirrorTransformer, Narrower: deployTransformer, Contracts: []string{volumeResource}},
+				}
+				inv.Discriminated = false
+				return inv
+			}(),
+			wantRefused: true,
+			wantReason:  status.ContractCollisionsReason,
+			wantMessage: collidingPairFinding +
+				"\n\n" +
+				"platform is not discriminated: 1 comparable transformer pair; " +
+				"every component the narrower transformer matches is also matched by the broader one, so both would render (0015:D5):" +
+				"\n  " + mirrorTransformer + " (broader) and " + deployTransformer + " (narrower) over " + volumeResource,
+		},
+		{
+			// Core reads the platform unroutable and names no row: a term
+			// in routable the operator does not know. Refuse anyway, and
+			// never claim a count of zero.
+			name: "an unroutable inventory naming no row still refuses without a zero count",
+			inv: &platform.ContractInventory{
+				DefinedBy:     map[string]string{},
+				RequiredBy:    map[string][]string{},
+				Fulfilled:     true,
+				Routable:      false,
+				Discriminated: true,
+			},
+			wantRefused: true,
+			wantReason:  status.OverSubscribedContractsReason,
+			wantMessage: unroutableFinding,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reason, msg, refused := inventoryRefusal(tt.inv)
+			if strings.Contains(msg, "0 over-subscribed") {
+				t.Errorf("the message must never claim a count of zero over-subscribed contracts, got %q", msg)
+			}
 			if refused != tt.wantRefused {
 				t.Fatalf("refused = %t, want %t (reason %q, message %q)", refused, tt.wantRefused, reason, msg)
 			}
@@ -339,17 +435,35 @@ func TestInventoryRefusal_MessageIsOrderIndependent(t *testing.T) {
 		Discriminated: false,
 	}
 
-	reasonOne, msgOne, refusedOne := inventoryRefusal(one)
-	reasonOther, msgOther, refusedOther := inventoryRefusal(other)
+	collidingOne := collidingPair()
+	collidingOther := collidingPair()
+	collidingOther.Collisions = []string{backupTrait, containerResource}
+	collidingOther.CollidingEntries = map[string][]string{
+		backupTrait:       {opmCatalog, opmCatalogV5},
+		containerResource: {opmCatalog, opmCatalogV5},
+	}
 
-	if !refusedOne || !refusedOther {
-		t.Fatalf("both orderings must refuse, got %t and %t", refusedOne, refusedOther)
-	}
-	if reasonOne != reasonOther {
-		t.Errorf("reason differs across orderings: %q vs %q", reasonOne, reasonOther)
-	}
-	if msgOne != msgOther {
-		t.Errorf("message differs across orderings, so an unchanged verdict would re-fire the warning event\n one: %q\nother: %q", msgOne, msgOther)
+	for _, pair := range []struct {
+		name       string
+		one, other *platform.ContractInventory
+	}{
+		{name: "over-subscribed and undiscriminated", one: one, other: other},
+		{name: "colliding", one: collidingOne, other: collidingOther},
+	} {
+		t.Run(pair.name, func(t *testing.T) {
+			reasonOne, msgOne, refusedOne := inventoryRefusal(pair.one)
+			reasonOther, msgOther, refusedOther := inventoryRefusal(pair.other)
+
+			if !refusedOne || !refusedOther {
+				t.Fatalf("both orderings must refuse, got %t and %t", refusedOne, refusedOther)
+			}
+			if reasonOne != reasonOther {
+				t.Errorf("reason differs across orderings: %q vs %q", reasonOne, reasonOther)
+			}
+			if msgOne != msgOther {
+				t.Errorf("message differs across orderings, so an unchanged verdict would re-fire the warning event\n one: %q\nother: %q", msgOne, msgOther)
+			}
+		})
 	}
 }
 
@@ -365,6 +479,11 @@ func TestInventoryRefusal_DoesNotMutateTheInventory(t *testing.T) {
 		Comparable: []platform.ComparablePredicates{
 			{Broader: mirrorTransformer, Narrower: deployTransformer, Contracts: []string{volumeResource, containerResource}},
 			{Broader: deployTransformer, Narrower: mirrorTransformer, Contracts: []string{volumeResource}},
+		},
+		Collisions: []string{volumeResource, containerResource},
+		CollidingEntries: map[string][]string{
+			containerResource: {opmCatalogV5, opmCatalog},
+			volumeResource:    {opmCatalogV5, opmCatalog},
 		},
 		Routable:      false,
 		Discriminated: false,
@@ -388,6 +507,12 @@ func TestInventoryRefusal_DoesNotMutateTheInventory(t *testing.T) {
 	}
 	if got := inv.Comparable[0].Contracts; got[0] != volumeResource || got[1] != containerResource {
 		t.Errorf("Comparable[0].Contracts was reordered in place: %v", got)
+	}
+	if got := inv.Collisions; got[0] != volumeResource || got[1] != containerResource {
+		t.Errorf("Collisions was reordered in place: %v", got)
+	}
+	if got := inv.CollidingEntries[containerResource]; got[0] != opmCatalogV5 || got[1] != opmCatalog {
+		t.Errorf("CollidingEntries was reordered in place: %v", got)
 	}
 }
 

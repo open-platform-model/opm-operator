@@ -223,6 +223,10 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		}
 	}
 
+	// colliding is two majors of the opm catalog sharing two contract keys
+	// and nothing over-subscribed: the collision-only shape.
+	colliding := collidingPair
+
 	// undefinedOverSubscribed is two providers of one contract whose defining
 	// catalog is not enabled: no DefinedBy and no RequiredBy entry names it,
 	// so only ProvidedBy carries the finding.
@@ -297,6 +301,26 @@ var _ = Describe("Platform Controller inventory refusals", func() {
 		_, ok := store.Generated()
 		Expect(ok).To(BeFalse(), "a refused generation records no package")
 		Expect(store.Identity().IsZero()).To(BeTrue())
+	})
+
+	It("refuses a colliding platform naming each key and its defining entries, holding no package", func() {
+		store := platformstore.NewStore()
+		r, _ := failureReconciler(store)
+		plat := createSingleton()
+
+		refuse(r, plat, colliding())
+
+		ready := readyCondition(fetchPlatform())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(status.ContractCollisionsReason))
+		for _, key := range []string{backupTrait, containerResource} {
+			Expect(ready.Message).To(ContainSubstring(key + " defined by " + opmCatalog + ", " + opmCatalogV5))
+		}
+		Expect(ready.Message).NotTo(ContainSubstring("over-subscribed"),
+			"a collision-only platform has no competing provider to name")
+
+		_, ok := store.Generated()
+		Expect(ok).To(BeFalse(), "a refused generation records no package")
 	})
 
 	It("refuses a comparable pair naming broader, narrower and the shared contract", func() {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-alpha.21](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.20...v1.0.0-alpha.21) (2026-09-30)
+
+
+### Bug Fixes
+
+* **controller:** count contract providers from the platform's single provider count ([#153](https://github.com/open-platform-model/opm-operator/issues/153)) ([02ac862](https://github.com/open-platform-model/opm-operator/commit/02ac862df5be1e2f6a50ee17798132a4efca27bf))
+
 ## [1.0.0-alpha.20](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.19...v1.0.0-alpha.20) (2026-09-29)
 
 

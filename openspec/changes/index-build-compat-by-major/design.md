@@ -94,7 +94,7 @@ Claimed catalog requires opmodel.dev/catalogs/opm@v6 at "v6.0.0" but the platfor
 comparable, so the requirement is refused without comparing versions. The comparison is conservative: ...
 ```
 
-On a one-major platform the platform side changes from `"v2.0.0"` to `"opmodel.dev/core@v2 at v2.0.0"`. No existing spec asserts that text (the different-major spec asserts only the reason; the wording spec uses a same-major refusal). `conservativeRefusal`'s signature and the rest of its wording are unchanged.
+On a one-major platform the platform side changes from `"v2.0.0"` to `"opmodel.dev/core@v2 at v2.0.0"`. The different-major reconcile spec now asserts that text, and a direct spec covers a platform major carried without a version. `conservativeRefusal`'s signature and the rest of its wording are unchanged.
 
 ### 4. Doc comments
 

@@ -38,6 +38,14 @@ context: |
   All commits MUST follow Conventional Commits v1: type(scope): description
   - Types: feat, fix, refactor, docs, test, chore
   - Scope: api, controller, source, render, apply, inventory, etc.
+  - Beta line: From its first beta, a prerelease line (`opmodel.dev/core@v2`,
+    `opmodel.dev/catalogs/k8s@v1`, library, cli, opm-operator) is on the path to GA. A breaking
+    change is still allowed during beta, but only as a `feat!` commit whose `BREAKING CHANGE:`
+    footer is the migration note the CHANGELOG shows. It advances the `-beta.N` counter and never
+    moves the module path to a new major. Stable lines (`opmodel.dev/catalogs/opm@v4` and the module
+    fleets) keep the normal SemVer rule: a break is a new major. A core beta break that would force
+    a catalogs/opm major needs owner sign-off. GA drops the suffix: `prerelease: false` plus a
+    visible carrier commit per package, in dependency order.
 
   ### VII. Simplicity & YAGNI
   Start simple. Complexity MUST be justified.
@@ -111,7 +119,8 @@ rules:
     - "Focus: WHY we're doing this, WHAT's in/out of scope"
     - "Updates when: Scope changes, intent clarifies, approach fundamentally shifts"
     - Identify affected API types and controllers.
-    - State whether this is MAJOR/MINOR/PATCH per SemVer.
+    - State whether this is MAJOR/MINOR/PATCH per SemVer; until GA, state the class as it would be
+      after GA and note that beta ships it as the next `-beta.N`.
     - Complexity additions MUST include justification (Principle VII).
     - Scope MUST cut into at most about five tasks.md sections, each ending green and leaving
       `main` releasable on its own (Principle VIII).

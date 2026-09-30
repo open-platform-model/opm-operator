@@ -55,7 +55,7 @@ jobs:
           version: 3.x
 
       - name: Install opm
-        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.25
+        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-alpha.27
 
       - name: Fixture publish gates (changed implies bumped)
         env:

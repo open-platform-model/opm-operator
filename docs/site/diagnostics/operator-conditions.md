@@ -2,8 +2,7 @@
 title: "Operator conditions"
 description: "Every status condition the operator sets on an instance, and what each one means."
 type: reference
-sidebar:
-  order: 40
+weight: 40
 ---
 
 <!-- One sentence: this page lists every status condition type and reason the operator writes on its four resource kinds, ModuleInstance, ModulePackage, Platform and TransformerRegistration. Then state the convention once, in Flux's terms, since the operator reuses Flux's condition helpers: a stalled failure sets Ready=False and Stalled=True with the same reason; an in-progress or deferred state sets Reconciling=True and Ready=Unknown with the same reason; success removes both. Rows are ordered by kind, workload kinds first, and within a kind in reconcile order. Mention in one line that some reasons appear only on events, never on a condition: Applied, Pruned, Resumed, NoOp, RenderWarning, OrphanedOnDeletion; Generated is both. Verify: the description names only instances, while the table covers all four kinds; the author decides whether to widen the description or split the page. Check against: opm-operator/internal/status/conditions.go, opm-operator/api/v1alpha1/conditions.go -->

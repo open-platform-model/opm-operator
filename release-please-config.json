@@ -12,7 +12,7 @@
       "extra-files": ["internal/version/version.go"],
       "versioning": "prerelease",
       "prerelease": true,
-      "prerelease-type": "alpha",
+      "prerelease-type": "beta",
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },

@@ -24,8 +24,8 @@ Supervisor ticks each after confirming it; a worker never ticks these. If a gate
 
 ## 2. Switch release-please to the beta label
 
-- [ ] 2.1 In `release-please-config.json`, set `"prerelease-type": "beta"` in package `"."`; leave `versioning`, `prerelease`, `bump-minor-pre-major` and every other key as is. Do not add `release-as`; do not touch `.release-please-manifest.json` or the `Version` constant. Verify: `jq -e '.packages["."]["prerelease-type"] == "beta"' release-please-config.json` and `! grep -qi 'release-as' release-please-config.json`; `git diff --stat` touches only that file.
-- [ ] 2.2 `task dev:fmt dev:vet dev:lint dev:test` green (config-only; confirms the tree), then commit `chore(release): switch the prerelease label to beta` (body: the label flip alone keeps counting alpha; the carrier squash footer crosses the line).
+- [x] 2.1 In `release-please-config.json`, set `"prerelease-type": "beta"` in package `"."`; leave `versioning`, `prerelease`, `bump-minor-pre-major` and every other key as is. Do not add `release-as`; do not touch `.release-please-manifest.json` or the `Version` constant. Verify: `jq -e '.packages["."]["prerelease-type"] == "beta"' release-please-config.json` and `! grep -qi 'release-as' release-please-config.json`; `git diff --stat` touches only that file.
+- [x] 2.2 `task dev:fmt dev:vet dev:lint dev:test` green (config-only; confirms the tree), then commit `chore(release): switch the prerelease label to beta` (body: the label flip alone keeps counting alpha; the carrier squash footer crosses the line).
 
 ## 3. README and install page on the beta line
 

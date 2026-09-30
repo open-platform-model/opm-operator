@@ -2,8 +2,7 @@
 title: "Install the operator"
 description: "Install the OPM operator so the cluster reconciles instances on its own."
 type: how-to
-sidebar:
-  order: 20
+weight: 20
 ---
 
 <!-- One sentence: installing opm-operator puts a controller in namespace `opm-operator-system` that renders and applies every ModuleInstance whose `spec.owner` is absent or `operator` (the ones created with kubectl or GitOps), plus every ModulePackage. You need it when the cluster should reconcile instances without anyone running `opm`. A cluster where only the CLI deploys needs only the CRDs, which "Deploy a module with the CLI" installs with `opm operator install --crds-only`.

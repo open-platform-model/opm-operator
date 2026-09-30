@@ -2,8 +2,7 @@
 title: "Delete an instance safely"
 description: "Remove an instance without orphaning the resources it created."
 type: how-to
-sidebar:
-  order: 22
+weight: 22
 ---
 
 <!-- One sentence: this removes an instance so that its resources are actually deleted, or kept on purpose, whichever of the two managers owns it. You need it because the two delete differently, and the operator's default leaves every resource running. Voice: candid, stating the hazard where it applies, not in a warning box at the end.

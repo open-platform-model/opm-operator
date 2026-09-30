@@ -2,8 +2,7 @@
 title: "Deletion and pruning"
 description: "What happens to an instance's resources when it is deleted, and why the default keeps them."
 type: explanation
-sidebar:
-  order: 30
+weight: 30
 ---
 
 <!-- Reads as "About deletion and pruning". This is the page that documents the deletion hazard at its current behaviour, not at any intended behaviour. It covers two events: deleting an instance, and pruning, meaning deleting what a new render no longer produces. Each is covered for both managers. No steps: those are in "Delete an instance safely". Voice: candid, since this is the one place where following a happy path can destroy or strand state.

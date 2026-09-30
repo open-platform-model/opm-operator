@@ -2,7 +2,7 @@
 
 See proposal.md (Why). State on `main` at planning time (2026-09-30): manifest and `internal/version/version.go` at `1.0.0-alpha.22`; `go.mod` requires library `v1.0.0-alpha.36`; `release-please-config.json` has `versioning: prerelease`, `prerelease: true`, `prerelease-type: alpha`, `bump-minor-pre-major: false`, and a visible Documentation section. Release PR #161 (`chore(main): release 1.0.0-alpha.23`, docs entries only) is open on `release-please--branches--main--components--opm-operator` and is held: nobody but the supervisor merges it, and never as an alpha. GitHub's Latest release for this repo is v0.7.5, the newest release not flagged Pre-release, so `releases/latest/download/install.yaml` installs v0.7.5.
 
-The cutover sequence is fixed outside this repo: G1 core `v2.0.0-beta.1`, G2 library `v1.0.0-beta.1`, G3 catalogs `k8s-v1.0.0-beta.1` and `opm-v4.4.4`, G4 cli `v1.0.0-beta.1`, G5 this operator's `v1.0.0-beta.1`, G6 the first cli release embedding it.
+The cutover sequence is fixed outside this repo: G1 core `v2.0.0-beta.1`, G2 library `v1.0.0-beta.1`, G3 catalogs `k8s-v1.0.0-beta.1` and `opm-v4.4.4`, G4 cli `v1.0.0-beta.1`, G5 this operator's `v1.0.0-beta.1`, G6 the first cli release embedding it. If a gate lands on a different version (burned tag), the recorded gate version replaces it everywhere in this change.
 
 ## Goals / Non-Goals
 
@@ -16,7 +16,7 @@ The cutover sequence is fixed outside this repo: G1 core `v2.0.0-beta.1`, G2 lib
 
 - No controller, API or CRD change. The CRD API stays `v1alpha1` until GA.
 - No change to the `:latest` image tag policy: it keeps tracking the newest release, betas included.
-- No fixture republish, no `test/fixtures/catalog.go` edit, no workflow opm CLI pin: those are supervisor-run tracks after G3 and G6.
+- No fixture republish, no `test/fixtures/catalog.go` edit, no workflow opm CLI pin: those belong to supervisor PRs (the FX `deps:pins:fixtures` PR after G3, which also carries the `catalog.go` `CatalogVersion` edit, and the `deps:pins:opm-cli` `ci` PR after G6).
 
 ## Research & Decisions
 
@@ -64,10 +64,26 @@ The cutover sequence is fixed outside this repo: G1 core `v2.0.0-beta.1`, G2 lib
 **Decision**: Not touched here. `version.go` is release-tooling-owned, and the examples are format illustrations that remain correct on the beta line. A later non-release docs pass may move all three together.
 **Rationale**: Keeps the carrier to release-relevant files.
 
+### Beta promise in the governance docs
+
+**Context**: `CONSTITUTION.md` Principle VI (line 99) and its proposal rule (line 207), and `openspec/config.yaml` Principle VI (line 37) and `rules.proposal` (line 114), make every proposal state MAJOR/MINOR/PATCH, which no longer names what ships during beta. The owner decided the promise; cli and library carry it in the same files.
+**Decision**: `CONSTITUTION.md` Principle VI, `openspec/config.yaml` Principle VI and `AGENTS.md` (a Beta line bullet beside "Commit type decides the release") carry the canon promise verbatim:
+
+> From its first beta, a prerelease line (opmodel.dev/core@v2, opmodel.dev/catalogs/k8s@v1, library, cli, opm-operator) is on the path to GA. A breaking change is still allowed during beta, but only as a `feat!` commit whose `BREAKING CHANGE:` footer is the migration note the CHANGELOG shows. It advances the `-beta.N` counter and never moves the module path to a new major. Stable lines (opmodel.dev/catalogs/opm@v4 and the module fleets) keep the normal SemVer rule: a break is a new major. A core beta break that would force a catalogs/opm major needs owner sign-off. GA drops the suffix: `prerelease: false` plus a visible carrier commit per package, in dependency order.
+
+The two "state MAJOR/MINOR/PATCH" rules gain a pre-GA note: until GA, a proposal states its class as it would after GA and notes that beta ships it as the next `-beta.N`.
+**Rationale**: One wording across cli, library and the operator; the constitution stays truthful for the beta.
+
+### Operator breaks wait for the cli
+
+**Context**: During beta every cli and operator release is `1.0.0-beta.N`, so the cli's MAJOR.MINOR ceiling gate never refuses. A minor hop would make it refuse, and a break the released cli cannot drive would ship an operator no released cli can use.
+**Decision**: An operator `feat!` that the released cli cannot drive merges only after the cli release that can drive it. No `Release-As: 1.1.0-beta.1` or any other minor or major hop happens during beta. Written in the `release-automation` "Beta prerelease line" requirement and in `AGENTS.md`.
+**Rationale**: The ordering replaces the ceiling gate for the beta; the cli keeps the same rule in its design.
+
 ### Fixture pins travel apart
 
 **Context**: The workspace commit rule forbids mixing a shipped bump (`go.mod`) with a fixture bump (`config/samples/*`) in one PR; a squash collapses the PR into one commit.
-**Decision**: `config/samples/opmodel.dev_v1alpha1_platform.yaml` moves in its own `test(fixtures)` PR on branch `beta/sample-platform-beta-pins`, applied from a supervisor patch produced by the root `platform-pins` run after G3, merged with no footer.
+**Decision**: `config/samples/opmodel.dev_v1alpha1_platform.yaml` moves in its own `test(fixtures)` PR on branch `beta/sample-platform-beta-pins`, applied from the operator hunk of the supervisor's post-G3 `task deps:update` run (that run already includes the platform-pins step; there is no separate `deps:pins:platform-pins` run), merged with no footer. The fixture republish (FX, `deps:pins:fixtures`) is a separate supervisor PR that runs after this one and cli PR-C merge.
 **Rationale**: The sample is not in `dist/install.yaml`; its bump must not release the operator.
 
 ## Reconcile phase impact
@@ -89,8 +105,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## Risks / Trade-offs
 
-- [Library beta.1 plus the stale fixtures (core `v2.0.0-alpha.6`, catalogs opm `v4.0.1`) may fail a registry-backed spec, an unverified assumption] → Section 1 runs `task dev:test` with the registry exported and no registry-backed spec skipped before anything else lands; a red run stops the change and is reported, since the fixture republish track may have to merge first.
-- [The squash drops or mangles the footer] → The supervisor parses the final message with release-please's own parser before merge and confirms #161's new title after merge; fallback is `BEGIN_COMMIT_OVERRIDE` on the merged PR body and a workflow re-run.
+- [Library beta.1 plus the stale fixtures (core `v2.0.0-alpha.6`, catalogs opm `v4.0.1`) may fail a registry-backed spec, an unverified assumption] → Section 1 runs `task dev:test` with the registry exported and no registry-backed spec skipped before anything else lands; a red run stops the change and is reported, since the FX fixture PR (supervisor-run `deps:pins:fixtures`, plus the `catalog.go` edit) then has to merge first, and the order becomes: FX PR, then this carrier.
+- [The squash drops or mangles the footer, or GitHub's default commit-list body lands] → Every PR in this change is squash-merged with a supervisor-written body (never the default commit list), checked with `check-merge-msg.js`; the supervisor parses the final message with release-please's own parser before merge and confirms #161's new title after merge; fallback is `BEGIN_COMMIT_OVERRIDE` on the merged PR body and a workflow re-run.
 - [#161 merged early: now it cuts alpha.23; between the carrier and G4 it ships operator 1.0.0-beta.1 before the cli beta.1 and its ceiling gate exists] → The supervisor posts a hold comment on #161 before any section starts (tasks.md, Hold H1); only the supervisor merges.
 - [A Dependabot Go PR merges between the carrier and #161] → Harmless: it joins the beta.1 changelog, and the footer commit stays in the window.
 - [A docs or fix commit after G5 cuts beta.2 before the cli embeds beta.1] → The cli ceiling gate compares MAJOR.MINOR only (cli change `adopt-beta-release-line`, implementing 0021 OQ14), so an operator `1.0.0-beta.2` does not refuse a cli on `1.0.0-beta.N`.

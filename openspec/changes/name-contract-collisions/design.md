@@ -160,7 +160,7 @@ Each ends green under `task dev:fmt dev:vet dev:lint dev:test` (after `task dev:
 - [A's core is not on GHCR when section 1 runs, so the registry-backed specs fail to build the generated platform] -> section 1 waits on A's release (B's start condition), and `OPM_TEST_REGISTRY_FORCE=1` turns a skip into a failure.
 - [B's `Contracts()` returns an error for a colliding platform instead of an inventory] -> the platform would report `BuildFailed` naming B's error and this change's reason would be unreachable; the interface says it decodes, and section 1's `go doc` check reads the `Contracts()` doc; a contradiction is a blocker to report, not to code around.
 - [Messages grow: a collision plus over-subscription prints two "platform is not routable" headers] -> accepted; each header counts its own list and names its own remedy.
-- [An old operator (library alpha.35) meets a colliding platform] -> it generates core `2.0.0-alpha.12`, where the platform fails to build (`BuildFailed`); it never renders one. The old-kernel render hazard in orchestration.md concerns the cli and hand-pinned platforms, not the operator's generated module.
+- [An old operator (library alpha.35) meets a colliding platform] -> its `Roots` pin core `2.0.0-alpha.12`, where the platform fails to build (`BuildFailed`), but the closure's MVS resolves A's core as soon as an enabled catalog release requires it; the platform then builds and today's `inventoryRefusal` refuses it on `Routable: false` as `OverSubscribedContracts` with "0 over-subscribed contracts". Either way it never records or renders one. The old-kernel render hazard in orchestration.md concerns the cli and hand-pinned platforms, not the operator's generated module.
 
 ## Migration Plan
 

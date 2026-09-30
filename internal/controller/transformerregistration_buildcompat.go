@@ -73,13 +73,17 @@ func platformRequirements(dir string) (map[string]string, error) {
 // buildIncompatibility compares the catalog's committed requirements against
 // the platform's resolved versions and returns the refusal message for the
 // first incompatible shared OPM-namespace path, or the empty string when
-// every shared path is compatible (0015:D8).
+// every shared path is compatible (0015:D8, 0026:D7:R2).
 //
-// Per shared base path: a requirement in a different major than the platform
-// carries is refused without comparing versions, because majors do not
-// compare; within one major, a requirement GREATER than the platform's is
-// refused. At or below is accepted — a provider tidied against an older build
-// runs against a newer platform.
+// Two majors of one module are two paths. A requirement is compared against
+// the platform's resolution of the provider's own major, which the platform
+// can carry beside other majors of the same module (every registry entry,
+// disabled ones included, is in the generated closure). Within that major, a
+// requirement GREATER than the platform's is refused; at or below is
+// accepted, because a provider tidied against an older build runs against a
+// newer platform. A requirement is refused as a major mismatch, without
+// comparing versions, only when the platform resolves the module in no path
+// of that major, because majors do not compare.
 //
 // Refusing here rather than at render is the point: a render failure would
 // name whichever unrelated module instance happened to trigger the build,
@@ -87,23 +91,28 @@ func platformRequirements(dir string) (map[string]string, error) {
 //
 // Paths are walked in sorted order so a catalog incompatible on several paths
 // always reports the same one, rather than whichever the map iteration
-// surfaced.
+// surfaced, and a mismatch message lists the platform's majors sorted, so the
+// verdict and its wording never depend on the order the resolution is read in.
 func buildIncompatibility(cat *catalog.Catalog, platformReqs map[string]string) (string, error) {
 	catalogReqs, err := cat.Requires()
 	if err != nil {
 		return "", err
 	}
 
-	// Index the platform's resolution by base path, so a major mismatch on
-	// one module is visible rather than looking like two unrelated paths.
-	type resolved struct{ qualifiedPath, version string }
-	byBase := make(map[string]resolved, len(platformReqs))
-	for qualified, version := range platformReqs {
+	// platformReqs answers the same-major lookup directly, being keyed by
+	// major-qualified path. This second index groups the platform's paths by
+	// base path, sorted, to tell a major mismatch apart from a module the
+	// platform does not carry at all.
+	majorsByBase := make(map[string][]string, len(platformReqs))
+	for qualified := range platformReqs {
 		base, _, ok := ast.SplitPackageVersion(qualified)
 		if !ok {
 			continue
 		}
-		byBase[base] = resolved{qualifiedPath: qualified, version: version}
+		majorsByBase[base] = append(majorsByBase[base], qualified)
+	}
+	for _, paths := range majorsByBase {
+		sort.Strings(paths)
 	}
 
 	paths := make([]string, 0, len(catalogReqs))
@@ -116,38 +125,49 @@ func buildIncompatibility(cat *catalog.Catalog, platformReqs map[string]string) 
 		if !inOPMNamespace(qualified) {
 			continue
 		}
-		base, catalogMajor, ok := ast.SplitPackageVersion(qualified)
+		base, _, ok := ast.SplitPackageVersion(qualified)
 		if !ok {
 			continue
 		}
-		plat, shared := byBase[base]
-		if !shared {
-			continue
-		}
-		_, platformMajor, ok := ast.SplitPackageVersion(plat.qualifiedPath)
-		if !ok {
-			continue
-		}
-
 		catalogVersion := catalogReqs[qualified]
 
-		if catalogMajor != platformMajor {
-			return conservativeRefusal(base, qualified, catalogVersion, plat.version,
-				"majors are not comparable, so the requirement is refused without comparing versions"), nil
-		}
-
-		if catalogVersion == "" || plat.version == "" {
-			// A path a local replacement serves carries no version. Nothing
-			// to compare, and nothing to refuse it on.
+		if platformVersion, same := platformReqs[qualified]; same {
+			if catalogVersion == "" || platformVersion == "" {
+				// A path a local replacement serves carries no version.
+				// Nothing to compare, and nothing to refuse it on.
+				continue
+			}
+			if semver.Compare(catalogVersion, platformVersion) > 0 {
+				return conservativeRefusal(base, qualified, catalogVersion, platformVersion,
+					"a provider cannot require a newer build than the platform it runs in"), nil
+			}
 			continue
 		}
-		if semver.Compare(catalogVersion, plat.version) > 0 {
-			return conservativeRefusal(base, qualified, catalogVersion, plat.version,
-				"a provider cannot require a newer build than the platform it runs in"), nil
+
+		resolved := majorsByBase[base]
+		if len(resolved) == 0 {
+			continue
 		}
+		return conservativeRefusal(base, qualified, catalogVersion, resolvedMajors(resolved, platformReqs),
+			"majors are not comparable, so the requirement is refused without comparing versions"), nil
 	}
 
 	return "", nil
+}
+
+// resolvedMajors names each of the platform's sorted paths with the version it
+// resolved to, or the path alone when a local replacement serves it with no
+// version.
+func resolvedMajors(qualified []string, platformReqs map[string]string) string {
+	named := make([]string, 0, len(qualified))
+	for _, path := range qualified {
+		if version := platformReqs[path]; version != "" {
+			named = append(named, path+" at "+version)
+			continue
+		}
+		named = append(named, path)
+	}
+	return strings.Join(named, ", ")
 }
 
 // conservativeRefusal words a 0015:D8 refusal. 0015:D8 requires the wording, not just

@@ -82,7 +82,7 @@ for _, qualified := range paths { // sorted, as today
 
 ### 2. "Admitted entry" means any entry in the generated closure, disabled entries included
 
-0026:D9:R7 says "the admitted entry of the provider's own major". Build compatibility is an MVS question over the generated `cue.mod` deps, and a disabled entry's module is in that graph (Context, "The closure"), so it counts as present. Enable-flag routing is judged elsewhere (`subscribedContract`, keyed by registry key). Requiring enabled-only would mean passing enable flags into `buildIncompatibility`, and would refuse an `opm@v5` provider on the case-D platform although its build resolves. Flagged to the user as a decision in the set's `user_decisions_needed`.
+0026:D9:R7 says "the admitted entry of the provider's own major". Build compatibility is an MVS question over the generated `cue.mod` deps, and a disabled entry's module is in that graph (Context, "The closure"), so it counts as present. Enable-flag routing is judged elsewhere (`subscribedContract`, keyed by registry key). Requiring enabled-only would mean passing enable flags into `buildIncompatibility`, and would refuse an `opm@v5` provider on the case-D platform although its build resolves. Flagged to the user as a decision in the set's `user_decisions_needed`; decided on 2026-09-30 as written here: compatibility is judged against any entry in the generated platform's dependency closure (MVS over its `cue.mod` deps), disabled entries included.
 
 ### 3. Message shape
 

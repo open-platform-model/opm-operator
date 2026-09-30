@@ -34,6 +34,12 @@ import (
 // touch the store, which is what lets every message be pinned by a table
 // test without a live catalog pair producing it.
 //
+// Nothing here counts providers. The inventory's provider count (ProvidedBy,
+// with OverSubscribed and Routable derived from it) is the one core computes
+// per registry entry (catalog path plus major) and the render build refuses
+// on; the operator reads it, so the generation gate and the render refusal
+// fire on the same platforms.
+//
 // Every list either function prints is sorted first. Core derives the
 // inventory in comprehension order, which is stable for one build but says
 // nothing across builds, and failReconcile gates its warning event on the
@@ -74,8 +80,13 @@ func inventoryRefusal(inv *platform.ContractInventory) (reason, msg string, refu
 }
 
 // overSubscribedFinding words the routing refusal: each over-subscribed
-// contract, the catalog defining it and every transformer requiring it
-// (0010:D37, kept by 0015:D2).
+// contract, the catalog defining it when an enabled one does, and every
+// enabled registry entry providing it (0010:D37, kept by 0015:D2). The
+// providers are read from ProvidedBy, never counted here: a contract is
+// over-subscribed when two or more registry entries (two majors of one
+// catalog are two) provide it, whether or not its defining catalog is
+// enabled. A registry entry is what the remedy acts on, a spec.registry key
+// to disable or a claim's spec.catalog to withdraw.
 func overSubscribedFinding(inv *platform.ContractInventory) string {
 	contracts := slices.Sorted(slices.Values(inv.OverSubscribed))
 
@@ -83,8 +94,8 @@ func overSubscribedFinding(inv *platform.ContractInventory) string {
 	fmt.Fprintf(&b, "platform is not routable: %s; a platform package cannot be generated until one competing catalog is disabled or its claim removed:",
 		counted(len(contracts), "over-subscribed contract", "over-subscribed contracts"))
 	for _, contract := range contracts {
-		requiredBy := slices.Sorted(slices.Values(inv.RequiredBy[contract]))
-		fmt.Fprintf(&b, "\n  %s%s required by %s", contract, definedBy(inv, contract), strings.Join(requiredBy, ", "))
+		providers := slices.Sorted(slices.Values(inv.ProvidedBy[contract]))
+		fmt.Fprintf(&b, "\n  %s%s provided by %s", contract, definedBy(inv, contract), strings.Join(providers, ", "))
 	}
 	return b.String()
 }
@@ -147,9 +158,11 @@ func setContractsFulfilled(plat *releasesv1alpha1.Platform, inv *platform.Contra
 }
 
 // definedBy renders the catalog that lists contract, as the parenthetical
-// every diagnostic prints beside it. An inventory whose DefinedBy is missing
-// the key would be a core defect; the message drops the parenthetical rather
-// than printing an empty one.
+// every diagnostic prints beside it. DefinedBy lacks the key when no enabled
+// catalog defines the contract: its defining catalog is disabled or absent
+// while registry entries still provide it, which over-subscription counts all
+// the same. The message then drops the parenthetical rather than printing an
+// empty one.
 func definedBy(inv *platform.ContractInventory, contract string) string {
 	if catalog := inv.DefinedBy[contract]; catalog != "" {
 		return " (defined by " + catalog + ")"

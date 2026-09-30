@@ -17,12 +17,14 @@ limitations under the License.
 package controller
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	oerrors "github.com/open-platform-model/library/opm/errors"
 	"github.com/open-platform-model/library/opm/platform"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -31,12 +33,15 @@ import (
 
 // The FQNs below model the shapes the refusals name; no published catalog
 // pair produces either (the refusals are tested without a
-// refusing catalog pair), so the inventories are hand-built.
+// refusing catalog pair), so the inventories are hand-built. The *Catalog
+// constants are registry keys (path with major), the values ProvidedBy lists.
 // backupTrait and restoreTrait are the package's existing contract FQNs
 // (transformerregistration_catalog_test.go).
 const (
 	opmCatalog    = "opmodel.dev/catalogs/opm@v4"
 	veleroCatalog = "opmodel.dev/catalogs/velero@v1"
+	k8upCatalog   = "opmodel.dev/catalogs/k8up@v1"
+	k8upCatalogV2 = "opmodel.dev/catalogs/k8up@v2"
 
 	k8upSchedule   = "opmodel.dev/catalogs/k8up/transformers/schedule@1.0.0"
 	veleroSchedule = "opmodel.dev/catalogs/velero/transformers/schedule@1.0.0"
@@ -74,11 +79,12 @@ func TestInventoryRefusal(t *testing.T) {
 			wantRefused: false,
 		},
 		{
-			name: "over-subscribed only names the contract, its catalog and every requiring transformer",
+			name: "over-subscribed only names the contract, its catalog and every providing registry entry",
 			inv: &platform.ContractInventory{
 				DefinedBy:  map[string]string{backupTrait: opmCatalog},
 				RequiredBy: map[string][]string{backupTrait: {veleroSchedule, k8upSchedule}},
-				// Core lists in comprehension order; the message sorts.
+				// The message sorts whatever order it is handed.
+				ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
 				OverSubscribed: []string{backupTrait},
 				Routable:       false,
 				Discriminated:  true,
@@ -87,7 +93,7 @@ func TestInventoryRefusal(t *testing.T) {
 			wantReason:  status.OverSubscribedContractsReason,
 			wantMessage: "platform is not routable: 1 over-subscribed contract; " +
 				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
-				"\n  " + backupTrait + " (defined by " + opmCatalog + ") required by " + k8upSchedule + ", " + veleroSchedule,
+				"\n  " + backupTrait + " (defined by " + opmCatalog + ") provided by " + k8upCatalog + ", " + veleroCatalog,
 		},
 		{
 			name: "two over-subscribed contracts are listed in sorted order with an agreeing count",
@@ -100,6 +106,10 @@ func TestInventoryRefusal(t *testing.T) {
 					restoreTrait: {veleroSchedule, k8upSchedule},
 					backupTrait:  {veleroSchedule, k8upSchedule},
 				},
+				ProvidedBy: map[string][]string{
+					restoreTrait: {veleroCatalog, k8upCatalog},
+					backupTrait:  {k8upCatalog, veleroCatalog},
+				},
 				OverSubscribed: []string{restoreTrait, backupTrait},
 				Routable:       false,
 				Discriminated:  true,
@@ -108,8 +118,8 @@ func TestInventoryRefusal(t *testing.T) {
 			wantReason:  status.OverSubscribedContractsReason,
 			wantMessage: "platform is not routable: 2 over-subscribed contracts; " +
 				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
-				"\n  " + backupTrait + " (defined by " + opmCatalog + ") required by " + k8upSchedule + ", " + veleroSchedule +
-				"\n  " + restoreTrait + " (defined by " + veleroCatalog + ") required by " + k8upSchedule + ", " + veleroSchedule,
+				"\n  " + backupTrait + " (defined by " + opmCatalog + ") provided by " + k8upCatalog + ", " + veleroCatalog +
+				"\n  " + restoreTrait + " (defined by " + veleroCatalog + ") provided by " + k8upCatalog + ", " + veleroCatalog,
 		},
 		{
 			name: "a comparable pair names broader, narrower and the shared contracts",
@@ -139,6 +149,7 @@ func TestInventoryRefusal(t *testing.T) {
 					backupTrait:       {veleroSchedule, k8upSchedule},
 					containerResource: {mirrorTransformer, deployTransformer},
 				},
+				ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
 				OverSubscribed: []string{backupTrait},
 				Comparable: []platform.ComparablePredicates{
 					{Broader: mirrorTransformer, Narrower: deployTransformer, Contracts: []string{containerResource}},
@@ -150,7 +161,7 @@ func TestInventoryRefusal(t *testing.T) {
 			wantReason:  status.OverSubscribedContractsReason,
 			wantMessage: "platform is not routable: 1 over-subscribed contract; " +
 				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
-				"\n  " + backupTrait + " (defined by " + opmCatalog + ") required by " + k8upSchedule + ", " + veleroSchedule +
+				"\n  " + backupTrait + " (defined by " + opmCatalog + ") provided by " + k8upCatalog + ", " + veleroCatalog +
 				"\n\n" +
 				"platform is not discriminated: 1 comparable transformer pair; " +
 				"every component the narrower transformer matches is also matched by the broader one, so both would render (0015:D5):" +
@@ -161,6 +172,7 @@ func TestInventoryRefusal(t *testing.T) {
 			inv: &platform.ContractInventory{
 				DefinedBy:      map[string]string{},
 				RequiredBy:     map[string][]string{backupTrait: {k8upSchedule, veleroSchedule}},
+				ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
 				OverSubscribed: []string{backupTrait},
 				Routable:       false,
 				Discriminated:  true,
@@ -169,7 +181,44 @@ func TestInventoryRefusal(t *testing.T) {
 			wantReason:  status.OverSubscribedContractsReason,
 			wantMessage: "platform is not routable: 1 over-subscribed contract; " +
 				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
-				"\n  " + backupTrait + " required by " + k8upSchedule + ", " + veleroSchedule,
+				"\n  " + backupTrait + " provided by " + k8upCatalog + ", " + veleroCatalog,
+		},
+		{
+			// Two majors of one provider catalog are two registry entries,
+			// so two providers of the contract.
+			name: "two majors of one provider catalog are named as two registry entries",
+			inv: &platform.ContractInventory{
+				DefinedBy:      map[string]string{backupTrait: opmCatalog},
+				RequiredBy:     map[string][]string{backupTrait: {k8upSchedule}},
+				ProvidedBy:     map[string][]string{backupTrait: {k8upCatalogV2, k8upCatalog}},
+				OverSubscribed: []string{backupTrait},
+				Routable:       false,
+				Discriminated:  true,
+			},
+			wantRefused: true,
+			wantReason:  status.OverSubscribedContractsReason,
+			wantMessage: "platform is not routable: 1 over-subscribed contract; " +
+				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
+				"\n  " + backupTrait + " (defined by " + opmCatalog + ") provided by " + k8upCatalog + ", " + k8upCatalogV2,
+		},
+		{
+			// The defining catalog is disabled or absent, so DefinedBy and
+			// RequiredBy carry no key for the contract; ProvidedBy still
+			// names who supplies it.
+			name: "a contract whose defining catalog is not enabled is named with its providers",
+			inv: &platform.ContractInventory{
+				DefinedBy:      map[string]string{},
+				RequiredBy:     map[string][]string{},
+				ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
+				OverSubscribed: []string{backupTrait},
+				Routable:       false,
+				Discriminated:  true,
+			},
+			wantRefused: true,
+			wantReason:  status.OverSubscribedContractsReason,
+			wantMessage: "platform is not routable: 1 over-subscribed contract; " +
+				"a platform package cannot be generated until one competing catalog is disabled or its claim removed:" +
+				"\n  " + backupTrait + " provided by " + k8upCatalog + ", " + veleroCatalog,
 		},
 	}
 
@@ -207,6 +256,12 @@ func TestInventoryRefusal(t *testing.T) {
 // partial inventory, that is what an operator would see, and this test is
 // what catches it.
 //
+// A platform predating a field the library reads comes back typed: the error
+// is a *oerrors.PlatformCoreTooOldError naming the missing field and the core
+// release that first derives it. The reconciler words none of it: the
+// BuildFailed branch surfaces the error verbatim, so the kernel's message is
+// what names the field and the release to re-pin to.
+//
 // The reconciler's own branch is not exercised end to end: reaching it needs
 // a built platform whose core predates the library's pin, which the library's
 // generator cannot produce, and stubbing the build seam is the seam-whose-
@@ -223,6 +278,13 @@ func TestInventoryUnreadableIsAnErrorNotAnEmptyInventory(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "contracts") {
 		t.Errorf("the error must name the field the read failed on, got %q", err)
+	}
+	var tooOld *oerrors.PlatformCoreTooOldError
+	if !errors.As(err, &tooOld) {
+		t.Fatalf("a platform carrying no #contracts must come back as a *PlatformCoreTooOldError, got %T: %v", err, err)
+	}
+	if tooOld.Field != "#contracts" {
+		t.Errorf("PlatformCoreTooOldError.Field = %q, want %q", tooOld.Field, "#contracts")
 	}
 }
 
@@ -243,8 +305,12 @@ func TestInventoryRefusal_MessageIsOrderIndependent(t *testing.T) {
 	}
 
 	one := &platform.ContractInventory{
-		DefinedBy:      definedByCatalog,
-		RequiredBy:     requiredBy,
+		DefinedBy:  definedByCatalog,
+		RequiredBy: requiredBy,
+		ProvidedBy: map[string][]string{
+			backupTrait:  {veleroCatalog, k8upCatalog},
+			restoreTrait: {k8upCatalog, veleroCatalog},
+		},
 		OverSubscribed: []string{backupTrait, restoreTrait},
 		Comparable: []platform.ComparablePredicates{
 			{Broader: mirrorTransformer, Narrower: deployTransformer, Contracts: []string{containerResource, volumeResource}},
@@ -259,6 +325,10 @@ func TestInventoryRefusal_MessageIsOrderIndependent(t *testing.T) {
 			backupTrait:       {k8upSchedule, veleroSchedule},
 			restoreTrait:      {veleroSchedule, k8upSchedule},
 			containerResource: {deployTransformer, mirrorTransformer},
+		},
+		ProvidedBy: map[string][]string{
+			backupTrait:  {k8upCatalog, veleroCatalog},
+			restoreTrait: {veleroCatalog, k8upCatalog},
 		},
 		OverSubscribed: []string{restoreTrait, backupTrait},
 		Comparable: []platform.ComparablePredicates{
@@ -290,6 +360,7 @@ func TestInventoryRefusal_DoesNotMutateTheInventory(t *testing.T) {
 	inv := &platform.ContractInventory{
 		DefinedBy:      map[string]string{backupTrait: opmCatalog, restoreTrait: veleroCatalog},
 		RequiredBy:     map[string][]string{backupTrait: {veleroSchedule, k8upSchedule}},
+		ProvidedBy:     map[string][]string{backupTrait: {veleroCatalog, k8upCatalog}},
 		OverSubscribed: []string{restoreTrait, backupTrait},
 		Comparable: []platform.ComparablePredicates{
 			{Broader: mirrorTransformer, Narrower: deployTransformer, Contracts: []string{volumeResource, containerResource}},
@@ -308,6 +379,9 @@ func TestInventoryRefusal_DoesNotMutateTheInventory(t *testing.T) {
 	}
 	if got := inv.RequiredBy[backupTrait]; got[0] != veleroSchedule || got[1] != k8upSchedule {
 		t.Errorf("RequiredBy was reordered in place: %v", got)
+	}
+	if got := inv.ProvidedBy[backupTrait]; got[0] != veleroCatalog || got[1] != k8upCatalog {
+		t.Errorf("ProvidedBy was reordered in place: %v", got)
 	}
 	if got := inv.Comparable; got[0].Broader != mirrorTransformer || got[1].Broader != deployTransformer {
 		t.Errorf("Comparable was reordered in place: %v", got)

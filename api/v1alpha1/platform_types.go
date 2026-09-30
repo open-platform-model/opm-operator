@@ -187,9 +187,11 @@ type PlatformStatus struct {
 	// could not be read; the message names the dependency, the entry or the
 	// field), GenerateFailed (the module could not be written to the
 	// operator's disk), OverSubscribedContracts (the module built, but a
-	// provider-fulfilled contract is required by transformers from more than
-	// one enabled catalog, so the platform cannot route it; the message names
-	// each contract, its defining catalog and the requiring transformers) or
+	// provider-fulfilled contract is provided by more than one enabled
+	// registry entry, counted per entry so two majors of one catalog are
+	// two, and whether or not its defining catalog is enabled; the platform
+	// cannot route it, and the message names each contract, its defining
+	// catalog when one is enabled and the providing registry entries) or
 	// ComparablePredicates (the module built, but two enabled transformers
 	// have comparable match predicates over a shared catalog-fulfilled
 	// contract, so both would render every component the narrower matches;

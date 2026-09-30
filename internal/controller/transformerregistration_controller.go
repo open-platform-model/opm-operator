@@ -213,7 +213,18 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 	// refusal above, which is about two claims naming the same CATALOG; this
 	// one is about two providers of the same CONTRACT, which can arrive from
 	// different catalogs entirely.
-	providers, err := subscriptionProviders(generated.Platform)
+	//
+	// Which enabled registry entries provide a contract is the built
+	// platform's own count (#contracts.providedBy, read through Contracts),
+	// the one the render refuses on; acceptance never recounts it.
+	if generated.Platform == nil {
+		// A generated record carrying no built platform. Contracts reads
+		// p.Package through a pointer receiver, so calling it here would
+		// panic; there is nothing to judge the claim against yet.
+		return r.deferVerdict(ctx, patcher, &claim, status.PlatformNotReadyReason,
+			"The generated platform's contract providers could not be read: no platform has been built")
+	}
+	inv, err := generated.Platform.Contracts()
 	if err != nil {
 		// The platform's providers could not be read, so the claim cannot be
 		// judged against them. Not a refusal, for the same reason an absent
@@ -221,11 +232,11 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 		return r.deferVerdict(ctx, patcher, &claim, status.PlatformNotReadyReason,
 			fmt.Sprintf("The generated platform's contract providers could not be read: %v", err))
 	}
-	if contract, catalogPath := subscribedContract(claim.Spec.Provides, providers, claim.Spec.Catalog); contract != "" {
+	if contract, entry := subscribedContract(claim.Spec.Provides, inv.ProvidedBy, claim.Spec.Catalog); contract != "" {
 		return r.refuse(ctx, patcher, &claim, status.ContractSubscribedReason, fmt.Sprintf(
 			"Contract %s is already provided by subscribed catalog %s; a contract has exactly one provider, "+
 				"so disable that subscription or withdraw this claim",
-			contract, catalogPath))
+			contract, entry))
 	}
 
 	contract, contractHolder, err := r.activeContractHolder(ctx, &claim)

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-alpha.22](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.21...v1.0.0-alpha.22) (2026-09-30)
+
+
+### Bug Fixes
+
+* **controller:** judge build compatibility against the provider's own major ([#156](https://github.com/open-platform-model/opm-operator/issues/156)) ([32d0932](https://github.com/open-platform-model/opm-operator/commit/32d09327fdd2d46920c18d034537e74a0f9647c0))
+* **controller:** name colliding contract keys in the platform refusal ([#158](https://github.com/open-platform-model/opm-operator/issues/158)) ([6500c73](https://github.com/open-platform-model/opm-operator/commit/6500c73a28e28115695de4e7246353784b32c1bc))
+
 ## [1.0.0-alpha.21](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-alpha.20...v1.0.0-alpha.21) (2026-09-30)
 
 

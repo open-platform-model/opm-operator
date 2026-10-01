@@ -1,16 +1,22 @@
 # Declares which enhancement decisions this change implements. Consumed by
 # `task enhancements:delivery:log` at archive time.
 #
-# 0021 D10 ("Release tags are immutable") is on enhancements PR 74, not yet on
-# main. Log delivery only after D10 is on enhancements main; re-check the
-# requirement numbers this change cites (R1, R3, R8) against that text first.
-# Release branches (D10 R5) are Phase 2 and are not claimed here.
+# decisions is deliberately empty. 0021 D10 ("Release tags are immutable",
+# enhancements PR 74, not yet on main) spans five repos, the org rulesets and
+# the Phase 2 release-branch automation; enhancements' schema.cue allows a
+# number here only when the change delivers the decision whole, and D10 is
+# claimed by whichever change completes it (Phase 2 at the earliest). The
+# archive still logs this landing against 0021.
 #
-# This change covers the operator's share of D10: its release path never
-# re-points a version registry tag, and its flow becomes draft-first so the
-# repository can join immutable releases. The rulesets and the immutable
-# release toggle are owner actions and are not claimed here.
+# Requirements this change carries for the operator's release path:
+#   0021:D10:R1  no workflow moves, deletes or re-creates a tag
+#   0021:D10:R3  :vX.Y.Z always resolves to the content first pushed under it
+#   0021:D10:R8  draft-first flow, so the operator can join immutable releases
+# Relied on, owner actions (gated in tasks.md): R6 (tag rulesets), R7
+# (tags-create-app-only). Phase 2, not carried: R5 (release branches), R9
+# (version-line rule). Re-check these numbers against D10 on enhancements
+# main before archiving (task 4.2).
 implements:
   - enhancement: "0021"
-    decisions: [D10]
+    decisions: []
     resolves: []

@@ -298,6 +298,7 @@ jobs:
         run: |
           .github/scripts/release-guard.sh assert-draft "${TAG}"
           gh release upload "${TAG}" dist/opm-examples.tar.gz --repo "${GH_REPO}" --clobber
+          .github/scripts/release-guard.sh assert-draft "${TAG}"
           gh release upload "${TAG}" dist/examples/*.yaml --repo "${GH_REPO}" --clobber
 
   publish-release:

@@ -13,10 +13,10 @@ Design.md "Research & Decisions" records the scratch proof; no assumption is unv
 
 ## 1. Shared check and the manual pin path (hack, .tasks/examples.yaml)
 
-- [ ] 1.1 Apply design.md Appendix A to `hack/fixtures.sh` as is. Verify: `shellcheck hack/fixtures.sh` is clean; once the cli's section 1 is committed, `git -C <workspace>/cli show test/fixture-consumer-guard:hack/fixtures.sh | cmp - hack/fixtures.sh` reports no difference.
-- [ ] 1.2 Apply the `.tasks/examples.yaml` part of design.md Appendix B: the `consumers` task (design.md D2) and the follow loop plus `desc` change in `pin` (D1). Verify: `CUE_CACHE_DIR=$(mktemp -d) task examples:consumers` prints four `ok`; with `test/fixtures/modulepackages/podinfo/cue.mod/module.cue` set to core `v2.0.0-alpha.6` it prints the diff and a `FAIL` line and fails, and `FIX=1` then restores the file byte for byte (`git diff --exit-code`).
-- [ ] 1.3 Verify the manual path: set the podinfo modulepackage to core `v2.0.0-alpha.6` and catalogs/opm `v4.0.1`, run `opm module version set 0.1.900 test/fixtures/modules/podinfo` and `task examples:pin`: the modulepackage pins `v0.1.900`, `v2.0.0-beta.1` and `v4.4.4`, and the output carries two "follows the module" lines. Discard every file change from this task (`git checkout -- .`).
-- [ ] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green and `openspec validate fixture-consumer-guard --strict` passes, then commit `test(fixtures): make modulepackage pins follow their module`.
+- [x] 1.1 Apply design.md Appendix A to `hack/fixtures.sh` as is. Verify: `shellcheck hack/fixtures.sh` is clean; once the cli's section 1 is committed, `git -C <workspace>/cli show test/fixture-consumer-guard:hack/fixtures.sh | cmp - hack/fixtures.sh` reports no difference.
+- [x] 1.2 Apply the `.tasks/examples.yaml` part of design.md Appendix B: the `consumers` task (design.md D2) and the follow loop plus `desc` change in `pin` (D1). Verify: `CUE_CACHE_DIR=$(mktemp -d) task examples:consumers` prints four `ok`; with `test/fixtures/modulepackages/podinfo/cue.mod/module.cue` set to core `v2.0.0-alpha.6` it prints the diff and a `FAIL` line and fails, and `FIX=1` then restores the file byte for byte (`git diff --exit-code`).
+- [x] 1.3 Verify the manual path: set the podinfo modulepackage to core `v2.0.0-alpha.6` and catalogs/opm `v4.0.1`, run `opm module version set 0.1.900 test/fixtures/modules/podinfo` and `task examples:pin`: the modulepackage pins `v0.1.900`, `v2.0.0-beta.1` and `v4.4.4`, and the output carries two "follows the module" lines. Discard every file change from this task (`git checkout -- .`).
+- [x] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green and `openspec validate fixture-consumer-guard --strict` passes, then commit `test(fixtures): make modulepackage pins follow their module`.
 
 ## 2. Run the check in CI and the seeded test task (test.yml, .tasks/dev.yaml, AGENTS.md)
 

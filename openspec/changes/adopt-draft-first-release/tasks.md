@@ -1,0 +1,38 @@
+# Tasks: adopt-draft-first-release
+
+Worktree `opm-operator/.claude/worktrees/tags-draft-first`, branch `tags/draft-first-release`. Every command runs inside that worktree. Workflow lint in every section: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/release.yml` (it also runs shellcheck on `run:` blocks when shellcheck is on PATH). Commit messages: no bare at-sign, no body line starting with a word followed by an opening parenthesis, no `Release-As:` footer, only the plain `Co-Authored-By: Claude <noreply@anthropic.com>` trailer. Never create, move or delete a tag or a release in this repo, never touch org settings or rulesets, never merge a PR, never run a root workspace task.
+
+## Gates
+
+Supervisor ticks each after confirming it; a worker never ticks these.
+
+- [ ] G-sandbox Unknowns U1 to U6 in design.md proven in `open-platform-model/release-flow-sandbox` with this change's config and job shape (blocks section 1). Recorded: run URLs and outputs.
+- [ ] G-owner Owner has reviewed the sandbox evidence and approves draft-first for opm-operator (blocks merging the PR).
+
+## 1. Record the sandbox evidence (spike)
+
+- [ ] 1.1 After G-sandbox: write the evidence for U1 to U6 into design.md under "G-sandbox: unknowns proven before section 1" (run URL, observed output per item). Any item that contradicts the design (for example U3 fails, or U2 re-proposes the drafted version) stops the change here: report it and revise design.md and the spec deltas before section 2.
+- [ ] 1.2 `openspec validate adopt-draft-first-release --strict` passes; `task dev:fmt dev:vet dev:lint dev:test` green (no code changed; confirms the tree), then commit `chore(openspec): record the draft-first sandbox evidence`.
+
+## 2. Tag-SHA assertion and the version-tag guard
+
+Works with today's published-release flow, so `main` stays releasable if only this section landed.
+
+- [ ] 2.1 `release.yml` job `release-please`: export `sha: ${{ steps.release.outputs.sha }}`; add the step "Assert the release tag is at the release commit" (`if: steps.release.outputs.releases_created == 'true'`, env `TAG`, `WANT`) with the script from design.md "Tag-SHA assertion right after release-please". Verify: run the script locally with `GITHUB_REPOSITORY=open-platform-model/opm-operator TAG=v1.0.0-beta.2` and `WANT=27d9dfc3c03777f218d69b3bbac435cc06b52af5` (passes) and with a different `WANT` (fails, exit 1, message names both commits).
+- [ ] 2.2 Job `image-release`, step "Extract image metadata": replace `type=sha,prefix=sha-,format=short` with `type=raw,value=sha-<first 7 of needs.release-please.outputs.sha>` (compute the short SHA in a prior step) and add `labels: org.opencontainers.image.revision=${{ needs.release-please.outputs.sha }}`. Verify: actionlint clean.
+- [ ] 2.3 Add step "Probe the release version tag" before QEMU/Buildx setup, after GHCR login, per design.md "Adopt by revision, not by digest": `docker buildx imagetools inspect "$REF" --format '{{json .Manifest.Digest}}'`; on output containing `: not found` set `state=absent`; on a digest read the revision with `--format '{{ index (index .Image "linux/amd64").Config.Labels "org.opencontainers.image.revision" }}'` and set `state=adopt` plus `digest=` when it equals the release commit, otherwise fail; any other output fails. Gate the QEMU, Buildx and "Build and push image" steps on `state == 'absent'`, and route every later `steps.build.outputs.digest` reference through one `steps.digest.outputs.digest` (build digest or adopted digest). Verify: run the probe script locally against `:v1.0.0-beta.2` with release commit `27d9dfc3c03777f218d69b3bbac435cc06b52af5` (adopt, digest `sha256:a130b542...`), with another commit (fail) and against `:v9.9.9-nope` (absent); actionlint clean.
+- [ ] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green and actionlint clean, then commit `ci(release): assert the tag commit and never overwrite a version image tag`.
+
+## 3. Draft-first release
+
+- [ ] 3.1 `release-please-config.json` package `"."`: add `"draft": true` and `"force-tag-creation": true`; no other key changes, no `release-as`. Verify: `jq -e '.packages["."].draft == true and .packages["."]["force-tag-creation"] == true' release-please-config.json`; `git diff --stat` touches only that file for this task.
+- [ ] 3.2 Upload steps in `image-release` (`install.yaml`) and `publish-examples` (bundle and manifests): prepend the draft check from design.md "Assets upload only to a draft" (`gh release view "$TAG" --json isDraft -q .isDraft` must print `true`, else `::error::` naming the tag and "release the next version", exit 1). Keep `--clobber`.
+- [ ] 3.3 New job `publish-release` per design.md "One final publish job": `needs: [release-please, image-release, publish-examples]`, `if: needs.release-please.outputs.releases_created == 'true'`, `permissions: contents: write` only, no checkout, `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`; already-published is a no-op; asserts `install.yaml` and `opm-examples.tar.gz` via `gh release view "$TAG" --json assets`; then `gh release edit "$TAG" --draft=false`. Verify: actionlint clean; `grep -nE 'git tag|git push|gh release (delete|create)|--tag |--target|git/refs' .github/workflows/release.yml` returns nothing.
+- [ ] 3.4 `task dev:fmt dev:vet dev:lint dev:test` green and actionlint clean, then commit `ci(release): publish releases as drafts and make them public last`.
+
+## 4. Record the decision, verify and archive
+
+- [ ] 4.1 Add `adr/018-draft-first-release-and-immutable-version-tags.md` from `adr/TEMPLATE.md` (status Accepted; context: the workspace immutable-tags rule and immutable releases; decision: the four mechanisms of design.md; consequences: roll-forward recovery, the adopt-by-revision trade-off). Add one bullet to `AGENTS.md` under Registry, after "Commit type decides the release": release tags are immutable per the workspace rule (root `AGENTS.md`); releases are drafts until `publish-release` makes them public; recovery is "Re-run failed jobs" before publish and the next `1.0.0-beta.N` after. If enhancements 0021 has by now assigned a number to its "Release tags are immutable" decision on its `main`, add `enhancement.yaml` (`implements: [{enhancement: "0021", decisions: [D<n>], resolves: []}]`); otherwise add none and say so in the PR. Verify: no em-dash (U+2014) in any added line, no bare at-sign.
+- [ ] 4.2 `openspec validate adopt-draft-first-release --strict` passes, then run the opsx verify skill on this change. Pass criterion: the only CRITICAL findings are the open Gates boxes and tasks 4.2 to 4.4.
+- [ ] 4.3 `openspec archive adopt-draft-first-release --yes`. Verify: `openspec/specs/release-automation/spec.md` carries the four new requirements and still carries the scenario headings "Release PR merged" and "Release PR closed without merge"; `openspec/specs/container-image-publish/spec.md` keeps "First release v0.1.0", "Subsequent release v0.2.0", "Release asset upload", "Default build-installer unchanged" and "Install manifest image is immutable"; `openspec validate release-automation --type spec --strict` and `openspec validate container-image-publish --type spec --strict` pass; the `openspec validate --specs --strict` failure count stays at the 19 that pre-date this change. When `enhancement.yaml` exists, log delivery per the archive operation guidance after merge, not now.
+- [ ] 4.4 `task dev:fmt dev:vet dev:lint dev:test` green on the branch head, `git diff origin/main...HEAD --stat` lists only `release-please-config.json`, `.github/workflows/release.yml`, `adr/018-*`, `AGENTS.md` and `openspec/`, then commit `chore(openspec): archive adopt-draft-first-release`.

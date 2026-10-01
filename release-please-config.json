@@ -7,6 +7,8 @@
   "packages": {
     ".": {
       "release-type": "go",
+      "draft": true,
+      "force-tag-creation": true,
       "package-name": "opm-operator",
       "changelog-path": "CHANGELOG.md",
       "extra-files": ["internal/version/version.go"],

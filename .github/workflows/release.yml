@@ -9,6 +9,15 @@ permissions:
   contents: write
   pull-requests: write
 
+# One release run at a time. Draft releases defeat release-please's duplicate
+# guard (GitHub accepts several drafts for one tag), and two image jobs could
+# both find the version tag absent. A queued run is never cancelled mid-flight;
+# GitHub replaces an older pending run, which is safe because release-please
+# derives its state from the branch head and the release PR labels.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: open-platform-model/opm-operator
@@ -64,9 +73,6 @@ jobs:
         with:
           version: 3.x
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -77,10 +83,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The version tag always names the image first pushed under it
+      # (0021:D10:R3). absent: build and push. reuse: a previous attempt of
+      # this release already pushed it from the release commit, so push
+      # nothing under it and reuse its digest. Anything else fails here.
+      - name: Probe the release version tag
+        id: probe
+        env:
+          REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.tag_name }}
+        run: |
+          if ! out=$(.github/scripts/image-tag-guard.sh probe "${REF}" "$(git rev-parse HEAD)"); then
+            echo "${out}"
+            exit 1
+          fi
+          echo "${out}"
+          echo "${out}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up QEMU
+        if: steps.probe.outputs.state == 'absent'
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
+          # Read the SHA from the checked-out tag, not the pushed commit, so the
+          # revision label and sha-<short> name the release commit.
+          context: git
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
             latest=false
@@ -91,6 +120,7 @@ jobs:
 
       - name: Build and push image
         id: build
+        if: steps.probe.outputs.state == 'absent'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -101,13 +131,49 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Resolve the release image digest
+        id: digest
+        env:
+          BUILT: ${{ steps.build.outputs.digest }}
+          REUSED: ${{ steps.probe.outputs.digest }}
+        run: |
+          digest="${BUILT:-${REUSED}}"
+          case "${digest}" in
+          sha256:*) echo "digest=${digest}" >> "${GITHUB_OUTPUT}" ;;
+          *) echo "::error::no release image digest (built '${BUILT}', reused '${REUSED}')"; exit 1 ;;
+          esac
+
+      - name: Verify the version tag names the pushed image
+        if: steps.probe.outputs.state == 'absent'
+        env:
+          REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.tag_name }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          .github/scripts/image-tag-guard.sh verify "${REF}" "${DIGEST}"
+
+      # A cancelled first attempt may have pushed the version tag without the
+      # mutable ones; point sha-<short> and latest at the reused digest.
+      - name: Re-point the mutable tags to the reused image
+        if: steps.probe.outputs.state == 'reuse'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          VERSION_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.tag_name }}
+          DIGEST: ${{ steps.probe.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && [ "$tag" != "${VERSION_REF}" ] && args+=(-t "$tag")
+          done <<< "${TAGS}"
+          docker buildx imagetools create "${args[@]}" "${IMAGE}@${DIGEST}"
+
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign image with cosign (keyless)
         env:
           COSIGN_EXPERIMENTAL: "1"
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           images=()
@@ -119,7 +185,7 @@ jobs:
       - name: Generate SBOM (SPDX JSON)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.digest.outputs.digest }}
           format: spdx-json
           output-file: ${{ github.workspace }}/sbom.spdx.json
           upload-release-assets: false
@@ -128,7 +194,7 @@ jobs:
       - name: Attest SBOM as cosign attestation
         env:
           COSIGN_EXPERIMENTAL: "1"
-          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.digest.outputs.digest }}
           SBOM_FILE: ${{ github.workspace }}/sbom.spdx.json
         run: |
           if [ ! -s "${SBOM_FILE}" ]; then
@@ -144,21 +210,25 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
 
       - name: Render digest-pinned install manifest
         env:
-          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.tag_name }}@${{ steps.build.outputs.digest }}
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.release-please.outputs.tag_name }}@${{ steps.digest.outputs.digest }}
         run: |
           task operator:installer IMG="${IMG}"
 
-      - name: Upload install.yaml to GitHub release
+      # Assets go to the draft only; --clobber keeps "Re-run failed jobs"
+      # idempotent and never touches a published release.
+      - name: Upload install.yaml to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release upload "${TAG}" dist/install.yaml --clobber
+          .github/scripts/release-guard.sh assert-draft "${TAG}"
+          gh release upload "${TAG}" dist/install.yaml --repo "${GH_REPO}" --clobber
 
   publish-examples:
     name: Publish example modules and manifests
@@ -220,10 +290,38 @@ jobs:
       - name: Bundle example manifests
         run: task examples:bundle
 
-      - name: Upload example manifests to GitHub release
+      - name: Upload example manifests to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release upload "${TAG}" dist/opm-examples.tar.gz --clobber
-          gh release upload "${TAG}" dist/examples/*.yaml --clobber
+          .github/scripts/release-guard.sh assert-draft "${TAG}"
+          gh release upload "${TAG}" dist/opm-examples.tar.gz --repo "${GH_REPO}" --clobber
+          .github/scripts/release-guard.sh assert-draft "${TAG}"
+          gh release upload "${TAG}" dist/examples/*.yaml --repo "${GH_REPO}" --clobber
+
+  publish-release:
+    name: Publish the draft release
+    # The single publish point: the release becomes public only after every
+    # job that attaches an asset has succeeded. A failed run leaves a draft;
+    # recover with "Re-run failed jobs", never "Re-run all jobs".
+    needs: [release-please, image-release, publish-examples]
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the draft release
+    steps:
+      - name: Checkout the release guard at the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          sparse-checkout: .github/scripts
+
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          .github/scripts/release-guard.sh publish "${TAG}"

@@ -2,7 +2,7 @@
 # `task enhancements:delivery:log` at archive time.
 #
 # decisions is deliberately empty. 0021 D10 ("Release tags are immutable",
-# enhancements PR 74, not yet on main) spans five repos, the org rulesets and
+# enhancements PR 74, on main since 2026-10-01) spans five repos, the org rulesets and
 # the Phase 2 release-branch automation; enhancements' schema.cue allows a
 # number here only when the change delivers the decision whole, and D10 is
 # claimed by whichever change completes it (Phase 2 at the earliest). The
@@ -14,8 +14,8 @@
 #   0021:D10:R8  draft-first flow, so the operator can join immutable releases
 # Relied on, owner actions (gated in tasks.md): R6 (tag rulesets), R7
 # (tags-create-app-only). Phase 2, not carried: R5 (release branches), R9
-# (version-line rule). Re-check these numbers against D10 on enhancements
-# main before archiving (task 4.2).
+# (version-line rule), R10 to R12 (cut action, release/** checks, cut
+# recovery). Numbers checked against D10 on enhancements main, 2026-10-01.
 implements:
   - enhancement: "0021"
     decisions: []

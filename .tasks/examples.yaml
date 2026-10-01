@@ -64,8 +64,15 @@ tasks:
     cmds:
       - FIXTURES_DIR={{.MODULES_DIR}} OPM_BIN={{.OPM}} CUE_REGISTRY='{{.PUBLISH_REGISTRY}}' SINCE='{{.SINCE}}' PRERELEASE='{{.PRERELEASE}}' hack/fixtures.sh publish
 
+  consumers:
+    desc: 'Check that every modulepackage pins exactly what CUE resolves for the module version it names (hack/fixtures.sh consumers). Resolves through CONSUMERS_CUE_REGISTRY: GHCR by default (the root CUE_REGISTRY var defaults to an all-local mapping, so it is not reused), the seeded MIXED mapping in PR CI. FIX=1 writes the resolved cue.mod back.'
+    vars:
+      CONSUMERS_CUE_REGISTRY: '{{.CONSUMERS_CUE_REGISTRY | default .GHCR_CUE_REGISTRY}}'
+    cmds:
+      - FIXTURES_DIR={{.MODULES_DIR}} CUE_REGISTRY='{{.CONSUMERS_CUE_REGISTRY}}' FIX='{{.FIX}}' hack/fixtures.sh consumers $(find {{.RELEASES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort)
+
   pin:
-    desc: 'Re-pin every consumer of an example module''s version to its declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>): the module''s moduleinstance.yaml, its modulepackage fixture''s cue.mod dep, and config/samples. Used by PR e2e to point the fleet at the just-published pre-release tags.'
+    desc: 'Re-pin every consumer of an example module''s version to its declared version, optionally with a PRERELEASE segment (matches examples:publish PRERELEASE=<id>): the module''s moduleinstance.yaml, its modulepackage fixture''s cue.mod dep (its shared core and catalog pins follow the module), and config/samples. Used by PR e2e to point the fleet at the just-published pre-release tags.'
     vars:
       PRERELEASE: '{{.PRERELEASE | default ""}}'
       SAMPLE_MI: '{{.SAMPLE_MI | default "config/samples/opmodel.dev_v1alpha1_moduleinstance.yaml"}}'
@@ -102,6 +109,18 @@ tasks:
           if [ -f "$mp" ] && grep -q "\"${path}\"" "$mp"; then
             awk -v p="\"${path}\"" -v v="${tag}" 'index($0,p) {f=1} f && /v: "/ {sub(/"[^"]+"/, "\"" v "\""); f=0} {print}' "$mp" > "$mp.tmp" && mv "$mp.tmp" "$mp"
             echo "pinned ${name} modulepackage dep -> ${tag}"
+            # Every other dep the modulepackage shares with the module (core,
+            # the catalogs) follows the module's pin: CUE keeps a dep the
+            # modulepackage already lists at its listed version, so a version
+            # re-pin alone would render the new module against a stale core.
+            for dep in $(sed -n 's/^[[:space:]]*"\([^"]*\)":[[:space:]]*{.*$/\1/p' "$dir/cue.mod/module.cue"); do
+              grep -q "\"${dep}\"" "$mp" || continue
+              want=$(awk -v p="\"${dep}\"" 'index($0,p) {f=1} f && /v: "/ {match($0, /"[^"]+"/); print substr($0, RSTART+1, RLENGTH-2); exit}' "$dir/cue.mod/module.cue")
+              have=$(awk -v p="\"${dep}\"" 'index($0,p) {f=1} f && /v: "/ {match($0, /"[^"]+"/); print substr($0, RSTART+1, RLENGTH-2); exit}' "$mp")
+              if [ -z "$want" ] || [ "$want" = "$have" ]; then continue; fi
+              awk -v p="\"${dep}\"" -v v="${want}" 'index($0,p) {f=1} f && /v: "/ {sub(/"[^"]+"/, "\"" v "\""); f=0} {print}' "$mp" > "$mp.tmp" && mv "$mp.tmp" "$mp"
+              echo "pinned ${name} modulepackage ${dep} ${have} -> ${want} (follows the module)"
+            done
           fi
           # config/samples ModuleInstance, when it instantiates this module.
           if [ -f "{{.SAMPLE_MI}}" ] && grep -q "path: ${path}$" "{{.SAMPLE_MI}}"; then

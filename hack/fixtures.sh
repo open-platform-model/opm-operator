@@ -33,6 +33,18 @@
 #            maps testing.opmodel.dev to (refuses a ghcr.io mapping)
 #   publish  publish the tree's fixtures to CUE_REGISTRY (default: GHCR);
 #            honours SINCE=<git-ref> and PRERELEASE=<id>
+#   consumers <dir>...
+#            check that each consumer (a dir holding a cue.mod that pins a
+#            fixture) pins exactly what CUE resolves for the fixture versions
+#            it names: in a scratch copy, `cue mod get <fixture>@<pinned>` per
+#            testing.opmodel.dev pin, then `cue mod tidy`, diffed against the
+#            committed module.cue. Needed because CUE keeps a dep the consumer
+#            already lists at its listed version: a consumer on a new fixture
+#            but a stale core passes `cue mod tidy --check` and evaluates
+#            against the stale core. Also fails on a tracked cue.mod outside
+#            FIXTURES_DIR that pins a fixture but is not listed. Resolves
+#            through CUE_REGISTRY (default: GHCR; the seeded mapping in PR CI).
+#            FIX=1 writes the resolved module.cue back instead of failing.
 #
 # Environment
 #   FIXTURES_DIR       fixture root; auto-detected (tests/fixtures/modules or
@@ -49,6 +61,7 @@
 #   SINCE              publish: skip fixtures unchanged since this git ref
 #   PRERELEASE         publish: append a SemVer pre-release segment to the tag
 #                      (e.g. e2e.gabc1234) so it never claims the release version
+#   FIX                consumers: 1 rewrites a drifted module.cue in place
 set -euo pipefail
 
 GHCR_REGISTRY='testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
@@ -83,6 +96,7 @@ UPSTREAM_REGISTRY=${UPSTREAM_REGISTRY:-$GHCR_REGISTRY}
 BASE_REF=${BASE_REF:-origin/main}
 SINCE=${SINCE:-}
 PRERELEASE=${PRERELEASE:-}
+FIX=${FIX:-}
 
 require_tools() {
   command -v cue >/dev/null || die "cue not on PATH"
@@ -257,11 +271,111 @@ cmd_publish() {
   publish_all
 }
 
+# fixture_deps <module.cue>: the testing.opmodel.dev dep keys a cue.mod pins
+# (dep keys only, never the `module:` line).
+fixture_deps() {
+  sed -n 's/^[[:space:]]*"\(testing\.opmodel\.dev\/[^"]*\)":[[:space:]]*{.*$/\1/p' "$1"
+}
+
+# dep_version <module.cue> <dep>: the v: pinned under <dep> (empty when absent).
+dep_version() {
+  awk -v p="\"$2\"" 'index($0, p) {f = 1} f && /v: "/ {match($0, /"[^"]+"/); print substr($0, RSTART + 1, RLENGTH - 2); exit}' "$1"
+}
+
+consumer_fail() {
+  echo "FAIL $1: $2" >&2
+}
+
+cmd_consumers() {
+  command -v cue >/dev/null || die "cue not on PATH"
+  [ "$#" -gt 0 ] || die "consumers: name the consumer dirs (each holds a cue.mod)"
+  export CUE_REGISTRY=${CUE_REGISTRY:-$GHCR_REGISTRY}
+  local scratch dir mod work deps dep ver out rc=0 ok listed f n=0
+  scratch=$(mktemp -d)
+  # shellcheck disable=SC2064 # expand now: $scratch is local to this function
+  trap "rm -rf '$scratch'" EXIT
+  echo "fixture consumers against $(testing_host)"
+  listed=" "
+  for dir in "$@"; do
+    dir=${dir%/}
+    dir=${dir#./}
+    n=$((n + 1))
+    mod="$dir/cue.mod/module.cue"
+    listed="${listed}${mod} "
+    echo "==> ${dir}"
+    if [ ! -f "$mod" ]; then
+      consumer_fail "$dir" "no cue.mod/module.cue"
+      rc=1
+      continue
+    fi
+    work="$scratch/$n"
+    mkdir -p "$work"
+    cp -R "$dir/." "$work/"
+    ok=1
+    deps=$(fixture_deps "$mod")
+    if [ -z "$deps" ]; then
+      consumer_fail "$dir" "pins no testing.opmodel.dev fixture; not a consumer"
+      rc=1
+      continue
+    fi
+    for dep in $deps; do
+      ver=$(dep_version "$mod" "$dep")
+      if [ -z "$ver" ]; then
+        consumer_fail "$dir" "no v: under \"$dep\""
+        ok=0
+        break
+      fi
+      # Same version on purpose: it forces CUE to walk the fixture's own
+      # requirements and raise every shared dep to at least the fixture's pin.
+      if ! out=$(cd "$work" && cue mod get "${dep%@*}@${ver}" 2>&1); then
+        echo "$out" >&2
+        consumer_fail "$dir" "cue mod get ${dep%@*}@${ver} failed (is that version published, or seeded into $(testing_host)?)"
+        ok=0
+        break
+      fi
+    done
+    if [ "$ok" -eq 1 ] && ! out=$(cd "$work" && cue mod tidy 2>&1); then
+      echo "$out" >&2
+      consumer_fail "$dir" "cue mod tidy failed"
+      ok=0
+    fi
+    if [ "$ok" -eq 0 ]; then
+      rc=1
+      continue
+    fi
+    if diff -u --label "$mod (committed)" --label "$mod (resolved)" "$mod" "$work/cue.mod/module.cue"; then
+      echo "    ok"
+    elif [ "$FIX" = "1" ]; then
+      cp "$work/cue.mod/module.cue" "$mod"
+      echo "    fixed: wrote the resolved module.cue"
+    else
+      consumer_fail "$dir" "module.cue differs from what CUE resolves for its fixture pins"
+      echo "     Re-run the workspace root task deps:pins:fixtures, apply the diff above," >&2
+      echo "     or re-run this with FIX=1 against a registry that holds the pinned fixture versions." >&2
+      rc=1
+    fi
+  done
+  # A consumer nobody listed is a consumer nobody checks.
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    while IFS= read -r f; do
+      case "$f" in "$FIXTURES_DIR"/*) continue ;; esac
+      [ -n "$(fixture_deps "$f")" ] || continue
+      case "$listed" in *" $f "*) continue ;; esac
+      consumer_fail "$f" "pins a testing.opmodel.dev fixture but is not a listed consumer"
+      rc=1
+    done < <(git ls-files -- '*cue.mod/module.cue')
+  else
+    echo "    (not a git work tree: skipped the unlisted-consumer check)"
+  fi
+  return $rc
+}
+
 case "$cmd" in
   pins) cmd_pins ;;
   check) cmd_check ;;
   seed) cmd_seed ;;
   publish) cmd_publish ;;
+  consumers) cmd_consumers "$@" ;;
   -h|--help|help) usage 0 ;;
-  *) die "unknown subcommand '$cmd' (pins|check|seed|publish)" ;;
+  *) die "unknown subcommand '$cmd' (pins|check|seed|publish|consumers)" ;;
 esac

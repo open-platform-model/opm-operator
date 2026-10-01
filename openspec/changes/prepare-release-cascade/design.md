@@ -12,14 +12,16 @@ Current state, verified on `origin/main` at `f31a013`:
 
 | Item | Where | Today |
 |---|---|---|
-| Release PR CI | `release.yml:38-52` mints the release App token, so release-please PRs trigger `pull_request` CI normally; head branch `release-please--branches--main` | no pin check |
-| Cheapest always-run PR job | `lint.yml:9-29`, job `lint` ("Run on Ubuntu"), checkout + setup-go + Task | no pin check |
+| Release PR CI | `release.yml:37-53` mints the release App token, so release-please PRs trigger `pull_request` CI normally; head branch `release-please--branches--main--components--opm-operator` (PR #170) | no pin check |
+| Cheapest always-run PR job | `lint.yml:9-29`, job `lint`, checkout + setup-go + Task | no pin check |
+| Job check names | `lint.yml:10`, `test.yml:29` and `test-e2e.yml:22` all declare `name: Run on Ubuntu` | not unique; a ruleset cannot pick one |
 | `replace` directives | `go mod edit -json` → `"Replace": null` | none |
 | OPM Go pins | `go list -m all` → `github.com/open-platform-model/library v1.0.0-beta.1` (tag exists, `02344e5`) | clean |
 | Published fixture cue.mods | `test/fixtures/modules/{hello,hello_web,podinfo,redis}`, `test/fixtures/modulepackages/{same four}` (`.tasks/examples.yaml:21-22`; published by `release.yml` `publish-examples`, bundled by `examples:bundle`) | no `-0.dev.` pin |
 | Tracked `local-module.cue` | `git ls-files '*local-module.cue'` | none |
-| Dependabot `gomod` | `.github/dependabot.yml:9-21` | no ignore; prefix `build` |
-| `docs` section | `release-please-config.json:23` `"hidden": false` | releases |
+| Dependabot `gomod` | `.github/dependabot.yml:9-23` (prefix at 16) | no ignore; prefix `build` |
+| `docs` section | `release-please-config.json:24` `"hidden": false` | releases |
+| Agent guide | `AGENTS.md:146` lists `docs` among the types that release | contradicts the change |
 | opm CLI pin | `test.yml:59`, `test-e2e.yml:98`, `publish-fixtures.yml:66`, `release.yml:274` | `@v1.0.0-beta.2` literal ×4 |
 | Local opm use | `.tasks/examples.yaml:30`, `.tasks/module.yaml:31` (`OPM` default `opm` on PATH), `hack/fixtures.sh:94,103` (`OPM_BIN`) | no version pinned anywhere outside workflows |
 
@@ -52,8 +54,17 @@ locally and in CI. The later `add-deps-cascade-task` change adds the receiver to
 Go and git, and finishes in about a minute, so a gate failure shows early. `test.yml`'s `test`
 job would work too but starts a registry service and seeds fixtures first.
 
+The job's display name changes from `Run on Ubuntu` to `Lint`. Rulesets match required checks by
+check name (plus an optional app) with no workflow selector, and three jobs in this repo report
+`Run on Ubuntu` today, so requiring that name would bind all three or none deterministically.
+`main` has no branch protection and its only ruleset is a workflows rule, so the rename breaks
+nothing. The check the owner's ruleset must require is `Lint`.
+
 ```yaml
-# .github/workflows/lint.yml, job lint, after "Install Task"
+# .github/workflows/lint.yml, job lint
+    name: Lint   # was "Run on Ubuntu"; must stay unique across the repo's jobs
+    ...
+      # after "Install Task"
       - name: Release-pin gate (G1, release PRs only)
         if: startsWith(github.head_ref || github.ref_name, 'release-please--')
         run: task deps:release-check
@@ -108,12 +119,13 @@ whose tags carry a path prefix would need its own tag rule; none exists today.
 - **Tag existence uses `git ls-remote`, not the Go proxy.** The proxy serves any commit as a
   pseudo-version and caches tags; `ls-remote` asks the repo itself. All OPM repos are public, so
   no token is needed. `library` is the only OPM Go pin today; the loop covers any future one.
-- **The pseudo-version regex** is the one in workspace RELEASING.md, section "Gates"; it matches
-  all three Go pseudo-version shapes (`vX.0.0-…`, `vX.Y.Z-pre.0.…`, `vX.Y.(Z+1)-0.…`).
+- **The pseudo-version regex** is this design's own choice (RELEASING.md names the check, not a
+  pattern); it matches all three Go pseudo-version shapes (`vX.0.0-…`, `vX.Y.Z-pre.0.…`,
+  `vX.Y.(Z+1)-0.…`).
 - **Dev CUE pins are checked only in published fixtures.** `internal/source/testdata/minimal-module`
   is test-only and never published; flagging it would block a release for nothing.
-- **`local-module.cue` is checked repo-wide**, because it is CUE's replace mechanism and has no
-  legitimate tracked use.
+- **`local-module.cue` is checked repo-wide**, because it is the opm CLI's local-replacement file
+  and has no legitimate tracked use.
 - `PinnedOperatorVersion` versus `install.yaml` is a cli-only G1 check and does not apply here.
 
 ### Dependabot ignore
@@ -132,11 +144,13 @@ The `build` prefix and the Kubernetes group stay as they are; third-party bumps 
 
 ### Hide `docs`, keep `refactor`
 
-`release-please-config.json:23` becomes `{ "type": "docs", "section": "Documentation", "hidden": true }`.
+`release-please-config.json:24` becomes `{ "type": "docs", "section": "Documentation", "hidden": true }`.
 release-please already treats hidden types as non-releasable here: the spec's "Only
 non-releasable commits" scenario relies on it for `chore`/`test`/`ci`/`build`, and those have
 never opened a Release PR. Past CHANGELOG entries are not rewritten. `refactor` stays visible
-because library rewrites must keep integrating early (workspace RELEASING.md, section "Bump rule").
+because library rewrites must keep integrating early (workspace RELEASING.md, section "Pin
+classes"). `AGENTS.md:146` is rewritten in the same section so agents typing commits from it
+see the same rule.
 
 ### `.opm-cli-version` and how workflows read it
 
@@ -152,18 +166,23 @@ install step itself, so no step depends on an env var set elsewhere:
           go install "github.com/open-platform-model/cli/cmd/opm@${v}"
 ```
 
+- **Deliberate departure from RELEASING.md's one-liner.** Workspace RELEASING.md, section "Cascade
+  files" shows `echo "OPM_CLI_VERSION=$(cat .opm-cli-version)" >> "$GITHUB_ENV"`. The operator
+  reads and validates the file inside each install step instead: a malformed value (`latest`,
+  empty) fails with an annotation naming the file before `go install` runs, and no step depends
+  on an env var another step set. The workspace author is asked to word that line as an example.
 - **No literal `cli/cmd/opm@v` remains.** The current workspace `.tasks/deps/opm-cli.sh` finds the
   operator pin by grepping `cli/cmd/opm@v` in workflow files; after this change that grep matches
   nothing, so the workspace script must write `.opm-cli-version` instead (dependency on workspace
   `docs/release-cascade`).
-- **`release.yml` `publish-examples`** checks out the release tag (`release.yml:247-252`), so it
+- **`release.yml` `publish-examples`** checks out the release tag (`release.yml:244-250`), so it
   installs the CLI pinned at that tag. That is the right version: the one CI tested the tag with.
 - **The four-line block is repeated, not factored.** A composite action or shared script would
   add a file the cascade must not touch and save twelve lines. Repetition is cheaper (Principle
   VII).
 - **Local tasks are unchanged.** `.tasks/examples.yaml:30` and `.tasks/module.yaml:31` use `opm` on
   PATH and pin no version. `hack/fixtures.sh` must stay byte-identical to the cli copy
-  (`.tasks/examples.yaml:10-11`), so its "install the pinned cli release" hint is left as is.
+  (`.tasks/examples.yaml:11-12`), so its "install the pinned cli release" hint is left as is.
 
 ### One section per concern, CLI move first
 
@@ -189,8 +208,9 @@ locally with beta.4 before the commit.
 **Explored**: `lint.yml` (`lint` job, Go + Task, no services) and `test.yml` (`test` job,
 registry service, fixture seed, envtest).
 **Decision**: `lint`.
-**Rationale**: Same inputs, faster signal; both jobs are candidates for the ruleset's required
-checks.
+**Rationale**: Same inputs, faster signal. The `lint` job is renamed to `Lint` so the ruleset can
+require exactly that check context; `test` and `test-e2e` keep `Run on Ubuntu` (they are not
+the gate carrier, and renaming them is outside this change).
 
 ### Hiding `docs` and the spec
 **Context**: The main spec's "Release PR creation on push to main" has a scenario "Docs-only
@@ -201,12 +221,22 @@ to main" with the surviving scenarios plus two new ones; MODIFIED "Changelog gen
 
 ## Risks / Trade-offs
 
-- [G1 is advisory until the ruleset requires `Lint`] → The owner settings step in workspace
-  RELEASING.md, section "Owner settings" makes it binding; the gate still shows red on the PR.
+- [G1 is advisory until the ruleset requires the `Lint` check] → The owner settings step in
+  workspace RELEASING.md, section "Owner settings" makes it binding; the gate still shows red on
+  the PR. A later job that reuses the name `Lint` would make the requirement ambiguous again; the
+  spec forbids it.
+- [Renaming the check] → A ruleset or bookmark that named `Lint / Run on Ubuntu` would stop
+  matching. None exists today (`main` has no branch protection; its only ruleset is mention-guard).
 - [`git ls-remote` needs network from the runner] → GitHub-hosted runners have it; a transient
   failure fails the gate loudly, never silently passes.
-- [A docs-only fix to user-facing docs no longer releases] → Intended. A doc fix that must ship
-  rides the next releasable commit, or uses a `Release-As:` footer.
+- [A docs-only fix to user-facing docs no longer releases] → Intended (owner decision). The cost
+  includes opmodel.dev: the site builds opm-operator docs at exactly what the newest cli tag pins
+  (`opmodel.dev/site/versions.conf:7-9`), so a docs-only fix in `docs/` reaches the site only
+  after a later operator release and then a cli release that embeds it. Escape hatch: a
+  `Release-As:` footer in the squash or PR body, or wait for the next `fix`.
+- [A separate opm CLI catch-up conflicts] → This change is the operator's Phase 1 opm CLI
+  catch-up; running workspace `task deps:pins:opm-cli` against the operator before it merges
+  rewrites the same four lines. Do not.
 - [Old workspace script skips the operator after merge] → Merge workspace `docs/release-cascade`
   first (proposal, "Depends on / gates").
 

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Release PR opens for releasable commits on push to main
-The release-please workflow SHALL run on every push to the `main` branch. It SHALL open a Release PR if releasable commits exist since the last release tag. Releasable commits are those whose type has a visible changelog section in `release-please-config.json` (`feat`, `fix`, `perf`, `revert`, `deps`, `refactor`) and any commit carrying a `Release-As:` footer. `docs`, `chore`, `test`, `ci` and `build` are hidden and SHALL NOT by themselves open a Release PR. If a Release PR already exists, it SHALL update the PR with the latest accumulated changes. Hiding `docs` keeps a doc-only commit from cutting an operator release that would cascade a pointless bump into the cli (workspace RELEASING.md, section "Bump rule").
+The release-please workflow SHALL run on every push to the `main` branch. It SHALL open a Release PR if releasable commits exist since the last release tag. Releasable commits are those whose type has a visible changelog section in `release-please-config.json` (`feat`, `fix`, `perf`, `revert`, `deps`, `refactor`) and any commit carrying a `Release-As:` footer. `docs`, `chore`, `test`, `ci` and `build` are hidden and SHALL NOT by themselves open a Release PR. If a Release PR already exists, it SHALL update the PR with the latest accumulated changes. Hiding `docs` keeps a doc-only commit from cutting an operator release that would cascade a pointless bump into the cli (workspace RELEASING.md, section "Pin classes").
 
 #### Scenario: First feat commit after a release
 - **WHEN** a `feat(scope): description` commit is pushed to `main` and no open Release PR exists
@@ -30,7 +30,7 @@ On every Release PR, the release-pin gate (G1, workspace RELEASING.md, section "
 - a published fixture's `cue.mod/module.cue` (`test/fixtures/modules/*`, `test/fixtures/modulepackages/*`) pins a dependency version containing `-0.dev.`;
 - any `cue.mod/local-module.cue` is tracked by git.
 
-Each failure SHALL name the offending file and pin. On pull requests that are not Release PRs the gate step SHALL be skipped. The same check SHALL be runnable locally as one task.
+Each failure SHALL name the offending file and pin. On pull requests that are not Release PRs the gate step SHALL be skipped. The same check SHALL be runnable locally as one task. The job carrying the gate SHALL report a check name no other workflow job in the repo uses (`Lint`), so a ruleset can require exactly that check.
 
 #### Scenario: Replace directive blocks the release
 - **WHEN** a Release PR head has `replace github.com/open-platform-model/library => ../library` in `go.mod`
@@ -55,6 +55,10 @@ Each failure SHALL name the offending file and pin. On pull requests that are no
 #### Scenario: Clean release PR passes
 - **WHEN** a Release PR head has no replace directive, pins `github.com/open-platform-model/library` to an existing tag, and no published fixture carries a dev pin or a tracked `local-module.cue`
 - **THEN** the gate step passes
+
+#### Scenario: The gate's check name is unique
+- **WHEN** the `name:` of every job under `.github/workflows/` is listed
+- **THEN** the job carrying the release-pin gate reports `Lint`, and no other job reports that name
 
 #### Scenario: Ordinary PRs skip the gate
 - **WHEN** a pull request's head branch does not start with `release-please--`
@@ -131,4 +135,4 @@ The workflow SHALL determine the proposed version from the commits since the las
 
 ### Requirement: Release PR creation on push to main
 **Reason**: Its scenario "Docs-only commits cut a release" asserts the opposite of the new rule; `docs` is now a hidden section so a doc-only commit no longer releases and cascades into the cli.
-**Migration**: Replaced by "Release PR opens for releasable commits on push to main", which keeps the other three scenarios unchanged, drops `docs` from the releasable types, and adds "Docs-only commits do not cut a release" and "Refactor commits still cut a release".
+**Migration**: Replaced by "Release PR opens for releasable commits on push to main", which keeps the first two scenarios unchanged, adds `docs` to "Only non-releasable commits", drops `docs` from the releasable types, and adds "Docs-only commits do not cut a release" and "Refactor commits still cut a release".

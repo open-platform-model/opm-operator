@@ -12,12 +12,13 @@ its published `install.yaml`. Four things in this repo work against the cascade 
   Every one of those would publish an operator image or fixture built against something no
   consumer can reproduce.
 - Dependabot proposes `github.com/open-platform-model/library` bumps as `build(deps)`, which never
-  releases (`.github/dependabot.yml:9-15`). That races the cascade PR and lands a library bump
+  releases (`.github/dependabot.yml:9-23`, prefix at line 16). That races the cascade PR and lands a library bump
   that the cli never hears about.
-- `docs` is a visible changelog section (`release-please-config.json:23`), so a doc-only commit
+- `docs` is a visible changelog section (`release-please-config.json:24`), so a doc-only commit
   cuts an operator release, which would then cascade a pointless bump into the cli. The owner
   chose to hide `docs` in library, opm-operator and cli (workspace RELEASING.md, section
-  "Bump rule").
+  "Pin classes"). `AGENTS.md:146` still lists `docs` as releasing and is corrected in the same
+  section.
 - The opm CLI version is hard-coded in four `go install` lines
   (`.github/workflows/test.yml:59`, `test-e2e.yml:98`, `publish-fixtures.yml:66`,
   `release.yml:274`), all still at `v1.0.0-beta.2` while the cli has published `v1.0.0-beta.4`.
@@ -35,16 +36,19 @@ reusable workflows come in later changes (see "Depends on / gates").
   published fixture's `cue.mod/module.cue` (`test/fixtures/modules/*`,
   `test/fixtures/modulepackages/*`); any tracked `cue.mod/local-module.cue`. It runs as a step
   inside the existing `lint` job of `.github/workflows/lint.yml`, only on release-please PRs
-  (`${{ github.head_ref || github.ref_name }}` starts with `release-please--`).
+  (`${{ github.head_ref || github.ref_name }}` starts with `release-please--`). That job is
+  renamed from `Run on Ubuntu` (a name `test.yml` and `test-e2e.yml` also use) to `Lint`, so its
+  check name is unique and a ruleset can require it.
 - **Dependabot ignore.** The `gomod` entry in `.github/dependabot.yml` ignores
   `github.com/open-platform-model/*`; the cascade owns those bumps.
 - **Docs commits stop releasing.** `release-please-config.json` hides the `docs` section
   (`"hidden": true`). `refactor` stays visible and keeps releasing, so library rewrites still
-  integrate early. Past CHANGELOG entries
-  are untouched.
+  integrate early. Past CHANGELOG entries are untouched. `AGENTS.md` "Commit type decides the
+  release" is rewritten to match.
 - **One opm CLI pin file.** A repo-root `.opm-cli-version` (one line, `v1.0.0-beta.4`) replaces the
   four hard-coded versions; every workflow installs `cli/cmd/opm@` the version read from that
-  file. This also moves the pin from `v1.0.0-beta.2` to `v1.0.0-beta.4`.
+  file. This also moves the pin from `v1.0.0-beta.2` to `v1.0.0-beta.4`, folding in the operator's
+  Phase 1 opm CLI catch-up (workspace RELEASING.md, section "Rollout and changes").
 
 Release class: none. Every commit is `ci` or `ci(deps)`, a hidden section, so the change cuts no
 operator release on its own; after GA it would still be no release (tooling only). No API type, CRD,
@@ -58,12 +62,16 @@ controller or reconcile phase changes.
   are gone and the old script silently skips the operator. The workspace branch must merge first,
   or in the same sitting.
 - **Gated by owner settings** (workspace RELEASING.md, section "Owner settings"): G1 is advisory
-  until the opm-operator ruleset makes the `Lint` check required. This change works without it.
+  until the opm-operator ruleset on `main` requires the check `Lint` (the `lint` job of
+  `lint.yml`, renamed in task 2.3 so no other job reports that name). This change works without
+  it.
 - **Not dependent on** library `prepare-release-cascade`, cli `prepare-release-cascade` or catalog_opm
   `prepare-release-cascade`; they are parallel Phase 1 changes with the same shape.
 - **Gates later changes:** opm-operator `add-deps-cascade-task` (writes `.opm-cli-version` and
-  extends `.tasks/deps.yaml`), `.github` `add-release-cascade-workflows`, and opm-operator
-  `join-release-cascade` assume the file, the gate and the Dependabot ignore exist.
+  extends `.tasks/deps.yaml`) and opm-operator `join-release-cascade` (which also needs `.github`
+  `add-release-cascade-workflows`) assume the file, the gate and the Dependabot ignore exist.
+- **Folds in the opm CLI catch-up.** This change is opm-operator's Phase 1 opm CLI catch-up; do not
+  run `deps:pins:opm-cli` against the operator before it merges.
 
 ## Capabilities
 
@@ -81,9 +89,14 @@ None.
 
 - **Files**: `.github/workflows/{lint,test,test-e2e,publish-fixtures,release}.yml`,
   `.github/dependabot.yml`, `release-please-config.json`, new `.opm-cli-version`, new
-  `hack/release-pin-check.sh`, new `.tasks/deps.yaml` included from `Taskfile.yml`.
-- **Untouched**: `hack/fixtures.sh` stays byte-identical to the cli copy (`.tasks/examples.yaml:10-11`).
+  `hack/release-pin-check.sh`, new `.tasks/deps.yaml` included from `Taskfile.yml`, `AGENTS.md`
+  (the "Commit type decides the release" bullet and two notes on the pin file and the gate).
+- **Untouched**: `hack/fixtures.sh` stays byte-identical to the cli copy (`.tasks/examples.yaml:11-12`).
 - **Release behaviour**: after merge, a `docs`-only window since the last tag opens no Release
   PR; `docs` commits that ride with a releasable commit stop appearing in CHANGELOG.md.
+- **opmodel.dev**: the site builds opm-operator docs at exactly the operator version the newest
+  cli tag pins (`opmodel.dev/site/versions.conf:7-9`). A docs-only fix in `docs/` reaches the
+  site only after a later operator release and then a cli release that embeds it, unless the
+  squash or PR body carries a `Release-As:` footer.
 - **Delivery**: one PR; the OpenSpec archive commit rides that PR (workspace RELEASING.md,
   section "Owner settings": main takes changes only through PRs).

@@ -2,9 +2,9 @@
 # `task enhancements:delivery:log` at archive time.
 #
 # 0021 D10 ("Release tags are immutable") is on enhancements PR 74, not yet on
-# main, and is being revised for the release/vX.Y branch model. Log delivery
-# only after D10 is on enhancements main; re-check the requirement numbers this
-# change cites (R1, R3, R7) against that text first.
+# main. Log delivery only after D10 is on enhancements main; re-check the
+# requirement numbers this change cites (R1, R3, R8) against that text first.
+# Release branches (D10 R5) are Phase 2 and are not claimed here.
 #
 # This change covers the operator's share of D10: its release path never
 # re-points a version registry tag, and its flow becomes draft-first so the

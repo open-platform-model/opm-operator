@@ -11,7 +11,7 @@ Platform state this change relies on (owner-managed, outside the repo, Revision 
 
 - `tags-immutable`: update, deletion and non_fast_forward refused on every tag, empty bypass.
 - `tags-create-app-only`: tag creation refused for everyone except the opm-release-please App. A tag in this repo is therefore always one release-please created at its release commit; a stale or hand-made tag cannot exist. This is why the per-repo tag-commit assertion of the first draft of this plan is dropped.
-- `release-branches`: `refs/heads/release/*` refuses deletion and non_fast_forward and requires a pull request (squash only), no bypass.
+- `release-branches`: `refs/heads/release/*` refuses deletion and non_fast_forward and requires a pull request (squash only), no bypass. No `release/*` branch exists in this repo, and this change adds no support for one (Phase 2).
 - Immutable releases are NOT enabled for opm-operator and stay off until one draft-first release has shipped.
 
 ## Goals / Non-Goals
@@ -20,15 +20,14 @@ Platform state this change relies on (owner-managed, outside the repo, Revision 
 
 - A GitHub Release becomes public only after every asset is attached, so the flow survives immutable releases.
 - No step in this repo's workflows can move, delete or re-create a git tag, or make `:vX.Y.Z` on GHCR name content other than what was first pushed under it (0021:D10:R1, 0021:D10:R3).
-- At most one release run per branch at a time, and at most one release per tag.
+- At most one release run at a time, and at most one release per tag.
 - A failed release run is recovered by re-running failed jobs on the draft, never by touching the tag.
-- A released minor can receive patch releases from a lazily cut `release/vX.Y` branch without disturbing `main`'s `:latest` or the repository's Latest release.
 
 **Non-Goals:**
 
 - No controller, API, CRD or reconcile change.
 - No change to the PR image workflow (`:pr-N`, `:sha-<short>` stay mutable), to `publish-fixtures.yml`, or to the e2e fixture tags (`-e2e.g*`).
-- No release branch is cut. None exists during beta; the first is cut at GA or when `main` starts work a released minor must not get.
+- No release-branch support (Phase 2, before GA): `release.yml` keeps triggering on `main` only, release-please keeps its default target branch, there is no cut workflow, and `:latest` and the Latest release keep today's behavior. See "Phase 2 inputs".
 - No org setting, ruleset or immutable-release toggle: owner actions.
 - No reproducible-build work: the image guard does not need byte-identical rebuilds (see "Never overwrite a version image tag").
 - Known gaps left for an owner decision, not guarded here: the human-run push paths `.tasks/docker.yaml` (`buildx build --push --tag {{.IMG}}`) and `Makefile` (`docker-buildx`) overwrite `:vX.Y.Z` if `IMG` names one, and `.tasks/release.yaml` `publish:ghcr` re-pushes the floating `v0.0.1` flux artifact tag under `testing.opmodel.dev/releases/operator/*`. None runs in a workflow.
@@ -42,7 +41,7 @@ Platform state this change relies on (owner-managed, outside the repo, Revision 
 **Decision**: Package `"."` MUST set `"draft": true` and `"force-tag-creation": true`. Nothing else in the config changes.
 **Rationale**: Keeps the single release actor (the App via release-please, the only identity allowed to create a tag) and the existing outputs, and is the documented upstream answer to eager tag creation for drafts.
 
-### Serialize release runs per branch
+### Serialize release runs
 
 **Context**: release-please's only duplicate guard is `DuplicateReleaseError`, raised on HTTP 422 `already_exists` (`src/github-api.ts`), and the Release PR is relabelled `autorelease: tagged` only after `createRelease` returns (`src/manifest.ts` `createReleasesForPullRequest`). GitHub accepts several drafts with one `tag_name`. Two runs in quick succession (the Release PR merge, then another merge seconds later) can therefore both create a draft for the same tag, and both image jobs could probe `:vX.Y.Z` as absent and push.
 **Decision**: `release.yml` MUST declare a workflow-level concurrency group:
@@ -53,7 +52,7 @@ concurrency:
   cancel-in-progress: false
 ```
 
-A run on `main` and a run on `release/v1.0` do not share a group; they produce different tags. GitHub keeps at most one pending run per group and cancels an older pending one; that is safe because release-please derives its state from the branch head and the PR labels, so the newest pending run creates any release an older one would have. In addition, the release guard (next decision) MUST refuse to upload or publish unless exactly one release carries the tag.
+The workflow runs on `main` only, so this is one group; keying it by ref keeps Phase 2's branch runs in their own groups without an edit. GitHub keeps at most one pending run per group and cancels an older pending one; that is safe because release-please derives its state from the branch head and the PR labels, so the newest pending run creates any release an older one would have. In addition, the release guard (next decision) MUST refuse to upload or publish unless exactly one release carries the tag.
 **Rationale**: The group removes the race; the exactly-one check turns a residual duplicate (manual run, a future workflow) into a loud failure instead of an ambiguous by-tag lookup.
 
 ### One release guard script, every gh call names the repository
@@ -82,14 +81,12 @@ publish)
       || { echo "::error::draft ${tag} lacks ${a}"; exit 1; }
   done
   id=$(jq -r '.[0].id' <<<"$rels")
-  args=(-X PATCH "repos/${GH_REPO}/releases/${id}" -F draft=false)
-  [ "${MAINTENANCE:-false}" = true ] && args+=(-f make_latest=false)
-  gh api "${args[@]}" >/dev/null ;;
+  gh api -X PATCH "repos/${GH_REPO}/releases/${id}" -F draft=false >/dev/null ;;
 *) echo "::error::unknown mode ${mode}"; exit 2 ;;
 esac
 ```
 
-Publishing goes by release id, so it never depends on by-tag draft lookup. The prerelease flag is not sent, so release-please's Pre-release flag stays. Every upload step runs `release-guard.sh assert-draft "$TAG"` immediately before its `gh release upload "$TAG" --repo "$GH_REPO" ... --clobber`; every job that calls `gh` sets `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and `GH_REPO: ${{ github.repository }}`.
+Publishing goes by release id, so it never depends on by-tag draft lookup. Neither the prerelease flag nor `make_latest` is sent, so release-please's Pre-release flag and GitHub's default Latest selection stay as today. Every upload step runs `release-guard.sh assert-draft "$TAG"` immediately before its `gh release upload "$TAG" --repo "$GH_REPO" ... --clobber`; every job that calls `gh` sets `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and `GH_REPO: ${{ github.repository }}`.
 **Rationale**: One script, one behavior, locally runnable against the live repository: `assert-draft v1.0.0-beta.2` fails (published), `publish v1.0.0-beta.2` exits 0 (already published path), `assert-draft v9.9.9` fails (zero releases).
 
 ### Assets upload only to a draft
@@ -102,10 +99,10 @@ Publishing goes by release id, so it never depends on by-tag draft lookup. The p
 **Decision**: A new job `publish-release` MUST `needs: [release-please, image-release, publish-examples]`, run only when `releases_created == 'true'`, hold `contents: write` and nothing else, and:
 
 1. check out the tag with `sparse-checkout: .github/scripts` (the job needs only the guard script, at the release commit);
-2. set `GH_TOKEN`, `GH_REPO: ${{ github.repository }}` and `MAINTENANCE: ${{ github.ref != 'refs/heads/main' }}`;
+2. set `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, `GH_REPO: ${{ github.repository }}` and `TAG: ${{ needs.release-please.outputs.tag_name }}`;
 3. run `.github/scripts/release-guard.sh publish "$TAG"`.
 
-**Rationale**: A single publish point means a partial run is never public. Re-runs replay the original workflow definition, so the job must be right on first ship; the local check against the live repo (task 3.3) is the substitute for a production rehearsal.
+**Rationale**: A single publish point means a partial run is never public. Re-runs replay the original workflow definition, so the job must be right on first ship; the local check against the live repo (task 3.2) is the substitute for a production rehearsal.
 
 ### Never overwrite a version image tag
 
@@ -126,8 +123,8 @@ rev=$(docker buildx imagetools inspect "${ref%:*}@${digest}" \
 printf 'state=reuse\ndigest=%s\n' "$digest"
 ```
 
-- `absent`: QEMU, build and push `:sha-<short>`, `:${TAG}` and (main only) `:latest`; then `image-tag-guard.sh verify` MUST confirm `:${TAG}` resolves to the pushed digest, failing otherwise.
-- `reuse`: the version tag already holds the image this release built. Nothing is pushed under `:${TAG}`; the existing digest becomes the job's digest; `:sha-<short>` and (main only) `:latest` are re-pointed to it with `docker buildx imagetools create`, since they are mutable and a cancelled first attempt may have pushed the version tag without them. Signing, attestation and `install.yaml` then run against that digest.
+- `absent`: QEMU, build and push `:sha-<short>`, `:${TAG}` and `:latest`; then `image-tag-guard.sh verify` MUST confirm `:${TAG}` resolves to the pushed digest, failing otherwise.
+- `reuse`: the version tag already holds the image this release built. Nothing is pushed under `:${TAG}`; the existing digest becomes the job's digest; `:sha-<short>` and `:latest` are re-pointed to it with `docker buildx imagetools create`, since they are mutable and a cancelled first attempt may have pushed the version tag without them. Signing, attestation and `install.yaml` then run against that digest.
 - anything else (different revision, unreadable digest, any probe error other than not found): fail before building.
 
 Every later reference to the digest goes through one step output (`steps.digest.outputs.digest`).
@@ -137,47 +134,14 @@ Every later reference to the digest goes through one step output (`steps.digest.
 
 **Context**: `docker/metadata-action` defaults to `context: workflow`, taking the SHA from `github.sha`, the pushed commit. When release-please cuts a release on a later push than the Release PR merge, that is not the release commit.
 **Explored**: metadata-action at the pinned SHA (v6.2.0) accepts `context: workflow|git`. Tag priorities: raw 200, sha 100, so `type=raw,value=${TAG}` declared first stays `version.main`, which feeds `org.opencontainers.image.version`.
-**Decision**: The metadata step MUST set `context: git` and keep `type=sha,prefix=sha-,format=short`, `type=raw,value=${TAG}` and `type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}` in that order. The revision label and the `sha-<short>` tag then name the checked-out tag commit.
+**Decision**: The metadata step MUST set `context: git` and keep `type=sha,prefix=sha-,format=short`, `type=raw,value=${TAG}` and `type=raw,value=latest` in that order (today's list; no branch gating in Phase 1). The revision label and the `sha-<short>` tag then name the checked-out tag commit.
 **Rationale**: Smaller than computing a short SHA by hand, and keeps the version label on the release tag.
-
-### Release maintenance branches
-
-**Context**: Owner branch model (2026-10-01): a released minor gets fixes from a lazily cut `release/vX.Y` branch, created from the newest `vX.Y.*` tag by one automated action that then opens a PR into the new branch setting branch-local release-please settings (`versioning: always-bump-patch`, `prerelease: false`). Backports land by PR. Branches are never deleted.
-**Explored**: release-please-action v5.0.0 `action.yml` input `target-branch` ("detected by default", i.e. the repository default branch). The org reusable workflow `open-platform-model/.github/.github/workflows/cut-release-branch.yml` (written in parallel) takes `tag_prefix`, `minor` and the package path, creates `release/<tag_prefix><minor>` from the highest `<tag_prefix><minor>.*` tag and opens the settings PR, which also checks that the caller's release workflow trigger covers the branch.
-**Decision**:
-
-- `release.yml` `on.push.branches` MUST be `[main, 'release/**']`, and the release-please step MUST pass `target-branch: ${{ github.ref_name }}`.
-- A release from a branch other than `main` MUST NOT move `:latest` (metadata `enable` above, and the reuse path) and MUST be published with `make_latest=false` (`MAINTENANCE` in the guard).
-- A new `.github/workflows/cut-release-branch.yml` MUST be a thin `workflow_dispatch` caller:
-
-```yaml
-name: Cut release branch
-on:
-  workflow_dispatch:
-    inputs:
-      minor:
-        description: Released minor to branch, as X.Y (for example 1.0)
-        required: true
-        type: string
-permissions:
-  contents: write
-  pull-requests: write
-jobs:
-  cut:
-    uses: open-platform-model/.github/.github/workflows/cut-release-branch.yml@<full commit SHA> # main, <date>
-    with:
-      tag_prefix: v
-      minor: ${{ inputs.minor }}
-      package: .
-    secrets: inherit
-```
-
-Input names follow the reusable workflow as merged (G-reusable). Branch creation emits a push on the new branch; release-please then runs with main-era config, finds no commits after the tag and does nothing, until the settings PR merges.
-**Rationale**: One cut path for all five repos; the caller only names this repo's tag prefix and package. Keeping `:latest` and the Latest release on `main` stops a patch to an old minor from becoming what `opm operator install` and `docker pull` resolve by default.
 
 ### Recovery rolls forward
 
-**Decision**: Workflows MUST NOT contain `git tag`, a `git push` of a tag ref (`refs/tags/`, `--tags`, `--mirror`, a delete or force refspec), `gh release delete`, `gh release edit --tag`/`--target`, or a write to the git refs API. A failed run before publish is recovered with "Re-run failed jobs" on the same workflow run; a re-run of a failed `release-please` job itself creates nothing (the PR is already labelled tagged), so every check that can fail lives in a downstream job. A published release that is wrong is fixed by the next version (the next `1.0.0-beta.N`, or the next patch on a maintenance branch).
+**Decision**: Workflows MUST NOT contain `git tag`, a `git push` of a tag ref (`refs/tags/`, `--tags`, `--mirror`, a delete or force refspec), `gh release delete`, `gh release edit --tag`/`--target`, or a write to the git refs API. A failed run before publish is recovered with "Re-run failed jobs" on the same workflow run. Every check that can fail lives in a downstream job, so the `release-please` job normally succeeds once and is never re-run. A published release that is wrong is fixed by the next version (the next `1.0.0-beta.N`; after GA the next patch).
+
+**Duplicate draft.** One path still yields two drafts for a tag: the `release-please` job fails after `createRelease` but before it relabels the Release PR `autorelease: tagged`, and is re-run; `createRef` then fails with 422 (tag exists, swallowed by force-tag-creation) and `createRelease` adds a second draft. From then on `release-guard.sh` fails every upload and the publish with "found 2". Recovery: the owner deletes the extra draft (the one with no assets, or the newer one) in the GitHub UI, never the tag; agents cannot, since the workspace hook blocks `gh release delete`. Then "Re-run failed jobs". ADR-018 records this procedure.
 
 ### G-sandbox: unknowns proven before section 1
 
@@ -189,8 +153,21 @@ Each item is proven in `open-platform-model/release-flow-sandbox`, and the evide
 - U4: PATCH `draft=false` by release id keeps the Pre-release flag and the forced tag, with all rulesets and immutable releases on.
 - U5: an upload after publish with immutable releases on fails.
 - U6: with `tags-create-app-only` on, release-please's `createRef` as the App succeeds, and the same call with GITHUB_TOKEN is refused. Must run as the App.
-- U7: GitHub accepts a second draft release with an existing `tag_name`, and `release-guard.sh` then fails both modes with "found 2".
-- U8: on a `release/vX.Y` branch with `always-bump-patch` and `prerelease: false`, release-please with `target-branch` proposes `vX.Y.(Z+1)`, the App tags the branch commit, `make_latest=false` leaves Latest on the `main` release, and the next Release PR on `main` is unaffected.
+- U7: GitHub accepts a second draft release with an existing `tag_name`, and `release-guard.sh` then fails both modes with "found 2"; deleting the extra draft in the UI and re-running failed jobs then publishes the remaining one with its tag unchanged.
+
+## Phase 2 inputs (not in this change)
+
+Release-branch support lands before GA in a separate change, after the org cut action is proven in `release-flow-sandbox` (including a cut from a tag made before this change and the main-versus-branch collision case). Findings from the review of the first draft of this plan that the Phase 2 change must carry:
+
+- **Version-line rule.** `release/vX.Y` is cut only when `main`'s next release is `X.(Y+1).0` or higher; after the cut, `main` never releases an `X.Y.*` version. The operator's Release PR on `main` must not be allowed to propose one.
+- **Reusable interface.** The org `cut-release-branch.yml` (open-platform-model/.github, commit 72f7d5d at review time) takes `package_path`, `release_app_client_id` (an input) and the secret `release_app_private_key`. A caller passing `package` and `secrets: inherit` fails at token selection. The caller must use the merged names, pass `release_app_client_id: ${{ vars.RELEASE_APP_CLIENT_ID }}` and the key secret explicitly, and set `permissions: {}`.
+- **The reusable rewrites `release.yml`, it does not check it.** Its edit is not idempotent on a file that already carries `release/**` and `target-branch` (duplicate key, then a fallback rewrite that strips blank lines). Fix in the reusable: no-op when both edits are present.
+- **App lacks `workflows` permission.** `opm-release-please` holds contents, issues and pull_requests write only, so a push changing `.github/workflows/*` is refused. The reusable creates `release/vX.Y` before pushing the setup branch, so a refused push leaves an undeletable branch that blocks a re-cut. Fix in the reusable: push the setup branch before `createRef`. Granting `workflows: write` is an owner decision.
+- **Gate.** Proving input names is not enough: require an end-to-end cut in the sandbox run as the App, where the setup PR leaves an already-edited `release.yml` byte-identical.
+- **Latest and `:latest`.** Decide by SemVer, not by branch: mark Latest and move `:latest` only when the tag is the highest final version among published releases; otherwise state that both lag until `main`'s next release. The cli pins the operator tag, so "a cli resolving latest" is not a reason.
+- **Patch-only bumps in the spec.** "Version bump determination per release line" says a `feat` proposes a minor; a branch requirement must state that every releasable commit on `release/*`, `feat` included, proposes a patch, with a scenario (`feat` on `release/v1.0` at 1.0.4 proposes 1.0.5), citing 0021:D10:R5.
+- **Sandbox item (former U8).** On `release/vX.Y` with `always-bump-patch` and `prerelease: false`, release-please with `target-branch` proposes `vX.Y.(Z+1)`, the App tags the branch commit, Latest follows the chosen policy, and the next Release PR on `main` is unaffected.
+- **Hook gap (workspace item).** `gh api -X POST .../git/refs -f ref=refs/heads/release/...` passes the agent hook because the ref is in the body; under the release-branches ruleset a mistaken branch squats the name permanently.
 
 ## Reconcile phase impact
 
@@ -203,5 +180,4 @@ None. Source, Render, Apply, Prune and Status are untouched: this change edits o
 - [Reuse path trusts a label] → the label is written only by this workflow and the version tag is pushed only by it; anyone able to push a forged image to `ghcr.io/open-platform-model/opm-operator` already defeats the rule. Deliberate trade-off against byte-reproducible builds.
 - [Partial tag push] → buildx writes each tag manifest separately, so a cancelled run can leave `:vX.Y.Z` without `:latest` or `:sha-<short>`. The reuse path re-points both mutable tags.
 - [Pending run cancelled by the concurrency group] → safe: release-please is derived from branch state, and the newest run creates whatever an older pending one would have.
-- [Reusable workflow interface drift] → the caller pins a full commit SHA of the merged reusable workflow (G-reusable), so a later change there cannot alter this repo's cut without a pin bump.
 - [Spec drift] → `Release build architecture set` says exactly two platform descriptors, while buildx also adds `unknown/unknown` attestation entries; pre-existing and untouched here.

@@ -61,6 +61,18 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+const (
+	// defaultRegistry is the built-in CUE registry mapping: opmodel.dev/* and
+	// testing.opmodel.dev/* come from GHCR, everything else from registry.cue.works.
+	defaultRegistry = "testing.opmodel.dev=ghcr.io/open-platform-model," +
+		"opmodel.dev=ghcr.io/open-platform-model,registry.cue.works"
+
+	// Registry sources reported by resolveRegistry, in precedence order.
+	registrySourceFlag    = "flag"
+	registrySourceEnv     = "env"
+	registrySourceDefault = "default"
+)
+
 // nolint:gocyclo
 func main() {
 	var registry string
@@ -91,11 +103,11 @@ func main() {
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.StringVar(&registry, "registry",
-		"testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works",
-		"CUE registry mapping for resolving module dependencies. "+
-			"Falls back to OPM_REGISTRY env var if empty. Default routes opmodel.dev/* and "+
-			"testing.opmodel.dev/* to ghcr.io/open-platform-model with registry.cue.works as fallback.")
+	flag.StringVar(&registry, "registry", "",
+		"CUE registry mapping for resolving module dependencies (CUE_REGISTRY syntax). "+
+			"If empty, the OPM_REGISTRY env var is used; if that is also empty, the built-in default "+
+			"routes opmodel.dev/* and testing.opmodel.dev/* to ghcr.io/open-platform-model "+
+			"with registry.cue.works as fallback.")
 	flag.StringVar(&cueCacheDir, "cue-cache-dir", "/tmp/cue-cache",
 		"Directory for CUE module download cache.")
 	flag.StringVar(&platformDir, "platform-dir", "/tmp/opm-platform",
@@ -224,8 +236,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Registry precedence: --registry flag > OPM_REGISTRY env > CUE default.
-	registry = resolveRegistry(registry)
+	// Registry precedence: --registry flag > OPM_REGISTRY env > built-in default.
+	registry, registrySource := resolveRegistry(registry)
+	setupLog.Info("Resolved CUE registry", "registry", registry, "source", registrySource)
 
 	// Set CUE environment variables before any CUE loading.
 	// These must be set in main() before mgr.Start() spawns goroutines,
@@ -370,12 +383,16 @@ func verifyCoreSchema(k *kernel.Kernel) (string, error) {
 	return k.SchemaCache().ResolvedVersion(), nil
 }
 
-// resolveRegistry picks the effective CUE registry mapping.
-// Precedence: --registry flag value > OPM_REGISTRY env var > "".
-// An empty return value signals "use CUE's built-in default resolution".
-func resolveRegistry(flagValue string) string {
+// resolveRegistry picks the effective CUE registry mapping and reports which
+// source supplied it.
+// Precedence: --registry flag value > OPM_REGISTRY env var > defaultRegistry.
+// The result is never empty, so a stock install resolves opmodel.dev from GHCR.
+func resolveRegistry(flagValue string) (registry, src string) {
 	if flagValue != "" {
-		return flagValue
+		return flagValue, registrySourceFlag
 	}
-	return os.Getenv("OPM_REGISTRY")
+	if env := os.Getenv("OPM_REGISTRY"); env != "" {
+		return env, registrySourceEnv
+	}
+	return defaultRegistry, registrySourceDefault
 }

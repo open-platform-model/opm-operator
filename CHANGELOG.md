@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.4](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-10-01)
+
+
+### Documentation
+
+* **site:** write Install the operator under Start here ([#174](https://github.com/open-platform-model/opm-operator/issues/174)) ([620319c](https://github.com/open-platform-model/opm-operator/commit/620319cecdcc2131ac79e4ce6881b9c544cfc6e4))
+
 ## [1.0.0-beta.3](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2026-10-01)
 
 

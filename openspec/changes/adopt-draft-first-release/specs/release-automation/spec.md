@@ -17,19 +17,19 @@ When the Release PR is merged to `main`, release-please SHALL create the git tag
 
 ## ADDED Requirements
 
-### Requirement: Release tag matches the release commit
-When release-please reports `releases_created == 'true'`, the release workflow SHALL resolve the release tag's commit from the remote (the peeled commit when the tag is annotated) and compare it with release-please's `sha` output before any image is built, any asset is uploaded or the release is published. On a mismatch, or when the tag does not exist, the workflow SHALL fail and SHALL NOT move, delete or re-create the tag.
+### Requirement: Release runs serialized per branch
+The release workflow SHALL declare a workflow-level concurrency group keyed by the pushed branch with `cancel-in-progress: false`, so at most one release run per branch executes at a time. Before any asset upload or publication, the workflow SHALL confirm that exactly one GitHub Release carries the release tag, and SHALL fail without uploading or publishing otherwise.
 
-#### Scenario: Tag at the release commit
-- **WHEN** release-please cuts `v1.0.0-beta.3` and the remote tag resolves to the same commit as the `sha` output
-- **THEN** the assertion passes and the image, asset and publish jobs run
+#### Scenario: Two pushes in quick succession
+- **WHEN** the Release PR for `v1.0.0-beta.3` merges and another commit lands on `main` seconds later
+- **THEN** the second run waits for the first to finish, and exactly one draft release exists for `v1.0.0-beta.3`
 
-#### Scenario: Pre-existing tag at another commit
-- **WHEN** a tag `v1.0.0-beta.3` already existed at a different commit and release-please adopted it while creating the draft
-- **THEN** the release-please job fails with a message naming both commits, no image or asset is produced, the release stays a draft, and the fix is the next `1.0.0-beta.N`
+#### Scenario: Duplicate release for a tag
+- **WHEN** two releases carry the tag `v1.0.0-beta.3`
+- **THEN** every upload step and the publish job fail with a message naming the count, and neither release is published
 
 ### Requirement: Release assets upload only to a draft release
-Every step that uploads an asset to the GitHub Release (`install.yaml`, `opm-examples.tar.gz`, the example manifests) SHALL first confirm that the release for the tag is a draft and SHALL fail without uploading when it is published. Replacing an existing asset (`--clobber`) SHALL be used only on a draft.
+Every step that uploads an asset to the GitHub Release (`install.yaml`, `opm-examples.tar.gz`, the example manifests) SHALL first confirm that the single release for the tag is a draft and SHALL fail without uploading when it is published. Replacing an existing asset (`--clobber`) SHALL be used only on a draft. Every GitHub CLI call in the release workflow SHALL name the repository explicitly. Source: 0021:D10:R7.
 
 #### Scenario: Upload to the draft
 - **WHEN** the image job uploads `install.yaml` for a release that is still a draft
@@ -40,7 +40,7 @@ Every step that uploads an asset to the GitHub Release (`install.yaml`, `opm-exa
 - **THEN** the step fails before uploading and tells the operator to release the next version instead
 
 ### Requirement: Release published once after every release job
-The release workflow SHALL contain a final job that depends on every job producing a release artifact (the image job and the example publishing job), runs only when a release was cut, holds `contents: write` and no other write permission, confirms the required assets (`install.yaml`, `opm-examples.tar.gz`) are attached to the draft, and then publishes the draft. It SHALL leave the Pre-release flag set by release-please unchanged. When the release is already published it SHALL succeed without changing anything.
+The release workflow SHALL contain a final job that depends on every job producing a release artifact (the image job and the example publishing job), runs only when a release was cut, holds `contents: write` and no other write permission, checks out only the files it runs, confirms the required assets (`install.yaml`, `opm-examples.tar.gz`) are attached to the draft, and then publishes the draft. It SHALL leave the Pre-release flag set by release-please unchanged. When the release is already published it SHALL succeed without changing anything.
 
 #### Scenario: All release jobs succeed
 - **WHEN** the image and example jobs finish successfully for `v1.0.0-beta.3`
@@ -54,11 +54,22 @@ The release workflow SHALL contain a final job that depends on every job produci
 - **WHEN** the final job runs and the draft lacks `install.yaml`
 - **THEN** the job fails and the release stays a draft
 
+### Requirement: Release maintenance branches
+The release workflow SHALL also run on pushes to `release/**` branches and SHALL run release-please against the pushed branch. A release cut from a branch other than `main` SHALL NOT be marked the repository's Latest release and SHALL NOT move the `:latest` image tag. The repository SHALL carry a manually dispatched `cut-release-branch` workflow taking a released minor `X.Y` that calls the organization's reusable cut-release-branch workflow, pinned by full commit SHA, with tag prefix `v` and package `.`. That reusable workflow creates `release/vX.Y` from the newest `vX.Y.*` tag and opens a pull request into it with the branch-local release-please settings. No workflow in this repository SHALL delete a `release/*` branch.
+
+#### Scenario: Maintenance branch cut
+- **WHEN** a maintainer dispatches `cut-release-branch` with minor `1.0` after `v1.0.4` and `v1.1.0` are released
+- **THEN** branch `release/v1.0` is created at the `v1.0.4` commit and a pull request into it sets `versioning: always-bump-patch` and `prerelease: false` for package `.`
+
+#### Scenario: Patch released from a maintenance branch
+- **WHEN** a backported `fix` merges into `release/v1.0` and the resulting Release PR for `v1.0.5` merges
+- **THEN** the same release jobs run for `v1.0.5`, the image is pushed as `:v1.0.5` and `:sha-<short>` without moving `:latest`, and the published release is not marked Latest
+
 ### Requirement: Release tags are never moved, deleted or re-created
-No workflow, task or script in this repository SHALL move, delete or re-create a git tag or delete a GitHub Release. A failed run before publish SHALL be recovered by re-running its failed jobs; a wrong published release or a tag at the wrong commit SHALL be fixed by releasing the next version.
+No workflow, task or script in this repository SHALL move, delete or re-create a git tag or delete a GitHub Release. A failed run before publish SHALL be recovered by re-running its failed jobs; a wrong published release SHALL be fixed by releasing the next version. Source: 0021:D10:R1.
 
 #### Scenario: Workflows carry no tag mutation
-- **WHEN** `.github/workflows/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for `git tag`, a tag push, `gh release delete`, `gh release edit --tag`/`--target` or a write to the git refs API
+- **WHEN** `.github/workflows/`, `.github/scripts/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for `git tag`, a `git push` of a tag ref (`refs/tags/`, `--tags`, `--mirror`, a delete or force refspec), `gh release delete`, `gh release edit --tag`/`--target`, or a write to the git refs API
 - **THEN** no match exists
 
 #### Scenario: Broken published release

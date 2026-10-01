@@ -2,7 +2,7 @@
 
 ### Requirement: Release image tags
 
-On a gated release run, the image-release job SHALL push exactly three tags for a release version `v<MAJOR>.<MINOR>.<PATCH>`: `:sha-<short>` (7-character short SHA of the release commit), `:v<MAJOR>.<MINOR>.<PATCH>` (exact release version including leading `v`), and `:latest`. The release commit is the commit release-please's `sha` output names, not the pushed commit, and the image's `org.opencontainers.image.revision` label SHALL carry it. The version tag SHALL never be overwritten: before building, the job SHALL probe the version tag; when it is absent the job builds and pushes all three tags; when it exists with a revision label equal to the release commit the job SHALL skip the build and reuse the existing manifest-list digest for every later step, leaving `:latest` unchanged; when it exists with any other revision, or the probe fails for any reason other than the tag being absent, the job SHALL fail without pushing. `:latest` and `:sha-<short>` are mutable by design.
+On a gated release run, the image-release job SHALL push, for a release version `v<MAJOR>.<MINOR>.<PATCH>`, `:sha-<short>` (7-character short SHA of the release commit), `:v<MAJOR>.<MINOR>.<PATCH>` (exact release version including leading `v`) and, only for a release cut from `main`, `:latest`. The release commit is the commit the release tag names, read from the checked-out tag, not the pushed commit; the image's `org.opencontainers.image.revision` label SHALL carry it and its `org.opencontainers.image.version` label SHALL be the release tag. The version tag SHALL always resolve to the manifest list first pushed under it (0021:D10:R3): before building, the job SHALL probe the version tag. When it is absent the job builds and pushes, then SHALL confirm the version tag resolves to the pushed digest. When it exists with a revision label equal to the release commit the job SHALL push nothing under the version tag, SHALL reuse the existing digest for every later step, and MAY re-point the mutable tags to it. When it exists with any other revision, or the probe fails for any reason other than the tag being absent, the job SHALL fail without pushing. `:latest` and `:sha-<short>` are mutable by design.
 
 #### Scenario: First release v0.1.0
 - **WHEN** release-please cuts `v0.1.0` at commit `abcd123...`
@@ -14,7 +14,7 @@ On a gated release run, the image-release job SHALL push exactly three tags for 
 
 #### Scenario: Re-run after the version tag was pushed
 - **WHEN** the image-release job is re-run for `v1.0.0-beta.3` after a previous attempt pushed `:v1.0.0-beta.3` built from the release commit
-- **THEN** the job SHALL NOT build or push, and SHALL sign, attest and render `install.yaml` against the existing digest
+- **THEN** the job SHALL NOT build or push `:v1.0.0-beta.3`, its digest stays unchanged, and the job SHALL sign, attest and render `install.yaml` against that digest
 
 #### Scenario: Version tag held by a different image
 - **WHEN** `:v1.0.0-beta.3` already exists and its revision label names a commit other than the release commit
@@ -23,6 +23,10 @@ On a gated release run, the image-release job SHALL push exactly three tags for 
 #### Scenario: Release cut on a later push
 - **WHEN** release-please creates the release for a Release PR merged at `abcd123...` during a workflow run triggered by a later push at `ef01234...`
 - **THEN** the image SHALL be built from the tag, tagged `:sha-abcd123`, and labelled with revision `abcd123...`
+
+#### Scenario: Release from a maintenance branch
+- **WHEN** `v1.0.5` is cut from `release/v1.0` while `:latest` names the `v1.1.0` image
+- **THEN** the job pushes `:v1.0.5` and `:sha-<short>`, and `:latest` still names the `v1.1.0` image
 
 ### Requirement: Release install manifest with digest-pinned image
 

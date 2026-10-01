@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.3](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2026-10-01)
+
+
+### Bug Fixes
+
+* **deps:** bump golang.org/x/mod to v0.40.0 ([#169](https://github.com/open-platform-model/opm-operator/issues/169)) ([139d63d](https://github.com/open-platform-model/opm-operator/commit/139d63d71fb9ae29f08e92ccbdf5c56cc0baee9f))
+
 ## [1.0.0-beta.2](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-09-30)
 
 

@@ -1,10 +1,10 @@
 ## Why
 
-A fixture bump can leave a modulepackage on a stale core or catalog pin, and nothing fails. Each `test/fixtures/modulepackages/<m>/cue.mod/module.cue` pins its module (`testing.opmodel.dev/modules/operator/<m>`) plus core and catalogs/opm. CUE v0.17.1 keeps a dependency the consumer already lists at its listed version: a modulepackage re-pinned to a new module version but left on an older core passes `cue mod tidy --check` and renders against the older core.
+A fixture bump can leave a modulepackage on a stale core or catalog pin, and nothing fails. Each `test/fixtures/modulepackages/<m>/cue.mod/module.cue` pins its module plus core and catalogs/opm. CUE v0.17.1 keeps a dependency the consumer already lists at its listed version, so a modulepackage re-pinned to a new module version but left on an older core passes `cue mod tidy --check` and renders against the older core.
 
-The documented manual bump path has exactly that gap. `AGENTS.md` says to run `opm module version set`, then `task examples:pin`; `examples:pin` rewrites only the module's own `v:` line in the modulepackage (`.tasks/examples.yaml`, the `pin` task). Only the workspace `task deps:pins:fixtures` copies the module's core and catalog pins ("follows the module"). The same bug bit the cli in its PR 254 (`dd23e01`, fixed by hand in `a3d8b01`).
+The documented manual path (`opm module version set`, then `task examples:pin`) has exactly that gap: `examples:pin` rewrites only the module's own `v:` line. Only the workspace `task deps:pins:fixtures` makes core and the catalogs follow the module. The same bug bit the cli in its PR 254.
 
-This change closes the manual path and adds the check that catches the drift whatever produced it, using the same `hack/fixtures.sh consumers` subcommand the cli change `fixture-consumer-guard` adds (the file is byte-identical in both repos).
+This change closes the manual path and adds a check, `hack/fixtures.sh consumers` (byte-identical with the cli's), that catches the drift whatever produced it.
 
 ## What Changes
 

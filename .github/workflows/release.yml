@@ -163,7 +163,7 @@ jobs:
         run: |
           args=()
           while IFS= read -r tag; do
-            [ -n "$tag" ] && [ "$tag" != "${VERSION_REF}" ] && args+=(--tag "$tag")
+            [ -n "$tag" ] && [ "$tag" != "${VERSION_REF}" ] && args+=(-t "$tag")
           done <<< "${TAGS}"
           docker buildx imagetools create "${args[@]}" "${IMAGE}@${DIGEST}"
 
@@ -219,12 +219,16 @@ jobs:
         run: |
           task operator:installer IMG="${IMG}"
 
-      - name: Upload install.yaml to GitHub release
+      # Assets go to the draft only; --clobber keeps "Re-run failed jobs"
+      # idempotent and never touches a published release.
+      - name: Upload install.yaml to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release upload "${TAG}" dist/install.yaml --clobber
+          .github/scripts/release-guard.sh assert-draft "${TAG}"
+          gh release upload "${TAG}" dist/install.yaml --repo "${GH_REPO}" --clobber
 
   publish-examples:
     name: Publish example modules and manifests
@@ -286,10 +290,37 @@ jobs:
       - name: Bundle example manifests
         run: task examples:bundle
 
-      - name: Upload example manifests to GitHub release
+      - name: Upload example manifests to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release upload "${TAG}" dist/opm-examples.tar.gz --clobber
-          gh release upload "${TAG}" dist/examples/*.yaml --clobber
+          .github/scripts/release-guard.sh assert-draft "${TAG}"
+          gh release upload "${TAG}" dist/opm-examples.tar.gz --repo "${GH_REPO}" --clobber
+          gh release upload "${TAG}" dist/examples/*.yaml --repo "${GH_REPO}" --clobber
+
+  publish-release:
+    name: Publish the draft release
+    # The single publish point: the release becomes public only after every
+    # job that attaches an asset has succeeded. A failed run leaves a draft;
+    # recover with "Re-run failed jobs", never "Re-run all jobs".
+    needs: [release-please, image-release, publish-examples]
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the draft release
+    steps:
+      - name: Checkout the release guard at the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          sparse-checkout: .github/scripts
+
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          .github/scripts/release-guard.sh publish "${TAG}"

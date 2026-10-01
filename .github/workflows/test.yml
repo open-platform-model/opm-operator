@@ -7,6 +7,7 @@ name: Tests
 # version therefore land in ONE PR; publish-fixtures.yml publishes the same
 # coordinate to GHCR on merge. `hack/fixtures.sh check` keeps the two equal: a
 # fixture changed in the PR must carry a version GHCR does not hold yet.
+# `hack/fixtures.sh consumers` then checks each modulepackage pins what CUE resolves.
 
 on:
   push:
@@ -64,6 +65,9 @@ jobs:
 
       - name: Seed the job-local registry from the tree
         run: task examples:seed CUE_REGISTRY="$MIXED_CUE_REGISTRY"
+
+      - name: Fixture consumers follow their fixtures
+        run: task examples:consumers CONSUMERS_CUE_REGISTRY="$MIXED_CUE_REGISTRY"
 
       - name: Running Tests
         env:

@@ -1,7 +1,8 @@
 name: Tests
 
 # Unit + integration tier. The registry-backed integration specs resolve the
-# fixture fleet (testing.opmodel.dev/modules/operator/*) from a job-local
+# fixture fleet (testing.opmodel.dev/modules/operator/* and the test catalog
+# testing.opmodel.dev/catalogs/operator/*) from a job-local
 # registry seeded from THIS tree (hack/fixtures.sh seed), while core and the
 # catalogs still come from GHCR. A fixture bump and every consumer of its
 # version therefore land in ONE PR; publish-fixtures.yml publishes the same

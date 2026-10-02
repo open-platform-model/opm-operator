@@ -8,6 +8,10 @@ version: '3'
 # identity/identity.cue (core #IdentityPackage; 0010:D38 / 0011:D12),
 # never in module.cue.
 #
+# Catalog fixtures under test/fixtures/catalogs/<c>/ (the catalogs/ sibling of
+# MODULES_DIR) publish through the same script with `opm catalog publish`, to
+# testing.opmodel.dev/catalogs/operator/<c>; check, seed and publish cover them.
+#
 # Publishing, seeding and the publish gates live in hack/fixtures.sh (one script,
 # identical in cli and opm-operator); these tasks are thin wrappers plus the
 # operator-only pieces: pinning moduleinstance.yaml / modulepackage / sample
@@ -36,7 +40,7 @@ tasks:
       - find {{.MODULES_DIR}} -mindepth 1 -maxdepth 1 -type d | sort
 
   pins:
-    desc: 'Print each example module''s declared coordinate (<path>=<version>) from its identity package'
+    desc: 'Print each fixture''s declared coordinate (<path>=<version>) from its identity package, test catalogs first'
     cmds:
       - FIXTURES_DIR={{.MODULES_DIR}} hack/fixtures.sh pins
 
@@ -48,17 +52,17 @@ tasks:
       - cue eval {{.MODULE_DIR}}/identity --out text -e Version
 
   check:
-    desc: 'Run every publish gate over the example modules (dry run against GHCR) and enforce changed-implies-bumped against BASE_REF (default origin/main)'
+    desc: 'Run every publish gate over the example modules and test catalogs (dry run against GHCR) and enforce changed-implies-bumped against BASE_REF (default origin/main)'
     cmds:
       - FIXTURES_DIR={{.MODULES_DIR}} OPM_BIN={{.OPM}} hack/fixtures.sh check
 
   seed:
-    desc: 'Publish the tree''s example modules into the LOCAL registry CUE_REGISTRY maps testing.opmodel.dev to (PR CI and local iteration; refuses a ghcr.io mapping)'
+    desc: 'Publish the tree''s example modules and test catalogs into the LOCAL registry CUE_REGISTRY maps testing.opmodel.dev to (PR CI and local iteration; refuses a ghcr.io mapping)'
     cmds:
       - FIXTURES_DIR={{.MODULES_DIR}} OPM_BIN={{.OPM}} CUE_REGISTRY='{{.CUE_REGISTRY}}' hack/fixtures.sh seed
 
   publish:
-    desc: 'Publish each example module at its declared version if absent (idempotent). SINCE=<git-ref> limits to modules changed since that ref. PRERELEASE=<id> appends a SemVer pre-release segment (e.g. e2e.gabc1234) so the tag never claims the real release version.'
+    desc: 'Publish each example module and test catalog at its declared version if absent (idempotent). SINCE=<git-ref> limits to modules changed since that ref. PRERELEASE=<id> appends a SemVer pre-release segment (e.g. e2e.gabc1234) so the tag never claims the real release version.'
     vars:
       PUBLISH_REGISTRY: '{{.CUE_REGISTRY | default .GHCR_CUE_REGISTRY}}'
     cmds:

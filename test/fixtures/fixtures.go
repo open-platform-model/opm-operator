@@ -1,12 +1,13 @@
 // Package fixtures reads the declared coordinate of this repo's published
-// test-fixture modules, so tests pin the version the tree carries instead of a
-// literal that has to be edited on every bump.
+// test fixtures (modules and catalogs), so tests pin the version the tree
+// carries instead of a literal that has to be edited on every bump.
 //
 // IDENTICAL COPY in cli/tests/fixtures/fixtures.go and
 // opm-operator/test/fixtures/fixtures.go. The workspace root `task
 // fixtures:lint` fails when the two drift; edit both.
 //
-// A fixture lives at <this dir>/modules/<name>/ and its identity package
+// A module fixture lives at <this dir>/modules/<name>/, a catalog fixture at
+// <this dir>/catalogs/<name>/, and its identity package
 // (identity/identity.cue) is the single source of ModulePath and Version. The
 // identity package is import-free by design, so loading it needs no registry
 // and no CUE_REGISTRY mapping. hack/fixtures.sh reads the same two fields with
@@ -27,7 +28,8 @@ import (
 // Coordinate is a fixture's declared module path and bare SemVer version.
 type Coordinate struct {
 	// ModulePath is the major-suffixed CUE module path, e.g.
-	// testing.opmodel.dev/modules/operator/hello@v0.
+	// testing.opmodel.dev/modules/operator/hello@v0 or
+	// testing.opmodel.dev/catalogs/operator/provider@v0.
 	ModulePath string
 	// Version is the bare SemVer, e.g. 0.0.6.
 	Version string
@@ -54,13 +56,38 @@ func Dir() (string, error) {
 	return d, nil
 }
 
+// CatalogDir returns the absolute path of the catalog fixtures directory: the
+// catalogs/ sibling of Dir(), the same root hack/fixtures.sh publishes
+// catalogs from.
+func CatalogDir() (string, error) {
+	root, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(root), "catalogs"), nil
+}
+
 // Load reads the coordinate of the fixture module <Dir()>/<name>.
 func Load(name string) (Coordinate, error) {
 	root, err := Dir()
 	if err != nil {
 		return Coordinate{}, err
 	}
-	moduleDir := filepath.Join(root, name)
+	return loadIdentity(filepath.Join(root, name), name)
+}
+
+// LoadCatalog reads the coordinate of the fixture catalog <CatalogDir()>/<name>.
+func LoadCatalog(name string) (Coordinate, error) {
+	root, err := CatalogDir()
+	if err != nil {
+		return Coordinate{}, err
+	}
+	return loadIdentity(filepath.Join(root, name), name)
+}
+
+// loadIdentity reads ModulePath and Version from the identity package of the
+// fixture tree at moduleDir.
+func loadIdentity(moduleDir, name string) (Coordinate, error) {
 	if _, err := os.Stat(filepath.Join(moduleDir, "identity")); err != nil {
 		return Coordinate{}, fmt.Errorf("fixtures: %s has no identity/ package: %w", name, err)
 	}
@@ -106,6 +133,17 @@ type Failer interface {
 func Must(t Failer, name string) Coordinate {
 	t.Helper()
 	c, err := Load(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// MustCatalog is LoadCatalog for tests: a catalog fixture that cannot be read
+// fails the test.
+func MustCatalog(t Failer, name string) Coordinate {
+	t.Helper()
+	c, err := LoadCatalog(name)
 	if err != nil {
 		t.Fatal(err)
 	}

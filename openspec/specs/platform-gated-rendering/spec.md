@@ -29,11 +29,11 @@ When the store holds no generated-module record, the reconciler SHALL set the Mo
 - **WHEN** rendering is blocked because no platform module is recorded
 - **THEN** the reason is `PlatformNotReady`, not `RenderFailed`, `ResolutionFailed` or `SkewRefused`
 
-### Requirement: Re-enqueue ModuleReleases when the platform becomes ready
+### Requirement: Re-enqueue ModuleInstances when the platform becomes ready
 
-The ModuleInstance reconciler SHALL watch the `Platform` and, on a generation change, re-enqueue all `ModuleInstances` so that instances blocked on `PlatformNotReady`, and instances rendered under a superseded policy or pin set, retry promptly.
+The ModuleInstance reconciler SHALL watch the `Platform` and, on every Platform change (including the reconciler's own status update, which does not bump the Platform's generation), re-enqueue all `ModuleInstances` so that instances blocked on `PlatformNotReady`, and instances rendered under a superseded policy or pin set, retry promptly.
 
-#### Scenario: Blocked releases retry when the platform is generated
+#### Scenario: Blocked instances retry when the platform is generated
 
 - **WHEN** a `ModuleInstance` is blocked with `PlatformNotReady` and a Platform is then applied and reaches `Generated`
 - **THEN** the reconciler re-enqueues the instance and renders it on the next reconcile

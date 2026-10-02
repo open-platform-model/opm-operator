@@ -234,9 +234,12 @@ type PlatformStatus struct {
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].reason"
 // +kubebuilder:printcolumn:name="Operator",type=string,JSONPath=".status.operatorVersion"
 
-// Platform is the Schema for the platforms API. It is a cluster-scoped
-// singleton (the only permitted name is "cluster") whose spec projects the
-// core #Platform author surface.
+// Platform declares the catalogs the operator renders against: the operator
+// generates a platform CUE module from it, and renders ModuleInstances and
+// ModulePackages against that module.
+//
+// It is a cluster-scoped singleton (the only permitted name is "cluster")
+// whose spec projects the core #Platform author surface.
 type Platform struct {
 	metav1.TypeMeta `json:",inline"`
 

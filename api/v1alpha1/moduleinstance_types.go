@@ -82,14 +82,6 @@ type ModuleInstanceStatus struct {
 	InstanceUUID string `json:"instanceUUID,omitempty"`
 
 	// conditions represent the current state of the ModuleInstance resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -134,7 +126,7 @@ type ModuleInstanceStatus struct {
 	// RequiredContracts lists every contract FQN this instance's components
 	// declare, sorted and deduplicated, as the last successful render
 	// reported them. It is the instance side of the removal guard
-	// (0015:D3, D16): a TransformerRegistration counts its
+	// (0015:D3/D16): a TransformerRegistration counts its
 	// dependents by intersecting this with its own spec.provides, so a
 	// provider cannot be deleted, or shrink its provides, out from under
 	// the instances still demanding what it serves.
@@ -167,7 +159,14 @@ type ModuleInstanceStatus struct {
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=".spec.module.version"
 // +kubebuilder:printcolumn:name="Retry",type=date,JSONPath=".status.nextRetryAt",priority=1
 
-// ModuleInstance is the Schema for the moduleinstances API
+// ModuleInstance asks the operator to render one CUE module at a pinned
+// version with the given values and apply the result.
+//
+// The module is resolved from an OCI registry by spec.module.path and
+// spec.module.version. When spec.owner is "cli", the OPM CLI manages the
+// instance and the operator leaves it alone: it renders, applies and prunes
+// nothing, adds no finalizer, and records only a ManagedExternally
+// acknowledgement.
 type ModuleInstance struct {
 	metav1.TypeMeta `json:",inline"`
 

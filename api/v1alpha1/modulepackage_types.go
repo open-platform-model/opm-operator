@@ -135,7 +135,12 @@ type ModulePackageStatus struct {
 // +kubebuilder:printcolumn:name="Revision",type=string,JSONPath=".status.source.artifactRevision",priority=1
 // +kubebuilder:printcolumn:name="Retry",type=date,JSONPath=".status.nextRetryAt",priority=1
 
-// ModulePackage is the Schema for the modulepackages API.
+// ModulePackage renders the ModuleInstance package that a Flux source
+// artifact carries.
+//
+// The operator fetches the artifact spec.sourceRef names, loads instance.cue
+// from the directory at spec.path, and renders and applies it when it
+// evaluates to #ModuleInstance; any other kind is rejected as unsupported.
 type ModulePackage struct {
 	metav1.TypeMeta `json:",inline"`
 

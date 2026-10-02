@@ -21,9 +21,9 @@
 
 ## 3. Leave OPM Go modules to the cascade
 
-- [ ] 3.1 Add `ignore: [{dependency-name: "github.com/open-platform-model/*"}]` to the `gomod` entry of `.github/dependabot.yml`, with a comment that the release cascade owns these bumps (workspace RELEASING.md, section "Pin classes"); keep the `build` prefix and the `kubernetes` group
-- [ ] 3.2 Validate the YAML parses (`yq . .github/dependabot.yml` or `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/dependabot.yml`)
-- [ ] 3.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(deps): leave OPM Go module bumps to the release cascade`
+- [x] 3.1 Add `ignore: [{dependency-name: "github.com/open-platform-model/*"}]` to the `gomod` entry of `.github/dependabot.yml`, with a comment that the release cascade owns these bumps (workspace RELEASING.md, section "Pin classes"); keep the `build` prefix and the `kubernetes` group
+- [x] 3.2 Validate the YAML parses (`yq . .github/dependabot.yml` or `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/dependabot.yml`)
+- [x] 3.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(deps): leave OPM Go module bumps to the release cascade`
 
 ## 4. Stop doc-only commits from releasing
 

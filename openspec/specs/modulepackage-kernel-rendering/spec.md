@@ -1,40 +1,40 @@
-# release-kernel-rendering
+# modulepackage-kernel-rendering
 
 ## Purpose
 
-The `Release` reconciler renders its Flux-fetched release package through the kernel-backed `KernelReleaseRenderer` against the generated platform: `ModuleRelease` packages are loaded, constructed, and compiled in the kernel's context with no injected values; rendering blocks inertly when no platform is generated, retries promptly when the platform becomes ready, and non-`ModuleRelease` packages are rejected.
+The `ModulePackage` reconciler renders its Flux-fetched package through the kernel-backed `KernelPackageRenderer` against the generated platform: a `#ModuleInstance` package that carries its own values is acquired through the kernel's on-disk acquisition and rendered through the single-build render with the leased platform record and its skew policy; rendering blocks inertly when no platform is generated, retries promptly when the platform changes, and packages of any other kind are rejected.
 
 ## Requirements
 
-### Requirement: Release renders through the kernel against the generated platform
+### Requirement: ModulePackage renders through the kernel against the generated platform
 
 `KernelPackageRenderer` SHALL acquire the extracted package as a source-carrying instance through the kernel's on-disk acquisition and render it through the single-build render with the leased platform record and its skew policy.
 
-#### Scenario: ModuleRelease package renders and applies
+#### Scenario: ModuleInstance package renders and applies
 
 - **WHEN** a `ModulePackage` artifact holding a `#ModuleInstance` package is rendered while a generated platform is recorded
 - **THEN** the rendered resources are applied and recorded as before
 
-### Requirement: Block Release when no platform is generated
+### Requirement: Block ModulePackage when no platform is generated
 
 When the store holds no generated-module record, the package renderer SHALL return `ErrPlatformNotReady` after kind detection and before any build, and the reconciler SHALL set `Ready=False` reason `PlatformNotReady`.
 
-#### Scenario: No platform present blocks the release inertly
+#### Scenario: No platform present blocks the package inertly
 
 - **WHEN** a `ModulePackage` is reconciled while no platform is recorded
 - **THEN** its status carries `PlatformNotReady` and nothing is applied
 
-### Requirement: Re-enqueue Releases when the platform becomes ready
+### Requirement: Re-enqueue ModulePackages when the platform becomes ready
 
-The `Release` reconciler SHALL watch the `Platform` resource and re-enqueue all `Releases` on a Platform change, so releases blocked on `PlatformNotReady` retry promptly rather than only on backoff.
+The `ModulePackage` reconciler SHALL watch the `Platform` resource and re-enqueue all `ModulePackages` on every Platform change (including the reconciler's own status update, which does not bump generation), so packages blocked on `PlatformNotReady` retry promptly rather than only on backoff.
 
-#### Scenario: Blocked release retries when the platform is generated
+#### Scenario: Blocked package retries when the platform is generated
 
-- **WHEN** a `Release` is blocked with `PlatformNotReady` and a `Platform` is then applied and generated
-- **THEN** the reconciler re-enqueues the `Release`
+- **WHEN** a `ModulePackage` is blocked with `PlatformNotReady` and a `Platform` is then applied and generated
+- **THEN** the reconciler re-enqueues the `ModulePackage`
 - **AND** on the next reconcile it renders and applies against the generated platform
 
-### Requirement: Non-ModuleRelease packages are rejected
+### Requirement: Packages of any other kind are rejected
 
 For a fetched package whose `kind` is anything other than `ModuleInstance`, the renderer SHALL return `ErrUnsupportedKind` and the reconciler SHALL surface `Ready=False` with reason `UnsupportedKind` and `Stalled=True`. The rejection SHALL NOT name speculative kinds: the kernel's `#ModuleInstance` shape gate (`oerrors.ErrWrongKind`, the sentinel the library's `opm/errors` package declares) is the detection mechanism, and the resulting error is generic.
 

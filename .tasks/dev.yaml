@@ -62,6 +62,8 @@ tasks:
     cmds:
       - task: :examples:seed
         vars: { CUE_REGISTRY: '{{.MIXED_CUE_REGISTRY}}' }
+      - task: :examples:consumers
+        vars: { CONSUMERS_CUE_REGISTRY: '{{.MIXED_CUE_REGISTRY}}' }
       - task: test
         vars:
           TEST_CUE_REGISTRY: '{{.MIXED_CUE_REGISTRY}}'

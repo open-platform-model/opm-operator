@@ -7,8 +7,9 @@ on:
 
 jobs:
   lint:
-    # Must stay unique across this repo's jobs: the ruleset on main requires
-    # the check "Lint" because it carries the release-pin gate (G1).
+    # Must stay unique across this repo's jobs: the main ruleset is to require
+    # the check "Lint" (workspace RELEASING.md, "Owner settings") because it
+    # carries the release-pin gate (G1).
     name: Lint
     runs-on: ubuntu-latest
     steps:

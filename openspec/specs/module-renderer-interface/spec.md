@@ -23,7 +23,7 @@ type ModuleRenderer interface {
 Production wires `KernelModuleRenderer` (see `platform-gated-rendering`); tests
 inject a stub that returns a pre-built `*RenderResult` without contacting an OCI
 registry. The package exports no registry-backed renderer struct and no longer
-references a catalog provider — transformers come from the materialized platform
+references a catalog provider — transformers come from the generated platform
 via the kernel.
 
 #### Scenario: Stub renderer returns pre-built result
@@ -59,7 +59,7 @@ field of type `render.ModuleRenderer` and pass it through to
 
 1. Controller creates `ModuleReleaseParams` with `Renderer: &KernelModuleRenderer{...}`
 2. Reconcile loop calls `params.Renderer.RenderModule(...)`
-3. `KernelModuleRenderer` renders through the library kernel against the materialized platform (see `platform-gated-rendering`)
+3. `KernelModuleRenderer` renders through the library kernel against the generated platform (see `platform-gated-rendering`)
 4. The reconcile loop consumes the resulting `*RenderResult` for apply, prune, drift, and impersonation
 
 ### Test with stub renderer

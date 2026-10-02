@@ -31,7 +31,7 @@ Fixtures SHALL NOT be authored under `opmodel.dev/*`. CUE resolves modules by lo
 The repo SHALL provide a podinfo example module modelling a stateless web workload. It SHALL render a Deployment and a Service exposing the podinfo HTTP port (9898), and SHALL declare an HTTP `livenessProbe` against `/healthz` and an HTTP `readinessProbe` against `/readyz` on that port.
 
 #### Scenario: Renders deployment with probes
-- **WHEN** the podinfo module is compiled and materialized
+- **WHEN** the podinfo module is rendered
 - **THEN** the output includes a Deployment whose container declares a `livenessProbe.httpGet` path `/healthz` and a `readinessProbe.httpGet` path `/readyz`, both on port 9898
 - **AND** the output includes a Service targeting port 9898
 
@@ -44,7 +44,7 @@ The repo SHALL provide a podinfo example module modelling a stateless web worklo
 The repo SHALL provide a redis example module modelling a stateful workload. It SHALL render a StatefulSet, a headless Service, and a PersistentVolumeClaim (or volumeClaimTemplate), and SHALL declare an exec readiness probe running `redis-cli ping`.
 
 #### Scenario: Renders statefulset with persistence and probe
-- **WHEN** the redis module is compiled and materialized
+- **WHEN** the redis module is rendered
 - **THEN** the output includes a StatefulSet with a volume claim and a headless Service
 - **AND** the container declares an exec readiness probe invoking `redis-cli ping`
 
@@ -109,8 +109,8 @@ package loads its imported `#Module` and renders at least one resource carrying 
 controller's ownership labels. The coverage SHALL remain gated on the local test registry
 (skipping when it is unavailable).
 
-#### Scenario: Every modulepackage renders under a materialized platform
-- **WHEN** the integration suite runs with a reachable test registry and a materialized platform
+#### Scenario: Every modulepackage renders under a generated platform
+- **WHEN** the integration suite runs with a reachable test registry and a generated platform
 - **THEN** each of the `hello`, `hello_web`, `podinfo`, `redis` modulepackage fixtures loads without a "field not allowed" error and renders at least one resource
 - **AND** each rendered resource carries the `managed-by` controller label and a non-empty module-instance UUID label
 

@@ -57,7 +57,7 @@ guarantees at most one `Platform` can exist.
 
 ### Requirement: Subscription shape
 
-`PlatformSpec.Registry` SHALL map major-suffixed catalog module paths (`opmodel.dev/catalogs/opm@v2`) to subscriptions of the form `{enable?, version}`. `version` SHALL name exactly one published catalog build as a bare SemVer string (`MinLength=1`); the filter vocabulary (`filter.range`, `filter.allow`, `filter.deny`) SHALL NOT exist in the schema. A subscription without a version SHALL never build: the CR itself builds nothing. Whether `version` is schema-`required` or schema-optional follows the recorded ratcheting measurement; the posture changes only the rejecting actor — admission in the required posture, platform synthesis at reconcile (surfaced as `BuildFailed` naming the subscription path) in the optional posture.
+`PlatformSpec.Registry` SHALL map major-suffixed catalog module paths (`opmodel.dev/catalogs/opm@v2`) to subscriptions of the form `{enable?, version}`. `version` SHALL name exactly one published catalog build as a bare SemVer string (`MinLength=1`); the filter vocabulary (`filter.range`, `filter.allow`, `filter.deny`) SHALL NOT exist in the schema. A subscription without a version SHALL never reach a platform build. Whether `version` is schema-`required` or schema-optional follows the recorded ratcheting measurement; the posture changes only the rejecting actor — admission in the required posture, the reconciler before any registry I/O (surfaced as `BuildFailed` naming the subscription path) in the optional posture.
 
 #### Scenario: Scalar subscription accepted
 

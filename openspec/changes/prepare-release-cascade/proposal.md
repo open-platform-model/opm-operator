@@ -21,7 +21,9 @@ its published `install.yaml`. Four things in this repo work against the cascade 
   section.
 - The opm CLI version is hard-coded in four `go install` lines
   (`.github/workflows/test.yml:59`, `test-e2e.yml:98`, `publish-fixtures.yml:66`,
-  `release.yml:274`), all still at `v1.0.0-beta.2` while the cli has published `v1.0.0-beta.4`.
+  `release.yml:274`), all still at `v1.0.0-beta.2` while the cli had published `v1.0.0-beta.4` at planning time
+  (beta.5 since; the pin moves there with `task deps:pins:opm-cli` as its own `ci(deps)` PR after
+  this change merges).
   The cascade App deliberately has no Workflows permission, so it can never move a pin that lives
   in `.github/workflows/` (workspace RELEASING.md, section "Cascade files").
 
@@ -103,8 +105,14 @@ None.
 - **opmodel.dev**: today the site builds opm-operator docs at exactly the operator version the
   newest cli tag pins (`opmodel.dev/site/versions.conf:7-9`). Until opmodel.dev
   `build-docs-from-branch-head` merges, a docs-only fix in `docs/` reaches the site only with the
-  next operator release (and the cli release that embeds it), unless the squash or PR body carries
-  a `Release-As:` footer. Section 4 is therefore gated on that change (see "Depends on / gates").
+  next operator release (and the cli release that embeds it), unless a normal PR sets `release-as`
+  in `release-please-config.json` (owner decision 2026-10-02: squash commits carry only the PR
+  title, so no footer reaches `main`). Section 4 is therefore gated on that change (see "Depends
+  on / gates").
+- **Library bumps are manual for a while.** Until opm-operator `join-release-cascade` goes live, a
+  library release reaches the operator only through a hand-made `fix(deps)` PR
+  (`go get github.com/open-platform-model/library@vX && go mod tidy`); Dependabot no longer
+  proposes it.
 - **Delivery**: one PR; the OpenSpec archive commit rides that PR and nothing is pushed to `main`
   (owner decision 2026-10-01 (RELEASING.md, Owner settings): main takes changes only through
   PRs).

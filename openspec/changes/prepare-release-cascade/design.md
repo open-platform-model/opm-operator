@@ -78,34 +78,61 @@ dispatch release-PR CI with `workflow_dispatch` (workspace RELEASING.md, section
 
 ```bash
 #!/usr/bin/env bash
-# hack/release-pin-check.sh: fail when a release would ship an unreproducible OPM pin.
+# Release-pin gate (G1, workspace RELEASING.md section "Gates"): fail when a
+# release would ship an OPM pin no consumer can reproduce.
+#
+#   1. a Go replace directive in go.mod;
+#   2. an OPM Go pin (github.com/open-platform-model/*) that is a pseudo-version
+#      or is not an existing tag of its repository;
+#   3. a -0.dev. dependency pin in a published fixture's cue.mod/module.cue
+#      (test/fixtures/modules/*, test/fixtures/modulepackages/*);
+#   4. any tracked cue.mod/local-module.cue (the opm CLI's local-replacement file).
+#
+# Every failure is printed before the script exits non-zero. Run it from the repo
+# root (task deps:release-check does). Needs go, jq, git and network access to
+# github.com for the tag lookups.
 set -euo pipefail
-fail=0; bad() { printf 'release-pin-check: %s\n' "$*" >&2; fail=1; }
+shopt -s nullglob
+
+fail=0
+bad() {
+	printf 'release-pin-check: %s\n' "$*" >&2
+	fail=1
+}
 
 # 1. No replace directives.
-go mod edit -json | jq -e '.Replace == null' >/dev/null \
-  || bad "go.mod has replace directives: $(go mod edit -json | jq -c '.Replace')"
+go mod edit -json | jq -e '.Replace == null' >/dev/null ||
+	bad "go.mod has replace directives: $(go mod edit -json | jq -c '.Replace')"
 
 # 2. OPM Go pins: no pseudo-versions, and the version is a tag of the module's repo.
+#    Pins come from go.mod itself (no network, no module resolution), so an
+#    unresolvable pin cannot hide behind a failed listing.
 pseudo='([-.]0\.|-)[0-9]{14}-[0-9a-f]{12}$'
 while read -r path ver; do
-  if [[ $ver =~ $pseudo ]]; then bad "$path $ver is a pseudo-version"; continue; fi
-  repo="https://$(cut -d/ -f1-3 <<<"$path")"   # github.com/open-platform-model/<repo>
-  git ls-remote --exit-code --tags "$repo" "refs/tags/$ver" >/dev/null \
-    || bad "$path $ver is not a tag of $repo"
+	[[ -n $path ]] || continue
+	if [[ $ver =~ $pseudo ]]; then
+		bad "go.mod: $path $ver is a pseudo-version"
+		continue
+	fi
+	repo="https://$(cut -d/ -f1-3 <<<"$path")" # github.com/open-platform-model/<repo>
+	git ls-remote --exit-code --tags "$repo" "refs/tags/$ver" >/dev/null ||
+		bad "go.mod: $path $ver is not a tag of $repo"
 done < <(go mod edit -json | jq -r '.Require[]?
-          | select(.Path | startswith("github.com/open-platform-model/"))
-          | "\(.Path) \(.Version)"')
+	| select(.Path | startswith("github.com/open-platform-model/"))
+	| "\(.Path) \(.Version)"')
 
 # 3. No -0.dev. pins in published fixtures.
 for f in test/fixtures/modules/*/cue.mod/module.cue test/fixtures/modulepackages/*/cue.mod/module.cue; do
-  while IFS= read -r l; do bad "dev pin $f:$l"; done < <(grep -nE 'v: "[^"]*-0\.dev\.' "$f" || true)
+	while IFS= read -r l; do bad "dev pin $f:$l"; done < <(grep -nE 'v: *"[^"]*-0\.dev\.' "$f" || true)
 done
 
 # 4. No tracked local-module.cue anywhere.
 while IFS= read -r f; do bad "tracked $f"; done < <(git ls-files '*cue.mod/local-module.cue')
 
-exit $fail
+if [[ $fail -eq 0 ]]; then
+	echo 'release-pin-check: ok'
+fi
+exit "$fail"
 ```
 
 The loops read through process substitution so `bad` runs in the main shell and `fail` survives.
@@ -166,11 +193,10 @@ install step itself, so no step depends on an env var set elsewhere:
           go install "github.com/open-platform-model/cli/cmd/opm@${v}"
 ```
 
-- **Deliberate departure from RELEASING.md's one-liner.** Workspace RELEASING.md, section "Cascade
-  files" shows `echo "OPM_CLI_VERSION=$(cat .opm-cli-version)" >> "$GITHUB_ENV"`. The operator
-  reads and validates the file inside each install step instead: a malformed value (`latest`,
-  empty) fails with an annotation naming the file before `go install` runs, and no step depends
-  on an env var another step set. The workspace author is asked to word that line as an example.
+- **Inline read-and-check.** RELEASING.md, section "Cascade files", allows either the
+  `$GITHUB_ENV` one-liner or an inline read-and-check in the install step. The operator uses the
+  inline form, so a malformed value (`latest`, empty) fails with an annotation naming the file
+  before `go install`, and no step depends on an env var set elsewhere.
 - **No literal `cli/cmd/opm@v` remains.** The current workspace `.tasks/deps/opm-cli.sh` finds the
   operator pin by grepping `cli/cmd/opm@v` in workflow files; after this change that grep matches
   nothing, so the workspace script must write `.opm-cli-version` instead (dependency on workspace
@@ -235,8 +261,13 @@ to main" with the surviving scenarios plus two new ones; MODIFIED "Changelog gen
   opmodel.dev `build-docs-from-branch-head` merges, a docs-only fix in this repo reaches
   opmodel.dev only with the next release (an operator release, then a cli release that embeds
   it). Mitigation: section 4's commit does not merge before that opmodel.dev change (proposal,
-  "Depends on / gates"). Escape hatch meanwhile: a `Release-As:` footer in the squash or PR body,
-  or wait for the next `fix`.
+  "Depends on / gates"). Escape hatch meanwhile: a normal PR that sets `release-as` in
+  `release-please-config.json` (owner decision 2026-10-02: squash commits carry only the PR
+  title, so a `Release-As:` footer never reaches `main`), or wait for the next `fix`.
+- [Library bumps go manual] → Until opm-operator `join-release-cascade` goes live, a library
+  release reaches the operator only through a hand-made `fix(deps)` PR
+  (`go get github.com/open-platform-model/library@vX && go mod tidy`); Dependabot no longer
+  proposes it.
 - [A separate opm CLI catch-up conflicts] → This change is the operator's Phase 1 opm CLI
   catch-up; running workspace `task deps:pins:opm-cli` against the operator before it merges
   rewrites the same four lines. Do not.
@@ -254,3 +285,8 @@ published by this change.
 
 - None blocking. The owner may later prefer the gate in both `lint` and `test`; that is a
   one-line addition.
+- Not in this change: once the owner sets `squash_merge_commit_message` to `BLANK` (owner decision
+  2026-10-02), the main spec's "Manual version override via release-as" (footer only, no
+  `release-as` key) and the `BREAKING CHANGE:` footer wording of "Beta prerelease line" no longer
+  match practice (breaking is `!` in the PR title; a forced version is `release-as` in
+  `release-please-config.json` via a normal PR). A follow-up change rewrites both.

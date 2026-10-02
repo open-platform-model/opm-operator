@@ -16,7 +16,7 @@ The dependency list SHALL be the full closure: beyond those roots it SHALL pin e
 
 #### Scenario: A two-catalog CR generates a two-entry module
 
-- **WHEN** the Platform CR subscribes `opmodel.dev/catalogs/opm@v4` at `4.0.1` and `opmodel.dev/catalogs/k8s@v1` at `1.0.0-alpha.2`
+- **WHEN** the Platform CR subscribes `opmodel.dev/catalogs/opm@v4` at `4.0.1` and `testing.opmodel.dev/catalogs/operator/provider@v0` at `0.1.0`
 - **THEN** the generated `cue.mod` pins both catalogs at exactly those versions, and `platform.cue` carries one importing entry per path
 
 #### Scenario: An active claim's catalog is pinned and imported

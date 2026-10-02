@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,25 +30,28 @@ func TestCmd(t *testing.T) {
 }
 
 var _ = Describe("resolveRegistry", func() {
-	Context("flag and env interaction", func() {
-		It("returns the flag value when the flag is non-empty", func() {
-			GinkgoT().Setenv("OPM_REGISTRY", "env-value")
-			Expect(resolveRegistry("flag-value")).To(Equal("flag-value"))
-		})
+	DescribeTable("precedence",
+		func(flagValue string, env *string, wantRegistry, wantSource string) {
+			if env != nil {
+				GinkgoT().Setenv("OPM_REGISTRY", *env)
+			} else {
+				// Setenv registers cleanup that restores the original value.
+				GinkgoT().Setenv("OPM_REGISTRY", "")
+				Expect(os.Unsetenv("OPM_REGISTRY")).To(Succeed())
+			}
+			gotRegistry, gotSource := resolveRegistry(flagValue)
+			Expect(gotRegistry).To(Equal(wantRegistry))
+			Expect(gotSource).To(Equal(wantSource))
+		},
+		Entry("flag set, env set: flag wins", "flag-value", new("env-value"), "flag-value", registrySourceFlag),
+		Entry("flag set, env unset: flag wins", "flag-value", nil, "flag-value", registrySourceFlag),
+		Entry("flag empty, env set: env wins", "", new("env-value"), "env-value", registrySourceEnv),
+		Entry("flag empty, env empty: built-in default", "", new(""), defaultRegistry, registrySourceDefault),
+		Entry("flag empty, env unset: built-in default", "", nil, defaultRegistry, registrySourceDefault),
+	)
 
-		It("falls back to OPM_REGISTRY when the flag is empty", func() {
-			GinkgoT().Setenv("OPM_REGISTRY", "env-value")
-			Expect(resolveRegistry("")).To(Equal("env-value"))
-		})
-
-		It("returns an empty string when both flag and env are empty", func() {
-			GinkgoT().Setenv("OPM_REGISTRY", "")
-			Expect(resolveRegistry("")).To(BeEmpty())
-		})
-
-		It("prefers the flag over the env var when both are set", func() {
-			GinkgoT().Setenv("OPM_REGISTRY", "env-value")
-			Expect(resolveRegistry("flag-wins")).To(Equal("flag-wins"))
-		})
+	It("keeps GHCR as the built-in default so a stock install resolves opmodel.dev", func() {
+		Expect(defaultRegistry).To(ContainSubstring("opmodel.dev=ghcr.io/open-platform-model"))
+		Expect(defaultRegistry).To(ContainSubstring("testing.opmodel.dev=ghcr.io/open-platform-model"))
 	})
 })

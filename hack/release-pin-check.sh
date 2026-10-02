@@ -32,12 +32,12 @@ pseudo='([-.]0\.|-)[0-9]{14}-[0-9a-f]{12}$'
 while read -r path ver; do
 	[[ -n $path ]] || continue
 	if [[ $ver =~ $pseudo ]]; then
-		bad "$path $ver is a pseudo-version"
+		bad "go.mod: $path $ver is a pseudo-version"
 		continue
 	fi
 	repo="https://$(cut -d/ -f1-3 <<<"$path")" # github.com/open-platform-model/<repo>
 	git ls-remote --exit-code --tags "$repo" "refs/tags/$ver" >/dev/null ||
-		bad "$path $ver is not a tag of $repo"
+		bad "go.mod: $path $ver is not a tag of $repo"
 done < <(go mod edit -json | jq -r '.Require[]?
 	| select(.Path | startswith("github.com/open-platform-model/"))
 	| "\(.Path) \(.Version)"')

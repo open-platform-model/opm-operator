@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Release PR opens for releasable commits on push to main
-The release-please workflow SHALL run on every push to the `main` branch. It SHALL open a Release PR if releasable commits exist since the last release tag. Releasable commits are those whose type has a visible changelog section in `release-please-config.json` (`feat`, `fix`, `perf`, `revert`, `deps`, `refactor`) and any commit carrying a `Release-As:` footer. `docs`, `chore`, `test`, `ci` and `build` are hidden and SHALL NOT by themselves open a Release PR. If a Release PR already exists, it SHALL update the PR with the latest accumulated changes. Hiding `docs` keeps a doc-only commit from cutting an operator release that would cascade a pointless bump into the cli (workspace RELEASING.md, section "Pin classes").
+The release-please workflow SHALL run on every push to the `main` branch. It SHALL open a Release PR if releasable commits exist since the last release tag. Releasable commits are those whose type has a visible changelog section in `release-please-config.json` (`feat`, `fix`, `perf`, `revert`, `deps`, `refactor`) and any commit carrying a `Release-As:` footer. `docs`, `chore`, `test`, `ci` and `build` are hidden and SHALL NOT by themselves open a Release PR. If a Release PR already exists, it SHALL update the PR with the latest accumulated changes. Hiding `docs` keeps a doc-only commit from cutting an operator release that would cascade a pointless bump into the cli (owner decision 2026-10-01 (RELEASING.md, Pin classes)).
 
 #### Scenario: First feat commit after a release
 - **WHEN** a `feat(scope): description` commit is pushed to `main` and no open Release PR exists

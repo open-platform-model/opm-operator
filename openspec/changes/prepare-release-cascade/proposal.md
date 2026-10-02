@@ -15,9 +15,9 @@ its published `install.yaml`. Four things in this repo work against the cascade 
   releases (`.github/dependabot.yml:9-23`, prefix at line 16). That races the cascade PR and lands a library bump
   that the cli never hears about.
 - `docs` is a visible changelog section (`release-please-config.json:24`), so a doc-only commit
-  cuts an operator release, which would then cascade a pointless bump into the cli. The owner
-  chose to hide `docs` in library, opm-operator and cli (workspace RELEASING.md, section
-  "Pin classes"). `AGENTS.md:146` still lists `docs` as releasing and is corrected in the same
+  cuts an operator release, which would then cascade a pointless bump into the cli. `docs` is
+  hidden in library, opm-operator and cli by owner decision 2026-10-01 (RELEASING.md, Pin
+  classes). `AGENTS.md:146` still lists `docs` as releasing and is corrected in the same
   section.
 - The opm CLI version is hard-coded in four `go install` lines
   (`.github/workflows/test.yml:59`, `test-e2e.yml:98`, `publish-fixtures.yml:66`,
@@ -70,6 +70,12 @@ controller or reconcile phase changes.
 - **Gates later changes:** opm-operator `add-deps-cascade-task` (writes `.opm-cli-version` and
   extends `.tasks/deps.yaml`) and opm-operator `join-release-cascade` (which also needs `.github`
   `add-release-cascade-workflows`) assume the file, the gate and the Dependabot ignore exist.
+- **Docs hiding waits for opmodel.dev.** Depends on: opmodel.dev change
+  `build-docs-from-branch-head` (branch `feat/build-docs-from-branch-head`) merged before the
+  commit of section 4 ("Stop doc-only commits from releasing") merges. That change builds the
+  operator docs from the release-branch head, as the site already does for core and catalog_opm;
+  without it, hiding `docs` delays every docs-only fix on opmodel.dev until the next operator
+  release and the cli release that embeds it.
 - **Folds in the opm CLI catch-up.** This change is opm-operator's Phase 1 opm CLI catch-up; do not
   run `deps:pins:opm-cli` against the operator before it merges.
 
@@ -94,9 +100,11 @@ None.
 - **Untouched**: `hack/fixtures.sh` stays byte-identical to the cli copy (`.tasks/examples.yaml:11-12`).
 - **Release behaviour**: after merge, a `docs`-only window since the last tag opens no Release
   PR; `docs` commits that ride with a releasable commit stop appearing in CHANGELOG.md.
-- **opmodel.dev**: the site builds opm-operator docs at exactly the operator version the newest
-  cli tag pins (`opmodel.dev/site/versions.conf:7-9`). A docs-only fix in `docs/` reaches the
-  site only after a later operator release and then a cli release that embeds it, unless the
-  squash or PR body carries a `Release-As:` footer.
-- **Delivery**: one PR; the OpenSpec archive commit rides that PR (workspace RELEASING.md,
-  section "Owner settings": main takes changes only through PRs).
+- **opmodel.dev**: today the site builds opm-operator docs at exactly the operator version the
+  newest cli tag pins (`opmodel.dev/site/versions.conf:7-9`). Until opmodel.dev
+  `build-docs-from-branch-head` merges, a docs-only fix in `docs/` reaches the site only with the
+  next operator release (and the cli release that embeds it), unless the squash or PR body carries
+  a `Release-As:` footer. Section 4 is therefore gated on that change (see "Depends on / gates").
+- **Delivery**: one PR; the OpenSpec archive commit rides that PR and nothing is pushed to `main`
+  (owner decision 2026-10-01 (RELEASING.md, Owner settings): main takes changes only through
+  PRs).

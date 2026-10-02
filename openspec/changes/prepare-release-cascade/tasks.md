@@ -27,7 +27,13 @@
 
 ## 4. Stop doc-only commits from releasing
 
+Depends on: opmodel.dev change `build-docs-from-branch-head` merged before this section's commit merges (proposal, "Depends on / gates"); until then a docs-only fix in this repo reaches opmodel.dev only with the next release.
+
 - [ ] 4.1 Set `"hidden": true` on the `docs` entry of `release-please-config.json:24`; leave `refactor` visible and leave CHANGELOG.md untouched
 - [ ] 4.2 Validate the JSON (`jq . release-please-config.json`)
 - [ ] 4.3 Rewrite `AGENTS.md:146` ("Commit type decides the release") to "release-please hides `docs`, `chore`, `test`, `ci` and `build`; `feat`, `fix`, `deps`, `perf` and `refactor` release", citing workspace RELEASING.md, section "Pin classes"; verify with `grep -n 'docs' AGENTS.md` that no line still lists `docs` as releasing
 - [ ] 4.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): hide the docs changelog section so doc-only commits do not release`
+
+## 5. Archive
+
+- [ ] 5.1 Archive the change on this branch (openspec archive), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01 (RELEASING.md, Owner settings))

@@ -148,8 +148,8 @@ The `build` prefix and the Kubernetes group stay as they are; third-party bumps 
 release-please already treats hidden types as non-releasable here: the spec's "Only
 non-releasable commits" scenario relies on it for `chore`/`test`/`ci`/`build`, and those have
 never opened a Release PR. Past CHANGELOG entries are not rewritten. `refactor` stays visible
-because library rewrites must keep integrating early (workspace RELEASING.md, section "Pin
-classes"). `AGENTS.md:146` is rewritten in the same section so agents typing commits from it
+because library rewrites must keep integrating early (owner decision 2026-10-01 (RELEASING.md,
+Pin classes)). `AGENTS.md:146` is rewritten in the same section so agents typing commits from it
 see the same rule.
 
 ### `.opm-cli-version` and how workflows read it
@@ -229,11 +229,14 @@ to main" with the surviving scenarios plus two new ones; MODIFIED "Changelog gen
   matching. None exists today (`main` has no branch protection; its only ruleset is mention-guard).
 - [`git ls-remote` needs network from the runner] → GitHub-hosted runners have it; a transient
   failure fails the gate loudly, never silently passes.
-- [A docs-only fix to user-facing docs no longer releases] → Intended (owner decision). The cost
-  includes opmodel.dev: the site builds opm-operator docs at exactly what the newest cli tag pins
-  (`opmodel.dev/site/versions.conf:7-9`), so a docs-only fix in `docs/` reaches the site only
-  after a later operator release and then a cli release that embeds it. Escape hatch: a
-  `Release-As:` footer in the squash or PR body, or wait for the next `fix`.
+- [A docs-only fix to user-facing docs no longer releases] → Intended, owner decision 2026-10-01
+  (RELEASING.md, Pin classes). The cost includes opmodel.dev: today the site builds opm-operator
+  docs at exactly what the newest cli tag pins (`opmodel.dev/site/versions.conf:7-9`), so until
+  opmodel.dev `build-docs-from-branch-head` merges, a docs-only fix in this repo reaches
+  opmodel.dev only with the next release (an operator release, then a cli release that embeds
+  it). Mitigation: section 4's commit does not merge before that opmodel.dev change (proposal,
+  "Depends on / gates"). Escape hatch meanwhile: a `Release-As:` footer in the squash or PR body,
+  or wait for the next `fix`.
 - [A separate opm CLI catch-up conflicts] → This change is the operator's Phase 1 opm CLI
   catch-up; running workspace `task deps:pins:opm-cli` against the operator before it merges
   rewrites the same four lines. Do not.
@@ -242,7 +245,9 @@ to main" with the surviving scenarios plus two new ones; MODIFIED "Changelog gen
 
 ## Migration Plan
 
-Merge after workspace `docs/release-cascade`. No rollback beyond reverting the PR; nothing is
+Merge after workspace `docs/release-cascade`, and not before opmodel.dev
+`build-docs-from-branch-head` while the branch carries section 4's commit. The OpenSpec archive
+commit rides this PR (section 5); nothing is pushed to `main`. No rollback beyond reverting the PR; nothing is
 published by this change.
 
 ## Open Questions

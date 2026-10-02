@@ -21,3 +21,7 @@ updates:
         patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
+    ignore:
+      # OPM modules move only through the release cascade, which titles a
+      # shipped bump fix(deps) so it releases (workspace RELEASING.md, "Pin classes").
+      - dependency-name: "github.com/open-platform-model/*"

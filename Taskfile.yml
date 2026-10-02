@@ -113,6 +113,9 @@ includes:
       CUE_REGISTRY: '{{.CUE_REGISTRY}}'
       GHCR_CUE_REGISTRY: '{{.GHCR_CUE_REGISTRY}}'
 
+  deps:
+    taskfile: ./.tasks/deps.yaml
+
   examples:
     taskfile: ./.tasks/examples.yaml
     vars:

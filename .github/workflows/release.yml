@@ -271,7 +271,11 @@ jobs:
       - name: Install opm
         # Fixtures publish through the cli's gated pipeline, so a fixture that
         # violates a publish gate fails the release instead of shipping.
-        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-beta.2
+        run: |
+          v=$(tr -d '[:space:]' < .opm-cli-version)
+          [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
+          go install "github.com/open-platform-model/cli/cmd/opm@${v}"
 
       - name: Publish example modules to GHCR (idempotent)
         env:

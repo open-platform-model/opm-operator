@@ -111,7 +111,7 @@ The `status.conditions` MUST report:
   - CUE cannot resolve the module from the registry.
   - The acquired module's declared identity (module path or version in its
     metadata) disagrees with the coordinate it was fetched by.
-  - The module demands contracts that the materialized platform does not
+  - The module demands contracts that the generated platform does not
     provide.
 - `Ready=False` with reason `RenderFailed` when CUE evaluation or rendering fails
   for a cause that is not a resolution-class failure.
@@ -130,7 +130,7 @@ The `status.conditions` MUST report:
 - **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True`, and a Warning event carries the mismatch message
 
 #### Scenario: Unresolved platform demands reported as resolution failure
-- **WHEN** the module demands contracts the materialized platform does not provide — including when that failure is reported together with unmatched-component failures
+- **WHEN** the module demands contracts the generated platform does not provide — including when that failure is reported together with unmatched-component failures
 - **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True`, and a Warning event carries the unresolved-demands message
 
 #### Scenario: Render failure reported

@@ -16,7 +16,7 @@ in production (see `platform-gated-rendering`).
 
 Values SHALL reach synthesis as a stack of values sources, each carrying an origin that identifies where the operator read it from, so a values error names that origin rather than an anonymous filename. No acquisition or synthesis call SHALL pass a per-call registry or load-options argument: the registry mapping is the one the shared Kernel was constructed with.
 
-#### Scenario: Renders resources from a materialized platform
+#### Scenario: Renders resources from a generated platform
 
 - **WHEN** `RenderModule` is called for a resolvable module while a generated platform is recorded
 - **THEN** the result carries the rendered resources and inventory entries, and any warnings the render reported
@@ -32,7 +32,7 @@ Values SHALL reach synthesis as a stack of values sources, each carrying an orig
 - **WHEN** the supplied raw values violate the module's `#config` schema
 - **THEN** the render fails with an error naming the origin the operator gave that source, not an anonymous filename
 
-### Requirement: Gate rendering on a materialized platform
+### Requirement: Gate rendering on a generated platform
 
 `KernelModuleRenderer` SHALL return `ErrPlatformNotReady` before any registry I/O when the store holds no generated-module record, and SHALL hold a lease on the record for the duration of the render otherwise.
 

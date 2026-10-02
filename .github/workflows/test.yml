@@ -76,8 +76,8 @@ jobs:
       - name: Running Tests
         env:
           # The registry is provided, so a registry-backed spec that would skip
-          # is a failure; the catalog path names the subscription those specs
-          # materialize (without it they skip silently).
+          # is a failure; the catalog path names the catalog those specs' generated
+          # platform pins (without it they skip silently).
           OPM_TEST_REGISTRY_FORCE: '1'
           OPM_TEST_CATALOG_PATH: 'opmodel.dev/catalogs/opm@v4'
         run: |

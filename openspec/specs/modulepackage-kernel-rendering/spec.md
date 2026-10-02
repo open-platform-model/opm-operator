@@ -2,11 +2,11 @@
 
 ## Purpose
 
-The `Release` reconciler renders its Flux-fetched release package through the kernel-backed `KernelReleaseRenderer` against the materialized platform: `ModuleRelease` packages are loaded, constructed, and compiled in the kernel's context with no injected values; rendering blocks inertly when no platform is materialized, retries promptly when the platform becomes ready, and non-`ModuleRelease` packages are rejected.
+The `Release` reconciler renders its Flux-fetched release package through the kernel-backed `KernelReleaseRenderer` against the generated platform: `ModuleRelease` packages are loaded, constructed, and compiled in the kernel's context with no injected values; rendering blocks inertly when no platform is generated, retries promptly when the platform becomes ready, and non-`ModuleRelease` packages are rejected.
 
 ## Requirements
 
-### Requirement: Release renders through the kernel against the materialized platform
+### Requirement: Release renders through the kernel against the generated platform
 
 `KernelPackageRenderer` SHALL acquire the extracted package as a source-carrying instance through the kernel's on-disk acquisition and render it through the single-build render with the leased platform record and its skew policy.
 
@@ -15,7 +15,7 @@ The `Release` reconciler renders its Flux-fetched release package through the ke
 - **WHEN** a `ModulePackage` artifact holding a `#ModuleInstance` package is rendered while a generated platform is recorded
 - **THEN** the rendered resources are applied and recorded as before
 
-### Requirement: Block Release when no platform is materialized
+### Requirement: Block Release when no platform is generated
 
 When the store holds no generated-module record, the package renderer SHALL return `ErrPlatformNotReady` after kind detection and before any build, and the reconciler SHALL set `Ready=False` reason `PlatformNotReady`.
 
@@ -28,11 +28,11 @@ When the store holds no generated-module record, the package renderer SHALL retu
 
 The `Release` reconciler SHALL watch the `Platform` resource and re-enqueue all `Releases` on a Platform change, so releases blocked on `PlatformNotReady` retry promptly rather than only on backoff.
 
-#### Scenario: Blocked release retries when the platform materializes
+#### Scenario: Blocked release retries when the platform is generated
 
-- **WHEN** a `Release` is blocked with `PlatformNotReady` and a `Platform` is then applied and materializes
+- **WHEN** a `Release` is blocked with `PlatformNotReady` and a `Platform` is then applied and generated
 - **THEN** the reconciler re-enqueues the `Release`
-- **AND** on the next reconcile it renders and applies against the materialized platform
+- **AND** on the next reconcile it renders and applies against the generated platform
 
 ### Requirement: Non-ModuleRelease packages are rejected
 

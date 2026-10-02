@@ -1,19 +1,19 @@
 ## Purpose
 
-Reconcile the cluster-scoped singleton `Platform` resource by synthesizing and
-materializing it through the library kernel, holding the result in a
+Reconcile the cluster-scoped singleton `Platform` resource by generating and building
+its platform module through the library kernel, holding the result in a
 process-local single-slot store for concurrent read by render paths, and
-surfacing the materialize outcome on the `Platform` status.
+surfacing the build outcome on the `Platform` status.
 
 ## Requirements
 
-### Requirement: Materialize the singleton Platform on reconcile
+### Requirement: Generate and build the singleton Platform on reconcile
 
-The operator SHALL reconcile the `Platform` named `cluster` by generating its platform CUE module on the operator's own disk, building it through the kernel's shape-gated platform loader, and recording the generated module (its package identity, directory, built platform) together with the resolved skew policy (`spec.skewPolicy`, `Warn` when unset) in the process-local store. The reconciler SHALL reconcile only the object named `cluster`; any other name SHALL be ignored without error. No materialized twin exists.
+The operator SHALL reconcile the `Platform` named `cluster` by generating its platform CUE module on the operator's own disk, building it through the kernel's shape-gated platform loader, and recording the generated module (its package identity, directory, built platform) together with the resolved skew policy (`spec.skewPolicy`, `Warn` when unset) in the process-local store. The reconciler SHALL reconcile only the object named `cluster`; any other name SHALL be ignored without error. No second, derived copy of the platform exists.
 
 The package the reconcile generates SHALL be a function of exactly two inputs — the CR's spec and the set of accepted-and-active `TransformerRegistration` claims — and the reconciler SHALL be woken by a change to either (enhancement 0015 D13). The waking event's content SHALL NOT be an input: the reconcile computes from the current state of both, so a stale, duplicated or reordered event yields the package the current state implies. A reconcile whose inputs resolve to the identity the store already holds, for a module directory that still exists, SHALL skip regeneration and still report the outcome on status; this is what bounds a burst of claim activations to one build rather than one per claim.
 
-#### Scenario: Valid platform materializes
+#### Scenario: Valid platform is generated
 
 - **WHEN** a `Platform` named `cluster` with resolvable pins is applied
 - **THEN** the reconciler generates and builds its module
@@ -34,7 +34,7 @@ The package the reconcile generates SHALL be a function of exactly two inputs �
 - **WHEN** the reconciler is woken repeatedly while the CR spec and the active-claim set are unchanged
 - **THEN** the held package is not rewritten and the CR still reports `Ready=True` with reason `Generated`
 
-### Requirement: Surface materialize outcome on status
+### Requirement: Surface build outcome on status
 
 The reconciler SHALL record the outcome on the `Platform` status: `Ready=True` with reason `Generated` on success, `Ready=False` with reason `BuildFailed` (a dependency did not resolve, the module did not build, or its contract inventory could not be read; the message names the dependency, the registry entry or the field), `GenerateFailed` (the module could not be written), `ContractCollisions` (the built platform's inventory reports contract keys that more than one enabled registry entry defines; the message names each colliding key and the registry entries defining it), `OverSubscribedContracts` (the built platform's inventory is not routable; the message names each over-subscribed contract, its defining catalog when one is enabled and the registry entries providing it) or `ComparablePredicates` (the built platform's inventory is not discriminated; the message names each comparable pair and the contracts it shares). When several refusals hold, the reason SHALL be the first of `ContractCollisions`, `OverSubscribedContracts`, `ComparablePredicates` that applies, and the message SHALL carry every finding. On success the reconciler SHALL also write the non-gating `ContractsFulfilled` condition from the effective package's inventory. `status.observedGeneration` SHALL be set on every outcome. A failure or a refusal SHALL NOT overwrite a previously recorded good module.
 
@@ -43,7 +43,7 @@ The reconciler SHALL record the outcome on the `Platform` status: `Ready=True` w
 - **WHEN** generation and build succeed for generation N and the built inventory is routable and discriminated
 - **THEN** `status.conditions` carries `Ready=True` (reason `Generated`), a `ContractsFulfilled` condition, and `status.observedGeneration == N`
 
-#### Scenario: Materialize failure surfaces structured error
+#### Scenario: Build failure surfaces structured error
 
 - **WHEN** a pinned build does not exist or an entry's key disagrees with its imported catalog
 - **THEN** `status.conditions` carries `Ready=False` (reason `BuildFailed`) with a message naming the path and version or the registry entry
@@ -53,7 +53,7 @@ The reconciler SHALL record the outcome on the `Platform` status: `Ready=True` w
 - **WHEN** the module builds and its inventory reports a colliding contract key, or is not routable, or is not discriminated
 - **THEN** `status.conditions` carries `Ready=False` with reason `ContractCollisions`, `OverSubscribedContracts` or `ComparablePredicates` and a message naming the contracts involved and the defining registry entries, the providing registry entries or the comparable transformers
 
-#### Scenario: Failure preserves last-good materialized platform
+#### Scenario: Failure preserves last-good generated platform
 
 - **WHEN** a previously recorded good module exists and a subsequent reconcile fails or is refused
 - **THEN** the store still returns the last-good record and the failure or refusal is reflected only on the Ready condition
@@ -95,7 +95,7 @@ The identity SHALL be derived from the `Platform` CR's generation and the sorted
 
 ### Requirement: Clear the store on Platform deletion
 
-When the `Platform` named `cluster` is deleted, the reconciler SHALL clear the store slot so no materialized platform is held. Deleting the Platform SHALL NOT itself delete or modify any workload resources (freeze-don't-teardown; release behavior under a missing platform is defined in a later slice).
+When the `Platform` named `cluster` is deleted, the reconciler SHALL clear the store slot so no generated platform is held. Deleting the Platform SHALL NOT itself delete or modify any workload resources (freeze-don't-teardown; release behavior under a missing platform is defined in a later slice).
 
 #### Scenario: Delete clears the slot
 
@@ -103,7 +103,7 @@ When the `Platform` named `cluster` is deleted, the reconciler SHALL clear the s
 - **THEN** the store reports no held platform
 - **AND** no workload resources are modified as a direct result
 
-### Requirement: Materialize failures requeue on a bounded interval
+### Requirement: Build failures requeue on a bounded interval
 
 When closure derivation, generation or the build fails, the `PlatformReconciler` SHALL requeue the `Platform` after a bounded interval rather than waiting for a spec change; no such failure is terminal. The reconciler SHALL set the failure reason (`BuildFailed` or `GenerateFailed`) and SHALL preserve any previously recorded good module.
 
@@ -149,11 +149,11 @@ The reconciler SHALL emit the failure warning event only when the failure state 
 - **WHEN** a Platform remains in the same failed state across multiple rechecks
 - **THEN** the warning event is not re-emitted on each recheck
 
-### Requirement: Subscription mapping and materialize failures
+### Requirement: Subscription mapping and build failures
 
 Each subscription's `version` SHALL be used verbatim as the generated module's pin and as the entry's stamped expected version. A subscription with an empty version (a stored object predating the required field) SHALL surface as `BuildFailed` naming the path before any registry I/O. A version absent from the registry SHALL surface as `BuildFailed` naming the path and version. A pin whose bytes disagree with the stamp SHALL surface as `BuildFailed` naming the registry entry. All retain the stalled recheck interval.
 
-#### Scenario: Missing version surfaces as MaterializeFailed
+#### Scenario: Missing version surfaces as BuildFailed
 
 - **WHEN** the stored Platform carries a subscription without a version
 - **THEN** the Platform's Ready condition is False with reason `BuildFailed` and a message naming the subscription path

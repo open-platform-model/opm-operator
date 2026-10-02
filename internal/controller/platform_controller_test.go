@@ -236,15 +236,16 @@ var _ = Describe("Platform Controller", func() {
 			r := newPlatformReconciler(store, k, reg)
 
 			disabled := false
+			// A disabled second entry, the operator's test catalog: it must still
+			// be pinned and imported, so it has to resolve.
+			second := fixtures.MustCatalog(GinkgoT(), "provider")
 			plat := &releasesv1alpha1.Platform{
 				ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
 				Spec: releasesv1alpha1.PlatformSpec{
 					Type: "kubernetes",
 					Registry: map[string]releasesv1alpha1.Subscription{
-						catalogPath: {Version: fixtures.CatalogVersion()},
-						// A disabled second entry keyed at an unpublished path: it must
-						// still be pinned and imported, so it has to resolve.
-						"opmodel.dev/catalogs/k8s@v1": {Version: "1.0.0-alpha.2", Enable: &disabled},
+						catalogPath:       {Version: fixtures.CatalogVersion()},
+						second.ModulePath: {Version: second.Version, Enable: &disabled},
 					},
 				},
 			}
@@ -275,7 +276,8 @@ var _ = Describe("Platform Controller", func() {
 			Expect(mf.QualifiedModule()).To(Equal(PlatformModulePath))
 			Expect(mf.Deps).To(HaveKey(catalogPath))
 			Expect(mf.Deps[catalogPath].Version).To(Equal("v" + fixtures.CatalogVersion()))
-			Expect(mf.Deps).To(HaveKey("opmodel.dev/catalogs/k8s@v1"))
+			Expect(mf.Deps).To(HaveKey(second.ModulePath))
+			Expect(mf.Deps[second.ModulePath].Version).To(Equal("v" + second.Version))
 			Expect(mf.Deps).To(HaveKey(platformmodule.CorePath))
 			// Core pin follows the library: the generated module pins core at
 			// the release the library verified its glue against, with no
@@ -483,14 +485,15 @@ var _ = Describe("Platform Controller", func() {
 			gen1 := reconcileGeneration()
 
 			disabled := false
+			second := fixtures.MustCatalog(GinkgoT(), "provider")
 			bumpSpec(func(s *releasesv1alpha1.PlatformSpec) {
-				s.Registry["opmodel.dev/catalogs/k8s@v1"] = releasesv1alpha1.Subscription{Version: "1.0.0-alpha.2", Enable: &disabled}
+				s.Registry[second.ModulePath] = releasesv1alpha1.Subscription{Version: second.Version, Enable: &disabled}
 			})
 			gen2 := reconcileGeneration()
 			Expect(gen2).To(BeNumerically(">", gen1))
 
 			bumpSpec(func(s *releasesv1alpha1.PlatformSpec) {
-				delete(s.Registry, "opmodel.dev/catalogs/k8s@v1")
+				delete(s.Registry, second.ModulePath)
 			})
 			gen3 := reconcileGeneration()
 			Expect(gen3).To(BeNumerically(">", gen2))

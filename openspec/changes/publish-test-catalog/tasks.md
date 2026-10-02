@@ -20,7 +20,7 @@ and a fresh `CUE_CACHE_DIR`.
 
 - [x] 2.1 `internal/controller/platform_claims_test.go`, `internal/controller/platform_controller_test.go` and `test/integration/reconcile/platform_claim_watch_test.go` read the second catalog through `fixtures.MustCatalog(GinkgoT(), "provider")` per design.md D4. Verify: `grep -rn 'catalogs/k8s' internal test` returns nothing.
 - [x] 2.2 Seed the throwaway registry (`task examples:seed CUE_REGISTRY="$MIXED"`), then run the claim-watch spec (`-ginkgo.focus='Claim-driven regeneration'`) and the `internal/controller` Platform specs with `CUE_REGISTRY="$MIXED"`, `OPM_TEST_REGISTRY_FORCE=1`, `OPM_TEST_CATALOG_PATH=opmodel.dev/catalogs/opm@v4`: all pass, none skipped for the registry. Stop the registry afterwards.
-- [x] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(controller): build the claim and platform specs against the test catalog`.
+- [x] 2.3 `task dev:fmt dev:vet dev:lint` green and `task dev:test:seeded MIXED_CUE_REGISTRY="$MIXED"` green (what PR CI runs: seed, consumers, then `dev:test` with `OPM_TEST_REGISTRY_FORCE=1`; a GHCR-only `task dev:test` cannot resolve the catalog until `publish-fixtures.yml` has published it), then commit `test(controller): build the claim and platform specs against the test catalog`.
 
 ## 3. Archive
 

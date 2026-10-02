@@ -134,9 +134,10 @@ can reword them.
 
 - No hand-edit `api/v1alpha1/zz_generated.deepcopy.go`.
 - No hand-edit `config/crd/bases/*.yaml` or `config/rbac/role.yaml`.
+- No hand-edit between the `BEGIN GENERATED` and `END GENERATED` markers of `docs/site/reference/operator-resources.md`; the text outside them is authored.
 - No hand-edit `PROJECT`.
 - Preserve `// +kubebuilder:scaffold:*` comments + license headers.
-- API markers/schema/`*_types.go` changed → run `task dev:manifests dev:generate`.
+- API markers/schema/`*_types.go` changed → run `task dev:manifests dev:generate dev:docs:reference`. Doc comments on the types become the CRD descriptions and the public resource reference, so write them for a reader of the site.
 
 ## Registry
 
@@ -159,6 +160,8 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 - `task` (default): list available tasks.
 - `task dev:manifests`: regen CRDs, RBAC, webhook manifests w/ `controller-gen`.
 - `task dev:generate`: regen DeepCopy methods.
+- `task dev:docs:reference`: regen CRDs, then the generated block of `docs/site/reference/operator-resources.md` (`hack/crdref`) from the CRDs, `config/samples` and `internal/controller`.
+- `task dev:docs:reference:check`: fail when that page is stale; the `Lint` workflow runs it.
 - `task dev:fmt`: `go fmt ./...`.
 - `task dev:vet`: `go vet ./...`.
 - `task dev:lint:config`: verify golangci-lint config.
@@ -192,7 +195,8 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 
 ## Working Style for Agents
 
-- `api/v1alpha1` edits → `task dev:manifests dev:generate`.
+- `api/v1alpha1` edits → `task dev:manifests dev:generate dev:docs:reference`.
+- `config/samples` or controller registration edits → `task dev:docs:reference`; `test/integration/crdvalidation` proves every sample is admitted by the CRDs.
 - Go changes `cmd/`/`internal/` → `task dev:fmt dev:vet dev:test` minimum.
 - Non-trivial changes → `task dev:lint` or `task dev:lint:fix` before finishing.
 - Manifests/RBAC changed → consider `task operator:installer` for alignment.

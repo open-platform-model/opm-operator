@@ -156,7 +156,9 @@ func generate(root string) (string, error) {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		writeEntry(&b, crd, example, controllers[crd.Spec.Names.Kind])
+		if err := writeEntry(&b, crd, example, controllers[crd.Spec.Names.Kind]); err != nil {
+			return "", fmt.Errorf("%s: %w", crd.Spec.Names.Kind, err)
+		}
 	}
 	// Each part ends in a blank line; the block ends in exactly one newline,
 	// and splice puts one blank line between it and each marker.
@@ -205,10 +207,15 @@ var scaffoldLabels = map[string]string{
 	"app.kubernetes.io/managed-by": "kustomize",
 }
 
+// testRegistry is the fixture domain. A sample that names it is a dev or e2e
+// fixture, not something a reader can apply, so it is never shown.
+const testRegistry = "testing.opmodel.dev"
+
 // loadSample returns the first document of the CRD's kind in the sample file
 // kubebuilder names <group>_<version>_<kind>.yaml, re-encoded without comments
-// and scaffold labels, or nil when there is none. The crdvalidation
-// integration test proves every sample validates against its CRD.
+// and scaffold labels, or nil when there is none or when that document
+// references the test registry. The crdvalidation integration test proves
+// every sample validates against its CRD.
 func loadSample(dir string, crd *apiextensionsv1.CustomResourceDefinition) ([]byte, error) {
 	group, version, kind := crd.Spec.Group, crd.Spec.Versions[0].Name, crd.Spec.Names.Kind
 	path := filepath.Join(dir, fmt.Sprintf("%s_%s_%s.yaml", group, version, strings.ToLower(kind)))
@@ -234,6 +241,9 @@ func loadSample(dir string, crd *apiextensionsv1.CustomResourceDefinition) ([]by
 		}
 		if obj["apiVersion"] != group+"/"+version || obj["kind"] != kind {
 			continue
+		}
+		if bytes.Contains(doc, []byte(testRegistry)) {
+			return nil, nil
 		}
 		if meta, ok := obj["metadata"].(map[string]any); ok {
 			if labels, ok := meta["labels"].(map[string]any); ok {
@@ -315,7 +325,7 @@ func builderCalls(body *ast.BlockStmt) (kinds, names []string) {
 }
 
 func writeEntry(b *strings.Builder, crd *apiextensionsv1.CustomResourceDefinition, example []byte,
-	controller string) {
+	controller string) error {
 	version := crd.Spec.Versions[0]
 	schema := version.Schema.OpenAPIV3Schema
 	summary, notes := splitSummary(schema.Description)
@@ -334,6 +344,9 @@ func writeEntry(b *strings.Builder, crd *apiextensionsv1.CustomResourceDefinitio
 	if status, ok := schema.Properties["status"]; ok {
 		c.object("status", status, &c.status)
 	}
+	if len(c.unsupported) > 0 {
+		return fmt.Errorf("schema constructs the reference does not render: %s", strings.Join(c.unsupported, "; "))
+	}
 	writeFields(b, "Spec", c.spec)
 	writeFields(b, "Status", c.status)
 
@@ -349,7 +362,7 @@ func writeEntry(b *strings.Builder, crd *apiextensionsv1.CustomResourceDefinitio
 		}
 	}
 	if controller != "" {
-		fmt.Fprintf(b, "### Served by\n\nThe operator's `%s` controller reconciles every %s.\n\n",
+		fmt.Fprintf(b, "### Served by\n\nThe operator's `%s` controller watches every %s.\n\n",
 			controller, crd.Spec.Names.Kind)
 	}
 	if len(c.rules) > 0 {
@@ -360,6 +373,7 @@ func writeEntry(b *strings.Builder, crd *apiextensionsv1.CustomResourceDefinitio
 		}
 		b.WriteString("\n")
 	}
+	return nil
 }
 
 func writeGlance(b *strings.Builder, crd *apiextensionsv1.CustomResourceDefinition,
@@ -416,6 +430,24 @@ type rule struct {
 type collector struct {
 	spec, status []field
 	rules        []rule
+	unsupported  []string
+}
+
+// refuse records every schema construct the entry has no way to show, so
+// generation fails instead of dropping a rule or a shape silently.
+func (c *collector) refuse(path string, s apiextensionsv1.JSONSchemaProps) {
+	if path == "" {
+		path = "the object"
+	}
+	for name, present := range map[string]bool{
+		"allOf": len(s.AllOf) > 0, "oneOf": len(s.OneOf) > 0, "anyOf": len(s.AnyOf) > 0,
+		"not": s.Not != nil, "nullable": s.Nullable,
+	} {
+		if present {
+			c.unsupported = append(c.unsupported, path+": "+name)
+		}
+	}
+	slices.Sort(c.unsupported)
 }
 
 func (c *collector) rule(path, text string) {
@@ -429,6 +461,7 @@ func (c *collector) rule(path, text string) {
 // root records the rules declared on the object itself: its required
 // top-level fields and its CEL validations.
 func (c *collector) root(s apiextensionsv1.JSONSchemaProps) {
+	c.refuse("", s)
 	c.validations("", s)
 	for _, name := range sorted(s.Required) {
 		c.rule(name, "Required")
@@ -481,6 +514,7 @@ func (c *collector) descend(path string, s apiextensionsv1.JSONSchemaProps, rows
 // constraints records every rule the API server enforces from the schema of
 // one value, apart from required, which the parent declares.
 func (c *collector) constraints(path string, s apiextensionsv1.JSONSchemaProps) {
+	c.refuse(path, s)
 	if s.MinLength != nil {
 		if *s.MinLength == 1 {
 			c.rule(path, "Must not be empty")

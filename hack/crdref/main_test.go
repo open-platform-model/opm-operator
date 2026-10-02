@@ -108,3 +108,41 @@ func TestGenerateIsCurrentAndDeterministic(t *testing.T) {
 	require.Equal(t, string(page), updated, "%s is stale: run task dev:docs:reference", pageFile)
 	require.True(t, strings.HasSuffix(first, "\n") && !strings.HasSuffix(first, "\n\n"))
 }
+
+func TestLoadSampleSkipsTestRegistry(t *testing.T) {
+	dir := t.TempDir()
+	crd := &apiextensionsv1.CustomResourceDefinition{Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+		Group:    "opmodel.dev",
+		Names:    apiextensionsv1.CustomResourceDefinitionNames{Kind: "ModuleInstance"},
+		Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{Name: "v1alpha1"}},
+	}}
+	path := filepath.Join(dir, "opmodel.dev_v1alpha1_moduleinstance.yaml")
+	write := func(modulePath string) {
+		doc := "apiVersion: opmodel.dev/v1alpha1\nkind: ModuleInstance\nmetadata:\n  name: a\n" +
+			"  labels:\n    app.kubernetes.io/managed-by: kustomize\n" +
+			"spec:\n  module:\n    path: " + modulePath + "\n    version: v1.0.0\n"
+		require.NoError(t, os.WriteFile(path, []byte(doc), 0o644))
+	}
+
+	write("testing.opmodel.dev/modules/operator/hello@v0")
+	got, err := loadSample(dir, crd)
+	require.NoError(t, err)
+	require.Nil(t, got, "a sample naming the test registry is not shown")
+
+	write("opmodel.dev/modules/cert_manager@v0")
+	got, err = loadSample(dir, crd)
+	require.NoError(t, err)
+	require.Contains(t, string(got), "opmodel.dev/modules/cert_manager@v0")
+	require.NotContains(t, string(got), "kustomize", "scaffold labels are dropped")
+}
+
+func TestUnrenderedSchemaConstructsFail(t *testing.T) {
+	str := apiextensionsv1.JSONSchemaProps{Type: "string"}
+	c := &collector{}
+	props := map[string]apiextensionsv1.JSONSchemaProps{
+		"a": {Type: "string", Nullable: true},
+		"b": {Type: "object", OneOf: []apiextensionsv1.JSONSchemaProps{str}},
+	}
+	c.object("spec", apiextensionsv1.JSONSchemaProps{Type: "object", Properties: props}, &c.spec)
+	require.Equal(t, []string{"spec.a: nullable", "spec.b: oneOf"}, c.unsupported)
+}

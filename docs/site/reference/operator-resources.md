@@ -98,30 +98,13 @@ The resource definition declares these `kubectl get` columns. A column with a pr
 | `status.observedGeneration` | `integer` | No |  |
 | `status.requiredContracts` | `[]string` | No | RequiredContracts lists every contract FQN this instance's components declare, sorted and deduplicated, as the last successful render reported them. It is the instance side of the removal guard ([0015:D3/D16](/enhancements/0015/decisions/)): a TransformerRegistration counts its dependents by intersecting this with its own spec.provides, so a provider cannot be deleted, or shrink its provides, out from under the instances still demanding what it serves. Derived, never authored. The contracts are read off the synthesized instance's components, which is the same keyspace the render's matching compares, so nothing a module author writes into spec can raise or lower the count. A reconcile that does not render — a failed render, a suspended instance, a CLI-owned one — leaves the previous value: a stale entry over-reports demand and blocks a deletion that could have proceeded, which is the safe direction for a guard. |
 
-### Example
-
-```yaml
-apiVersion: opmodel.dev/v1alpha1
-kind: ModuleInstance
-metadata:
-  name: moduleinstance-sample
-  namespace: default
-spec:
-  module:
-    path: testing.opmodel.dev/modules/operator/hello@v0
-    version: v0.0.12
-  prune: true
-  values:
-    message: hello from local dev
-```
-
 ### Notes
 
 The module is resolved from an OCI registry by spec.module.path and spec.module.version. When spec.owner is "cli", the OPM CLI manages the instance and the operator leaves it alone: it renders, applies and prunes nothing, adds no finalizer, and records only a ManagedExternally acknowledgement.
 
 ### Served by
 
-The operator's `moduleinstance` controller reconciles every ModuleInstance.
+The operator's `moduleinstance` controller watches every ModuleInstance.
 
 ### Enforcement
 
@@ -265,7 +248,7 @@ The operator fetches the artifact spec.sourceRef names, loads instance.cue from 
 
 ### Served by
 
-The operator's `modulepackage` controller reconciles every ModulePackage.
+The operator's `modulepackage` controller watches every ModulePackage.
 
 ### Enforcement
 
@@ -355,7 +338,7 @@ It is a cluster-scoped singleton (the only permitted name is "cluster") whose sp
 
 ### Served by
 
-The operator's `platform` controller reconciles every Platform.
+The operator's `platform` controller watches every Platform.
 
 ### Enforcement
 
@@ -431,7 +414,7 @@ Creating one requires platform-admin RBAC. The operator ships that role unbound 
 
 ### Served by
 
-The operator's `transformerregistration` controller reconciles every TransformerRegistration.
+The operator's `transformerregistration` controller watches every TransformerRegistration.
 
 ### Enforcement
 

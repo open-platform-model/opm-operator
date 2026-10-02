@@ -26,12 +26,17 @@ The repository SHALL carry the operator resource reference at `docs/site/referen
 
 ### Requirement: Entry shape states only what the sources prove
 
-Each entry SHALL carry, in this order and under a heading per kind: the summary (the first sentence of the kind's schema description); an "At a glance" table of group, version, kind, scope, resource name, short names, categories and subresources, followed by the declared printer columns; a "Spec" and a "Status" table with one row per property, nested properties as dotted paths (`a.b`, `a[].b`, `a.<key>.b`), each with its type, whether it is required and its description, and its default when the schema declares one; an "Example"; "Notes" (the rest of the kind's schema description); "Served by" (the controller whose builder registers the kind with `For` and names itself with `Named` in `internal/controller`); and "Enforcement", listing every rule the schema gives the API server (CEL rules, required fields, string length, pattern, enum, numeric bounds, item and property counts, list-map keys, set uniqueness), each tagged "API server". A part with nothing derivable SHALL be left out rather than filled. The standard `metav1.Condition` list SHALL appear as one `[]Condition` row without its Kubernetes-owned rules. Text from a doc comment SHALL be escaped so it renders as text, and an enhancement decision reference in it (`NNNN:Dn`, with optional `/Dn` and `:Rn` parts) SHALL link to `/enhancements/NNNN/decisions/`.
+Each entry SHALL carry, in this order and under a heading per kind: the summary (the first sentence of the kind's schema description); an "At a glance" table of group, version, kind, scope, resource name, short names, categories and subresources, followed by the declared printer columns; a "Spec" and a "Status" table with one row per property, nested properties as dotted paths (`a.b`, `a[].b`, `a.<key>.b`), each with its type, whether it is required and its description, and its default when the schema declares one; an "Example" (the first document of the kind in `config/samples/<group>_<version>_<kind>.yaml`, left out when it references the `testing.opmodel.dev` fixture registry); "Notes" (the rest of the kind's schema description); "Served by" (the controller whose builder registers the kind with `For` and names itself with `Named` in `internal/controller`, stated as watching every object of the kind); and "Enforcement", listing every rule the schema gives the API server (CEL rules, required fields, string length, pattern, enum, numeric bounds, item and property counts, list-map keys, set uniqueness), each tagged "API server". A part with nothing derivable SHALL be left out rather than filled. A schema construct the entry cannot show (`allOf`, `oneOf`, `anyOf`, `not`, `nullable`) SHALL fail generation, naming its path, rather than be dropped. The standard `metav1.Condition` list SHALL appear as one `[]Condition` row without its Kubernetes-owned rules. Text from a doc comment SHALL be escaped so it renders as text, and an enhancement decision reference in it (`NNNN:Dn`, with optional `/Dn` and `:Rn` parts) SHALL link to `/enhancements/NNNN/decisions/`.
 
 #### Scenario: Kind without a sample has no example
 
 - **WHEN** `config/samples` holds no `<group>_<version>_<kind>.yaml` document of a kind
 - **THEN** that kind's entry has no Example part and every other part is unchanged
+
+#### Scenario: Sample from the fixture registry is not shown
+
+- **WHEN** the kind's sample references `testing.opmodel.dev`
+- **THEN** that kind's entry has no Example part, and the sample itself is unchanged
 
 #### Scenario: CEL rule on the object is listed
 

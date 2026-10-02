@@ -34,3 +34,8 @@ jobs:
         run: task dev:lint:config
       - name: Run linter
         run: task dev:lint
+
+      # docs/site/reference/operator-resources.md is generated from the
+      # committed CRDs, config/samples and internal/controller (hack/crdref).
+      - name: Generated resource reference is current
+        run: task dev:docs:reference:check

@@ -95,7 +95,11 @@ jobs:
           echo "OPERATOR_DOCKER_CONFIG=$RUNNER_TEMP/ghcr/config.json" >> "$GITHUB_ENV"
 
       - name: Install opm
-        run: go install github.com/open-platform-model/cli/cmd/opm@v1.0.0-beta.2
+        run: |
+          v=$(tr -d '[:space:]' < .opm-cli-version)
+          [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
+          go install "github.com/open-platform-model/cli/cmd/opm@${v}"
 
       - name: Publish example modules to GHCR (pre-release tags)
         if: steps.cap.outputs.can_publish == 'true'

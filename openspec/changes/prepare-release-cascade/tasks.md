@@ -1,13 +1,13 @@
 ## 1. Pin the opm CLI in `.opm-cli-version` (beta.2 to beta.4)
 
-- [ ] 1.1 Add repo-root `.opm-cli-version` containing the single line `v1.0.0-beta.4`
-- [ ] 1.2 Replace the `go install github.com/open-platform-model/cli/cmd/opm@<current literal>` step (the current literal is `v1.0.0-beta.2` today) in `.github/workflows/test.yml:58-59` with the read-validate-install block from design.md ("`.opm-cli-version` and how workflows read it")
-- [ ] 1.3 Same replacement in `.github/workflows/test-e2e.yml:97-98` and `.github/workflows/publish-fixtures.yml:65-66`
-- [ ] 1.4 Same replacement in `.github/workflows/release.yml:271-274` (`publish-examples`, which checks out the release tag), keeping its comment about the gated publish pipeline
-- [ ] 1.5 Confirm `grep -rn 'cli/cmd/opm@v' .github/workflows` returns nothing and `grep -rn 'v1.0.0-beta.2' .github/workflows` no longer names the cli; confirm every workflow parses: `python3 -c 'import yaml,sys;[yaml.safe_load(open(f)) for f in sys.argv[1:]]' .github/workflows/*.yml` (and `actionlint` if available)
-- [ ] 1.6 Install the pinned CLI into a throwaway GOBIN so the developer's own `opm` is not replaced (`GOBIN=$(mktemp -d) go install github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)`, keeping that GOBIN) and run `OPM=$GOBIN/opm task examples:check` (`.tasks/examples.yaml` passes `OPM` to `hack/fixtures.sh` as `OPM_BIN`); if a fixture now fails a publish gate, stop and record the failure in design.md instead of editing `hack/fixtures.sh`
-- [ ] 1.7 Add one bullet to `AGENTS.md` "Registry": the opm CLI pin lives only in `.opm-cli-version`, and moving it is a `ci(deps)` commit (workspace RELEASING.md, section "Cascade files")
-- [ ] 1.8 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(deps): read the opm CLI version from .opm-cli-version and move it to v1.0.0-beta.4`
+- [x] 1.1 Add repo-root `.opm-cli-version` containing the single line `v1.0.0-beta.4`
+- [x] 1.2 Replace the `go install github.com/open-platform-model/cli/cmd/opm@<current literal>` step (the current literal is `v1.0.0-beta.2` today) in `.github/workflows/test.yml:58-59` with the read-validate-install block from design.md ("`.opm-cli-version` and how workflows read it")
+- [x] 1.3 Same replacement in `.github/workflows/test-e2e.yml:97-98` and `.github/workflows/publish-fixtures.yml:65-66`
+- [x] 1.4 Same replacement in `.github/workflows/release.yml:271-274` (`publish-examples`, which checks out the release tag), keeping its comment about the gated publish pipeline
+- [x] 1.5 Confirm `grep -rn 'cli/cmd/opm@v' .github/workflows` returns nothing and `grep -rn 'v1.0.0-beta.2' .github/workflows` no longer names the cli; confirm every workflow parses: `python3 -c 'import yaml,sys;[yaml.safe_load(open(f)) for f in sys.argv[1:]]' .github/workflows/*.yml` (and `actionlint` if available)
+- [x] 1.6 Install the pinned CLI into a throwaway GOBIN so the developer's own `opm` is not replaced (`GOBIN=$(mktemp -d) go install github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)`, keeping that GOBIN) and run `OPM=$GOBIN/opm task examples:check` (`.tasks/examples.yaml` passes `OPM` to `hack/fixtures.sh` as `OPM_BIN`); if a fixture now fails a publish gate, stop and record the failure in design.md instead of editing `hack/fixtures.sh`
+- [x] 1.7 Add one bullet to `AGENTS.md` "Registry": the opm CLI pin lives only in `.opm-cli-version`, and moving it is a `ci(deps)` commit (workspace RELEASING.md, section "Cascade files")
+- [x] 1.8 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(deps): pin the opm CLI in .opm-cli-version at v1.0.0-beta.4`
 
 ## 2. G1 release-pin gate
 

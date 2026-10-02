@@ -21,7 +21,7 @@
         { "type": "perf", "section": "Performance Improvements" },
         { "type": "revert", "section": "Reverts" },
         { "type": "deps", "section": "Dependencies" },
-        { "type": "docs", "section": "Documentation", "hidden": false },
+        { "type": "docs", "section": "Documentation", "hidden": true },
         { "type": "refactor", "section": "Code Refactoring", "hidden": false },
         { "type": "test", "section": "Tests", "hidden": true },
         { "type": "ci", "section": "Continuous Integration", "hidden": true },

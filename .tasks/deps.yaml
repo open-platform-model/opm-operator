@@ -1,0 +1,9 @@
+version: '3'
+
+# Dependency pins and the release cascade (workspace RELEASING.md).
+
+tasks:
+  release-check:
+    desc: 'Release-pin gate G1 (workspace RELEASING.md, section "Gates"): fail on a go.mod replace, a pseudo-version or untagged OPM Go pin, a -0.dev. pin in a published fixture cue.mod, or a tracked cue.mod/local-module.cue'
+    cmds:
+      - hack/release-pin-check.sh

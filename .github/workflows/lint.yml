@@ -7,7 +7,9 @@ on:
 
 jobs:
   lint:
-    name: Run on Ubuntu
+    # Must stay unique across this repo's jobs: the ruleset on main requires
+    # the check "Lint" because it carries the release-pin gate (G1).
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -22,6 +24,10 @@ jobs:
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
           version: 3.x
+
+      - name: Release-pin gate (G1, release PRs only)
+        if: startsWith(github.head_ref || github.ref_name, 'release-please--')
+        run: task deps:release-check
 
       - name: Check linter configuration
         run: task dev:lint:config

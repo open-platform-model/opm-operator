@@ -37,7 +37,13 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ModulePackage is the Schema for the modulepackages API.
+        description: |-
+          ModulePackage renders the ModuleInstance package that a Flux source
+          artifact carries.
+
+          The operator fetches the artifact spec.sourceRef names, loads instance.cue
+          from the directory at spec.path, and renders and applies it when it
+          evaluates to #ModuleInstance; any other kind is rejected as unsupported.
         properties:
           apiVersion:
             description: |-

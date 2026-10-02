@@ -109,7 +109,9 @@ type TransformerRegistrationStatus struct {
 // +kubebuilder:printcolumn:name="Accepted",type=string,JSONPath=".status.accepted"
 // +kubebuilder:printcolumn:name="Active",type=string,JSONPath=".status.active"
 
-// TransformerRegistration is the Schema for the transformerregistrations API.
+// TransformerRegistration is a provider module's claim that its catalog
+// implements platform contracts.
+//
 // It is the cluster-scoped claim a provider module ships among its rendered
 // resources, the second path by which transformers reach a platform
 // (0015:D3); the first is a subscription in Platform.spec.registry.

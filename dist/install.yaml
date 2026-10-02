@@ -41,7 +41,15 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ModuleInstance is the Schema for the moduleinstances API
+        description: |-
+          ModuleInstance asks the operator to render one CUE module at a pinned
+          version with the given values and apply the result.
+
+          The module is resolved from an OCI registry by spec.module.path and
+          spec.module.version. When spec.owner is "cli", the OPM CLI manages the
+          instance and the operator leaves it alone: it renders, applies and prunes
+          nothing, adds no finalizer, and records only a ManagedExternally
+          acknowledgement.
         properties:
           apiVersion:
             description: |-
@@ -124,16 +132,8 @@ spec:
             description: status defines the observed state of ModuleInstance
             properties:
               conditions:
-                description: |-
-                  conditions represent the current state of the ModuleInstance resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                description: conditions represent the current state of the ModuleInstance
+                  resource.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -318,7 +318,7 @@ spec:
                   RequiredContracts lists every contract FQN this instance's components
                   declare, sorted and deduplicated, as the last successful render
                   reported them. It is the instance side of the removal guard
-                  (0015:D3, D16): a TransformerRegistration counts its
+                  (0015:D3/D16): a TransformerRegistration counts its
                   dependents by intersecting this with its own spec.provides, so a
                   provider cannot be deleted, or shrink its provides, out from under
                   the instances still demanding what it serves.
@@ -381,7 +381,13 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ModulePackage is the Schema for the modulepackages API.
+        description: |-
+          ModulePackage renders the ModuleInstance package that a Flux source
+          artifact carries.
+
+          The operator fetches the artifact spec.sourceRef names, loads instance.cue
+          from the directory at spec.path, and renders and applies it when it
+          evaluates to #ModuleInstance; any other kind is rejected as unsupported.
         properties:
           apiVersion:
             description: |-
@@ -744,9 +750,12 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Platform is the Schema for the platforms API. It is a cluster-scoped
-          singleton (the only permitted name is "cluster") whose spec projects the
-          core #Platform author surface.
+          Platform declares the catalogs the operator renders against: the operator
+          generates a platform CUE module from it, and renders ModuleInstances and
+          ModulePackages against that module.
+
+          It is a cluster-scoped singleton (the only permitted name is "cluster")
+          whose spec projects the core #Platform author surface.
         properties:
           apiVersion:
             description: |-
@@ -1057,7 +1066,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          TransformerRegistration is the Schema for the transformerregistrations API.
+          TransformerRegistration is a provider module's claim that its catalog
+          implements platform contracts.
+
           It is the cluster-scoped claim a provider module ships among its rendered
           resources, the second path by which transformers reach a platform
           (0015:D3); the first is a subscription in Platform.spec.registry.

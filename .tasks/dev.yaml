@@ -41,6 +41,17 @@ tasks:
     cmds:
       - '"{{.CONTROLLER_GEN}}" object:headerFile="hack/boilerplate.go.txt" paths="./..."'
 
+  docs:reference:
+    desc: Regenerate the operator resource reference (docs/site/reference/operator-resources.md) from the CRDs, config/samples and internal/controller
+    deps: [manifests]
+    cmds:
+      - go run ./hack/crdref
+
+  docs:reference:check:
+    desc: Fail when the committed operator resource reference differs from what hack/crdref generates from the committed CRDs
+    cmds:
+      - go run ./hack/crdref -check
+
   test:
     desc: 'Run unit and integration tests. Fixtures and catalogs resolve from GHCR unless TEST_CUE_REGISTRY overrides the mapping (PR CI passes the MIXED mapping after seeding a job-local registry from the tree). OPM_TEST_REGISTRY_FORCE=1 turns a skipped registry-backed spec into a failure.'
     deps: [manifests, generate, fmt, vet, ":tool:setup-envtest"]

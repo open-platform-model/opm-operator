@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# hack/fixtures.sh: one flow for the repo's published test-fixture modules.
+# hack/fixtures.sh: one flow for the repo's published test fixtures, modules
+# and catalogs.
 #
 # IDENTICAL COPY in cli/hack/fixtures.sh and opm-operator/hack/fixtures.sh. The
 # workspace root `task fixtures:lint` fails when the two drift; edit both.
 #
-# A fixture is a CUE module under $FIXTURES_DIR/<name>/ whose identity package
+# A fixture is a CUE module under $FIXTURES_DIR/<name>/ (a module) or
+# $CATALOGS_DIR/<name>/ (a catalog) whose identity package
 # (identity/identity.cue) is the single source of its ModulePath and Version.
-# Fixtures live on the testing domain (testing.opmodel.dev/modules/<repo>/*),
-# never under opmodel.dev/*, and are published through `opm module publish`, so
-# every publish gate runs over them.
+# Fixtures live on the testing domain (testing.opmodel.dev/modules/<repo>/*,
+# testing.opmodel.dev/catalogs/<repo>/*), never under opmodel.dev/*, and are
+# published through `opm module publish` or `opm catalog publish` by the root
+# they sit in, so every publish gate of their kind runs over them. Catalogs go
+# first, so a module fixture may depend on a catalog fixture.
 #
 # The same coordinate is served from two places, and only the registry mapping
 # decides which one a consumer sees:
@@ -42,13 +46,16 @@
 #            already lists at its listed version: a consumer on a new fixture
 #            but a stale core passes `cue mod tidy --check` and evaluates
 #            against the stale core. Also fails on a tracked cue.mod outside
-#            FIXTURES_DIR that pins a fixture but is not listed. Resolves
-#            through CUE_REGISTRY (default: GHCR; the seeded mapping in PR CI).
+#            FIXTURES_DIR and CATALOGS_DIR that pins a fixture but is not
+#            listed. Resolves through CUE_REGISTRY (default: GHCR; the seeded
+#            mapping in PR CI).
 #            FIX=1 writes the resolved module.cue back instead of failing.
 #
 # Environment
-#   FIXTURES_DIR       fixture root; auto-detected (tests/fixtures/modules or
-#                      test/fixtures/modules) when unset
+#   FIXTURES_DIR       module fixture root; auto-detected (tests/fixtures/modules
+#                      or test/fixtures/modules) when unset
+#   CATALOGS_DIR       catalog fixture root; defaults to the catalogs/ sibling of
+#                      FIXTURES_DIR when that directory exists, otherwise none
 #   OPM_BIN            opm binary (default: opm on PATH)
 #   CUE_REGISTRY       target mapping for seed/publish. The script exports
 #                      OPM_REGISTRY=CUE_REGISTRY as well (an inherited value is
@@ -91,6 +98,12 @@ if [ -z "$FIXTURES_DIR" ]; then
 fi
 [ -n "$FIXTURES_DIR" ] && [ -d "$FIXTURES_DIR" ] || die "no fixtures dir (set FIXTURES_DIR)"
 
+CATALOGS_DIR=${CATALOGS_DIR:-}
+if [ -z "$CATALOGS_DIR" ] && [ -d "$(dirname "$FIXTURES_DIR")/catalogs" ]; then
+  CATALOGS_DIR=$(dirname "$FIXTURES_DIR")/catalogs
+fi
+[ -z "$CATALOGS_DIR" ] || [ -d "$CATALOGS_DIR" ] || die "CATALOGS_DIR '$CATALOGS_DIR' is not a directory"
+
 OPM_BIN=${OPM_BIN:-opm}
 UPSTREAM_REGISTRY=${UPSTREAM_REGISTRY:-$GHCR_REGISTRY}
 BASE_REF=${BASE_REF:-origin/main}
@@ -103,8 +116,22 @@ require_tools() {
   command -v "$OPM_BIN" >/dev/null || die "$OPM_BIN not on PATH (install the pinned cli release, or set OPM_BIN)"
 }
 
+# fixture_dirs: every fixture, catalogs first.
 fixture_dirs() {
+  if [ -n "$CATALOGS_DIR" ]; then
+    find "$CATALOGS_DIR" -mindepth 1 -maxdepth 1 -type d | sort
+  fi
   find "$FIXTURES_DIR" -mindepth 1 -maxdepth 1 -type d | sort
+}
+
+# kind_of <dir>: the opm artifact kind a fixture publishes as, decided by the
+# root it sits in (`opm catalog ...` or `opm module ...`).
+kind_of() {
+  if [ -n "$CATALOGS_DIR" ] && [[ $1 == "$CATALOGS_DIR"/* ]]; then
+    echo catalog
+  else
+    echo module
+  fi
 }
 
 # identity <dir> <field>: read ModulePath or Version from the identity package.
@@ -146,35 +173,36 @@ only_already_published() {
 # publish_one <dir> <mode>: publish a fixture at its declared version (plus
 # PRERELEASE). Prints the outcome; returns non-zero on a real failure.
 publish_one() {
-  local dir=$1 name ver tag srcdir out ok attempt delay
+  local dir=$1 name kind ver tag srcdir out ok attempt delay
   name=$(basename "$dir")
+  kind=$(kind_of "$dir")
   ver=$(identity "$dir" Version)
   tag="v${ver}"
   srcdir=$dir
   # A pre-release tag (PR e2e) is v<ver>-<id>: valid SemVer that sorts below the
   # eventual release cut and never collides with it. The DECLARED version has to
   # move with the tag: acquire-time identity checks (0010:D11) require
-  # metadata.version to equal the fetched tag. Stage a copy and let `opm module
+  # metadata.version to equal the fetched tag. Stage a copy and let `opm <kind>
   # version set` write it; it is offline and preserves the defaulted-disjunction
   # shape byte-for-byte.
   if [ -n "$PRERELEASE" ]; then
     tag="${tag}-${PRERELEASE}"
     srcdir=$(mktemp -d)
     cp -R "$dir/." "$srcdir/"
-    if ! "$OPM_BIN" module version set "${ver}-${PRERELEASE}" "$srcdir" >/dev/null; then
+    if ! "$OPM_BIN" "$kind" version set "${ver}-${PRERELEASE}" "$srcdir" >/dev/null; then
       rm -rf "$srcdir"
       echo "FAIL ${name}: prerelease version set failed" >&2
       return 1
     fi
   fi
-  echo "==> ${name}: publishing ${tag}"
+  echo "==> ${name} (${kind}): publishing ${tag}"
   # GHCR applies a secondary rate limit to rapid writes (403 "exceeded a
   # secondary rate limit"), reached in practice when the whole fleet is pushed in
   # seconds. Back off and retry rather than fail the run for a throttle.
   out=""
   ok=1
   for attempt in 1 2 3 4; do
-    if out=$("$OPM_BIN" module publish "$srcdir" 2>&1); then
+    if out=$("$OPM_BIN" "$kind" publish "$srcdir" 2>&1); then
       ok=0
       break
     fi
@@ -221,15 +249,16 @@ cmd_pins() {
 
 cmd_check() {
   require_tools
-  local dir name tag out rc=0 found=0
+  local dir name kind tag out rc=0 found=0
   export CUE_REGISTRY=$UPSTREAM_REGISTRY
   export OPM_REGISTRY=$UPSTREAM_REGISTRY
   for dir in $(fixture_dirs); do
     found=$((found + 1))
     name=$(basename "$dir")
+    kind=$(kind_of "$dir")
     tag="v$(identity "$dir" Version)"
-    echo "==> ${name}: gates at ${tag}"
-    if out=$("$OPM_BIN" module publish --dry-run "$dir" 2>&1); then
+    echo "==> ${name} (${kind}): gates at ${tag}"
+    if out=$("$OPM_BIN" "$kind" publish --dry-run "$dir" 2>&1); then
       echo "$out"
       continue
     fi
@@ -241,7 +270,7 @@ cmd_check() {
     fi
     if changed_since "$BASE_REF" "$dir"; then
       echo "FAIL ${name}: changed since ${BASE_REF} but ${tag} is already published upstream." >&2
-      echo "     Published versions are immutable: bump it (opm module version set <semver> $dir)" >&2
+      echo "     Published versions are immutable: bump it (opm ${kind} version set <semver> $dir)" >&2
       echo "     so PR CI (tree) and post-merge (registry) test the same content." >&2
       rc=1
       continue
@@ -359,6 +388,9 @@ cmd_consumers() {
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     while IFS= read -r f; do
       case "$f" in "$FIXTURES_DIR"/*) continue ;; esac
+      if [ -n "$CATALOGS_DIR" ]; then
+        case "$f" in "$CATALOGS_DIR"/*) continue ;; esac
+      fi
       [ -n "$(fixture_deps "$f")" ] || continue
       case "$listed" in *" $f "*) continue ;; esac
       consumer_fail "$f" "pins a testing.opmodel.dev fixture but is not a listed consumer"

@@ -37,12 +37,14 @@ import (
 )
 
 // claimCatalogPath is the catalog a platform spec's active claim contributes:
-// a real, resolvable one the spec's own registry does not subscribe, so the
-// generated module has to pin and import it because the claim said so.
-const claimCatalogPath = "opmodel.dev/catalogs/k8s@v1"
+// the operator's test catalog (test/fixtures/catalogs/provider), a real,
+// resolvable one the spec's own registry does not subscribe, so the generated
+// module has to pin and import it because the claim said so.
+func claimCatalogPath() string { return fixtures.MustCatalog(GinkgoT(), "provider").ModulePath }
 
-// claimCatalogVersion is the build claimCatalogPath is claimed at.
-const claimCatalogVersion = "1.0.0-alpha.2"
+// claimCatalogVersion is the build claimCatalogPath is claimed at: the version
+// the fixture's identity package declares.
+func claimCatalogVersion() string { return fixtures.MustCatalog(GinkgoT(), "provider").Version }
 
 // storeActiveClaim stores a claim already accepted and active — the verdict
 // the claim reconciler writes and this capability only consumes. The platform
@@ -273,12 +275,12 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			before, ok := store.Generated()
 			Expect(ok).To(BeTrue())
 			Expect(before.Identity.Claims()).To(BeEmpty())
-			Expect(registryText(before.Dir)).NotTo(ContainSubstring(claimCatalogPath))
+			Expect(registryText(before.Dir)).NotTo(ContainSubstring(claimCatalogPath()))
 
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), plat)).To(Succeed())
 			generationBefore := plat.Generation
 
-			storeActiveClaim("default."+providerInstanceName, claimCatalogPath, claimCatalogVersion)
+			storeActiveClaim("default."+providerInstanceName, claimCatalogPath(), claimCatalogVersion())
 			Eventually(func(g Gomega) {
 				var list releasesv1alpha1.TransformerRegistrationList
 				g.Expect(k8sClient.List(ctx, &list)).To(Succeed())
@@ -299,12 +301,12 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			Expect(after.Identity).NotTo(Equal(before.Identity),
 				"a claim activating yields a new identity at an unchanged generation")
 			Expect(after.Identity.Generation()).To(Equal(generationBefore))
-			Expect(after.Identity.Claims()).To(Equal([]string{claimCatalogPath + "@" + claimCatalogVersion}))
+			Expect(after.Identity.Claims()).To(Equal([]string{claimCatalogPath() + "@" + claimCatalogVersion()}))
 			Expect(after.Dir).NotTo(Equal(before.Dir))
 
-			Expect(registryText(after.Dir)).To(ContainSubstring(claimCatalogPath),
+			Expect(registryText(after.Dir)).To(ContainSubstring(claimCatalogPath()),
 				"the active provider's catalog is a registry entry")
-			Expect(registryText(after.Dir)).To(ContainSubstring(claimCatalogVersion),
+			Expect(registryText(after.Dir)).To(ContainSubstring(claimCatalogVersion()),
 				"pinned at the version the claim named")
 
 			// Status is the Platform's own account of what the render builds
@@ -318,8 +320,8 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 					Source:  releasesv1alpha1.RegistryEntrySubscription,
 				},
 				releasesv1alpha1.ResolvedRegistryEntry{
-					Catalog: claimCatalogPath,
-					Version: claimCatalogVersion,
+					Catalog: claimCatalogPath(),
+					Version: claimCatalogVersion(),
 					Enabled: true,
 					Source:  releasesv1alpha1.RegistryEntryRegistration,
 				},
@@ -340,10 +342,10 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			}
 			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
 
-			claim := storeActiveClaim("default."+providerInstanceName, claimCatalogPath, claimCatalogVersion)
+			claim := storeActiveClaim("default."+providerInstanceName, claimCatalogPath(), claimCatalogVersion())
 			_, err := r.Reconcile(ctx, clusterRequest)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(catalogsInUnion(fetchPlatform())).To(ContainElement(claimCatalogPath))
+			Expect(catalogsInUnion(fetchPlatform())).To(ContainElement(claimCatalogPath()))
 			identityWithClaim := fetchPlatform().Status.PackageIdentity
 
 			// The claim stops being active. The union must shed its catalog.
@@ -359,7 +361,7 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			_, err = r.Reconcile(ctx, clusterRequest)
 			Expect(err).NotTo(HaveOccurred())
 			shrunk := fetchPlatform()
-			Expect(catalogsInUnion(shrunk)).NotTo(ContainElement(claimCatalogPath),
+			Expect(catalogsInUnion(shrunk)).NotTo(ContainElement(claimCatalogPath()),
 				"the union no longer lists a catalog no claim contributes")
 			Expect(catalogsInUnion(shrunk)).To(ConsistOf(testCatalogPath()))
 			Expect(shrunk.Status.PackageIdentity).NotTo(Equal(identityWithClaim))
@@ -427,7 +429,7 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			}
 			Expect(k8sClient.Create(ctx, plat)).To(Succeed())
 
-			claim := storeActiveClaim("default."+providerInstanceName, claimCatalogPath, claimCatalogVersion)
+			claim := storeActiveClaim("default."+providerInstanceName, claimCatalogPath(), claimCatalogVersion())
 			_, err := r.Reconcile(ctx, clusterRequest)
 			Expect(err).NotTo(HaveOccurred())
 			withClaim, ok := store.Generated()
@@ -450,7 +452,7 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			Expect(ok).To(BeTrue())
 			Expect(withoutClaim.Identity.Claims()).To(BeEmpty(),
 				"the package follows current state, never the event's content")
-			Expect(registryText(withoutClaim.Dir)).NotTo(ContainSubstring(claimCatalogPath))
+			Expect(registryText(withoutClaim.Dir)).NotTo(ContainSubstring(claimCatalogPath()))
 		})
 
 		It("converges a burst of activations in one regeneration, covering every claim", func() {
@@ -467,8 +469,8 @@ var _ = Describe("Platform generation from the active-claim set", func() {
 			// Both claims flip active together, as a batch of provider
 			// installs completing does.
 			claimed := map[string]string{
-				testCatalogPath(): fixtures.CatalogVersion(),
-				claimCatalogPath:  claimCatalogVersion,
+				testCatalogPath():  fixtures.CatalogVersion(),
+				claimCatalogPath(): claimCatalogVersion(),
 			}
 			names := []string{"default." + providerInstanceName, "burst." + providerInstanceName}
 			i := 0

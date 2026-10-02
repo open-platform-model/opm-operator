@@ -1,8 +1,9 @@
 name: Publish Fixtures
 
-# Publishes the example test modules to GHCR outside the release train, so the
-# coordinate a PR tested against its job-local registry (test.yml seeds it from
-# the tree) exists on GHCR as soon as the PR merges. Every other context (release,
+# Publishes the test fixtures (the example modules under test/fixtures/modules
+# and the test catalogs under test/fixtures/catalogs) to GHCR outside the
+# release train, so the coordinate a PR tested against its job-local registry
+# (test.yml seeds it from the tree) exists on GHCR as soon as the PR merges. Every other context (release,
 # e2e, developers, the controller) resolves fixtures from GHCR.
 #
 # The release workflow also publishes them on release, and the e2e workflow
@@ -22,6 +23,7 @@ on:
       - main
     paths:
       - 'test/fixtures/modules/**'
+      - 'test/fixtures/catalogs/**'
       - 'hack/fixtures.sh'
       - '.tasks/examples.yaml'
       - '.github/workflows/publish-fixtures.yml'

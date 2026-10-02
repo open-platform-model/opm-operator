@@ -39,6 +39,7 @@ import (
 	opmcontroller "github.com/open-platform-model/opm-operator/internal/controller"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/status"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // This is the end-to-end counterpart to the unit-level claim-watch specs
@@ -54,10 +55,6 @@ var _ = Describe("Claim-driven regeneration (manager-driven, registry-backed)", 
 	const (
 		platformName = "cluster"
 		claimName    = "claim-watch-ns.provider"
-		// A second real catalog the spec's Platform does not subscribe, so its
-		// arrival in the generated module can only have come from the claim.
-		claimCatalog        = "opmodel.dev/catalogs/k8s@v1"
-		claimCatalogVersion = "1.0.0-alpha.2"
 	)
 
 	AfterEach(func() {
@@ -72,6 +69,12 @@ var _ = Describe("Claim-driven regeneration (manager-driven, registry-backed)", 
 	It("regenerates when a claim becomes active, with no edit to the Platform CR", func() {
 		skipIfNoTestRegistry()
 		registry := os.Getenv("CUE_REGISTRY")
+
+		// A second real catalog the spec's Platform does not subscribe, so its
+		// arrival in the generated module can only have come from the claim:
+		// the operator's test catalog (test/fixtures/catalogs/provider).
+		provider := fixtures.MustCatalog(GinkgoT(), "provider")
+		claimCatalog, claimCatalogVersion := provider.ModulePath, provider.Version
 
 		mgrCtx, cancelMgr := context.WithCancel(ctx)
 		defer cancelMgr()

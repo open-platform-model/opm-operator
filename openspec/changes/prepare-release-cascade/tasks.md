@@ -32,8 +32,8 @@ Depends on: opmodel.dev change `build-docs-from-branch-head` merged before this 
 - [x] 4.1 Set `"hidden": true` on the `docs` entry of `release-please-config.json:24`; leave `refactor` visible and leave CHANGELOG.md untouched
 - [x] 4.2 Validate the JSON (`jq . release-please-config.json`)
 - [x] 4.3 Rewrite `AGENTS.md:146` ("Commit type decides the release") to "release-please hides `docs`, `chore`, `test`, `ci` and `build`; `feat`, `fix`, `deps`, `perf` and `refactor` release", citing workspace RELEASING.md, section "Pin classes"; verify with `grep -n 'docs' AGENTS.md` that no line still lists `docs` as releasing
-- [x] 4.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): hide the docs changelog section so doc-only commits do not release`
+- [x] 4.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): hide the docs changelog section so docs do not release`
 
 ## 5. Archive
 
-- [ ] 5.1 Archive the change on this branch (openspec archive), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01 (RELEASING.md, Owner settings))
+- [ ] 5.1 Archive the change on this branch (openspec archive), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01 (RELEASING.md, Owner settings)). Commit `chore(openspec): archive prepare-release-cascade`

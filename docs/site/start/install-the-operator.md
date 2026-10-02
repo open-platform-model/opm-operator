@@ -71,7 +71,7 @@ There are two ways to install the operator, and both apply the manifest a releas
 
    The operator renders against the cluster's Platform, a cluster-wide resource that pins one build of each catalog. Until the operator has generated the Platform, every ModuleInstance and ModulePackage waits with `Ready=False` and reason `PlatformNotReady`.
 
-   If you installed with `opm operator install`, it has already created the Platform `cluster`, subscribed to the newest release of `opmodel.dev/catalogs/opm@v4`. It leaves an existing Platform untouched, and with `--skip-platform` it creates none. The Platform it creates subscribes to the abstraction catalog only. To subscribe to the raw Kubernetes catalog `opmodel.dev/catalogs/k8s@v1` as well, add its entry under `spec.registry` with `kubectl edit platform cluster`.
+   If you installed with `opm operator install`, it has already created the Platform `cluster`, subscribed to the newest release of `opmodel.dev/catalogs/opm@v4`. It leaves an existing Platform untouched, and with `--skip-platform` it creates none.
 
    Otherwise, write the Platform to a file, `platform.yaml`:
 
@@ -85,8 +85,6 @@ There are two ways to install the operator, and both apply the manifest a releas
      registry:
        opmodel.dev/catalogs/opm@v4:
          version: "4.4.4"
-       opmodel.dev/catalogs/k8s@v1:
-         version: "1.0.0-beta.1"
    ```
 
    Apply it:

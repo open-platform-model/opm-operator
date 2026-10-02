@@ -325,8 +325,6 @@ metadata:
   name: cluster
 spec:
   registry:
-    opmodel.dev/catalogs/k8s@v1:
-      version: 1.0.0-beta.1
     opmodel.dev/catalogs/opm@v4:
       version: 4.4.4
   type: kubernetes

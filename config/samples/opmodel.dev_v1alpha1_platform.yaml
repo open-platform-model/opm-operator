@@ -20,8 +20,3 @@ spec:
       # it as `test(fixtures)`: no operator release. The mirrored CLI seed
       # is shipped and bumps as `fix(deps)`.
       version: "4.4.4"
-    opmodel.dev/catalogs/k8s@v1:
-      # Second subscription mirroring the CLI's seeded default (seed-both-
-      # catalogs): the raw passthrough catalog, bumped in the same commit
-      # as the opm@v4 pin above.
-      version: "1.0.0-beta.1"

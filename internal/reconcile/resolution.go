@@ -6,6 +6,7 @@ import (
 	oerrors "github.com/open-platform-model/library/opm/errors"
 	"github.com/open-platform-model/library/opm/helper/objectset"
 
+	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
@@ -16,9 +17,8 @@ import (
 // matched (*oerrors.UnmatchedComponentsError). The last two are the typed
 // causes of the kernel's fail-closed render gate, carried on
 // *kernel.RenderError and joined together when both apply; errors.AsType
-// traverses the join. Both render-error classifiers consult this ahead of
-// their string fallbacks, which remain for loader-path errors that carry no
-// type.
+// traverses the join. Both render-error classifiers consult it through
+// renderFailureReason, and isTerminalAcquireCause treats it as terminal.
 //
 // IdentityError cannot occur on the ModulePackage path — packages load from
 // a Flux artifact and never acquire from the registry — but the helper is
@@ -32,6 +32,32 @@ func isTypedResolutionError(err error) bool {
 	}
 	_, ok := errors.AsType[*oerrors.UnmatchedComponentsError](err)
 	return ok
+}
+
+// isTerminalAcquireCause reports whether err carries a typed cause that
+// retrying cannot fix: a wrong artifact kind, a structurally invalid package
+// or a missing required field (the loader's shape gate), or a typed
+// resolution failure (an identity mismatch, unresolved platform demands,
+// unmatched components). Unresolved demands cannot sit under an acquisition
+// failure today, but keeping them here means a later wrap cannot make them
+// retry.
+func isTerminalAcquireCause(err error) bool {
+	if errors.Is(err, oerrors.ErrWrongKind) ||
+		errors.Is(err, oerrors.ErrInvalidPackage) ||
+		errors.Is(err, oerrors.ErrMissingRequiredField) {
+		return true
+	}
+	return isTypedResolutionError(err)
+}
+
+// isTransientAcquireFailure reports an acquisition failure (render.ErrAcquire)
+// with no typed terminal cause: a registry outage, a CUE dependency that would
+// not resolve, or, until the library types its fetch and load errors, a
+// not-found or a package that fails to load. Both reconcile loops retry it on
+// the bounded backoff as a non-stalled ResolutionFailed; it is classified by
+// type alone, never by message text.
+func isTransientAcquireFailure(err error) bool {
+	return errors.Is(err, render.ErrAcquire) && !isTerminalAcquireCause(err)
 }
 
 // isSkewRefusal reports whether err is a render refused before evaluation by
@@ -59,25 +85,28 @@ func isDuplicateIdentities(err error) bool {
 //  2. DuplicateIdentities — two rendered objects share one apply identity, a
 //     verdict on the render's own output that must not be mistaken for a
 //     platform problem.
-//  3. ResolutionFailed — unresolved demands, unmatched components and
-//     identity mismatches.
+//  3. ResolutionFailed — unresolved demands, unmatched components, identity
+//     mismatches and every acquisition failure (render.ErrAcquire). The
+//     callers retry an acquisition failure without a typed terminal cause
+//     before reaching here (isTransientAcquireFailure), so under this reason
+//     it is the stalled case.
 //  4. RenderFailed — a transform failure, an over-subscribed provider
 //     contract (*oerrors.TransformError,
 //     *oerrors.OverSubscribedContractsError) and every other refusal or
 //     evaluation error. The pre-evaluation refusals that indicate an operator
 //     defect (a missing Source, an uncovered OPM path) fall through to here
-//     with the kernel's message verbatim.
+//     with the kernel's message verbatim. A failed instance synthesis lands
+//     here too.
 //
-// A string fallback classifies loader-path errors that carry no type
-// (matchers supplied by the caller: the two reconcile loops wrap different
-// phases in different words).
-func renderFailureReason(err error, isResolutionMsg func(error) bool) string {
+// There is no string fallback: a render error is classified by its type or
+// sentinel, never by its message text.
+func renderFailureReason(err error) string {
 	switch {
 	case isSkewRefusal(err):
 		return status.SkewRefusedReason
 	case isDuplicateIdentities(err):
 		return status.DuplicateIdentitiesReason
-	case isTypedResolutionError(err), isResolutionMsg(err):
+	case isTypedResolutionError(err), errors.Is(err, render.ErrAcquire):
 		return status.ResolutionFailedReason
 	default:
 		return status.RenderFailedReason

@@ -53,7 +53,7 @@ Check against: cli/internal/workflow/apply/apply.go, cli/internal/inventory/stal
 ### Where the two paths differ
 
 <!-- Prose, not a field table. Five differences decide whether a resource is actually removed:
-- Default: the CLI always deletes on delete and prunes on apply; the operator does neither unless `spec.prune` is true.
+- Default: the CLI always deletes on delete and prunes on apply unless `--no-prune` is passed; the operator does neither unless `spec.prune` is true.
 - Namespaces and CRDs: the operator never deletes them. The CLI deletes both on `opm instance delete`, and CRDs (not Namespaces) when pruning on apply.
 - Ownership check: the operator re-reads each live object and skips it when its managed-by or UUID label disagrees. The CLI deletes whatever the inventory names.
 - Identity: the CLI acts with the user's credentials; the operator with the impersonated ServiceAccount.
@@ -113,7 +113,7 @@ Check against: opm-operator/internal/reconcile/moduleinstance.go, cli/internal/w
 
 Check against: opm-operator/internal/reconcile/moduleinstance.go -->
 
-### The CLI prunes on every apply
+### The CLI prunes on every apply unless told not to
 
 <!-- Readers carry the operator's default over to the CLI. `opm instance apply` deletes stale resources unless `--no-prune` is passed, CRDs included.
 

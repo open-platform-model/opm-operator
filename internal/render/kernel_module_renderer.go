@@ -24,6 +24,29 @@ import (
 // errors.Is without string matching.
 var ErrPlatformNotReady = errors.New("platform not ready: no generated platform module")
 
+// ErrAcquire marks a failure to acquire module source: fetching a module from
+// the registry (ModuleInstance) or loading a package and resolving its CUE
+// dependencies (ModulePackage). The reconcile loops retry it on the bounded
+// backoff unless a typed terminal cause (an identity mismatch, a wrong kind,
+// a structurally invalid package, a missing required field) sits underneath.
+// It never changes the message: errors.Is finds it beside the original error.
+var ErrAcquire = errors.New("acquiring module source")
+
+// acquireError marks err as an acquisition failure (ErrAcquire) without
+// changing its message; errors.Is finds the sentinel and errors.AsType still
+// reaches every typed cause under err.
+type acquireError struct {
+	msg string
+	err error
+}
+
+func (e *acquireError) Error() string   { return e.msg + ": " + e.err.Error() }
+func (e *acquireError) Unwrap() []error { return []error{ErrAcquire, e.err} }
+
+// acquireFailed wraps err as msg + ": " + err, the same text as
+// fmt.Errorf("%s: %w", msg, err), and marks it with ErrAcquire.
+func acquireFailed(msg string, err error) error { return &acquireError{msg: msg, err: err} }
+
 // valuesOrigin is the origin the ModuleInstance's raw values are loaded
 // under: the CR field they were read from. A values error is reported at
 // this origin (kernel.Source.Origin), so an operator reading the event can
@@ -115,7 +138,7 @@ func (r *KernelModuleRenderer) synthesize(
 ) (*module.Instance, error) {
 	mod, err := moduleacquire.Acquire(ctx, r.Kernel, modulePath, moduleVersion, r.Registry)
 	if err != nil {
-		return nil, fmt.Errorf("acquiring module: %w", err)
+		return nil, acquireFailed("acquiring module", err)
 	}
 
 	// The CRD values become one values source whose origin names the CR

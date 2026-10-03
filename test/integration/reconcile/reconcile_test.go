@@ -126,9 +126,9 @@ var _ = Describe("Reconcile Error Paths", func() {
 		})
 	})
 
-	Context("Source not found (stalled)", func() {
-		It("should set Stalled when source does not exist", func() {
-			// Create MR referencing a module that does not exist.
+	Context("Identity mismatch (stalled)", func() {
+		It("should set Stalled when the acquired module's identity disagrees", func() {
+			// Create an MR whose acquired module reports a different identity.
 			mr := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "stalled-mr",
@@ -144,7 +144,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 
 			params := reconcileParams()
-			params.Renderer = resolutionErrorRenderer()
+			params.Renderer = identityMismatchRenderer()
 
 			nn := types.NamespacedName{Name: "stalled-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
@@ -226,7 +226,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 				},
 				Spec: releasesv1alpha1.ModuleInstanceSpec{
 					Module: releasesv1alpha1.ModuleReference{
-						Path:    "opmodel.dev/nonexistent",
+						Path:    "opmodel.dev/test",
 						Version: "v0.1.0",
 					},
 				},
@@ -234,7 +234,7 @@ var _ = Describe("Reconcile Error Paths", func() {
 			Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 
 			params := reconcileParams()
-			params.Renderer = resolutionErrorRenderer()
+			params.Renderer = identityMismatchRenderer()
 			nn := types.NamespacedName{Name: "retry-stalled-mr", Namespace: namespace}
 			ensureFinalizer(params, nn)
 

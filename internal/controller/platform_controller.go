@@ -109,8 +109,8 @@ type PlatformReconciler struct {
 	Layout platformstore.Layout
 
 	// ModFiles serves published module files for the closure derivation.
-	// Nil constructs one from Registry on first use; a test may inject a
-	// fixture graph.
+	// Nil builds a fresh source per reconcile; a test may inject a fixture
+	// graph, which is used across reconciles as given.
 	ModFiles platformmodule.ModFileSource
 }
 
@@ -407,24 +407,24 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// modFiles returns the module-file source for closure derivation,
-// constructing it on first use from the operator's registry mapping, its
-// client type and the process environment (CUE_CACHE_DIR is set at manager
-// start), passed explicitly: the helper reads nothing from the process.
+// modFiles returns the module-file source for one reconcile's closure
+// derivation. An injected ModFiles is returned as is. Otherwise a new source
+// is built on every call from the operator's registry mapping, its client
+// type and the process environment (CUE_CACHE_DIR is set at manager start),
+// passed explicitly: the helper reads nothing from the process. CUE's module
+// cache keeps every lookup error in memory for the life of the source, so
+// reusing one across reconciles would serve a transient registry failure to
+// every retry. Fetched module files persist on disk under CUE_CACHE_DIR, so a
+// new source costs no extra downloads.
 func (r *PlatformReconciler) modFiles() (platformmodule.ModFileSource, error) {
 	if r.ModFiles != nil {
 		return r.ModFiles, nil
 	}
-	src, err := platformmodule.NewRegistry(platformmodule.RegistryConfig{
+	return platformmodule.NewRegistry(platformmodule.RegistryConfig{
 		Registry:   r.Registry,
 		ClientType: "opm-operator",
 		Env:        os.Environ(),
 	})
-	if err != nil {
-		return nil, err
-	}
-	r.ModFiles = src
-	return src, nil
 }
 
 // failReconcile records a generate/build failure on plat and returns the

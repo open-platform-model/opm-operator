@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	oerrors "github.com/open-platform-model/library/opm/errors"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +39,7 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -327,6 +330,66 @@ var _ = Describe("ModulePackage Controller", func() {
 			if k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm) == nil {
 				Expect(k8sClient.Delete(ctx, &cm)).To(Succeed())
 			}
+			Expect(k8sClient.Delete(ctx, &got)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, src)).To(Succeed())
+		})
+	})
+
+	Context("Acquisition failures", func() {
+		// reconcileFailing renders the package with renderer and returns the
+		// failing reconcile's result and the stored package.
+		reconcileFailing := func(ctx context.Context, name string, renderer *stubPackageRenderer) (
+			reconcile.Result, releasesv1alpha1.ModulePackage, *sourcev1.OCIRepository,
+		) {
+			src := newOCIRepo(name+"-src", namespace)
+			Expect(k8sClient.Create(ctx, src)).To(Succeed())
+			markOCIReady(src, "main@sha256:eee", "sha256:eee")
+			Expect(k8sClient.Status().Update(ctx, src)).To(Succeed())
+
+			createModulePackage(ctx, name, "releases/app", false, nil)
+
+			r := buildReconciler(&stubFetcher{pathInArtifact: "releases/app"}, renderer)
+			nn := types.NamespacedName{Name: name, Namespace: namespace}
+			result := reconcileTwice(ctx, r, nn)
+
+			var got releasesv1alpha1.ModulePackage
+			Expect(k8sClient.Get(ctx, nn, &got)).To(Succeed())
+			return result, got, src
+		}
+
+		It("retries a package load failure on the backoff instead of stalling", func() {
+			ctx := context.Background()
+			renderer := &stubPackageRenderer{err: fmt.Errorf("loading package: %w: %w",
+				errors.New("cannot find module providing package opmodel.dev/test/module: registry unavailable"),
+				render.ErrAcquire)}
+
+			result, got, src := reconcileFailing(ctx, "acquire-transient-pkg", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.ComputeBackoff(1)))
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(status.ResolutionFailedReason))
+			Expect(apimeta.FindStatusCondition(got.Status.Conditions, status.StalledCondition)).To(BeNil())
+
+			Expect(k8sClient.Delete(ctx, &got)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, src)).To(Succeed())
+		})
+
+		It("stalls a structurally invalid package", func() {
+			ctx := context.Background()
+			renderer := &stubPackageRenderer{err: fmt.Errorf("loading package: %w: %w",
+				fmt.Errorf("loading instance: %w", oerrors.ErrInvalidPackage),
+				render.ErrAcquire)}
+
+			result, got, src := reconcileFailing(ctx, "acquire-terminal-pkg", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
+			stalled := apimeta.FindStatusCondition(got.Status.Conditions, status.StalledCondition)
+			Expect(stalled).NotTo(BeNil())
+			Expect(stalled.Status).To(Equal(metav1.ConditionTrue))
+			Expect(stalled.Reason).To(Equal(status.ResolutionFailedReason))
+
 			Expect(k8sClient.Delete(ctx, &got)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, src)).To(Succeed())
 		})

@@ -68,7 +68,10 @@ spec:
               dependsOn:
                 description: |-
                   DependsOn references other ModulePackage CRs that must be Ready=True before
-                  this ModulePackage is reconciled. References are same-namespace only.
+                  this ModulePackage is reconciled. References are same-namespace only: an
+                  entry whose namespace is set to anything other than this ModulePackage's
+                  own is refused: the ModulePackage reports Ready=False with reason
+                  DependenciesNotReady and does not reconcile.
                 items:
                   description: |-
                     NamespacedObjectReference contains enough information to locate the referenced Kubernetes resource object in any
@@ -87,8 +90,13 @@ spec:
                 type: array
               interval:
                 description: |-
-                  Interval at which the reconciler re-evaluates the package to detect drift
-                  and re-apply. Also the requeue interval after transient failures.
+                  Interval at which the reconciler runs again: it re-fetches the source
+                  artifact, re-renders the package and compares the source, render and
+                  inventory digests with the last applied ones, and skips the apply when
+                  they all match. It does not compare the live objects, so a change made
+                  directly to an applied object is not detected or reverted until the
+                  rendered output changes. Also the requeue interval after transient
+                  failures. Defaults to 5 minutes.
                 type: string
               path:
                 description: |-

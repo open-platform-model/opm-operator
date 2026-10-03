@@ -417,6 +417,15 @@ func renderModulePackage(
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.PlatformNotReadyReason, "Render", "%s", err)
 			return nil, &phaseFail{FailedTransient, err.Error(), interval}, nil
 		}
+		// A package load that failed without a typed terminal cause (a CUE
+		// dependency the registry did not serve) retries on the bounded
+		// backoff as a non-stalled ResolutionFailed, the same shared
+		// classification the ModuleInstance loop uses.
+		if isTransientAcquireFailure(err) {
+			status.MarkNotReady(pkg, status.ResolutionFailedReason, "%s", err)
+			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.ResolutionFailedReason, "Render", "%s", err)
+			return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}
+		}
 		reason := renderErrorReason(err)
 		status.MarkStalled(pkg, reason, "%s", err)
 		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
@@ -432,13 +441,13 @@ func renderModulePackage(
 }
 
 // renderErrorReason maps a failed package render to its reason: an
-// unsupported kind first, then the kernel's typed cause (renderFailureReason)
-// with the package loader's string fallback.
+// unsupported kind first, then the typed cause (renderFailureReason), which
+// reports every acquisition failure as ResolutionFailed.
 func renderErrorReason(err error) string {
 	if errors.Is(err, render.ErrUnsupportedKind) {
 		return status.UnsupportedKindReason
 	}
-	return renderFailureReason(err, isResolutionErrorMsg)
+	return renderFailureReason(err)
 }
 
 func computeModulePackageDigests(converted *convertedRender, digests *status.DigestSet) {
@@ -822,11 +831,4 @@ func inventoryDigestModulePackage(inv *releasesv1alpha1.Inventory) string {
 		return ""
 	}
 	return inv.Digest
-}
-
-func isResolutionErrorMsg(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "loading synthesized instance") ||
-		strings.Contains(msg, "loading package") ||
-		strings.Contains(msg, "resolving")
 }

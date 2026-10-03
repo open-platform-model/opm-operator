@@ -24,7 +24,7 @@ bundles: "opm-operator": {
 		// The authored pages ship in the same bundle (docs-kit DESIGN decision
 		// 20). Until the site reads this bundle, the committed page carries
 		// crdref's block, which would collide with the crd page, so it is
-		// excluded; section 3 deletes the block and this exclude, and the
+		// excluded; after G2-switch the block and this exclude go, and the
 		// authored intro then completes the generated page.
 		{kind: "markdown", dir: "docs/site", exclude: ["reference/operator-resources.md"]},
 		{
@@ -34,9 +34,12 @@ bundles: "opm-operator": {
 			page:        "reference/operator-resources.md"
 			title:       "Operator resources"
 			description: "One generated entry per operator resource kind: ModuleInstance, ModulePackage, Platform and TransformerRegistration."
+			weight:      7 // the committed page's weight, so the page keeps its place before the intro completes it
 			order:       ["ModuleInstance", "ModulePackage", "Platform", "TransformerRegistration"]
+			// The hello fixture is a test module, not an example to copy (crdref's rule).
+			hideSamplesMatching: ["testing.opmodel.dev"]
 			// The Named(...) of the controller whose builder calls For(&<Kind>{})
-			// in internal/controller; section 3's test keeps these in step.
+			// in internal/controller; the reconciledBy test keeps these in step.
 			reconciledBy: {
 				ModuleInstance:          "moduleinstance"
 				ModulePackage:           "modulepackage"
@@ -51,9 +54,11 @@ bundles: "opm-operator": {
 
 The names are what crdref's scan finds at `9835474` (`internal/controller/moduleinstance_controller.go:135`, `platform_controller.go:578`, `modulepackage_controller.go:182`, `transformerregistration_controller.go:602`) and what the committed page states ("The operator's `moduleinstance` controller watches every ModuleInstance."). The title and description are the committed page's front matter.
 
-### D2. Sample selection must match crdref (verified in section 1)
+### D2. Sample selection matches crdref (docs-kit fix assumed, verified at adoption)
 
-`config/samples` holds two ModuleInstance documents: `opmodel.dev_v1alpha1_moduleinstance.yaml` (the `testing.opmodel.dev` hello fixture, used by kustomize and `test/integration/crdvalidation`) and `opmodel.dev_v1alpha1_moduleinstance_jellyfin.yaml`, plus a Flux `OCIRepository` and `kustomization.yaml`. crdref reads only the file named `<group>_<version>_<kind>.yaml` and hides a sample that references `testing.opmodel.dev`, so today's ModuleInstance entry has no Example and the jellyfin file is never read. docs-kit's `add-crd-extractor` design says only "one sample per kind" and refuses a second one (its D5 message), and names no fixture-registry rule. If the released extractor keeps that rule, this repository's bundle fails to build, or shows the test fixture as the example. Section 1 checks the released behavior (task 1.4) and stops for a docs-kit fix rather than move or rename samples, which kustomize, `task examples:pin` and the crdvalidation tier depend on.
+`config/samples` holds two ModuleInstance documents: `opmodel.dev_v1alpha1_moduleinstance.yaml` (the `testing.opmodel.dev` hello fixture, used by kustomize and `test/integration/crdvalidation`) and `opmodel.dev_v1alpha1_moduleinstance_jellyfin.yaml`, plus a Flux `OCIRepository` and `kustomization.yaml`. crdref reads only the file named `<group>_<version>_<kind>.yaml`, takes its first document of the kind, strips the kubebuilder scaffold labels, and hides a sample that references `testing.opmodel.dev`; so today's ModuleInstance entry has no Example and the jellyfin file is never read.
+
+The cross-repo review of docs-kit's plan made this a blocking docs-kit item: `add-crd-extractor` gains the kubebuilder file-name pick, scaffold-label stripping, `hideSamplesMatching: [...string]` and `weight?: int & >=1`. This plan assumes that fix and sets `hideSamplesMatching: ["testing.opmodel.dev"]` and `weight: 7` (D1). If the released extractor lacks any of it, adoption stops for docs-kit rather than move or rename samples, which kustomize, `task examples:pin` and the crdvalidation tier depend on.
 
 ### D3. Publishing
 
@@ -82,13 +87,15 @@ It follows `image-release` (orchestration's choice) and runs beside `publish-exa
 
 Tasks: root `Taskfile.yml` gains `tools:opm-docs`, `docs:bundle`, `docs:pins:check`, `docs:bundle:check`, named as in the other adopters; `.tasks/opm-docs.sh` is copied byte for byte and installs to `.bin/` (C12), not the repository's `bin/` (`LOCALBIN`), so the shared script stays identical. The operator has no `task check`: `docs:bundle:check` joins the validation gates in `openspec/config.yaml` and the verification checklist in `AGENTS.md`, and `lint.yml` gains a `task docs:pins:check` step (offline). `.gitignore` gains `/out/` and `/.bin/`.
 
-### D4. Section 3: the completed page
+### D4. The completed page (after G2-switch)
 
 `operator-resources.md` becomes its front matter (`title`, `description`, `type: reference`, `weight: 7`) and its intro sentence: no marker lines, no `## <Kind>` heading (the generated body's first heading is `## ModuleInstance`, C18 D4). The trailing `## See also` cannot stay where it is: a completable page puts the whole authored body before the generated entries (C15), so the heading would stand empty above them. Its brief moves into the intro's brief ("link the Install the operator and Delete an instance safely guides and the Operator conditions page from the intro"), and the heading goes.
 
+The reduction lands on `main` as its own Markdown-only commit (its own section, so the squash keeps it alone), before the `exclude` goes. That keeps the backfilled `1.0.0-beta.4` bundle revisable: a docs revision builds the release tree with `main`'s config and applies one Markdown-only or comment-only commit (C3 "Docs revisions"). Once `main` drops the exclude, beta.4's tree still holds the full page with its `## ModuleInstance` heading, which a completable page refuses; so the first revision of beta.4 after that must apply the reduction commit, and every later revision carries it (revisions accumulate their patches). Revisions are dispatched by hand for now (opm-operator#188, tracked in docs-kit#16).
+
 `hack/crdref/` goes with its tests, `.tasks/dev.yaml` `docs:reference` and `docs:reference:check`, and `lint.yml`'s "Generated resource reference is current" step. `AGENTS.md`'s rule about the generated markers becomes "the resource reference is generated by docs-kit from the CRD types; their doc comments are the page".
 
-### D5. Section 3: `reconciledBy` stays true
+### D5. `reconciledBy` stays true (after G2-switch)
 
 crdref's guarantee that "Served by" names the real controller would be lost with the scan. A test, `internal/controller/docskit_reconciledby_test.go`, keeps it: it reads `docs-kit.cue` with `cuelang.org/go` (already a dependency), takes the `crd` source's `reconciledBy`, scans `internal/controller/*.go` with `go/parser` for builder chains holding one `For(&v1alpha1.<Kind>{})` and one `Named("<name>")` (crdref's scan, moved), and fails naming the kind when the two maps differ. It runs in `task dev:test`.
 
@@ -103,7 +110,7 @@ crdref's guarantee that "Served by" names the real controller would be lost with
 
 ### A test for `reconciledBy` (orchestration: optional)
 
-**Decision**: yes, in section 3 (D5).
+**Decision**: yes, when crdref is deleted (D5).
 **Rationale**: the page states a fact about the code, and the operator's spec has always required that fact to come from the code. The scan already exists; moving it into a test costs little and keeps the guarantee without putting Go inference into docs-kit.
 
 ### Citation links
@@ -113,6 +120,6 @@ crdref's guarantee that "Served by" names the real controller would be lost with
 
 ## Risks / Trade-offs
 
-- Between section 2 and the first operator release after section 3, the site shows a bundle built with the `exclude`: the generated page alone, with C18's title and description but no `weight` (C18's config has none) and no intro. The page can move in the Reference sidebar until then. Recorded as a docs-kit gap.
-- Sample selection (D2) can block section 1 until docs-kit changes.
+- From G2-switch until the first operator release after the exclude goes, the site shows a bundle built with the `exclude`: the generated page alone, with D1's title, description and `weight: 7`, but no intro.
+- Sample selection (D2) blocks adoption until docs-kit's fix is released.
 - After G2-switch, a fix to a CRD description reaches the site only through an operator release: a docs revision applies only Markdown or comment changes, and CRD YAML is neither. `docs:` commits do not release the operator, so such a fix waits for the next releasable commit.

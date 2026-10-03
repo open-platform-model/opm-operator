@@ -6,13 +6,15 @@ The owner decided one cutover per repository (docs-kit DESIGN decision 20): the 
 
 Sequence and contracts: docs-kit `docs/orchestration.md` (phase 2, "opm-operator: `publish-crd-bundle`") and `https://github.com/open-platform-model/docs-kit/blob/main/docs/contracts.md` (C5, C6, C9, C12, C15, C18). Until a docs-kit change lands, its `openspec/changes/<change>/design.md` on docs-kit `main` shows the contract.
 
-Delivery: one PR per section (cli needs the docs/opm-operator release bundle after section 2)
+Delivery: one PR per section (cli needs the docs/opm-operator 1.0.0-beta.4 bundle after section 2)
 
 ## What Changes
 
-- **Section 1, adopt (gate G2-operator).** `docs-kit.cue` declares the project `opm-operator`: docs placement owning `reference/operator-resources.md`, a `markdown` source over `docs/site` excluding that page, and a `crd` source over `config/crd/bases` and `config/samples` with `reconciledBy` for the four kinds (`moduleinstance`, `modulepackage`, `platform`, `transformerregistration`, as `internal/controller` names them today) and `citations: "link"`. `.opm-docs-version`, `.tasks/opm-docs.sh`, the tasks `tools:opm-docs`, `docs:bundle`, `docs:pins:check` and `docs:bundle:check`, `.github/workflows/docs.yml`, and `publish-docs` in `release.yml` after `image-release`. A parity check of the generated entries against crdref's block. `AGENTS.md` gains a "Docs bundles" paragraph. crdref and its check stay.
-- **Section 2, release bundles (owner).** A dispatched backfill of `v1.0.0-beta.4` and the next operator release publish `docs/opm-operator`; record the runs.
-- **Section 3, retire crdref (gate G2-switch).** Delete `hack/crdref/`, `dev:docs:reference` and its check, and the `Lint` step; reduce `operator-resources.md` to its front matter and intro (no markers, no `## <Kind>` heading) and remove the `exclude`, so the intro completes the generated page; a test that keeps `reconciledBy` equal to the controllers' `Named` names; archive.
+- **Section 1, adopt (gate G2-operator, including docs-kit's sample-selection fix).** `docs-kit.cue` declares the project `opm-operator`: docs placement owning `reference/operator-resources.md`, a `markdown` source over `docs/site` excluding that page, and a `crd` source over `config/crd/bases` and `config/samples` with `weight: 7`, `hideSamplesMatching: ["testing.opmodel.dev"]`, `reconciledBy` for the four kinds (`moduleinstance`, `modulepackage`, `platform`, `transformerregistration`, as `internal/controller` names them today) and `citations: "link"`. `.opm-docs-version`, `.tasks/opm-docs.sh`, the tasks `tools:opm-docs`, `docs:bundle`, `docs:pins:check` and `docs:bundle:check`, `.github/workflows/docs.yml`, and `publish-docs` in `release.yml` after `image-release`. A parity check of the generated entries against crdref's block, and a local dry run of the `v1.0.0-beta.4` backfill. `AGENTS.md` gains a "Docs bundles" paragraph. crdref and its check stay.
+- **Section 2, the bundle the cli pins (owner, part of gate G2-pins).** A dispatched backfill of `v1.0.0-beta.4`, the version the cli's `main` pins (owner decision 2026-10-03); a fresh release is optional. Record the runs.
+- **Section 3, retire crdref (gate G2-switch).** Delete `hack/crdref/`, `dev:docs:reference` and its check, and the `Lint` step; a test that keeps `reconciledBy` equal to the controllers' `Named` names.
+- **Section 4, reduce the page (after section 3).** `operator-resources.md` becomes its front matter and intro (no markers, no `## <Kind>` heading) in a Markdown-only commit of its own, so later docs revisions of `1.0.0-beta.4` can apply it.
+- **Section 5, complete the page.** Remove the `exclude`, so the intro completes the generated page; archive.
 
 ## Capabilities
 
@@ -34,7 +36,7 @@ Delivery: one PR per section (cli needs the docs/opm-operator release bundle aft
 
 | Consumer | What it has to do |
 | --- | --- |
-| cli | Its bundled release pins an operator version (`internal/operator/manifest.go` `PinnedOperatorVersion`); gate G2-pins needs that version to have a bundle. |
-| opmodel.dev | Nothing until `pull-reference-bundles`; v1.0 then reads `docs/opm-operator` through the cli's pins, and section 3 waits for that. |
+| cli | Nothing: `PinnedOperatorVersion` is already `v1.0.0-beta.4`, which section 2 backfills (gate G2-pins). |
+| opmodel.dev | Nothing until `pull-reference-bundles`; v1.0 then reads `docs/opm-operator` through the cli's pins (gate G2-switch), and crdref's retirement waits for that gate. |
 
-**Owner items:** merging docs-kit's release PRs (gate), the backfill dispatch and the operator release of section 2, checking `ghcr.io/open-platform-model/docs/opm-operator` is public on first push.
+**Owner items:** merging docs-kit's release PRs (gate G2-operator), the `v1.0.0-beta.4` backfill dispatch, checking `ghcr.io/open-platform-model/docs/opm-operator` is public on first push.

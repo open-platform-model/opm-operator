@@ -37,7 +37,7 @@ None.
 
 - `internal/render/kernel_module_renderer.go`, `internal/render/kernel_package_renderer.go` (the sentinel and its two wrap sites).
 - `internal/reconcile/resolution.go` (the shared predicate; `renderFailureReason` without its fallback parameter), `internal/reconcile/moduleinstance.go` (`classifyRenderError`; `isResolutionError` deleted), `internal/reconcile/modulepackage.go` (`renderModulePackage`, `renderErrorReason`; `isResolutionErrorMsg` deleted).
-- Tests: `internal/reconcile/resolution_test.go`, `internal/controller/testhelpers_test.go`, `internal/controller/moduleinstance_reconcile_test.go`, `internal/controller/modulepackage_controller_test.go`.
+- Tests: `internal/reconcile/resolution_test.go`, `internal/controller/testhelpers_test.go`, `internal/controller/moduleinstance_reconcile_test.go`, `internal/controller/modulepackage_controller_test.go`, `test/integration/reconcile/suite_test.go` (its own copy of `resolutionErrorRenderer`) and `test/integration/reconcile/state_recovery_test.go`.
 - Docs: `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md`.
 - Downstream: none. No library pin, no cli change. Task d1's typed library errors will later narrow which untyped failures are retried; this change leaves one predicate for d1 to extend.
 - No enhancement decision backs this change, so no `enhancement.yaml`.

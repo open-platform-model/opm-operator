@@ -39,7 +39,11 @@ Explored: the beta.1 kernel plan research for task a3, re-checked against `origi
 
 ### D1. `render.ErrAcquire`, marked without changing the message
 
-`internal/render` declares `var ErrAcquire = errors.New("acquiring module source")` beside `ErrPlatformNotReady`. The two acquisition sites mark their error with it through one unexported helper whose result keeps the site's current message verbatim and unwraps to both the sentinel and the original error:
+**Context.** The classifiers need a type-level signal that a failure happened during acquisition; today only the wrap text says so.
+
+**Explored.** `fmt.Errorf("%w: %w", ErrAcquire, err)`; a library sentinel (task d1); a wrapper type that keeps the message.
+
+**Decision.** `internal/render` declares `var ErrAcquire = errors.New("acquiring module source")` beside `ErrPlatformNotReady`. The two acquisition sites mark their error with it through one unexported helper whose result keeps the site's current message verbatim and unwraps to both the sentinel and the original error:
 
 ```go
 // acquireError marks err as an acquisition failure (ErrAcquire) without
@@ -65,7 +69,11 @@ func acquireFailed(msg string, err error) error { return &acquireError{msg: msg,
 
 ### D2. One shared predicate decides transient versus terminal
 
-`internal/reconcile/resolution.go` gains:
+**Context.** The owner's list of typed terminal causes must stall on both kinds, and the two loops must not drift.
+
+**Explored.** A per-loop check in each classifier; one shared predicate in `resolution.go`.
+
+**Decision.** `internal/reconcile/resolution.go` gains:
 
 ```go
 // isTerminalAcquireCause reports a typed cause that retrying cannot fix.
@@ -100,20 +108,33 @@ if isTransientAcquireFailure(err) {
 
 ### D3. Reason: `ResolutionFailed` for every `ErrAcquire` failure
 
-A transient acquisition failure reports `ResolutionFailed`, not Stalled. A terminal one under `ErrAcquire` reports `ResolutionFailed` and Stalled: `renderFailureReason` adds `errors.Is(err, render.ErrAcquire)` to its `ResolutionFailed` case, after skew and duplicate identities. The `module-instance-synthesis` spec already defines `ResolutionFailed` as "the module cannot be resolved into a usable, trustworthy input", with Stalled only "when the failure is not transient", so no new reason is needed.
+**Context.** Deleting the `loading package` matcher would move a ModulePackage `ErrInvalidPackage` from `ResolutionFailed` to `RenderFailed` unless the sentinel itself picks the reason. The owner named the stall, not the reason.
 
-Consequences: on the ModuleInstance path an invalid or wrong-kind module moves from `RenderFailed` to `ResolutionFailed` (still Stalled); on the ModulePackage path every acquire failure was already `ResolutionFailed` through the `loading package` text.
+**Explored.** `RenderFailed` for terminal acquire causes (ModuleInstance status quo); `ResolutionFailed` for every `ErrAcquire` failure; a new reason constant.
+
+**Decision.** A transient acquisition failure reports `ResolutionFailed`, not Stalled. A terminal one under `ErrAcquire` reports `ResolutionFailed` and Stalled: `renderFailureReason` adds `errors.Is(err, render.ErrAcquire)` to its `ResolutionFailed` case, after skew and duplicate identities. The `module-instance-synthesis` spec already defines `ResolutionFailed` as "the module cannot be resolved into a usable, trustworthy input", with Stalled only "when the failure is not transient", so no new reason is needed.
+
+**Rationale.** One reason for every acquisition failure, transient or terminal, matching the spec's definition and keeping the ModulePackage reason as it is today. Consequences: on the ModuleInstance path an invalid or wrong-kind module moves from `RenderFailed` to `ResolutionFailed` (still Stalled); on the ModulePackage path every acquire failure was already `ResolutionFailed` through the `loading package` text.
 
 ### D4. Delete the string matchers and the fallback parameter
 
-`isResolutionError`, `isResolutionErrorMsg` and the `isResolutionMsg func(error) bool` parameter of `renderFailureReason` are deleted. `resolving` was reachable only through the `loading package` wrap, which `ErrAcquire` now covers. `synthesizing release` was live: a failed `SynthesizeInstance` now reports `RenderFailed` (Stalled, 30m), matching its scope as a post-acquisition failure. If synthesis turns out to fail transiently in practice (it loads the module's transitive dependencies through the same registry env), d1's typed errors are the place to catch it; wrapping it with `ErrAcquire` here would retry every values-concreteness error too.
+**Context.** The owner decision deletes the string matchers; one of them (`synthesizing release`) still matches a live error.
+
+**Explored.** Keep `synthesizing release` as a matcher; wrap synthesis with `ErrAcquire`; let synthesis fall to `RenderFailed`.
+
+**Decision.** `isResolutionError`, `isResolutionErrorMsg` and the `isResolutionMsg func(error) bool` parameter of `renderFailureReason` are deleted. `resolving` was reachable only through the `loading package` wrap, which `ErrAcquire` now covers. `synthesizing release` was live: a failed `SynthesizeInstance` now reports `RenderFailed` (Stalled, 30m), matching its scope as a post-acquisition failure.
+
+**Rationale.** If synthesis turns out to fail transiently in practice (it loads the module's transitive dependencies through the same registry env), d1's typed errors are the place to catch it; wrapping it with `ErrAcquire` here would retry every values-concreteness error too.
 
 ## Risks / Trade-offs
 
 - **A real typo retries forever on the 5m cap** instead of stalling on 30m. Six times the registry traffic for a broken object, and `Stalled` no longer flags it. Accepted by the owner; d1 restores a stall for a typed not-found.
 - **CUE syntax errors in a ModulePackage's package retry as transient** (they surface from `LoadDir` untyped). Same trade-off, same refinement path.
 - **Reason churn for alerting.** Anyone alerting on `RenderFailed` for unreachable modules sees `ResolutionFailed` instead. Pre-GA, documented in the diagnostics page.
-- **Tests that relied on text.** `resolutionErrorRenderer` returns the dead `loading synthesized release` string; the counter spec using it keeps its assertion (the counter increments on a transient outcome too) once the stub returns an `ErrAcquire` error.
+- **Tests that relied on text.** `resolutionErrorRenderer` returns the dead `loading synthesized release` string in two places: `internal/controller/testhelpers_test.go` (the counter spec keeps its assertion once the stub returns an `ErrAcquire` error, since the counter increments on a transient outcome too) and `test/integration/reconcile/suite_test.go` (its three specs assert Stalled/ResolutionFailed, so that copy returns an `ErrAcquire`-marked `IdentityError` and stays on the stalled path).
+- **A malformed `spec.module.version` retries on the 5m cap.** `module.NewVersion` fails with an untyped `parsing artifact version` error (library `loader/registry.go`), and the CRD checks only `MinLength=1` on the version. Same refinement path: d1's typed errors, or the library sibling accept-bare-semver-in-registry-verbs once the operator bumps its pin.
+- **A stale main spec.** `modulepackage-reconcile-loop` "Render failure" ("the CUE package fails to evaluate" gives Stalled RenderFailed) predates the kernel path and already describes the retired `ReleaseReconciler`. A package that fails to load now retries as a transient `ResolutionFailed` (the `modulepackage-artifact-loading` delta says so); that main spec is left to the sync-stale-specs follow-up rather than modified here.
+- **Textual conflicts with the sibling change bound-render-memory** (branch `fix/bound-render-memory`). Both edit the `RenderModule` call block in `moduleinstance.go`, `renderModulePackage`, the `stubRenderer`/`stubPackageRenderer` helpers and `docs/RENDERING.md`. There is no semantic conflict: the render-slot wait sits before the renderer and returns `ctx.Err()` unclassified. Whichever change merges second rebases onto the other, and the transient branch belongs inside the classifier, not around the slot acquire.
 
 ## Sections
 

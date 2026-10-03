@@ -11,6 +11,10 @@ The Release reconciler MUST evaluate the CUE package at `spec.path` using `CUE_R
 - **WHEN** a CUE module dependency referenced in the package's `cue.mod/module.cue` cannot be resolved from the registry
 - **THEN** the reconciler sets `Ready=False` with reason `ResolutionFailed`, does not set `Stalled=True`, and requeues on the exponential backoff capped at 5 minutes
 
+#### Scenario: Package that fails to load without a typed cause retries
+- **WHEN** loading the package at `spec.path` fails with no typed terminal cause, for example a CUE syntax error or a non-concrete package surfaced by the loader
+- **THEN** the reconciler sets `Ready=False` with reason `ResolutionFailed`, does not set `Stalled=True`, and requeues on the exponential backoff capped at 5 minutes
+
 #### Scenario: CUE evaluation error
 - **WHEN** the package loads but its render fails evaluation for a cause that is not a resolution-class failure
 - **THEN** the reconciler sets `Ready=False` with reason `RenderFailed` and `Stalled=True`

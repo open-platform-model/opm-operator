@@ -11,7 +11,7 @@ that setting:
   the next PR removes it once that release is cut, because while it stays it pins every later
   release. A `Release-As:` footer never reaches `main`.
 
-`RELEASING.md` ("Title from diff class", lines 247-250) and the workspace commit skill
+`RELEASING.md` ("Owner settings", "Merge settings", lines 460-467) and the workspace commit skill
 (`.claude/skills/commit/SKILL.md:48-55`) already say this. This repo still says the opposite:
 
 - The main spec `release-automation`, requirement "Manual version override via release-as"
@@ -77,7 +77,7 @@ None.
 
 ## Impact
 
-- **SemVer: none (after GA as now).** Every commit is `docs` or `ci`, both hidden in
+- **SemVer: none.** Every commit is `docs` or `ci`, both hidden in
   `release-please-config.json`. The change cuts no operator release and cascades nothing into the
   cli. No API type, CRD, controller or reconcile phase (Source, Render, Apply, Prune, Status)
   changes. Principle VII: nothing is added; text is corrected.
@@ -95,15 +95,27 @@ None.
   task. It therefore does not wait for `.github` `add-cascade-resolver`, which gates the `task`
   changes of Phase 2 (`RELEASING.md`, "Rollout and changes", "Changes"). It can merge in any order
   with the cli's same-named change and with the other Phase 2 changes.
-- **Owner merge setting (Phase 0) not required to merge.** Until the owner switches
-  `squash_merge_commit_message` to `BLANK`, the repo squashes with `COMMIT_MESSAGES`, and a footer
-  in a branch commit would still reach `main`. The commit skill closes that gap by merging with an
-  explicit empty body (`gh pr merge --squash --body ''`, `.claude/skills/commit/SKILL.md:48-51`).
-  The policy this change writes down is therefore already the practice. `AGENTS.md` says so in one
-  clause until the setting lands.
+- **Owner merge settings (Phase 0) not required to merge, but not yet applied.** On 2026-10-04
+  `gh api repos/open-platform-model/opm-operator` still reports three of the "Merge settings" of
+  workspace `RELEASING.md` "Owner settings" as not applied:
+  - `squash_merge_commit_message` is `COMMIT_MESSAGES`, not `BLANK`, so a footer in a branch commit
+    reaches `main` unless the merge passes an empty body;
+  - `squash_merge_commit_title` is `COMMIT_OR_PR_TITLE`, not `PR_TITLE`, so a one-commit PR squashes
+    under its commit subject and a `!` that is only in the PR title can be lost;
+  - `allow_merge_commit` and `allow_rebase_merge` are `true`, so a merge commit or a rebase merge
+    carries every branch commit's body, footers included, to `main`.
+
+  The commit skill's empty body (`gh pr merge --squash --body ''`,
+  `.claude/skills/commit/SKILL.md:48-51`) covers only the first. The policy this change writes down
+  is therefore the practice only when a PR is merged by squash with an explicit subject and an empty
+  body (`gh pr merge --squash --subject "<PR title> (#N)" --body ''`). `AGENTS.md` says so in one
+  clause until the owner applies the settings.
 - **Not in scope:**
   - the cli's copies (`cli/AGENTS.md`, `cli/CONSTITUTION.md`, `cli/openspec`);
   - catalog_opm;
   - `.github` README and mention-guard comments;
-  - workspace `RELEASING.md`.
+  - workspace `RELEASING.md`;
+  - the repo-local `.claude/skills/commit/SKILL.md`, which carries none of the release or
+    empty-body rules D5 relies on, though a session started in this repo may load it instead of
+    the workspace skill.
   Each is its own item in the follow-up sweep.

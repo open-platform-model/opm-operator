@@ -12,11 +12,11 @@ A forced version SHALL be a `release-as` value on package `"."` of `release-plea
 - **THEN** the next pull request removes the key, and after it merges the next releasable commit proposes `1.0.0-beta.2` per "Version bump determination per release line"
 
 #### Scenario: Config carries release-as only while a forced release is pending
-- **WHEN** `release-please-config.json` is inspected on `main` and the version its `release-as` would force is already a release tag, or no forced version is pending
+- **WHEN** `release-please-config.json` is inspected on `main` and the version its `release-as` would force is already a release tag and the pull request after that release's cut has merged, or no forced version is pending
 - **THEN** it SHALL contain no `release-as` key at the root or in any package
 
 #### Scenario: A footer forces nothing
-- **WHEN** a pull request whose body or branch commits carry `Release-As: 1.1.0-beta.1` is squash-merged, and `release-please-config.json` carries no `release-as`
+- **WHEN** a pull request whose body or branch commits carry `Release-As: 1.1.0-beta.1` is squash-merged under the Merge settings of workspace RELEASING.md "Owner settings", and `release-please-config.json` carries no `release-as`
 - **THEN** the squash commit on `main` is the PR title alone, and the next Release PR proposes the automated bump, not `1.1.0-beta.1`
 
 #### Scenario: A hidden-type carrier waits for a visible commit

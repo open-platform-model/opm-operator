@@ -59,14 +59,14 @@ releasable commits on push to main".
 ### D2 What the new requirement says, grounded in release-please
 
 - `release-as` in config overrides the computed version before the footer or the versioning
-  strategy is consulted (`buildNewVersion`, release-please `src/strategies/base.ts:547-551`). The
+  strategy is consulted (`buildNewVersion`, release-please v17.6.0 `src/strategies/base.ts:547-551`). The
   override also applies under `versioning: prerelease`, so the key can change a label (alpha to
   beta), which a `prerelease-type` flip cannot do.
 - The value stays in force on every run until it is removed, and the next Release PR would
   re-propose an already-tagged version. So the next PR after the cut removes it
   (`RELEASING.md:465-467`).
 - A Release PR still needs a commit with a visible type: release-please skips the path when the
-  release notes are empty (`base.ts:286-289` and `:331-337`, "No user facing commits found"). A
+  release notes are empty (`base.ts:331-337`, "No user facing commits found"). A
   carrier PR typed `ci:` therefore waits for the next visible commit. The spec states this in a
   scenario, so nobody expects the config edit alone to cut the release.
 
@@ -112,26 +112,36 @@ rather than decided here.
 
 ### D5 Interim before the owner applies `BLANK`
 
-Until the setting is applied, the repo squashes with `COMMIT_MESSAGES` and a branch-commit footer
-would reach `main`. The workspace commit skill already mandates merging with an empty body
-(`gh pr merge --squash --body ''`, `.claude/skills/commit/SKILL.md:48-51`), so the documented
-practice holds today. `AGENTS.md` carries one clause saying so. That clause is dropped once the
-setting is verified, which is outside this change.
+On 2026-10-04 `gh api repos/open-platform-model/opm-operator` shows three "Merge settings" of
+workspace `RELEASING.md` "Owner settings" not yet applied:
+
+| Setting | Today | Effect until applied |
+| --- | --- | --- |
+| `squash_merge_commit_message` | `COMMIT_MESSAGES` | a branch-commit footer reaches `main` unless the merge passes an empty body |
+| `squash_merge_commit_title` | `COMMIT_OR_PR_TITLE` | a one-commit PR squashes under its commit subject, so a `!` only in the PR title can be lost |
+| `allow_merge_commit`, `allow_rebase_merge` | `true` | a merge commit or rebase merge carries every branch commit's body, footers included |
+
+The workspace commit skill's empty body (`gh pr merge --squash --body ''`,
+`.claude/skills/commit/SKILL.md:48-51`) covers only the first row. So `AGENTS.md` carries one
+clause: until the owner applies the settings, merge by squash only, with
+`gh pr merge --squash --subject "<PR title> (#N)" --body ''`. That clause is dropped once the
+settings are verified, which is outside this change.
 
 ## Research & Decisions
 
 ### Does a release-as config value alone open a Release PR?
 **Context**: The new requirement must not promise that the carrier PR cuts the release.
-**Explored**: release-please `src/strategies/base.ts` on `main` (package version 17.11.2):
+**Explored**: release-please `src/strategies/base.ts` at v17.6.0, the version the pinned action bundles (see Rationale):
 `buildReleasePullRequest` returns early with "No user facing commits found" when the release notes
 are empty (`:331-337`), before any version logic matters; `buildNewVersion` takes `releaseAs` first
 (`:547-551`).
 **Decision**: The spec says a `release-as` value opens no Release PR by itself. A scenario covers
 a hidden-type carrier.
-**Rationale**: It matches the source. The repo pins `googleapis/release-please-action` v5.0.0
-(`.github/workflows/release.yml:49`). That this action bundles a release-please with the same
-two code paths is assumed, not checked against the action's lockfile. Both paths predate v17, so
-the risk is low, and the change ships no behaviour that depends on it.
+**Rationale**: It matches the source the repo actually runs. The repo pins
+`googleapis/release-please-action@45996ed` (v5.0.0, `.github/workflows/release.yml:49`), whose
+`package-lock.json` locks `node_modules/release-please` at 17.6.0. In release-please v17.6.0,
+`src/strategies/base.ts:331-337` holds the "No user facing commits found" skip and `:547-551` the
+`release-as` override, the same code as release-please `main`.
 
 ### Keep or flip the Dependabot prefix?
 **Context**: The comment is wrong; the prefix it defends has an effect the comment does not state.
@@ -145,13 +155,18 @@ release-policy decision for the owner.
 ## Risks / Trade-offs
 
 - [Spec says "SHALL NOT be relied on" for a footer that still works under `COMMIT_MESSAGES`] →
-  Intended. The owner decision of 2026-10-02 makes the config key the mechanism, and the empty-body merge rule
-  (D5) keeps footers off `main` before the setting lands.
+  Intended. The owner decision of 2026-10-02 makes the config key the mechanism, and the
+  squash-only, explicit-subject, empty-body merge rule (D5) keeps footers off `main` until the
+  owner applies the merge settings.
 - [A `release-as` value left in config re-proposes a published version] → The new requirement and
   its scenario make removal by the next PR part of the contract. The draft-first release flow
   ("Release tags are never moved, deleted or re-created") already refuses to re-tag.
-- [Unverified bundled release-please version] → See Research. No behaviour in this change depends
-  on it.
+- [The bundled release-please moves when the action pin moves] → Checked at the current pin
+  (Research: v17.6.0). No behaviour in this change depends on it.
+
+- [The sibling Phase 2 change `add-deps-cascade-task` also edits the `AGENTS.md` "Registry"
+  section, next to "Beta line"] → No dependency between the two; whichever PR merges second
+  updates from `main` and resolves the textual conflict.
 
 ## Migration Plan
 

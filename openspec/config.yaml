@@ -40,10 +40,11 @@ context: |
   - Scope: api, controller, source, render, apply, inventory, etc.
   - Beta line: From its first beta, a prerelease line (`opmodel.dev/core@v2`,
     library, cli, opm-operator) is on the path to GA. A breaking
-    change is still allowed during beta, but only as a `feat!` commit whose `BREAKING CHANGE:`
-    footer is the migration note the CHANGELOG shows. It advances the `-beta.N` counter and never
-    moves the module path to a new major. Stable lines (`opmodel.dev/catalogs/opm@v4` and the module
-    fleets) keep the normal SemVer rule: a break is a new major. A core beta break that would force
+    change is still allowed during beta, but only as a `!` in the PR title (`feat!:`), the only
+    text the squash commit carries (`squash_merge_commit_message: BLANK`); the title is the
+    CHANGELOG entry, and the migration note goes in the PR body, which that entry links. It
+    advances the `-beta.N` counter and never moves the module path to a new major. Stable lines
+    (`opmodel.dev/catalogs/opm@v4` and the module fleets) keep the normal SemVer rule: a break is a new major. A core beta break that would force
     a catalogs/opm major needs owner sign-off. GA drops the suffix: `prerelease: false` plus a
     visible carrier commit per package, in dependency order.
 
@@ -193,7 +194,7 @@ operations:
         checking that box, run the section's gates (`task dev:fmt dev:vet dev:lint dev:test`, after `task dev:manifests dev:generate` when API types changed) on the whole tree and make
         exactly the named Conventional Commit (types and scopes per Principle VI; optional plain Co-Authored-By: Claude
         <noreply@anthropic.com> trailer only, never a session link, never a bare @name, and
-        no body line starting with word( because the squash body reaches release-please). Do not start the next section with uncommitted work in the tree."
+        no body line starting with word( because release-please drops a commit with such a body line, footer included, whenever the body reaches `main` (any merge not made under the `BLANK` squash message)). Do not start the next section with uncommitted work in the tree."
       - "The commit task is the only delivery operation apply performs: no push, no PR, no tag,
         no release. Commit on the working branch the run started on. If the run started on
         main, create the working branch before the first commit task; never commit to main."

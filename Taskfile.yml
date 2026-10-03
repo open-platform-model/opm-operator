@@ -143,3 +143,37 @@ tasks:
     desc: Show available tasks
     cmds:
       - task --list
+
+  ## Docs bundle
+  #
+  # docs-kit.cue declares one docs bundle, opm-operator: the authored pages
+  # under docs/site/ plus the resource reference opm-docs generates from
+  # config/crd/bases and config/samples. CI builds, signs and publishes it
+  # through docs-kit's publish.yml (docs.yml, release.yml). These tasks run the
+  # same opm-docs release locally, installed into .bin/ (not bin/, so
+  # .tasks/opm-docs.sh stays identical to the other adopters'). The release is
+  # pinned in .opm-docs-version and in every publish.yml ref, and
+  # docs:bundle:check refuses the two disagreeing.
+
+  tools:opm-docs:
+    desc: Install or reuse .bin/opm-docs, the checksum-verified docs-kit release named by .opm-docs-version
+    cmds:
+      - bash .tasks/opm-docs.sh install
+
+  docs:bundle:
+    desc: Build the opm-operator docs bundle of the work tree into out/opm-operator/ (a local preview of edge)
+    deps: [tools:opm-docs]
+    cmds:
+      - .bin/opm-docs build --project opm-operator --out out
+
+  docs:pins:check:
+    desc: Refuse a docs-kit publish.yml ref under .github/workflows/ that names another release than .opm-docs-version (offline)
+    cmds:
+      - bash .tasks/opm-docs.sh pin-check
+
+  docs:bundle:check:
+    desc: Check the docs-kit pins agree, then build and lint the opm-operator docs bundle into a temporary directory
+    deps: [tools:opm-docs]
+    cmds:
+      - task: docs:pins:check
+      - .bin/opm-docs check --project opm-operator

@@ -46,3 +46,7 @@ tui.json
 
 # Agent git worktrees are local checkouts, never content.
 .claude/worktrees/
+
+# docs bundle preview (task docs:bundle) and the pinned opm-docs binary
+/out/
+/.bin/

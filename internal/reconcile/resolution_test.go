@@ -418,9 +418,9 @@ func TestRenderModulePackage_AcquireFailure(t *testing.T) {
 			rec := events.NewFakeRecorder(2)
 			params := &ModulePackageParams{EventRecorder: rec, Renderer: failingPackageRenderer{err: tt.err}}
 
-			result, fail := renderModulePackage(context.Background(), params, pkg, "/pkg", time.Hour)
-			if result != nil || fail == nil {
-				t.Fatalf("renderModulePackage() = (%v, %v), want a failure", result, fail)
+			result, fail, err := renderModulePackage(context.Background(), params, pkg, "/pkg", time.Hour)
+			if result != nil || fail == nil || err != nil {
+				t.Fatalf("renderModulePackage() = (%v, %v, %v), want a failure", result, fail, err)
 			}
 			if fail.outcome != tt.wantOutcome {
 				t.Errorf("outcome = %v, want %v", fail.outcome, tt.wantOutcome)

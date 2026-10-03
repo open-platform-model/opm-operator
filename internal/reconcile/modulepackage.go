@@ -424,7 +424,7 @@ func renderModulePackage(
 		if isTransientAcquireFailure(err) {
 			status.MarkNotReady(pkg, status.ResolutionFailedReason, "%s", err)
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.ResolutionFailedReason, "Render", "%s", err)
-			return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}
+			return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}, nil
 		}
 		reason := renderErrorReason(err)
 		status.MarkStalled(pkg, reason, "%s", err)

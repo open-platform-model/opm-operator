@@ -1619,6 +1619,9 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
+        env:
+        - name: GOMEMLIMIT
+          value: 3276MiB
         image: controller:latest
         imagePullPolicy: IfNotPresent
         livenessProbe:

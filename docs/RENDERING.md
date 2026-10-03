@@ -54,6 +54,15 @@ Nothing on the render path has a timeout, so a render stuck on registry I/O
 holds its slot until it returns. At the default of `1` that delays every
 other render of both kinds, not only of its own.
 
+The shipped manager Deployment (`config/manager/manager.yaml`) sets the
+container's memory limit to `4Gi` and the Go soft memory limit
+`GOMEMLIMIT=3276MiB`, about 80% of it, so the runtime collects harder as the
+heap nears the limit instead of the container being killed at it. The value
+is a literal, since the downward API cannot scale the limit. Raising the
+memory limit (for example to allow more concurrent renders) means raising
+`GOMEMLIMIT` with it; a limit raised alone leaves the soft limit low, which
+costs extra garbage collection but never an OOMKill.
+
 The bound is memory, not cores. A render is single-threaded and its working
 set grows with the module's component count. Measured in enhancement 0019
 (experiment 08, fitted with R^2 = 0.9997):

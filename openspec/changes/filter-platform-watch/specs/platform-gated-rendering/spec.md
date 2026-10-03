@@ -4,12 +4,12 @@
 
 The ModuleInstance reconciler SHALL watch the `Platform`. It SHALL re-enqueue ModuleInstances on a Platform update only when a field that a ModuleInstance render consumes differs between the old and the new object. Those fields are:
 
-- the `Ready` condition's status or reason
+- the `Ready` condition's status
 - the pin set: `status.packageIdentity` or `status.registry`
 - `spec.skewPolicy`
 - `metadata.generation` or `status.observedGeneration`
 
-The trigger includes the Platform reconciler's own status update, which does not bump the Platform's generation. A Platform update that changes none of these fields SHALL NOT enqueue any ModuleInstance. Examples of such updates are a change to the `Ready` message alone, an `operatorVersion` stamp, or a `ContractsFulfilled` update. Platform create and delete events SHALL re-enqueue.
+The trigger includes the Platform reconciler's own status update, which does not bump the Platform's generation. A change to `status.operatorVersion` SHALL also re-enqueue: after an operator upgrade it is the only status change the regenerated Platform writes, and it is what recovers instances that rendered into `PlatformNotReady` while the new process's platform store was empty. A Platform update that changes none of these fields SHALL NOT enqueue any ModuleInstance. Examples of such updates are a change to the `Ready` message or to its reason while it stays `False`, or a `ContractsFulfilled` update. Platform create and delete events SHALL re-enqueue.
 
 The reconciler SHALL enqueue only the ModuleInstances that render against the changed Platform: those that are operator-managed (`spec.owner` absent, empty or `operator`) and not suspended. A ModuleInstance with `spec.owner: cli` or `spec.suspend: true` SHALL NOT be enqueued by a Platform event; a change to either field is a spec change and reconciles the instance through its own watch.
 
@@ -27,7 +27,7 @@ The reconciler SHALL enqueue only the ModuleInstances that render against the ch
 
 #### Scenario: A message-only status write enqueues nothing
 
-- **WHEN** the Platform reconciler rewrites the `Ready` condition's message, and its status, reason, `packageIdentity`, `registry` and generation are unchanged
+- **WHEN** the Platform reconciler rewrites the `Ready` condition's message, and its status, `packageIdentity`, `registry`, `operatorVersion` and generation are unchanged
 - **THEN** no `ModuleInstance` is enqueued and no render runs
 
 #### Scenario: CLI-owned and suspended instances are not enqueued
@@ -35,3 +35,9 @@ The reconciler SHALL enqueue only the ModuleInstances that render against the ch
 - **GIVEN** one `ModuleInstance` with `spec.owner: cli`, one with `spec.suspend: true` and one operator-managed instance
 - **WHEN** the Platform's `Ready` condition moves to `True` with reason `Generated`
 - **THEN** only the operator-managed instance is enqueued
+
+#### Scenario: An operator upgrade into an already-Ready Platform recovers blocked instances
+
+- **GIVEN** a Platform that is already `Ready=True` with reason `Generated`, and an operator that restarts under a new version with an empty platform store
+- **WHEN** the operator-managed instances render before the platform is regenerated and report `PlatformNotReady`, and the Platform reconciler then regenerates the platform and writes a status whose only change is `status.operatorVersion`
+- **THEN** the reconciler re-enqueues every operator-managed, unsuspended `ModuleInstance` and renders it on the next reconcile, without waiting for the transient backoff

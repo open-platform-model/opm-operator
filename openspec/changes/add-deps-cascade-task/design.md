@@ -91,7 +91,11 @@ Read-only checks on 2026-10-04:
 - **The opm CLI has both setters.** `opm module version set <version> [path]` and
   `opm catalog version set <version> [path]` exist (cli `internal/cmd/module/version.go:30`,
   `internal/cmd/catalog/version.go:31`). Both are also present at cli `v1.0.0-beta.4`, the
-  version S2 lowers `.opm-cli-version` to and therefore the one phase B installs there.
+  version S2 lowers `.opm-cli-version` to and therefore the one phase B installs there. Spike 1.5
+(2026-10-04): at both `v1.0.0-beta.7` and `v1.0.0-beta.4`, `opm module version set 0.0.13
+test/fixtures/modules/hello` and `opm catalog version set 0.1.1 test/fixtures/catalogs/provider`
+change only the `Version:` line of the fixture's `identity/identity.cue`, with no registry
+access.
 - **go-task** is 3.52.0 locally. Contract §3 records that only `task -x` propagates exit 3.
 
 ## Goals / Non-Goals
@@ -168,8 +172,11 @@ tasks:
     cmds: [.tasks/cascade/cascade.sh]
 ```
 
-Whether go-task accepts a top-level `x-` key is a spike item (1.3). If it does not, the anchor
-goes on the first task's `vars:` and the other two alias it.
+Spike 1.3 (go-task 3.52.0, 2026-10-04): an included taskfile accepts a top-level
+`x-cascade-resolver:` anchor that its tasks alias with `vars: *cascade_resolver`. `task -x` passes
+a script's `exit 3` through as 3, while plain `task` gives 201. A relative `CASCADE_RESOLVER` fails
+the `sh:` var with "must be absolute" (exit 1 under `-x`), and a missing resolver fails the
+precondition with the contract's message.
 
 ### `cascade.sh`: three phases
 
@@ -397,8 +404,7 @@ port is about 30 lines and leaves `examples.yaml` untouched for the e2e path tha
 
 ### Where `language.version` is compared
 **Context**: Contract §5.2 rule 10 says each repo names one file for "the local `CUE_VERSION`".
-**Decision**: `.github/workflows/test.yml:19` (`CUE_VERSION: 'v0.17.1'`), the PR test job's (contract §5.2 rule 10 names this file)
-env. It is read with `grep -oP "CUE_VERSION: '\K[^']+"`. If the value cannot be read, the task
+**Decision**: `.github/workflows/test.yml:19` (`CUE_VERSION: 'v0.17.1'`), the env of the PR test job, which contract §5.2 rule 10 names for opm-operator. It is read with `grep -oP "CUE_VERSION: '\K[^']+"`. If the value cannot be read, the task
 warns with key `-` and continues.
 **Rationale**: It is the version that PR CI installs (`test.yml:49-52`) and that runs the
 fixtures. `test-e2e.yml` is not required.
@@ -445,8 +451,9 @@ lines that have nothing to do with the task.
 - The task's `go get …@<tree value>` plus `go mod tidy` must then reproduce the tree's `go.mod`
   and `go.sum`.
 **Rationale**: `go get` of an older version could lower other modules by MVS, and the later
-upgrade would not restore them. The spike (1.4) checks that the restore is byte-identical. If it
-is not, the test compares `go.mod` alone and records why in this section.
+upgrade would not restore them. Spike 1.4 (2026-10-04): `go mod edit -require=…library@v1.0.0-alpha.36`, then
+`go get …library@v1.0.0-beta.1 && go mod tidy`, reproduces `go.mod` and `go.sum` byte for byte.
+The test therefore compares both files.
 
 ### The S2 golden list
 After S2's first run, the diff against the original tree must be exactly these version-advance

@@ -4,23 +4,23 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 ## 1. Spike: verify the assumptions and land the stub
 
-- [ ] 1.1 Copy the stub text from Phase 2 cascade contract §7 to `.tasks/cascade/testdata/stub-resolve.sh` (mode 0755), byte for byte. Confirm `sha256sum` prints `970130f7d55c07f5b86d4f5b6f392330427ff923eb34f93553656bcd4b893d9c`, and that `shellcheck` is clean.
-- [ ] 1.2 Add `.tasks/cascade/testdata/older.tsv` with the five rows in design.md ("`older.tsv`"). Re-check each against the live service:
+- [x] 1.1 Copy the stub text from Phase 2 cascade contract §7 to `.tasks/cascade/testdata/stub-resolve.sh` (mode 0755), byte for byte. Confirm `sha256sum` prints `970130f7d55c07f5b86d4f5b6f392330427ff923eb34f93553656bcd4b893d9c`, and that `shellcheck` is clean.
+- [x] 1.2 Add `.tasks/cascade/testdata/older.tsv` with the five rows in design.md ("`older.tsv`"). Re-check each against the live service:
   - `proxy.golang.org/.../library/@v/v1.0.0-alpha.36.info` answers 200;
   - the GHCR manifest `HEAD` answers 200 for `catalogs/opm v4.4.2` and `core v2.0.0-alpha.12`;
   - the cli `v1.0.0-beta.4` release assets `opm-linux-amd64.tar.gz` and `checksums.txt` answer 200;
   - the `v4.4.2` modulefile pins core `v2.0.0-alpha.12`.
-- [ ] 1.3 In a scratch Taskfile, check two go-task 3.52 behaviours, and record both in design.md ("File layout and task wiring"):
+- [x] 1.3 In a scratch Taskfile, check two go-task 3.52 behaviours, and record both in design.md ("File layout and task wiring"):
   - whether a top-level `x-cascade-resolver:` anchor is accepted;
   - that `task -x` propagates `exit 3` while a plain `task` gives 201.
-- [ ] 1.4 In a scratch copy of the tree, check that the S2 library restore is byte-identical:
+- [x] 1.4 In a scratch copy of the tree, check that the S2 library restore is byte-identical:
   - run `go mod edit -require=github.com/open-platform-model/library@v1.0.0-alpha.36`;
   - then run `go get github.com/open-platform-model/library@v1.0.0-beta.1 && go mod tidy`;
   - check that this reproduces `go.mod` and `go.sum` byte for byte.
 
   Record the result in design.md ("S2 setup for the Go pin").
-- [ ] 1.5 In a scratch copy, install the opm CLI from `.opm-cli-version` into a throwaway `GOBIN`. Run `opm module version set 0.0.13 test/fixtures/modules/hello` and `opm catalog version set 0.1.1 test/fixtures/catalogs/provider`, and confirm each changes only the `Version:` line of its `identity/identity.cue`. Repeat with cli `v1.0.0-beta.4`, the version S2 lowers `.opm-cli-version` to and so the one phase B installs there. Record any deviation in design.md.
-- [ ] 1.6 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(cascade): add the cascade stub resolver and older pins`
+- [x] 1.5 In a scratch copy, install the opm CLI from `.opm-cli-version` into a throwaway `GOBIN`. Run `opm module version set 0.0.13 test/fixtures/modules/hello` and `opm catalog version set 0.1.1 test/fixtures/catalogs/provider`, and confirm each changes only the `Version:` line of its `identity/identity.cue`. Repeat with cli `v1.0.0-beta.4`, the version S2 lowers `.opm-cli-version` to and so the one phase B installs there. Record any deviation in design.md.
+- [x] 1.6 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(cascade): add the cascade stub resolver and older pins`
 
 ## 2. Pin report, class map, title and body tasks
 

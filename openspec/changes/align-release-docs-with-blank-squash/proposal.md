@@ -1,0 +1,109 @@
+## Why
+
+On 2026-10-02 the owner set the squash merge message of the releasing repos to `BLANK` (workspace
+`RELEASING.md`, "Owner settings", "Merge settings"): a squash commit carries only the PR title.
+The PR body and the branch commit messages never reach `main`, so no footer does either. Under
+that setting:
+
+- a breaking change is `!` in the PR title (`feat!:`, `fix(deps)!:`); a `BREAKING CHANGE:` footer
+  never reaches `main`;
+- a forced version is a `release-as` key in `release-please-config.json`. A normal PR sets it, and
+  the next PR removes it once that release is cut, because while it stays it pins every later
+  release. A `Release-As:` footer never reaches `main`.
+
+`RELEASING.md` ("Title from diff class", lines 247-250) and the workspace commit skill
+(`.claude/skills/commit/SKILL.md:48-55`) already say this. This repo still says the opposite:
+
+- The main spec `release-automation`, requirement "Manual version override via release-as"
+  (`openspec/specs/release-automation/spec.md:9-22`), makes the footer the only mechanism. It says
+  the `release-as` key "SHALL NOT appear in `release-please-config.json`" and has a scenario that
+  checks the config carries no such key. Followed today, it forbids the only forced-version
+  mechanism that still works.
+- These places still describe a breaking change as a `feat!` commit whose `BREAKING CHANGE:`
+  footer is the migration note in the CHANGELOG:
+  - the same spec's "Version bump determination per release line" (`:69`, `:81`);
+  - "Beta prerelease line" (`:85`, `:92`, `:97`, `:100-101`);
+  - "Release PR opens for releasable commits on push to main" (`:156`, `:167`);
+  - `AGENTS.md:151` ("Beta line");
+  - `CONSTITUTION.md:101`;
+  - the copy of the constitution in `openspec/config.yaml:41-48`.
+- `openspec/config.yaml:196` justifies a commit-message rule with "the squash body reaches
+  release-please", which is no longer true.
+- The `gomod` comment in `.github/dependabot.yml:17-18` says `deps` "is not a Conventional Commit
+  type, so release-please drops such merge commits from the changelog". That has been false since
+  `release-please-config.json:23` listed `deps` as the visible "Dependencies" section: a `deps:`
+  commit releases here. The real effect of the `build` prefix is the opposite of what the comment
+  implies. `build` is hidden (`release-please-config.json:28`), so a Dependabot Go bump releases
+  nothing unless the merger retitles it (`RELEASING.md`, "Runbook", "Dependabot PRs").
+
+The archived `prepare-release-cascade` change listed this as a follow-up
+(`openspec/changes/archive/2026-10-02-prepare-release-cascade/design.md:288-292`). The cli has the
+same-named change for its own copies.
+
+## What Changes
+
+- **Spec `release-automation`:**
+  - **Replaced.** "Manual version override via release-as" is replaced by a requirement that makes
+    the `release-as` key the mechanism. A normal PR sets it, the next PR removes it once that
+    release is cut, and a footer is not relied on.
+  - **Rewritten.** The breaking-change wording in "Version bump determination per release line"
+    and "Beta prerelease line" becomes `!` in the PR title. "Release PR opens for releasable
+    commits on push to main" stops counting a `Release-As:` footer as releasable, and states that a
+    `release-as` value alone opens no Release PR.
+- **Prose:**
+  - `AGENTS.md:151` ("Beta line"), `CONSTITUTION.md:101` and `openspec/config.yaml:41-48` now say:
+    breaking is `!` in the PR title, and the migration note goes in the PR body, which the
+    CHANGELOG entry links. "No minor or major hop (such as `Release-As: 1.1.0-beta.1`)" becomes
+    "such as a `release-as` of `1.1.0-beta.1`".
+  - `openspec/config.yaml:196` keeps its rule with a true reason.
+- **`.github/dependabot.yml`:** the `gomod` prefix comment states what `build(deps)` does here:
+  hidden, so no release unless retitled. The prefix itself does not change.
+
+No workflow, task, script, Go code, CRD or `release-please-config.json` value changes.
+
+## Capabilities
+
+### New Capabilities
+
+None.
+
+### Modified Capabilities
+
+- `release-automation`:
+  - a forced version is a `release-as` key in `release-please-config.json`, set by a normal PR and
+    removed by the next PR after the release, instead of a commit footer;
+  - a breaking change is `!` in the PR title;
+  - a footer no longer counts as releasable.
+
+## Impact
+
+- **SemVer: none (after GA as now).** Every commit is `docs` or `ci`, both hidden in
+  `release-please-config.json`. The change cuts no operator release and cascades nothing into the
+  cli. No API type, CRD, controller or reconcile phase (Source, Render, Apply, Prune, Status)
+  changes. Principle VII: nothing is added; text is corrected.
+- **Files:** `openspec/specs/release-automation/spec.md` (on archive), `AGENTS.md`,
+  `CONSTITUTION.md`, `openspec/config.yaml`, `.github/dependabot.yml`.
+- **Behaviour:** none. Changing release-please's behaviour is out of scope: it already honours both
+  the key and, under `COMMIT_MESSAGES`, the footer. The change aligns what the repo tells people
+  and agents with the owner's merge settings.
+- **Delivery:** one PR; the OpenSpec archive commit rides it, and nothing is pushed to `main`
+  (owner decision 2026-10-01, `RELEASING.md`, "Owner settings").
+
+## Depends on / gates
+
+- **Depends on: none.** This change edits only prose, a spec and a YAML comment, and touches no
+  task. It therefore does not wait for `.github` `add-cascade-resolver`, which gates the `task`
+  changes of Phase 2 (`RELEASING.md`, "Rollout and changes", "Changes"). It can merge in any order
+  with the cli's same-named change and with the other Phase 2 changes.
+- **Owner merge setting (Phase 0) not required to merge.** Until the owner switches
+  `squash_merge_commit_message` to `BLANK`, the repo squashes with `COMMIT_MESSAGES`, and a footer
+  in a branch commit would still reach `main`. The commit skill closes that gap by merging with an
+  explicit empty body (`gh pr merge --squash --body ''`, `.claude/skills/commit/SKILL.md:48-51`).
+  The policy this change writes down is therefore already the practice. `AGENTS.md` says so in one
+  clause until the setting lands.
+- **Not in scope:**
+  - the cli's copies (`cli/AGENTS.md`, `cli/CONSTITUTION.md`, `cli/openspec`);
+  - catalog_opm;
+  - `.github` README and mention-guard comments;
+  - workspace `RELEASING.md`.
+  Each is its own item in the follow-up sweep.

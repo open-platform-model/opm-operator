@@ -34,8 +34,8 @@ func identityErr() error {
 
 // renderRefused mirrors the kernel's fail-closed gate: a *kernel.RenderError
 // carrying the diagnostics and the joined typed causes, wrapped once by the
+// renderer. If the library changes this shape, these tests fail rather than
 // letting typed routing silently degrade to RenderFailed.
-// letting typed routing silently degrade to the string fallback.
 func renderRefused(causes ...error) error {
 	return fmt.Errorf("rendering module instance: %w", &kernel.RenderError{Err: errors.Join(causes...)})
 }

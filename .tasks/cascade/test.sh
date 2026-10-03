@@ -4,9 +4,9 @@
 # PASS <scenario> or FAIL <scenario>: <reason>; exits 0 when every scenario passes, 1
 # otherwise. Nothing touches the real checkout.
 #
-# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 (no GHCR or proxy
-# access beyond a warm Go module cache). CASCADE_TEST_SET=all (the default) adds S2 and S4,
-# and S5 when CASCADE_RESOLVER_REAL names the real resolver.
+# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6, S7, S8, S9 (no GHCR or
+# proxy access beyond a warm Go module cache). CASCADE_TEST_SET=all (the default) adds S2,
+# S4 and S10, and S5 when CASCADE_RESOLVER_REAL names the real resolver.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
@@ -232,6 +232,65 @@ else
   pass S6
 fi
 
+# --- S7: a hold on core below the core the catalog pins holds the catalog too ---------------------
+
+D=$(sandbox s7)
+o_cat=$(older_v "$CATKEY")
+o_core=$(older_v "$COREKEY")
+sed -i "s/version: \"${CAT_T#v}\"/version: \"${o_cat#v}\"/" "$D/$SAMPLE_PLATFORM"
+set_dep_v "$D/test/fixtures/modules/hello/cue.mod/module.cue" "$CATKEY" "$o_cat"
+set_dep_v "$D/test/fixtures/modules/hello/cue.mod/module.cue" "$COREKEY" "$o_core"
+printf 'holds:\n  - pin: "%s"\n    max: "%s"\n    reason: "S7"\n    expires: "2099-12-31"\n' \
+  "$COREKEY" "$o_core" >"$D/.cascade-hold"
+setup=$(commit_setup "$D")
+# The newest catalog is the tree's, which pins the tree's core, above the hold.
+rc=$(run_task "$D" "$setup" "$OLDER_TABLE" "$TMP/s7.log")
+if [ "$rc" != 3 ]; then
+  fail S7 "exit $rc, want 3 (catalog and core held)" "$TMP/s7.log"
+elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
+  fail S7 "the tree changed under the hold" "$TMP/s7.log"
+elif ! grep -q 'catalog held too' "$D/.git/cascade/warnings"; then
+  fail S7 "no 'catalog held too' warning" "$D/.git/cascade/warnings"
+else
+  pass S7
+fi
+
+# --- S8: a changed fixture whose merge-base version is unpublished is not bumped again ----------
+
+D=$(sandbox s8)
+base=$(cd "$D" && git rev-parse HEAD)
+printf 'S8\n' >"$D/test/fixtures/modules/hello/cascade-test-change.txt"
+commit_setup "$D" >/dev/null
+awk -F'\t' '!($1 == "published" && $3 ~ /\/hello@v0$/)' "$CURRENT" >"$TMP/s8.tsv"
+rc=$(run_task "$D" "$base" "$TMP/s8.tsv" "$TMP/s8.log")
+if [ "$rc" != 3 ]; then
+  fail S8 "exit $rc, want 3 (the pending version stays)" "$TMP/s8.log"
+elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
+  fail S8 "the tree changed" "$TMP/s8.log"
+else
+  pass S8
+fi
+
+# --- S9: a fixture core ahead of the catalog's core stays, with a warning -----------------------
+
+D=$(sandbox s9)
+ahead="${CORE_T%%.*}.999.0"
+set_dep_v "$D/test/fixtures/modules/redis/cue.mod/module.cue" "$COREKEY" "$ahead"
+setup=$(commit_setup "$D")
+before=$(sha256sum "$D/test/fixtures/modules/redis/cue.mod/module.cue")
+rc=$(run_task "$D" "$setup" "$CURRENT" "$TMP/s9.log")
+if [ "$rc" != 0 ]; then
+  fail S9 "exit $rc, want 0 (the consumer follows up)" "$TMP/s9.log"
+elif [ "$(sha256sum "$D/test/fixtures/modules/redis/cue.mod/module.cue")" != "$before" ]; then
+  fail S9 "the ahead core was moved" "$TMP/s9.log"
+elif ! grep -qF "core \`$ahead\` is ahead" "$D/.git/cascade/warnings"; then
+  fail S9 "no core-ahead warning" "$D/.git/cascade/warnings"
+elif [ "$(cd "$D" && git status --porcelain)" != " M test/fixtures/modulepackages/redis/cue.mod/module.cue" ]; then
+  fail S9 "more than the redis modulepackage changed" "$TMP/s9.log"
+else
+  pass S9
+fi
+
 if [ "$SET" = offline ]; then
   exit "$FAILED"
 fi
@@ -349,6 +408,27 @@ else
   else
     pass S4
   fi
+fi
+
+# --- S10: MVS raising a frozen key in a module stops the task --------------------------------------
+
+D=$(sandbox s10)
+set_dep_v "$D/$S4_FILE" "$CATKEY" "$(older_v "$CATKEY")"
+set_dep_v "$D/$S4_FILE" "$COREKEY" "$(older_v "$COREKEY")"
+{
+  [ ! -f "$D/.cascade-frozen" ] || cat "$D/.cascade-frozen"
+  [ -f "$D/.cascade-frozen" ] || printf 'frozen:\n'
+  printf -- '- path: %s\n  pins: [%s]\n  reason: S10\n' "$S4_FILE" "$COREKEY"
+} >"$TMP/s10.frozen"
+mv "$TMP/s10.frozen" "$D/.cascade-frozen"
+setup=$(commit_setup "$D")
+rc=$(run_task "$D" "$setup" "$OLDER_TABLE" "$TMP/s10.log")
+if [ "$rc" != 1 ]; then
+  fail S10 "exit $rc, want 1" "$TMP/s10.log"
+elif ! grep -qF "$S4_FILE: cue mod tidy moved the frozen $COREKEY" "$TMP/s10.log"; then
+  fail S10 "the error does not name the file and the frozen key" "$TMP/s10.log"
+else
+  pass S10
 fi
 
 exit "$FAILED"

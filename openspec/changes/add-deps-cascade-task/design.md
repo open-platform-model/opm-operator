@@ -497,6 +497,24 @@ than 0 or 3 and leave `git status --porcelain` empty.
 **Rationale**: It proves the `if`/`case` rule and the `EXIT` trap in "`cascade.sh`: three phases"
 (the spec's "never turns a failure into 0 or 3").
 
+### Scenarios beyond the contract
+**Context**: Contract §8's S1 to S6 leave four spec scenarios to hand checks: the core hold, a
+pending fixture, a core ahead of its catalog, and MVS raising a frozen key. A hand check of the
+hold found a real defect (a consumer lowered to its held module; fixed in section 6).
+**Decision**: `test.sh` scripts them:
+- **S7** (offline): the sample and `hello` lowered to the `older.tsv` catalog and core, and a
+  `.cascade-hold` capping core at the older core. Exit 3, a clean tree, and the "catalog held
+  too" warning.
+- **S8** (offline): a new file in `hello` and no `published` row for its merge-base version.
+  Exit 3: the pending version is not bumped again.
+- **S9** (offline): `redis` pins a core above the one its catalog pins. Exit 0, `redis`'s
+  `module.cue` byte-unchanged, the core-ahead warning, and only the `redis` modulepackage
+  following up.
+- **S10** (network): `hello` lowered and frozen for core only. The catalog move makes MVS raise
+  core, so the task exits 1 and names the file and the key.
+**Rationale**: Each runs in seconds, and S7 to S9 need no network, so they join the required
+offline set.
+
 ### Test placement (contract §8, §9.12)
 **Context**: Contract §8 places the offline step in `test.yml` job `Run on Ubuntu`, calling it
 "an existing required job". Workspace RELEASING.md, section "Rulesets on main", lists

@@ -128,6 +128,12 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 - [x] 5.5 Add one bullet to `AGENTS.md` "Registry". It says that `task -x deps:cascade` moves the upstream pins (library, the opm catalog and core with fixtures and consumers, and `.opm-cli-version`) and exits 0 changed, 3 nothing, or other on error; that `deps:cascade:title|body|test` exist; and that `.tasks/cascade/` holds the scripts (workspace RELEASING.md, section "What each repo's task moves").
 - [x] 5.6 `task dev:fmt dev:vet dev:lint dev:test` and `CASCADE_TEST_SET=offline task -x deps:cascade:test` green, then commit `ci(cascade): run the deps:cascade tests in CI`
 
-## 6. Archive
+## 6. Verify follow-ups
 
-- [ ] 6.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`
+- [x] 6.1 A fixture consumer's catalog and core only move up (design.md, "Consumers follow in the same PR"): under a core hold, a module held below its modulepackage dragged the consumer down. Committed as `ci(cascade): never lower a fixture consumer's catalog or core`.
+- [x] 6.2 Script the spec scenarios the contract's S1 to S6 leave to hand checks (design.md, "Scenarios beyond the contract"): S7 core hold, S8 pending fixture, S9 core ahead (offline), S10 MVS raising a frozen key (network). Confirm S7 fails against the mover before 6.1.
+- [x] 6.3 `shellcheck .tasks/cascade/*.sh`, `task dev:fmt dev:vet dev:lint dev:test` and `task -x deps:cascade:test` green, then commit `test(cascade): cover core holds, pending fixtures, core ahead and frozen MVS raises`
+
+## 7. Archive
+
+- [ ] 7.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`

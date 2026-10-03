@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.5](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-10-03)
+
+
+### Bug Fixes
+
+* **cmd:** make OPM_REGISTRY and the built-in default reachable ([#173](https://github.com/open-platform-model/opm-operator/issues/173)) ([0945214](https://github.com/open-platform-model/opm-operator/commit/0945214407cbdb8c4ea621882fe7cde7b0e013de)), closes [#64](https://github.com/open-platform-model/opm-operator/issues/64)
+* **controller:** bound renders and their exports process-wide with one slot pool ([#192](https://github.com/open-platform-model/opm-operator/issues/192)) ([bc4e8aa](https://github.com/open-platform-model/opm-operator/commit/bc4e8aac4e62dc3eb0be5db8fc790d9782e4744b))
+* **controller:** build the platform module-file source per reconcile ([#189](https://github.com/open-platform-model/opm-operator/issues/189)) ([4654cad](https://github.com/open-platform-model/opm-operator/commit/4654cad4b9e1a13ea8ea40d92e964e96e23c6ff5))
+* **controller:** retry acquisition failures without a typed cause on the backoff ([#190](https://github.com/open-platform-model/opm-operator/issues/190)) ([62be402](https://github.com/open-platform-model/opm-operator/commit/62be402236702327bac22587a842a81b9b6aaca8))
+
+
+### Performance Improvements
+
+* **controller:** filter the ModuleInstance Platform watch to the fields renders consume ([#191](https://github.com/open-platform-model/opm-operator/issues/191)) ([3782c9c](https://github.com/open-platform-model/opm-operator/commit/3782c9cec901c5486dcf4c4884b1d3243f10cfc1))
+
 ## [1.0.0-beta.4](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-10-01)
 
 

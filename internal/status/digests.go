@@ -75,31 +75,48 @@ func ConfigDigest(values *releasesv1alpha1.RawValues) string {
 // and hashes the concatenation.
 // Format: "sha256:<hex>"
 func RenderDigest(resources []*core.Resource) (string, error) {
-	sorted := make([]*core.Resource, len(resources))
-	copy(sorted, resources)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		gi, gj := sorted[i].GVK(), sorted[j].GVK()
+	digest, _, err := RenderDigestJSON(resources)
+	return digest, err
+}
+
+// RenderDigestJSON computes the same digest as RenderDigest and also returns
+// each resource's JSON, in the input order. Every resource is exported from
+// CUE once, so a caller that needs both the digest and the JSON (to convert
+// the resources for apply) pays for one export, not two.
+func RenderDigestJSON(resources []*core.Resource) (string, [][]byte, error) {
+	encoded := make([][]byte, len(resources))
+	for i, r := range resources {
+		b, err := r.MarshalJSON()
+		if err != nil {
+			return "", nil, fmt.Errorf("render digest: %w", err)
+		}
+		encoded[i] = b
+	}
+
+	order := make([]int, len(resources))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		ri, rj := resources[order[a]], resources[order[b]]
+		gi, gj := ri.GVK(), rj.GVK()
 		if gi.Group != gj.Group {
 			return gi.Group < gj.Group
 		}
 		if gi.Kind != gj.Kind {
 			return gi.Kind < gj.Kind
 		}
-		if sorted[i].Namespace() != sorted[j].Namespace() {
-			return sorted[i].Namespace() < sorted[j].Namespace()
+		if ri.Namespace() != rj.Namespace() {
+			return ri.Namespace() < rj.Namespace()
 		}
-		return sorted[i].Name() < sorted[j].Name()
+		return ri.Name() < rj.Name()
 	})
 
 	h := sha256.New()
-	for _, r := range sorted {
-		b, err := r.MarshalJSON()
-		if err != nil {
-			return "", fmt.Errorf("render digest: %w", err)
-		}
-		h.Write(b)
+	for _, i := range order {
+		h.Write(encoded[i])
 	}
-	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
+	return fmt.Sprintf("sha256:%x", h.Sum(nil)), encoded, nil
 }
 
 // IsNoOp returns true if all four digests in current match lastApplied.

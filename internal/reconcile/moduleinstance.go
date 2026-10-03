@@ -49,6 +49,10 @@ type ModuleInstanceParams struct {
 	// Renderer produces the render result for a ModuleInstance. Must be non-nil;
 	// production wires render.KernelModuleRenderer, tests wire a stub.
 	Renderer render.ModuleRenderer
+	// RenderSlots is the process-wide render pool shared with the
+	// ModulePackage reconciler; every call to Renderer holds one slot until
+	// its result is exported for apply. Nil leaves renders unbounded.
+	RenderSlots *render.Slots
 	// DefaultServiceAccount is the fallback SA name used when a
 	// ModuleInstance has an empty spec.serviceAccountName. Empty disables
 	// the default and preserves the controller-client fallback.
@@ -56,6 +60,43 @@ type ModuleInstanceParams struct {
 	// Warnings remembers each instance's last render warnings so RenderWarning
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
+}
+
+// commitNoOpStatus is the deferred status commit of a NoOp reconcile. Drift
+// detection ran and may have set or cleared the Drifted condition, and phase
+// counters may need an increment or reset, so they are persisted through a
+// bounded patch; lastAttempted, history and inventory are not touched.
+//
+// NoOp implies the digests match LastApplied (a previous reconcile applied
+// successfully), so Ready=True is the correct state. MarkReconciling at the
+// start of this reconcile transiently set Ready=Unknown; it is reset before
+// patching.
+func commitNoOpStatus(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	mi *releasesv1alpha1.ModuleInstance,
+	phases phaseOutcomes,
+	reconcileStart time.Time,
+) {
+	status.MarkReady(mi, "Reconciliation succeeded")
+	updateFailureCounters(&mi.Status, NoOp, phases)
+	mi.Status.NextRetryAt = nil
+	if patchErr := patcher.Patch(ctx, mi,
+		patch.WithOwnedConditions{
+			Conditions: []string{
+				status.ReadyCondition,
+				status.ReconcilingCondition,
+				status.StalledCondition,
+				status.ModuleResolvedCondition,
+				status.DriftedCondition,
+			},
+		},
+		patch.WithStatusObservedGeneration{},
+	); patchErr != nil {
+		logf.FromContext(ctx).Error(patchErr, "Failed to patch NoOp status")
+	}
+	recordReconcileMetrics(mi.Name, mi.Namespace, NoOp, time.Since(reconcileStart), false, 0)
+	opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
 }
 
 // ReconcileModuleInstance orchestrates all phases of the reconcile loop.
@@ -133,6 +174,11 @@ func ReconcileModuleInstance(
 
 		// Phase outcome tracking for failure counters (updated in Phase 7).
 		phases phaseOutcomes
+
+		// skipCommit is set only when the wait for a render slot is cut
+		// short: nothing was attempted, so there is nothing to record, and
+		// the zero outcome (NoOp) would otherwise report a success.
+		skipCommit bool
 	)
 
 	// Deferred status commit — patches status on every reconcile attempt,
@@ -142,34 +188,11 @@ func ReconcileModuleInstance(
 	// Storm-safe: GenerationChangedPredicate on the controller's event filter
 	// prevents status-only patches from triggering watch-driven reconciles.
 	defer func() {
+		if skipCommit {
+			return
+		}
 		if outcome == NoOp {
-			// Drift detection ran and may have set/cleared the Drifted
-			// condition; phase counters may need increment/reset. Persist
-			// these via a bounded patch.
-			//
-			// NoOp implies digests match LastApplied — a previous reconcile
-			// applied successfully — so Ready=True is the correct state.
-			// MarkReconciling at the start of this reconcile transiently set
-			// Ready=Unknown; reset it now before patching.
-			status.MarkReady(&mi, "Reconciliation succeeded")
-			updateFailureCounters(&mi.Status, outcome, phases)
-			mi.Status.NextRetryAt = nil
-			if patchErr := patcher.Patch(ctx, &mi,
-				patch.WithOwnedConditions{
-					Conditions: []string{
-						status.ReadyCondition,
-						status.ReconcilingCondition,
-						status.StalledCondition,
-						status.ModuleResolvedCondition,
-						status.DriftedCondition,
-					},
-				},
-				patch.WithStatusObservedGeneration{},
-			); patchErr != nil {
-				log.Error(patchErr, "Failed to patch NoOp status")
-			}
-			recordReconcileMetrics(mi.Name, mi.Namespace, outcome, time.Since(reconcileStart), false, 0)
-			opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
+			commitNoOpStatus(ctx, patcher, &mi, phases, reconcileStart)
 			return
 		}
 
@@ -248,15 +271,25 @@ func ReconcileModuleInstance(
 	digests.Source = status.ModuleSourceDigest(mi.Spec.Module.Path, mi.Spec.Module.Version)
 	digests.Config = status.ConfigDigest(mi.Spec.Values)
 
-	// Phase 1: Synthesize, resolve, and render module from OCI registry.
-	// CUE's native module system resolves the target module from the registry.
-	renderResult, err := params.Renderer.RenderModule(
-		ctx,
-		mi.Name, mi.Namespace,
-		mi.Spec.Module.Path, mi.Spec.Module.Version,
-		mi.Spec.Values,
+	// Phase 1: Synthesize, resolve, and render module from OCI registry, then
+	// export the rendered set for apply. One slot of the process-wide pool is
+	// held until the export is done: the rendered CUE values pin the whole
+	// build until then, and the export is where the heap peaks.
+	var (
+		renderResult *render.RenderResult
+		converted    *convertedRender
+		err          error
+		convErr      *conversionError
 	)
-	if err != nil {
+	if waitErr := params.RenderSlots.Run(ctx, func() {
+		renderResult, converted, err = renderAndConvertInstance(ctx, params.Renderer, &mi)
+	}); waitErr != nil {
+		// The context ended while waiting for a slot (manager shutdown).
+		// Nothing was rendered, so commit nothing and classify nothing.
+		skipCommit = true
+		return ctrl.Result{}, fmt.Errorf("waiting for a render slot: %w", waitErr)
+	}
+	if err != nil && !errors.As(err, &convErr) {
 		outcome, errMsg = classifyRenderError(&mi, params.EventRecorder, err)
 		// PlatformNotReady is a transient blocked-on-dependency state (the
 		// platform store holds no generated platform module yet), so it must
@@ -277,30 +310,22 @@ func ReconcileModuleInstance(
 	status.MarkModuleResolved(&mi, fmt.Sprintf("%s@%s", mi.Spec.Module.Path, mi.Spec.Module.Version))
 	reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, &mi, renderResult)
 
-	renderDigest, err := status.RenderDigest(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(&mi, status.RenderFailedReason, "computing render digest: %s", err)
+	if convErr != nil {
+		status.MarkStalled(&mi, convErr.reason, "%s", convErr)
 		outcome = FailedStalled
-		errMsg = fmt.Sprintf("computing render digest: %s", err)
+		errMsg = convErr.Error()
 		retryAfter = StalledRecheckInterval
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
-	digests.Render = renderDigest
+	digests.Render = converted.digest
 	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
 
 	// Phase 4: Plan actions — no-op detection, drift detection, compute stale set.
 	//
-	// Convert the full rendered set early: the instance UUID and the shrink
-	// verdict below are read from it, and the apply list every later phase
-	// uses is derived from it.
-	resources, err := toUnstructuredSlice(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(&mi, status.ApplyFailedReason, "converting resources: %s", err)
-		outcome = FailedStalled
-		errMsg = fmt.Sprintf("converting resources: %s", err)
-		retryAfter = StalledRecheckInterval
-		return ctrl.Result{RequeueAfter: retryAfter}, nil
-	}
+	// The full rendered set was converted under the slot: the instance UUID
+	// and the shrink verdict below are read from it, and the apply list every
+	// later phase uses is derived from it.
+	resources := converted.resources
 
 	// Persist the rendered instance UUID on Status. All rendered resources
 	// carry the same UUID (stamped by the CUE catalog's moduleLabels merge);
@@ -1023,15 +1048,24 @@ func extractInstanceUUID(resources []*unstructured.Unstructured) string {
 	return ""
 }
 
-// toUnstructuredSlice converts core.Resource slice to unstructured slice for apply.
-func toUnstructuredSlice(resources []*core.Resource) ([]*unstructured.Unstructured, error) {
-	result := make([]*unstructured.Unstructured, 0, len(resources))
-	for _, r := range resources {
-		u, err := r.ToUnstructured()
-		if err != nil {
-			return nil, fmt.Errorf("converting %s to unstructured: %w", r, err)
-		}
-		result = append(result, u)
+// renderAndConvertInstance renders mi and exports the result for apply. It
+// runs inside the reconcile's render slot. On a conversion failure it still
+// returns the render result, whose plain data the caller reports, and a
+// *conversionError.
+func renderAndConvertInstance(
+	ctx context.Context,
+	renderer render.ModuleRenderer,
+	mi *releasesv1alpha1.ModuleInstance,
+) (*render.RenderResult, *convertedRender, error) {
+	result, err := renderer.RenderModule(
+		ctx,
+		mi.Name, mi.Namespace,
+		mi.Spec.Module.Path, mi.Spec.Module.Version,
+		mi.Spec.Values,
+	)
+	if err != nil {
+		return nil, nil, err
 	}
-	return result, nil
+	converted, err := convertRender(result)
+	return result, converted, err
 }

@@ -75,11 +75,18 @@ type ModulePackageReconciler struct {
 	// it on any reconcile path.
 	Kernel *kernel.Kernel
 
-	// MaxConcurrentRenders bounds how many ModulePackages reconcile (and so
-	// render) at once: the manager's --max-concurrent-renders, applied as
-	// MaxConcurrentReconciles. Zero or negative keeps controller-runtime's
-	// default of one.
+	// MaxConcurrentRenders is the manager's --max-concurrent-renders, applied
+	// as this controller's MaxConcurrentReconciles: how many ModulePackages
+	// reconcile at once. Renders are bounded separately, across both kinds,
+	// by RenderSlots. Zero or negative keeps controller-runtime's default of
+	// one.
 	MaxConcurrentRenders int
+
+	// RenderSlots is the process-wide render pool built from
+	// --max-concurrent-renders and shared with the ModuleInstance reconciler,
+	// so the flag bounds renders of both kinds together. Nil leaves renders
+	// unbounded (tests that need no bound).
+	RenderSlots *render.Slots
 
 	// warnings remembers each package's last render warnings so RenderWarning
 	// events are emitted on transition only (0019:D18).
@@ -109,6 +116,7 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		EventRecorder:         r.EventRecorder,
 		Fetcher:               r.Fetcher,
 		Renderer:              r.Renderer,
+		RenderSlots:           r.RenderSlots,
 		DefaultServiceAccount: r.DefaultServiceAccount,
 		Warnings:              &r.warnings,
 	}, req)
@@ -127,8 +135,11 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 //     whose trigger (the reconciler's status update) does not bump generation.
 //
 // MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
-// controller's MaxConcurrentReconciles: renders share nothing (library
-// ADR-005, ADR-007), so the only bound is memory.
+// controller's MaxConcurrentReconciles, so phases outside the render (apply,
+// prune, deletion, suspend) never queue behind the other kind's renders. The
+// renders themselves are bounded by RenderSlots, one pool shared with the
+// ModuleInstance controller: renders share nothing (library ADR-005, ADR-007),
+// so the only bound is memory, and it holds across both kinds.
 func (r *ModulePackageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.ModulePackage{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).

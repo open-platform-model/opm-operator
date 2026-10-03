@@ -66,6 +66,11 @@ spec:
         image: controller:latest
         imagePullPolicy: IfNotPresent
         name: manager
+        # GOMEMLIMIT is the Go runtime's soft memory limit, about 80% of
+        # limits.memory below; see the comment there. Change both together.
+        env:
+        - name: GOMEMLIMIT
+          value: 3276MiB
         ports: []
         securityContext:
           readOnlyRootFilesystem: true
@@ -100,6 +105,22 @@ spec:
         # the headroom is cheap insurance against a failure mode whose blast
         # radius is the whole cluster. The request stays small so the operator
         # still schedules on modest nodes.
+        #
+        # GOMEMLIMIT (env above) is set to about 80% of this limit (3276MiB of
+        # 4Gi) so the Go runtime collects harder as the heap nears the limit
+        # instead of letting render garbage pile up to the OOMKill. It is a
+        # literal because the downward API can expose the limit but not scale
+        # it. The headroom covers what GOMEMLIMIT does not count: memory
+        # allocated outside the Go runtime, the binary's mapped pages and page
+        # cache charged to the container's cgroup. Move both together: a limit
+        # lowered below GOMEMLIMIT silently disables the soft limit.
+        #
+        # What fills the heap is renders: one render of a module that vendors
+        # CRDs (cert-manager-sized) peaks near 2 GB of heap while its result
+        # is exported for apply. The manager's
+        # --max-concurrent-renders (default 1) is the process-wide bound on
+        # renders in flight, ModuleInstances and ModulePackages together; size
+        # it against this limit (docs/RENDERING.md).
         resources:
           limits:
             cpu: "2"

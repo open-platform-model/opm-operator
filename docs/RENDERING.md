@@ -37,11 +37,39 @@ identities and refuses the whole render when two objects share one
 
 ## `--max-concurrent-renders`
 
-The flag (default `1`) sets the maximum concurrent reconciles of the
-ModuleInstance and ModulePackage controllers, and so the number of renders in
-flight per kind. The Platform controller is always serial. The default keeps
-the serial behaviour of earlier releases; raise it when reconcile latency
-across many workloads matters.
+The flag (default `1`) is the number of renders in flight across the whole
+process, ModuleInstances and ModulePackages together. The manager builds one
+pool of that many render slots and both controllers share it: a reconcile
+takes a slot just before it calls the renderer (platform lease, acquisition,
+synthesis and the render build) and holds it through the export of the
+result for apply (the render digest and the unstructured conversion). Each
+resource is exported twice inside the slot: once by the renderer for the
+inventory entries, and once more for the digest and the conversion, which
+share that export. It gives the slot back once the rendered CUE values are
+dropped, on success, error or a recovered panic. The export is part of the
+window because the rendered values pin the whole build until then, and it is
+where the heap peaks: for a cert-manager-sized module the export peaks higher
+than the render itself. Each of the two controllers also
+reconciles up to that many objects of its kind at once, so apply, prune,
+deletion and suspend of one kind never queue behind the other kind's renders;
+only the renders share the bound. A reconcile waiting for a slot holds no
+platform lease, so it renders against the newest platform when its turn
+comes. The Platform controller is always serial and takes no slot. Raise the
+flag when reconcile latency across many workloads matters.
+
+Nothing on the render path has a timeout, so a render stuck on registry I/O
+holds its slot until it returns. At the default of `1` that delays every
+other render of both kinds, not only of its own.
+
+The shipped manager Deployment (`config/manager/manager.yaml`) sets the
+container's memory limit to `4Gi` and the Go soft memory limit
+`GOMEMLIMIT=3276MiB`, about 80% of it, so the runtime collects harder as the
+heap nears the limit instead of the container being killed at it. The value
+is a literal, since the downward API cannot scale the limit, so move both
+together. A memory limit lowered below `GOMEMLIMIT` silently disables the soft
+limit, and the container is killed at the hard limit as before. A limit raised
+alone (for example to allow more concurrent renders) leaves the soft limit
+low, which costs extra garbage collection but never an OOMKill.
 
 The bound is memory, not cores. A render is single-threaded and its working
 set grows with the module's component count. Measured in enhancement 0019
@@ -55,7 +83,8 @@ set grows with the module's component count. Measured in enhancement 0019
 | Throughput saturation | physical cores / 1.6 renders in flight |
 
 Size against the largest module the operator will see, not the average: the
-pool has no admission control, so several large renders can coincide. A pod
+slots bound the number of renders across both kinds, not their size, so at
+`N` above one, `N` renders of the largest module can coincide. A pod
 rendering ordinary modules (10 to 25 components) at four concurrent renders
 wants about 1 GB and is comfortable at 2 GB. A 129-component fleet at eight
 concurrent renders wants 12 GB. Where memory is the tighter budget, fewer

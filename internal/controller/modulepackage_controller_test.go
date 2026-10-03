@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	fluxmeta "github.com/fluxcd/pkg/apis/meta"
@@ -67,21 +68,42 @@ func (s *stubFetcher) Fetch(_ context.Context, _ string, _ string, dir string, _
 }
 
 // stubPackageRenderer returns a pre-built RenderResult (or error) without
-// evaluating CUE.
+// evaluating CUE. Each call returns a copy of result, as a real render
+// returns a fresh one, because the reconcile drops the rendered resources
+// from the result it was handed; the last result returned is kept for specs
+// to inspect.
 type stubPackageRenderer struct {
 	kind   string
 	result *render.RenderResult
 	err    error
+
+	mu   sync.Mutex
+	last *render.RenderResult
 }
 
 func (s *stubPackageRenderer) Render(_ context.Context, _ string) (string, *render.RenderResult, error) {
 	if s.err != nil {
 		return s.kind, nil, s.err
 	}
-	if s.kind == "" {
-		return render.KindModuleInstance, s.result, nil
+	var out *render.RenderResult
+	if s.result != nil {
+		r := *s.result
+		out = &r
 	}
-	return s.kind, s.result, nil
+	s.mu.Lock()
+	s.last = out
+	s.mu.Unlock()
+	if s.kind == "" {
+		return render.KindModuleInstance, out, nil
+	}
+	return s.kind, out, nil
+}
+
+// lastResult is the result the most recent successful call returned.
+func (s *stubPackageRenderer) lastResult() *render.RenderResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.last
 }
 
 var _ = Describe("ModulePackage Controller", func() {

@@ -121,12 +121,13 @@ func main() {
 			"ImpersonationFailed. Empty (default) preserves today's behavior: fall back to the "+
 			"controller's own identity. See docs/TENANCY.md for the recommended per-namespace SA pattern.")
 	flag.IntVar(&maxConcurrentRenders, "max-concurrent-renders", 1,
-		"Maximum number of ModuleInstances and ModulePackages (each) reconciled, and so rendered, at once. "+
-			"Renders share nothing, so the bound is memory, not cores: budget about 61 MB plus 7.75 MB per "+
-			"component of the largest module per concurrent render, on top of a 0.3 GB base, against the "+
-			"pod's memory limit (enhancement 0019). Throughput saturates at about physical cores divided by "+
-			"1.6 renders in flight. The default of 1 preserves serial reconciles; the Platform controller "+
-			"is always serial.")
+		"Maximum number of renders in flight at once, ModuleInstances and ModulePackages together; each "+
+			"of the two controllers also reconciles up to this many objects of its kind. Renders share "+
+			"nothing, so the bound is memory, not cores: budget about 61 MB plus 7.75 MB per component of "+
+			"the largest module per concurrent render, on top of a 0.3 GB base, against the pod's memory "+
+			"limit (enhancement 0019). Throughput saturates at about physical cores divided by 1.6 renders "+
+			"in flight. The default of 1 renders one object at a time across both kinds; the Platform "+
+			"controller is always serial.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -262,7 +263,8 @@ func main() {
 	// reconcile. It is configured from the resolved registry value. Every
 	// verb builds in a context of its own (library ADR-007), so the Kernel is
 	// shared across the controllers with no gate; concurrency is bounded by
-	// --max-concurrent-renders on the render paths.
+	// --max-concurrent-renders on the render paths, through the one render
+	// slot pool below.
 	k := kernel.New(
 		kernel.WithRegistry(registry),
 	)
@@ -292,6 +294,12 @@ func main() {
 
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
+	// One render slot pool for the process: both render paths take a slot
+	// around each render and the export of its result for apply, so --max-concurrent-renders bounds renders of both
+	// kinds together, which is what sizes the pod's memory. Pass this one
+	// pointer to every render-bearing reconciler; a nil pool never blocks.
+	renderSlots := render.NewSlots(maxConcurrentRenders)
+
 	if err := (&controller.ModuleInstanceReconciler{
 		Client:          mgr.GetClient(),
 		APIReader:       mgr.GetAPIReader(),
@@ -308,6 +316,7 @@ func main() {
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
+		RenderSlots:           renderSlots,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleInstance")
 		os.Exit(1)
@@ -328,6 +337,7 @@ func main() {
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
+		RenderSlots:           renderSlots,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModulePackage")
 		os.Exit(1)

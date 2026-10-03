@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"cuelang.org/go/cue/cuecontext"
 
@@ -31,10 +32,16 @@ import (
 )
 
 // stubRenderer is a test ModuleRenderer that returns a pre-built result or
-// an error without touching an OCI registry.
+// an error without touching an OCI registry. Each call returns a copy of
+// result, as a real render returns a fresh one, because the reconcile drops
+// the rendered resources from the result it was handed; the last result
+// returned is kept for specs to inspect.
 type stubRenderer struct {
 	result *render.RenderResult
 	err    error
+
+	mu   sync.Mutex
+	last *render.RenderResult
 }
 
 func (s *stubRenderer) RenderModule(
@@ -45,10 +52,24 @@ func (s *stubRenderer) RenderModule(
 	if s.err != nil {
 		return nil, s.err
 	}
+	var out *render.RenderResult
 	if s.result != nil {
-		return s.result, nil
+		r := *s.result
+		out = &r
+	} else {
+		out = stubRenderResult(namespace, values)
 	}
-	return stubRenderResult(namespace, values), nil
+	s.mu.Lock()
+	s.last = out
+	s.mu.Unlock()
+	return out, nil
+}
+
+// lastResult is the result the most recent successful call returned.
+func (s *stubRenderer) lastResult() *render.RenderResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.last
 }
 
 // stubContract is the contract FQN the stub render result reports as its

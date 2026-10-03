@@ -89,9 +89,10 @@ var _ ModuleRenderer = (*KernelModuleRenderer)(nil)
 //
 // Every kernel call shares nothing (library ADR-005, ADR-007): acquisition,
 // synthesis and the render build each evaluate in a context of their own, so
-// renders of different objects overlap under --max-concurrent-renders with
-// no gate. The lease is held for the whole call: the build reads the
-// platform module directory the record names.
+// renders of different objects overlap up to the shared render slot count
+// (--max-concurrent-renders, across both kinds; the caller holds the slot)
+// and no correctness gate applies. The lease is held for the whole call: the
+// build reads the platform module directory the record names.
 func (r *KernelModuleRenderer) RenderModule(
 	ctx context.Context,
 	name, namespace, modulePath, moduleVersion string,

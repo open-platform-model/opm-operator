@@ -53,6 +53,11 @@ type ModulePackageParams struct {
 	// required — a nil Renderer is a programming error.
 	Renderer render.PackageRenderer
 
+	// RenderSlots is the process-wide render pool shared with the
+	// ModuleInstance reconciler; every call to Renderer holds one slot until
+	// its result is exported for apply. Nil leaves renders unbounded.
+	RenderSlots *render.Slots
+
 	// DefaultServiceAccount is the fallback SA name used when a ModulePackage has
 	// an empty spec.serviceAccountName. Empty disables the default and
 	// preserves the controller-client fallback.
@@ -143,9 +148,17 @@ func ReconcileModulePackage(
 		errMsg     string
 		retryAfter time.Duration
 		phases     phaseOutcomes
+
+		// skipCommit is set only when the wait for a render slot is cut
+		// short: nothing was attempted, so there is nothing to record, and
+		// the zero outcome (NoOp) would otherwise report a success.
+		skipCommit bool
 	)
 
 	defer func() {
+		if skipCommit {
+			return
+		}
 		now := metav1.Now()
 		pkg.Status.ObservedGeneration = pkg.Generation
 
@@ -243,16 +256,17 @@ func ReconcileModulePackage(
 	}
 
 	// Phase 4+5: load CUE, detect kind, render.
-	renderResult, fail := renderModulePackage(ctx, params, &pkg, packageDir, interval)
+	converted, fail, waitErr := renderModulePackage(ctx, params, &pkg, packageDir, interval)
+	if waitErr != nil {
+		skipCommit = true
+		return ctrl.Result{}, waitErr
+	}
 	if fail != nil {
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 
-	if fail := computeModulePackageDigests(&pkg, renderResult, &digests); fail != nil {
-		applyFail(fail)
-		return ctrl.Result{RequeueAfter: retryAfter}, nil
-	}
+	computeModulePackageDigests(converted, &digests)
 
 	lastApplied := status.DigestSet{
 		Source:    pkg.Status.LastAppliedSourceDigest,
@@ -267,7 +281,7 @@ func ReconcileModulePackage(
 		return ctrl.Result{RequeueAfter: interval}, nil
 	}
 
-	applyedResult, fail := applyAndPruneModulePackage(ctx, params, &pkg, renderResult, &phases)
+	applyedResult, fail := applyAndPruneModulePackage(ctx, params, &pkg, converted, &phases)
 	if fail != nil {
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -365,8 +379,33 @@ func renderModulePackage(
 	pkg *releasesv1alpha1.ModulePackage,
 	packageDir string,
 	interval time.Duration,
-) (*render.RenderResult, *phaseFail) {
-	kind, result, err := params.Renderer.Render(ctx, packageDir)
+) (*convertedRender, *phaseFail, error) {
+	// The render holds one slot of the process-wide pool until its result is
+	// exported for apply: the rendered CUE values pin the whole build until
+	// then, and the export is where the heap peaks.
+	var (
+		kind      string
+		result    *render.RenderResult
+		converted *convertedRender
+		err       error
+	)
+	if waitErr := params.RenderSlots.Run(ctx, func() {
+		kind, result, err = params.Renderer.Render(ctx, packageDir)
+		if err == nil && kind == render.KindModuleInstance {
+			converted, err = convertRender(result)
+		}
+	}); waitErr != nil {
+		// The context ended while waiting for a slot (manager shutdown).
+		// Nothing was rendered: the caller returns this error as is and
+		// commits nothing, and no classifier sees it.
+		return nil, nil, fmt.Errorf("waiting for a render slot: %w", waitErr)
+	}
+	var convErr *conversionError
+	if errors.As(err, &convErr) {
+		reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, pkg, result)
+		status.MarkStalled(pkg, convErr.reason, "%s", convErr)
+		return nil, &phaseFail{FailedStalled, convErr.Error(), StalledRecheckInterval}, nil
+	}
 	if err != nil {
 		// PlatformNotReady is a blocked-on-dependency state, not a stall: the
 		// store holds no generated platform module yet. Mark Ready=False/
@@ -376,7 +415,7 @@ func renderModulePackage(
 		if errors.Is(err, render.ErrPlatformNotReady) {
 			status.MarkNotReady(pkg, status.PlatformNotReadyReason, "%s", err)
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.PlatformNotReadyReason, "Render", "%s", err)
-			return nil, &phaseFail{FailedTransient, err.Error(), interval}
+			return nil, &phaseFail{FailedTransient, err.Error(), interval}, nil
 		}
 		// A package load that failed without a typed terminal cause (a CUE
 		// dependency the registry did not serve) retries on the bounded
@@ -385,20 +424,20 @@ func renderModulePackage(
 		if isTransientAcquireFailure(err) {
 			status.MarkNotReady(pkg, status.ResolutionFailedReason, "%s", err)
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.ResolutionFailedReason, "Render", "%s", err)
-			return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}
+			return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}, nil
 		}
 		reason := renderErrorReason(err)
 		status.MarkStalled(pkg, reason, "%s", err)
 		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
-		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
+		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}, nil
 	}
 	if kind != render.KindModuleInstance {
 		msg := fmt.Sprintf("unexpected instance kind %q", kind)
 		status.MarkStalled(pkg, status.UnsupportedKindReason, "%s", msg)
-		return nil, &phaseFail{FailedStalled, msg, StalledRecheckInterval}
+		return nil, &phaseFail{FailedStalled, msg, StalledRecheckInterval}, nil
 	}
 	reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, pkg, result)
-	return result, nil
+	return converted, nil, nil
 }
 
 // renderErrorReason maps a failed package render to its reason: an
@@ -411,22 +450,12 @@ func renderErrorReason(err error) string {
 	return renderFailureReason(err)
 }
 
-func computeModulePackageDigests(
-	pkg *releasesv1alpha1.ModulePackage,
-	renderResult *render.RenderResult,
-	digests *status.DigestSet,
-) *phaseFail {
-	renderDigest, err := status.RenderDigest(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(pkg, status.RenderFailedReason, "computing render digest: %s", err)
-		return &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
-	}
-	digests.Render = renderDigest
-	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
+func computeModulePackageDigests(converted *convertedRender, digests *status.DigestSet) {
+	digests.Render = converted.digest
+	digests.Inventory = inventory.ComputeDigest(converted.result.InventoryEntries)
 	// A ModulePackage carries no user values — config digest hashes empty input so
 	// NoOp detection stays consistent across reconciles.
 	digests.Config = status.ConfigDigest(nil)
-	return nil
 }
 
 // applyPruneResult captures the outputs of the apply+prune phase.
@@ -439,16 +468,15 @@ func applyAndPruneModulePackage(
 	ctx context.Context,
 	params *ModulePackageParams,
 	pkg *releasesv1alpha1.ModulePackage,
-	renderResult *render.RenderResult,
+	converted *convertedRender,
 	phases *phaseOutcomes,
 ) (*applyPruneResult, *phaseFail) {
 	log := logf.FromContext(ctx)
 
-	resources, err := toUnstructuredSlice(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(pkg, status.ApplyFailedReason, "converting resources: %s", err)
-		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
-	}
+	// The resources were converted under the render slot, and the CUE
+	// values that pinned the build are already gone.
+	resources := converted.resources
+	renderResult := converted.result
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
 	if pkg.Status.Inventory != nil {

@@ -117,7 +117,9 @@ const stubInstanceUUID = "00000000-0000-0000-0000-00000000beef"
 
 // stubRenderer is a test ModuleRenderer that returns a pre-built result or
 // an error without touching an OCI registry. Leave result nil + err nil to
-// use the default ConfigMap-based render result.
+// use the default ConfigMap-based render result. Each call returns a copy of
+// result, as a real render returns a fresh one, because the reconcile drops
+// the rendered resources from the result it was handed.
 type stubRenderer struct {
 	result *render.RenderResult
 	err    error
@@ -132,7 +134,8 @@ func (s *stubRenderer) RenderModule(
 		return nil, s.err
 	}
 	if s.result != nil {
-		return s.result, nil
+		r := *s.result
+		return &r, nil
 	}
 	return stubRenderResult(namespace, values), nil
 }

@@ -74,6 +74,7 @@ var _ = Describe("Platform transient registry failure (registry-backed)", func()
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 		Expect(ready.Reason).To(Equal(status.BuildFailedReason))
 		Expect(ready.Message).To(ContainSubstring(basePath))
+		Expect(ready.Message).To(ContainSubstring("503"), "phase 1 must fail on the front's refusal")
 		_, held := store.Generated()
 		Expect(held).To(BeFalse())
 

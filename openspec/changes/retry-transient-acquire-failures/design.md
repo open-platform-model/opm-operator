@@ -29,7 +29,7 @@ Reconcile phase impact: Render classification only. Source, Apply, Prune and Inv
 **Non-Goals:**
 
 - Typed library errors (task d1) and a network-versus-not-found split. A permanent not-found retries every 5 minutes until d1 lands.
-- Classifying failures after acquisition: values compile, `#config` validation, `SynthesizeInstance` and `Kernel.Render` keep their current stall.
+- Classifying ModuleInstance failures after acquisition: values compile, `#config` validation, `SynthesizeInstance` and `Kernel.Render` keep their stall. On a ModulePackage, values compile and concreteness run inside `AcquireInstanceFromDir` and fall under the acquire wrap (see Risks).
 - New reason constants, API or CRD changes.
 - Retrying the Flux artifact fetch differently (already transient).
 
@@ -130,6 +130,7 @@ if isTransientAcquireFailure(err) {
 
 - **A real typo retries forever on the 5m cap** instead of stalling on 30m. Six times the registry traffic for a broken object, and `Stalled` no longer flags it. Accepted by the owner; d1 restores a stall for a typed not-found.
 - **CUE syntax errors in a ModulePackage's package retry as transient** (they surface from `LoadDir` untyped). Same trade-off, same refinement path.
+- **Author defects in a ModulePackage retry as transient.** With no values sources, `Kernel.AcquireInstanceFromDir` runs `loader.LoadDir`, which builds the package's own values against `#config` and validates the instance as concrete (library `v1.0.0-beta.1` `opm/kernel/process.go`). Both failures are untyped under the `ErrAcquire` wrap, so a package whose values conflict with `#config` or are not concrete reports `ResolutionFailed` without `Stalled` and retries every 5 minutes; kstatus and Flux health checks see InProgress, never Failed. The same defect on a ModuleInstance stays `RenderFailed` and Stalled, because its values validation runs after acquisition. This is the literal reading of "untyped acquire and load failures go transient"; d1's typed library errors refine it.
 - **Reason churn for alerting.** Anyone alerting on `RenderFailed` for unreachable modules sees `ResolutionFailed` instead. Pre-GA, documented in the diagnostics page.
 - **Tests that relied on text.** `resolutionErrorRenderer` returns the dead `loading synthesized release` string in two places: `internal/controller/testhelpers_test.go` (the counter spec keeps its assertion once the stub returns an `ErrAcquire` error, since the counter increments on a transient outcome too) and `test/integration/reconcile/suite_test.go` (its three specs assert Stalled/ResolutionFailed, so that copy returns an `ErrAcquire`-marked `IdentityError` and stays on the stalled path).
 - **A malformed `spec.module.version` retries on the 5m cap.** `module.NewVersion` fails with an untyped `parsing artifact version` error (library `loader/registry.go`), and the CRD checks only `MinLength=1` on the version. Same refinement path: d1's typed errors, or the library sibling accept-bare-semver-in-registry-verbs once the operator bumps its pin.

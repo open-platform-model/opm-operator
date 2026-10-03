@@ -422,6 +422,10 @@ for d in "${MODULE_DIRS[@]}"; do
       [ -n "$have" ] || continue
       if [ "$key" = "$CATKEY" ]; then want=${FINAL_CAT[$d]}; else want=${FINAL_CORE[$d]}; fi
       [ -n "$want" ] || continue
+      # Catalog and core in a consumer only move up: a higher pin there is what CUE
+      # resolves anyway (MVS), and pins never move backwards.
+      vcmp "$want" "$have"
+      [ "$CMP" = 1 ] || continue
       plan_text cuedep "$mp" "$key" "$want" "$have" "$key"
     done
   fi

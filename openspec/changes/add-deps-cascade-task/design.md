@@ -314,7 +314,8 @@ consumers must name the tree's fixture version. For each fixture module `m`, aft
 
 - **`test/fixtures/modulepackages/<m>/cue.mod/module.cue`.** The `v:` after
   `"testing.opmodel.dev/modules/operator/<m>@v0"` is rewritten to the module's version, and the
-  catalog and core `v:` to the module's own values. This is a text edit and never `tidy`,
+  catalog and core `v:` to the module's own values when those are higher. A consumer's catalog or
+  core is never lowered: MVS resolves the higher pin anyway, and pins never move backwards. This is a text edit and never `tidy`,
   because the new fixture version is not on GHCR until `publish-fixtures.yml` runs on merge.
 - **`test/fixtures/modules/<m>/moduleinstance.yaml`.** The indented `version:` line is rewritten
   to `v<ver>`.

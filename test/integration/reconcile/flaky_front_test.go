@@ -80,7 +80,7 @@ func newFlakyFront(liveRegistry, catalogPath string) *flakyFront {
 	if prefix = strings.TrimSuffix(prefix, "/"); prefix != "" {
 		frontHost += "/" + prefix
 	}
-	for _, entry := range strings.Split(liveRegistry, ",") {
+	for entry := range strings.SplitSeq(liveRegistry, ",") {
 		Expect(strings.HasPrefix(strings.TrimSpace(entry), basePath+"=")).To(BeFalse(),
 			"the live CUE_REGISTRY already maps %q; the front cannot add its own entry", basePath)
 	}

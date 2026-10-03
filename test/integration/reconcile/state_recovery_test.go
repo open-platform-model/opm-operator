@@ -78,18 +78,18 @@ func unknownKindRenderResult(namespace string) *render.RenderResult {
 }
 
 var _ = Describe("Reconcile State Recovery", func() {
-	// Validates Stalled → Ready recovery once the module resolves again
+	// Validates Stalled → Ready recovery once the identity mismatch clears
 	// (design 3.1; resolution failure staged via the suite's error renderers).
-	It("should recover from Stalled when the source becomes available", func() {
+	It("should recover from Stalled once the identity matches", func() {
 		mrName := "stalled-recover-mr"
 		createModuleInstance(mrName)
 		nn := types.NamespacedName{Name: mrName, Namespace: namespace}
 
 		params := reconcileParams()
-		params.Renderer = resolutionErrorRenderer()
+		params.Renderer = identityMismatchRenderer()
 		ensureFinalizer(params, nn)
 
-		By("first reconcile stalls on module resolution")
+		By("first reconcile stalls on the identity mismatch")
 		result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 		Expect(err).NotTo(HaveOccurred(), "stalled failures return nil error")
 		Expect(result.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
@@ -104,7 +104,7 @@ var _ = Describe("Reconcile State Recovery", func() {
 		Expect(ready).NotTo(BeNil())
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 
-		By("second reconcile recovers once the module resolves")
+		By("second reconcile recovers once the identity matches")
 		params.Renderer = &stubRenderer{}
 		result, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 		Expect(err).NotTo(HaveOccurred())

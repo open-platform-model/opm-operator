@@ -200,11 +200,11 @@ func acquireErr(cause error) error {
 	return fmt.Errorf("acquiring module: %w: %w", cause, render.ErrAcquire)
 }
 
-// resolutionErrorRenderer returns a stub whose error is an acquisition
+// identityMismatchRenderer returns a stub whose error is an acquisition
 // failure with a typed terminal cause (an identity mismatch), which the
 // reconcile loop classifies as a stalled ResolutionFailed on the 30-minute
 // recheck.
-func resolutionErrorRenderer() *stubRenderer {
+func identityMismatchRenderer() *stubRenderer {
 	return &stubRenderer{
 		err: acquireErr(oerrors.IdentityError{
 			Field:      "path",

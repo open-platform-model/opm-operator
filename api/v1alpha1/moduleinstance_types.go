@@ -33,7 +33,7 @@ const (
 	// finalizer, and only records a ManagedExternally acknowledgement.
 	OwnerCLI OwnerType = "cli"
 	// OwnerOperator marks an instance as managed by the operator (the default
-	// semantics). The reconciler also treats an absent or empty owner this way.
+	// semantics). The reconciler also treats an absent owner this way.
 	OwnerOperator OwnerType = "operator"
 )
 
@@ -42,9 +42,10 @@ type ModuleInstanceSpec struct {
 	// +optional
 	Suspend bool `json:"suspend,omitempty"`
 
-	// Owner identifies which actor manages this instance. An absent, empty, or
+	// Owner identifies which actor manages this instance. An absent or
 	// "operator" value means operator-managed: the controller reconciles
-	// normally. Only an explicit "cli" makes the operator skip the instance
+	// normally. The API server rejects any other value, including an explicit
+	// empty string. Only an explicit "cli" makes the operator skip the instance
 	// (no render/apply/prune, no finalizer) and record a single
 	// ManagedExternally acknowledgement. There is no CRD default; the
 	// reconciler carries the operator-managed default semantics.
@@ -59,6 +60,12 @@ type ModuleInstanceSpec struct {
 	// +optional
 	Values *RawValues `json:"values,omitempty"`
 
+	// Prune controls whether the operator deletes what an instance no longer
+	// renders. When true, the operator deletes stale resources on reconcile
+	// and every applied object when the ModuleInstance is deleted. When false
+	// or absent, it leaves them in place: deleting the ModuleInstance leaves
+	// its applied objects running. Namespaces and CustomResourceDefinitions
+	// are never deleted.
 	// +optional
 	Prune bool `json:"prune,omitempty"`
 

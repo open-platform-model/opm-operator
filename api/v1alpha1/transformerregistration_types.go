@@ -95,7 +95,8 @@ type TransformerRegistrationStatus struct {
 	Accepted bool `json:"accepted,omitzero"`
 
 	// active reports whether an accepted claim's provider is serving. An
-	// accepted claim stays inactive until its ModulePackage is Ready.
+	// accepted claim stays inactive until its provider ModuleInstance (named by
+	// spec.providerRef) reports Ready, and once active it stays active.
 	// +optional
 	Active bool `json:"active,omitzero"`
 }

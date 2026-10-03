@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"cuelang.org/go/cue/cuecontext"
@@ -110,10 +111,17 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 	}
 }
 
-// resolutionErrorRenderer returns a stub whose error is classified by
-// isResolutionError() as a ResolutionFailed outcome.
-func resolutionErrorRenderer() *stubRenderer {
+// acquireErr marks cause as an acquisition failure (render.ErrAcquire), the
+// way the module renderer does when moduleacquire.Acquire fails.
+func acquireErr(cause error) error {
+	return fmt.Errorf("acquiring module: %w: %w", cause, render.ErrAcquire)
+}
+
+// acquireFailureRenderer returns a stub whose error is an acquisition failure
+// with no typed terminal cause (a registry outage), which the reconcile loop
+// classifies as a transient ResolutionFailed retried on the bounded backoff.
+func acquireFailureRenderer() *stubRenderer {
 	return &stubRenderer{
-		err: fmt.Errorf("loading synthesized release: module not found in registry"),
+		err: acquireErr(errors.New("fetching opmodel.dev/test@v0.1.0: dial tcp registry.example:443: connection refused")),
 	}
 }

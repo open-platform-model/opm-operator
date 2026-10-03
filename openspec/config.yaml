@@ -113,6 +113,7 @@ context: |
   2. `task dev:fmt dev:vet` — Code is formatted and passes go vet.
   3. `task dev:lint` — golangci-lint passes.
   4. `task dev:test` — Envtest-based unit/controller tests pass.
+  5. `task docs:bundle:check` — the docs-kit pins agree and the opm-operator docs bundle builds and lints.
 
 rules:
   proposal:

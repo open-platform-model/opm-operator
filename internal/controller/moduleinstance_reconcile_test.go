@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	oerrors "github.com/open-platform-model/library/opm/errors"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1162,14 +1163,15 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 		It("should increment reconcile counter on failed reconcile", func() {
 			ctx := context.Background()
 
-			// ModuleInstance points to a non-existent source → FailedStalled.
+			// The module cannot be acquired → FailedTransient (the counter
+			// increments on every failed outcome, transient or stalled).
 			createModuleInstance(ctx, "counter-fail-mr")
 
 			reconciler := &ModuleInstanceReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: events.NewFakeRecorder(10),
-				Renderer:      resolutionErrorRenderer(),
+				Renderer:      acquireFailureRenderer(),
 			}
 
 			nn := types.NamespacedName{Name: "counter-fail-mr", Namespace: namespace}
@@ -1178,9 +1180,9 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Second reconcile fails (source not found → FailedStalled).
+			// Second reconcile fails (module not acquired → FailedTransient).
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred()) // FailedStalled returns nil error
+			Expect(err).NotTo(HaveOccurred()) // a classified failure returns nil error
 
 			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &mr)).To(Succeed())
@@ -1409,6 +1411,88 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "counter-reset-mr", Namespace: namespace},
 			})).To(Succeed())
+		})
+	})
+
+	Context("Acquisition failures", func() {
+		// reconcileFailing adds the finalizer, then runs the failing reconcile
+		// and returns its result, the stored instance and the events emitted.
+		reconcileFailing := func(ctx context.Context, name string, renderer *stubRenderer) (
+			reconcile.Result, releasesv1alpha1.ModuleInstance, []string,
+		) {
+			createModuleInstance(ctx, name)
+			recorder := events.NewFakeRecorder(10)
+			reconciler := &ModuleInstanceReconciler{
+				Client:        k8sClient,
+				Scheme:        k8sClient.Scheme(),
+				EventRecorder: recorder,
+				Renderer:      renderer,
+			}
+			nn := types.NamespacedName{Name: name, Namespace: namespace}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred(), "a classified render failure returns nil error")
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+
+			var es []string
+			for len(recorder.Events) > 0 {
+				es = append(es, <-recorder.Events)
+			}
+			return result, mi, es
+		}
+
+		deleteInstance := func(ctx context.Context, name string) {
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			})).To(Succeed())
+		}
+
+		It("retries an acquisition failure on the backoff instead of stalling", func() {
+			ctx := context.Background()
+			renderer := acquireFailureRenderer()
+			before := time.Now()
+
+			result, mi, es := reconcileFailing(ctx, "acquire-transient-mr", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.ComputeBackoff(1)))
+			ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(status.ResolutionFailedReason))
+			Expect(ready.Message).To(Equal(renderer.err.Error()), "the status message is the acquisition error unchanged")
+			Expect(apimeta.FindStatusCondition(mi.Status.Conditions, status.StalledCondition)).To(BeNil())
+			Expect(mi.Status.NextRetryAt).NotTo(BeNil())
+			Expect(mi.Status.NextRetryAt.Time).To(BeTemporally("~", before.Add(opmreconcile.ComputeBackoff(1)), 3*time.Second))
+			Expect(es).To(ContainElement(SatisfyAll(
+				HavePrefix(corev1.EventTypeWarning+" "+status.ResolutionFailedReason),
+				ContainSubstring(renderer.err.Error()),
+			)))
+
+			deleteInstance(ctx, "acquire-transient-mr")
+		})
+
+		It("stalls an acquisition failure with a typed terminal cause", func() {
+			ctx := context.Background()
+			renderer := &stubRenderer{err: acquireErr(oerrors.IdentityError{
+				Field:      "path",
+				Declared:   "opmodel.dev/test/other",
+				Fetched:    "opmodel.dev/test/module",
+				Coordinate: "opmodel.dev/test/module v0.1.0",
+			})}
+
+			result, mi, _ := reconcileFailing(ctx, "acquire-terminal-mr", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
+			stalled := apimeta.FindStatusCondition(mi.Status.Conditions, status.StalledCondition)
+			Expect(stalled).NotTo(BeNil())
+			Expect(stalled.Status).To(Equal(metav1.ConditionTrue))
+			Expect(stalled.Reason).To(Equal(status.ResolutionFailedReason))
+
+			deleteInstance(ctx, "acquire-terminal-mr")
 		})
 	})
 

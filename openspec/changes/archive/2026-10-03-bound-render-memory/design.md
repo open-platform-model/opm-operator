@@ -158,8 +158,12 @@ func convertRender(result *render.RenderResult) (*convertedRender, error)
 
 - `status.RenderDigestJSON` marshals each resource once and returns the digest (same bytes, same
   order, so the same value `RenderDigest` gives) together with the JSON. The conversion decodes
-  those bytes, so the rendered set is exported once, not twice.
-- On success it sets `result.Resources = nil` before it returns, still inside the slot. Every later
+  those bytes, so the reconcile exports the rendered set once, not twice. The renderer already
+  exports every resource once for the inventory entries (`buildInventoryEntries` calls
+  `ToUnstructured`), so the total is two exports per resource, down from three. Both run inside the
+  slot.
+- On every exit, failures included, it sets `result.Resources = nil` (a deferred assignment) before
+  it returns, still inside the slot. Every later
   phase reads `convertedRender.resources` or the result's plain data (inventory entries, warnings,
   required contracts, platform identity).
 - A failure keeps its reason: a marshal failure marks the object Stalled with `RenderFailed`

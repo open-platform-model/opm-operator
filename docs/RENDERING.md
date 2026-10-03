@@ -42,8 +42,10 @@ process, ModuleInstances and ModulePackages together. The manager builds one
 pool of that many render slots and both controllers share it: a reconcile
 takes a slot just before it calls the renderer (platform lease, acquisition,
 synthesis and the render build) and holds it through the export of the
-result for apply (the render digest and the unstructured conversion, one CUE
-export per resource). It gives the slot back once the rendered CUE values are
+result for apply (the render digest and the unstructured conversion). Each
+resource is exported twice inside the slot: once by the renderer for the
+inventory entries, and once more for the digest and the conversion, which
+share that export. It gives the slot back once the rendered CUE values are
 dropped, on success, error or a recovered panic. The export is part of the
 window because the rendered values pin the whole build until then, and it is
 where the heap peaks: for a cert-manager-sized module the export peaks higher

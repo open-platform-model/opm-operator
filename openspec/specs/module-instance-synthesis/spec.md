@@ -108,22 +108,27 @@ The `status.conditions` MUST report:
 - `Ready=True` when the module is successfully resolved, rendered, and applied.
 - `Ready=False` with reason `ResolutionFailed` when the module cannot be resolved
   into a usable, trustworthy input for rendering. This covers:
-  - CUE cannot resolve the module from the registry.
+  - The module cannot be acquired from the registry.
   - The acquired module's declared identity (module path or version in its
     metadata) disagrees with the coordinate it was fetched by.
+  - The acquired artifact is not a module or is structurally invalid.
   - The module demands contracts that the generated platform does not
     provide.
-- `Ready=False` with reason `RenderFailed` when CUE evaluation or rendering fails
-  for a cause that is not a resolution-class failure.
-- `Stalled=True` when the failure is not transient (e.g. module path does not exist).
+- `Ready=False` with reason `RenderFailed` when synthesis, CUE evaluation or
+  rendering fails for a cause that is not a resolution-class failure.
+- `Stalled=True` when the failure is not transient. An acquisition failure that
+  carries no typed terminal cause is transient: it MUST NOT set `Stalled=True`
+  and retries on the exponential backoff capped at 5 minutes (see
+  `reconcile-backoff`, "Acquisition failures without a typed terminal cause are
+  transient").
 
 #### Scenario: Success reported
 - **WHEN** the module resolves, renders, and applies successfully
 - **THEN** `status.conditions` reports `Ready=True`
 
 #### Scenario: Resolution failure reported
-- **WHEN** CUE cannot resolve the module from the registry
-- **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True` when the failure is not transient
+- **WHEN** the module cannot be acquired from the registry and the failure carries no typed terminal cause
+- **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed`, no `Stalled` condition, and the instance retries on the exponential backoff
 
 #### Scenario: Identity mismatch reported as resolution failure
 - **WHEN** the acquired module's declared identity disagrees with the coordinate it was fetched by (mismatched module path or version)
@@ -134,7 +139,7 @@ The `status.conditions` MUST report:
 - **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True`, and a Warning event carries the unresolved-demands message
 
 #### Scenario: Render failure reported
-- **WHEN** CUE evaluation or rendering fails for a cause that is not a resolution-class failure
+- **WHEN** synthesis, CUE evaluation or rendering fails for a cause that is not a resolution-class failure
 - **THEN** `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True` when user input must change to resolve the failure
 
 ### Requirement: End-to-end release scenarios
@@ -147,7 +152,7 @@ The synthesis flow MUST behave predictably across the common user-facing scenari
 
 #### Scenario: Module not found in registry
 - **WHEN** a user creates a `ModuleRelease` CR with a `spec.module.path` that does not exist in the registry
-- **THEN** the controller synthesizes the package, CUE fails to resolve the module, and `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True`
+- **THEN** acquisition fails without a typed terminal cause, `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and no `Stalled` condition, and the controller retries on the exponential backoff capped at 5 minutes until the path resolves or the CR changes
 
 #### Scenario: Invalid values
 - **WHEN** a user creates a `ModuleRelease` CR with values that do not satisfy `#config`

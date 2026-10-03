@@ -143,3 +143,61 @@ tasks:
     desc: Show available tasks
     cmds:
       - task --list
+
+  ## Docs bundle
+  #
+  # docs-kit.cue declares one docs bundle, opm-operator: the authored pages
+  # under docs/site/ plus the resource reference opm-docs generates from
+  # config/crd/bases and config/samples. CI builds, signs and publishes it
+  # through docs-kit's publish.yml (docs.yml, release.yml). These tasks run the
+  # same opm-docs release locally, installed into .bin/ (not bin/, so
+  # .tasks/opm-docs.sh stays identical to the other adopters'). The release is
+  # pinned in .opm-docs-version and in every publish.yml ref, and
+  # docs:bundle:check refuses the two disagreeing.
+
+  tools:opm-docs:
+    desc: Install or reuse .bin/opm-docs, the checksum-verified docs-kit release named by .opm-docs-version
+    cmds:
+      - bash .tasks/opm-docs.sh install
+
+  docs:bundle:
+    desc: Build the opm-operator docs bundle of the work tree into out/opm-operator/ (a local preview of edge)
+    deps: [tools:opm-docs]
+    cmds:
+      - .bin/opm-docs build --project opm-operator --out out
+
+  docs:pins:check:
+    desc: Refuse a docs-kit publish.yml ref under .github/workflows/ that names another release than .opm-docs-version (offline)
+    cmds:
+      - bash .tasks/opm-docs.sh pin-check
+
+  # Until section 3 of publish-crd-bundle retires crdref, crdref's block is
+  # the check on docs-kit.cue: crdref reads "Served by" from the controllers'
+  # Named(...) values, so a renamed controller without a reconciledBy edit
+  # fails here instead of publishing a wrong page into an immutable release
+  # bundle. The blank lines padding the marker comments are not part of
+  # crdref's body. Section 3 replaces this with the reconciledBy test.
+  docs:bundle:parity:
+    desc: Build the opm-operator docs bundle and fail when its generated operator-resources.md body differs from crdref's block in the committed page
+    deps: [tools:opm-docs]
+    cmds:
+      - |
+        set -euo pipefail
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        .bin/opm-docs build --project opm-operator --out "$tmp" >/dev/null
+        awk '/^## /{f=1}f' "$tmp/opm-operator/content/reference/operator-resources.md" >"$tmp/bundle.md"
+        awk '/END GENERATED/{f=0}f; /BEGIN GENERATED/{f=1}' docs/site/reference/operator-resources.md |
+          sed -e '1{/^$/d;}' -e '${/^$/d;}' >"$tmp/crdref.md"
+        if ! diff -u "$tmp/crdref.md" "$tmp/bundle.md"; then
+          echo "docs:bundle:parity: the bundle's generated operator-resources.md differs from crdref's block (- crdref, + bundle); a renamed controller needs its reconciledBy entry in docs-kit.cue" >&2
+          exit 1
+        fi
+        echo "OK: the bundle's generated resource page matches crdref's block."
+
+  docs:bundle:check:
+    desc: Check the docs-kit pins agree, then build and lint the opm-operator docs bundle into a temporary directory
+    deps: [tools:opm-docs]
+    cmds:
+      - task: docs:pins:check
+      - .bin/opm-docs check --project opm-operator

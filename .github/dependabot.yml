@@ -6,6 +6,9 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    ignore:
+      # docs-kit's publish.yml moves only with .opm-docs-version, after the site bumps (docs-kit C5, C12).
+      - dependency-name: "open-platform-model/docs-kit*"
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:

@@ -153,6 +153,10 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 - **Every kernel call shares nothing.** The process has one library Kernel and no gate: every verb (module acquisition, instance synthesis, on-disk acquisition, the platform build, `Kernel.Render`) builds in a context of its own and is safe to call concurrently (library ADR-007). Concurrency is bounded by one render slot pool shared by both render paths, sized by `--max-concurrent-renders` (default 1, sized by memory: `docs/RENDERING.md`), and by the Platform reconciler building one generation at a time. A render leases the generated platform record so the Platform reconciler's prune skips the directory it reads. No lock or ordering gate is held across a kernel call: a render holds its platform lease and one render slot, and neither orders or excludes particular calls. Never hold a lock while calling the Kernel.
 - **Registry precedence on the operator binary:** `resolveRegistry` (`cmd/main.go`) resolves `--registry` (default empty) > `OPM_REGISTRY` env > the built-in `defaultRegistry` (GHCR for `opmodel.dev` and `testing.opmodel.dev`, `registry.cue.works` for the rest), and logs the winning source at startup. Retarget the operator with `--registry` or `OPM_REGISTRY` on the Deployment; `CUE_REGISTRY` as pod env is still ignored (the binary overwrites it with the resolved value).
 
+## Docs Bundles
+
+`docs-kit.cue` declares one docs-kit bundle, `opm-operator` (docs-kit `docs/contracts.md` C6, C15, C18): the authored pages under `docs/site/` plus the resource reference that docs-kit's `crd` source generates from `config/crd/bases` and `config/samples`. `Docs / check` builds and lints it on every pull request, a push to `main` publishes it as `edge`, and every release publishes it from `release.yml`'s `publish-docs` job after `image-release` (`publish-release` does not wait for it), to `ghcr.io/open-platform-model/docs/opm-operator`. Preview with `task docs:bundle` (writes `out/opm-operator/`), or `opm-docs serve` once `.opm-docs-version` names a docs-kit release that has it. Recover a release with no bundle, or backfill one cut before adoption (from `v1.0.0-beta.4`), with `gh workflow run docs.yml --ref main -f mode=release -f tag=vX.Y.Z`. Fix a released page with `mode=revision` and `fix=<40-hex sha>`, a Markdown-only or comment-only commit on `main`; revisions are dispatched by hand (opm-operator#188). Once the site reads the bundle, an authored fix reaches a released version only by a release or a revision, and a CRD description fix only by a release. Until then the committed `docs/site/reference/operator-resources.md` is excluded from the bundle and crdref keeps it current. `reconciledBy` in `docs-kit.cue` names the controller of each kind: the `Named(...)` value of the builder that calls `For(&<Kind>{})`. Until crdref is retired, `task docs:bundle:parity` (a `Lint` step) keeps it true: it fails when the bundle's generated page differs from crdref's block, which crdref builds from the controllers. The docs-kit release is pinned twice, in `.opm-docs-version` and in every `publish.yml@vX.Y.Z` ref (a tag, never a SHA: docs-kit C5, C9); move both in one PR, and `task docs:pins:check` (a `Lint` step) refuses a mismatch.
+
 ## Build And Dev Commands
 
 ### Core Commands
@@ -162,6 +166,10 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 - `task dev:generate`: regen DeepCopy methods.
 - `task dev:docs:reference`: regen CRDs, then the generated block of `docs/site/reference/operator-resources.md` (`hack/crdref`) from the CRDs, `config/samples` and `internal/controller`.
 - `task dev:docs:reference:check`: fail when that page is stale; the `Lint` workflow runs it.
+- `task docs:bundle`: build the `opm-operator` docs bundle of the work tree into `out/opm-operator/` (installs the pinned `opm-docs` into `.bin/` via `task tools:opm-docs`).
+- `task docs:bundle:check`: `task docs:pins:check`, then build and lint the bundle into a temporary directory.
+- `task docs:pins:check`: refuse a docs-kit `publish.yml` ref that names another release than `.opm-docs-version` (offline).
+- `task docs:bundle:parity`: build the bundle and fail when its generated `operator-resources.md` body differs from crdref's block in the committed page (until crdref is retired).
 - `task dev:fmt`: `go fmt ./...`.
 - `task dev:vet`: `go vet ./...`.
 - `task dev:lint:config`: verify golangci-lint config.
@@ -196,7 +204,7 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 ## Working Style for Agents
 
 - `api/v1alpha1` edits → `task dev:manifests dev:generate dev:docs:reference`.
-- `config/samples` or controller registration edits → `task dev:docs:reference`; `test/integration/crdvalidation` proves every sample is admitted by the CRDs.
+- `config/samples` or controller registration edits → `task dev:docs:reference` and `task docs:bundle:check`; `test/integration/crdvalidation` proves every sample is admitted by the CRDs. A renamed controller (`Named(...)`) or a new kind also needs its `reconciledBy` entry in `docs-kit.cue`.
 - Go changes `cmd/`/`internal/` → `task dev:fmt dev:vet dev:test` minimum.
 - Non-trivial changes → `task dev:lint` or `task dev:lint:fix` before finishing.
 - Manifests/RBAC changed → consider `task operator:installer` for alignment.
@@ -290,5 +298,6 @@ Full guide: [`docs/TESTING.md`](docs/TESTING.md). Key rules:
 - `task dev:manifests dev:generate` after API/marker changes.
 - `task dev:fmt dev:vet dev:test` after meaningful Go changes.
 - `task dev:lint` or `task dev:lint:fix` for non-trivial edits.
+- `task docs:bundle:check` after edits to `docs/site/`, `api/v1alpha1`, `config/samples`, `docs-kit.cue` or a docs-kit pin.
 - No manual edits to generated files/scaffold markers.
 - Note if e2e skipped due to missing Kind/cluster.

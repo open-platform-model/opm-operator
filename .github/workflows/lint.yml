@@ -30,6 +30,12 @@ jobs:
         if: startsWith(github.head_ref || github.ref_name, 'release-please--')
         run: task deps:release-check
 
+      # .opm-docs-version and every docs-kit publish.yml ref under
+      # .github/workflows/ name one docs-kit release (docs-kit C5, C12).
+      # Offline: no opm-docs install.
+      - name: docs-kit pins agree
+        run: task docs:pins:check
+
       - name: Check linter configuration
         run: task dev:lint:config
       - name: Run linter
@@ -39,3 +45,10 @@ jobs:
       # committed CRDs, config/samples and internal/controller (hack/crdref).
       - name: Generated resource reference is current
         run: task dev:docs:reference:check
+
+      # Until crdref is retired, the bundle's generated resource page must
+      # equal crdref's block, so a renamed controller fails here before a
+      # wrong "Served by" reaches a release bundle (reconciledBy in
+      # docs-kit.cue). Installs the pinned opm-docs release.
+      - name: Docs bundle matches crdref
+        run: task docs:bundle:parity

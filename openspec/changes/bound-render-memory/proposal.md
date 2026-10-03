@@ -36,7 +36,10 @@ controllers, plus nil-out of renderResult.Resources after conversion (decided ea
   render (apply, prune, deletion, suspend, CLI-owned handling) of one kind never queue behind the
   other kind's renders (design.md, "Reconcile concurrency stays per controller"). The flag's help,
   the controllers' field comments, `docs/RENDERING.md` and the kernel rule in `AGENTS.md` say what
-  the flag bounds now and that a render slot is the only thing held across a kernel call.
+  the flag bounds now and that no lock or ordering gate is held across a kernel call: a render holds
+  its platform lease and one render slot, and neither orders or excludes particular calls. The slot
+  is released by a deferred call, so a render that panics (controller-runtime recovers it) frees its
+  slot too.
 - **The manager sets a Go soft memory limit.** `config/manager/manager.yaml` sets
   `GOMEMLIMIT=3276MiB` on the manager container, about 80% of the 4Gi limit, as a literal next to
   the limit, and the memory comment there says the two move together. `dist/install.yaml` is
@@ -48,7 +51,10 @@ controllers, plus nil-out of renderResult.Resources after conversion (decided ea
 or condition is added or removed. One behaviour tightens: at the default of 1 a ModuleInstance render
 and a ModulePackage render no longer overlap, so a cluster with both kinds renders them one after the
 other. That is the documented meaning of the flag; an administrator who relied on the overlap raises
-the flag to 2.
+the flag to 2. It also brings cross-kind head-of-line blocking: nothing on the render path has a
+timeout, so at the default of 1 a ModuleInstance render stuck on registry I/O now stalls every
+ModulePackage render as well (and the other way round), where before it stalled only its own kind.
+A render timeout would be a separate change.
 
 Complexity (Principle VII): one small type (a counted slot pool with context-aware acquire) and one
 field on each reconciler's params. Justified because the alternative bound, halving each
@@ -63,18 +69,19 @@ None.
 
 ### Modified Capabilities
 
-- `library-kernel-runtime`: "Single long-lived library Kernel" says the only thing a render holds
-  across a kernel call is a render slot, a memory bound and not a correctness gate; "Render
+- `library-kernel-runtime`: "Single long-lived library Kernel" says no lock or ordering gate is held
+  across a kernel call (a render holds its platform lease and one render slot, a memory bound and
+  not a correctness gate); "Render
   concurrency is a manager flag bounded by memory" makes the flag a process-wide slot count shared by
   both kinds; two added requirements cover dropping rendered values after conversion and the Go soft
   memory limit in the shipped manifest.
 
 ## Impact
 
-- `internal/render`: the slot pool type and its unit tests.
+- `internal/render`: the slot pool type and its unit tests; the `KernelModuleRenderer` doc comment.
 - `internal/reconcile/moduleinstance.go`, `internal/reconcile/modulepackage.go`: slot around the
   renderer call, nil-out after conversion; unit and integration tests in `internal/reconcile` and
-  `test/integration/reconcile`.
+  `test/integration/reconcile` (the test stub renderers return a copy per call).
 - `internal/controller/moduleinstance_controller.go`, `modulepackage_controller.go`: a
   `RenderSlots` field passed to the params; comments.
 - `cmd/main.go`: one pool constructed from the flag and handed to both reconcilers; flag help and

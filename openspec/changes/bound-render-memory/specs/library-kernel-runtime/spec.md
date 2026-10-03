@@ -2,7 +2,7 @@
 
 ### Requirement: Single long-lived library Kernel
 
-The manager SHALL construct one library Kernel for the process lifetime and share it across controllers. The Kernel is safe for concurrent use across its methods: every kernel call (module acquisition, instance synthesis, on-disk instance acquisition, the platform build and the single-build render) evaluates in a context the library creates for that call and releases with it, so the operator SHALL NOT serialise any kernel call behind a mutex or other correctness gate of its own. The only thing a reconcile SHALL hold across a kernel call is a render slot from the process-wide pool sized by `--max-concurrent-renders`, which bounds memory and never orders or excludes particular calls. Concurrency is bounded by that pool on the render paths, and to one platform generation at a time by the Platform reconciler's construction.
+The manager SHALL construct one library Kernel for the process lifetime and share it across controllers. The Kernel is safe for concurrent use across its methods: every kernel call (module acquisition, instance synthesis, on-disk instance acquisition, the platform build and the single-build render) evaluates in a context the library creates for that call and releases with it, so the operator SHALL NOT serialise any kernel call behind a mutex or other correctness gate of its own. No lock or ordering gate SHALL be held across a kernel call: a render holds its platform lease and one render slot from the process-wide pool sized by `--max-concurrent-renders`, and neither orders or excludes particular calls; the slot bounds memory only. Concurrency is bounded by that pool on the render paths, and to one platform generation at a time by the Platform reconciler's construction.
 
 #### Scenario: Two renders overlap
 
@@ -22,11 +22,11 @@ The manager SHALL construct one library Kernel for the process lifetime and shar
 #### Scenario: No kernel gate
 
 - **WHEN** a developer inspects the platform store, the render slots and the reconcilers
-- **THEN** no mutex or gate serialises kernel calls, and the only thing held across a kernel call is one render slot, taken before the platform lease and released when the renderer returns
+- **THEN** no mutex or ordering gate serialises kernel calls, and a render holds only its platform lease and one render slot, the slot taken before the lease and released when the renderer returns
 
 ### Requirement: Render concurrency is a manager flag bounded by memory
 
-The manager SHALL accept `--max-concurrent-renders` (integer, default 1) and SHALL construct from it one pool of render slots shared by the ModuleInstance and ModulePackage reconcilers, so the flag is the maximum number of renders in flight across the whole process, both kinds together. A reconcile SHALL take a slot before it calls its renderer (platform lease, acquisition, synthesis and render) and SHALL release it when the renderer returns, on success and on error. Each of the two controllers SHALL also use the flag as its maximum concurrent reconciles, so phases outside the render are not serialised behind the other kind's renders. A reconcile whose wait for a slot ends because its context is cancelled SHALL return without marking the object stalled. The Platform controller SHALL stay serial and SHALL take no slot. The flag's help SHALL state the memory sizing rule (per-render cost grows with component count) and that the bound is shared by both kinds, so the value is chosen against the pod's memory limit.
+The manager SHALL accept `--max-concurrent-renders` (integer, default 1) and SHALL construct from it one pool of render slots shared by the ModuleInstance and ModulePackage reconcilers, so the flag is the maximum number of renders in flight across the whole process, both kinds together. A reconcile SHALL take a slot before it calls its renderer (platform lease, acquisition, synthesis and render) and SHALL release it when the renderer returns, on success, on error and on a panic that the controller runtime recovers. Each of the two controllers SHALL also use the flag as its maximum concurrent reconciles, so phases outside the render are not serialised behind the other kind's renders. A reconcile whose wait for a slot ends because its context is cancelled SHALL return the context error without calling the renderer and without patching the object's status, emitting an event or recording reconcile metrics. The Platform controller SHALL stay serial and SHALL take no slot. The flag's help SHALL state the memory sizing rule (per-render cost grows with component count) and that the bound is shared by both kinds, so the value is chosen against the pod's memory limit.
 
 #### Scenario: Default keeps reconciles serial
 
@@ -46,7 +46,12 @@ The manager SHALL accept `--max-concurrent-renders` (integer, default 1) and SHA
 #### Scenario: Shutdown while waiting for a slot
 
 - **WHEN** the manager is stopping and a reconcile is still waiting for a render slot
-- **THEN** the reconcile returns the context error without calling the renderer, and the object's conditions do not change to stalled
+- **THEN** the reconcile returns the context error without calling the renderer, and the object's status is not patched
+
+#### Scenario: A panicking render frees its slot
+
+- **WHEN** a renderer panics while a reconcile holds a render slot and the controller runtime recovers the panic
+- **THEN** the slot is free again, and the next render of either kind takes it without waiting
 
 ## ADDED Requirements
 

@@ -125,3 +125,9 @@ func TestSlots_PanicInRunFreesSlot(t *testing.T) {
 	require.NoError(t, err, "the slot was given back on panic")
 	release()
 }
+
+// A pool of no slots would block every render forever, so NewSlots refuses it.
+func TestNewSlots_RefusesFewerThanOne(t *testing.T) {
+	assert.Panics(t, func() { NewSlots(0) })
+	assert.Panics(t, func() { NewSlots(-1) })
+}

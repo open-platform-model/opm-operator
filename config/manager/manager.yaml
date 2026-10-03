@@ -112,10 +112,12 @@ spec:
         # literal because the downward API can expose the limit but not scale
         # it. The headroom covers what GOMEMLIMIT does not count: memory
         # allocated outside the Go runtime, the binary's mapped pages and page
-        # cache charged to the container's cgroup. Raise both together.
+        # cache charged to the container's cgroup. Move both together: a limit
+        # lowered below GOMEMLIMIT silently disables the soft limit.
         #
         # What fills the heap is renders: one render of a module that vendors
-        # CRDs (cert-manager-sized) peaks near 1.75 GB of heap. The manager's
+        # CRDs (cert-manager-sized) peaks near 2 GB of heap while its result
+        # is exported for apply. The manager's
         # --max-concurrent-renders (default 1) is the process-wide bound on
         # renders in flight, ModuleInstances and ModulePackages together; size
         # it against this limit (docs/RENDERING.md).

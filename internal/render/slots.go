@@ -2,6 +2,7 @@ package render
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -17,9 +18,13 @@ type Slots struct {
 	ch chan struct{}
 }
 
-// NewSlots returns a pool of n slots. n must be at least 1; the manager
-// refuses a smaller --max-concurrent-renders before it gets here.
+// NewSlots returns a pool of n slots. It panics when n is below 1: a pool of
+// no slots would block every render forever. The manager refuses a smaller
+// --max-concurrent-renders before it gets here.
 func NewSlots(n int) *Slots {
+	if n < 1 {
+		panic(fmt.Sprintf("render.NewSlots: n must be at least 1, got %d", n))
+	}
 	return &Slots{ch: make(chan struct{}, n)}
 }
 

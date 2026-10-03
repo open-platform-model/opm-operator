@@ -51,8 +51,8 @@ type ModuleInstanceParams struct {
 	// production wires render.KernelModuleRenderer, tests wire a stub.
 	Renderer render.ModuleRenderer
 	// RenderSlots is the process-wide render pool shared with the
-	// ModulePackage reconciler; every call to Renderer holds one slot. Nil
-	// leaves renders unbounded.
+	// ModulePackage reconciler; every call to Renderer holds one slot until
+	// its result is exported for apply. Nil leaves renders unbounded.
 	RenderSlots *render.Slots
 	// DefaultServiceAccount is the fallback SA name used when a
 	// ModuleInstance has an empty spec.serviceAccountName. Empty disables
@@ -272,27 +272,25 @@ func ReconcileModuleInstance(
 	digests.Source = status.ModuleSourceDigest(mi.Spec.Module.Path, mi.Spec.Module.Version)
 	digests.Config = status.ConfigDigest(mi.Spec.Values)
 
-	// Phase 1: Synthesize, resolve, and render module from OCI registry.
-	// CUE's native module system resolves the target module from the registry.
-	// The render holds one slot of the process-wide pool for the whole call.
+	// Phase 1: Synthesize, resolve, and render module from OCI registry, then
+	// export the rendered set for apply. One slot of the process-wide pool is
+	// held until the export is done: the rendered CUE values pin the whole
+	// build until then, and the export is where the heap peaks.
 	var (
 		renderResult *render.RenderResult
+		converted    *convertedRender
 		err          error
+		convErr      *conversionError
 	)
 	if waitErr := params.RenderSlots.Run(ctx, func() {
-		renderResult, err = params.Renderer.RenderModule(
-			ctx,
-			mi.Name, mi.Namespace,
-			mi.Spec.Module.Path, mi.Spec.Module.Version,
-			mi.Spec.Values,
-		)
+		renderResult, converted, err = renderAndConvertInstance(ctx, params.Renderer, &mi)
 	}); waitErr != nil {
 		// The context ended while waiting for a slot (manager shutdown).
 		// Nothing was rendered, so commit nothing and classify nothing.
 		skipCommit = true
 		return ctrl.Result{}, fmt.Errorf("waiting for a render slot: %w", waitErr)
 	}
-	if err != nil {
+	if err != nil && !errors.As(err, &convErr) {
 		outcome, errMsg = classifyRenderError(&mi, params.EventRecorder, err)
 		// PlatformNotReady is a transient blocked-on-dependency state (the
 		// platform store holds no generated platform module yet), so it must
@@ -310,33 +308,22 @@ func ReconcileModuleInstance(
 	status.MarkModuleResolved(&mi, fmt.Sprintf("%s@%s", mi.Spec.Module.Path, mi.Spec.Module.Version))
 	reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, &mi, renderResult)
 
-	renderDigest, err := status.RenderDigest(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(&mi, status.RenderFailedReason, "computing render digest: %s", err)
+	if convErr != nil {
+		status.MarkStalled(&mi, convErr.reason, "%s", convErr)
 		outcome = FailedStalled
-		errMsg = fmt.Sprintf("computing render digest: %s", err)
+		errMsg = convErr.Error()
 		retryAfter = StalledRecheckInterval
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
-	digests.Render = renderDigest
+	digests.Render = converted.digest
 	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
 
 	// Phase 4: Plan actions — no-op detection, drift detection, compute stale set.
 	//
-	// Convert the full rendered set early: the instance UUID and the shrink
-	// verdict below are read from it, and the apply list every later phase
-	// uses is derived from it.
-	resources, err := toUnstructuredSlice(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(&mi, status.ApplyFailedReason, "converting resources: %s", err)
-		outcome = FailedStalled
-		errMsg = fmt.Sprintf("converting resources: %s", err)
-		retryAfter = StalledRecheckInterval
-		return ctrl.Result{RequeueAfter: retryAfter}, nil
-	}
-	// A rendered resource carries its CUE value, which pins the whole build;
-	// every later phase reads the unstructured copies, so drop them now.
-	renderResult.Resources = nil
+	// The full rendered set was converted under the slot: the instance UUID
+	// and the shrink verdict below are read from it, and the apply list every
+	// later phase uses is derived from it.
+	resources := converted.resources
 
 	// Persist the rendered instance UUID on Status. All rendered resources
 	// carry the same UUID (stamped by the CUE catalog's moduleLabels merge);
@@ -1058,15 +1045,24 @@ func extractInstanceUUID(resources []*unstructured.Unstructured) string {
 	return ""
 }
 
-// toUnstructuredSlice converts core.Resource slice to unstructured slice for apply.
-func toUnstructuredSlice(resources []*core.Resource) ([]*unstructured.Unstructured, error) {
-	result := make([]*unstructured.Unstructured, 0, len(resources))
-	for _, r := range resources {
-		u, err := r.ToUnstructured()
-		if err != nil {
-			return nil, fmt.Errorf("converting %s to unstructured: %w", r, err)
-		}
-		result = append(result, u)
+// renderAndConvertInstance renders mi and exports the result for apply. It
+// runs inside the reconcile's render slot. On a conversion failure it still
+// returns the render result, whose plain data the caller reports, and a
+// *conversionError.
+func renderAndConvertInstance(
+	ctx context.Context,
+	renderer render.ModuleRenderer,
+	mi *releasesv1alpha1.ModuleInstance,
+) (*render.RenderResult, *convertedRender, error) {
+	result, err := renderer.RenderModule(
+		ctx,
+		mi.Name, mi.Namespace,
+		mi.Spec.Module.Path, mi.Spec.Module.Version,
+		mi.Spec.Values,
+	)
+	if err != nil {
+		return nil, nil, err
 	}
-	return result, nil
+	converted, err := convertRender(result)
+	return result, converted, err
 }

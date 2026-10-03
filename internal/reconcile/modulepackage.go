@@ -54,8 +54,8 @@ type ModulePackageParams struct {
 	Renderer render.PackageRenderer
 
 	// RenderSlots is the process-wide render pool shared with the
-	// ModuleInstance reconciler; every call to Renderer holds one slot. Nil
-	// leaves renders unbounded.
+	// ModuleInstance reconciler; every call to Renderer holds one slot until
+	// its result is exported for apply. Nil leaves renders unbounded.
 	RenderSlots *render.Slots
 
 	// DefaultServiceAccount is the fallback SA name used when a ModulePackage has
@@ -256,7 +256,7 @@ func ReconcileModulePackage(
 	}
 
 	// Phase 4+5: load CUE, detect kind, render.
-	renderResult, fail, waitErr := renderModulePackage(ctx, params, &pkg, packageDir, interval)
+	converted, fail, waitErr := renderModulePackage(ctx, params, &pkg, packageDir, interval)
 	if waitErr != nil {
 		skipCommit = true
 		return ctrl.Result{}, waitErr
@@ -266,10 +266,7 @@ func ReconcileModulePackage(
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 
-	if fail := computeModulePackageDigests(&pkg, renderResult, &digests); fail != nil {
-		applyFail(fail)
-		return ctrl.Result{RequeueAfter: retryAfter}, nil
-	}
+	computeModulePackageDigests(converted, &digests)
 
 	lastApplied := status.DigestSet{
 		Source:    pkg.Status.LastAppliedSourceDigest,
@@ -284,7 +281,7 @@ func ReconcileModulePackage(
 		return ctrl.Result{RequeueAfter: interval}, nil
 	}
 
-	applyedResult, fail := applyAndPruneModulePackage(ctx, params, &pkg, renderResult, &phases)
+	applyedResult, fail := applyAndPruneModulePackage(ctx, params, &pkg, converted, &phases)
 	if fail != nil {
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -382,20 +379,32 @@ func renderModulePackage(
 	pkg *releasesv1alpha1.ModulePackage,
 	packageDir string,
 	interval time.Duration,
-) (*render.RenderResult, *phaseFail, error) {
-	// The render holds one slot of the process-wide pool for the whole call.
+) (*convertedRender, *phaseFail, error) {
+	// The render holds one slot of the process-wide pool until its result is
+	// exported for apply: the rendered CUE values pin the whole build until
+	// then, and the export is where the heap peaks.
 	var (
-		kind   string
-		result *render.RenderResult
-		err    error
+		kind      string
+		result    *render.RenderResult
+		converted *convertedRender
+		err       error
 	)
 	if waitErr := params.RenderSlots.Run(ctx, func() {
 		kind, result, err = params.Renderer.Render(ctx, packageDir)
+		if err == nil && kind == render.KindModuleInstance {
+			converted, err = convertRender(result)
+		}
 	}); waitErr != nil {
 		// The context ended while waiting for a slot (manager shutdown).
 		// Nothing was rendered: the caller returns this error as is and
 		// commits nothing, and no classifier sees it.
 		return nil, nil, fmt.Errorf("waiting for a render slot: %w", waitErr)
+	}
+	var convErr *conversionError
+	if errors.As(err, &convErr) {
+		reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, pkg, result)
+		status.MarkStalled(pkg, convErr.reason, "%s", convErr)
+		return nil, &phaseFail{FailedStalled, convErr.Error(), StalledRecheckInterval}, nil
 	}
 	if err != nil {
 		// PlatformNotReady is a blocked-on-dependency state, not a stall: the
@@ -419,7 +428,7 @@ func renderModulePackage(
 		return nil, &phaseFail{FailedStalled, msg, StalledRecheckInterval}, nil
 	}
 	reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, pkg, result)
-	return result, nil, nil
+	return converted, nil, nil
 }
 
 // renderErrorReason maps a failed package render to its reason: an
@@ -432,22 +441,12 @@ func renderErrorReason(err error) string {
 	return renderFailureReason(err, isResolutionErrorMsg)
 }
 
-func computeModulePackageDigests(
-	pkg *releasesv1alpha1.ModulePackage,
-	renderResult *render.RenderResult,
-	digests *status.DigestSet,
-) *phaseFail {
-	renderDigest, err := status.RenderDigest(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(pkg, status.RenderFailedReason, "computing render digest: %s", err)
-		return &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
-	}
-	digests.Render = renderDigest
-	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
+func computeModulePackageDigests(converted *convertedRender, digests *status.DigestSet) {
+	digests.Render = converted.digest
+	digests.Inventory = inventory.ComputeDigest(converted.result.InventoryEntries)
 	// A ModulePackage carries no user values — config digest hashes empty input so
 	// NoOp detection stays consistent across reconciles.
 	digests.Config = status.ConfigDigest(nil)
-	return nil
 }
 
 // applyPruneResult captures the outputs of the apply+prune phase.
@@ -460,20 +459,15 @@ func applyAndPruneModulePackage(
 	ctx context.Context,
 	params *ModulePackageParams,
 	pkg *releasesv1alpha1.ModulePackage,
-	renderResult *render.RenderResult,
+	converted *convertedRender,
 	phases *phaseOutcomes,
 ) (*applyPruneResult, *phaseFail) {
 	log := logf.FromContext(ctx)
 
-	resources, err := toUnstructuredSlice(renderResult.Resources)
-	if err != nil {
-		status.MarkStalled(pkg, status.ApplyFailedReason, "converting resources: %s", err)
-		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
-	}
-	// A rendered resource carries its CUE value, which pins the whole build;
-	// every later phase reads the unstructured copies, so drop them now. The
-	// caller holds the same result and reads only its plain data after this.
-	renderResult.Resources = nil
+	// The resources were converted under the render slot, and the CUE
+	// values that pinned the build are already gone.
+	resources := converted.resources
+	renderResult := converted.result
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
 	if pkg.Status.Inventory != nil {

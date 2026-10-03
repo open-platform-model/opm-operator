@@ -33,3 +33,10 @@ never classified as a transient acquisition failure.
 - [x] 3.2 `docs/RENDERING.md` `--max-concurrent-renders` section: one paragraph on the shipped `GOMEMLIMIT` and that raising the memory limit means raising it too. Verify: the value named matches the manifest.
 - [x] 3.3 `task operator:installer`. Verify: `git diff --stat dist/install.yaml` shows only the added env block of the manager Deployment.
 - [x] 3.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(config): set GOMEMLIMIT to about 80% of the manager memory limit` (body: the runtime collected against heap growth only and let render garbage accumulate up to the OOMKill; no body line starting with `word(`; no bare at-sign).
+
+## 4. Review fixes (supervisor triage 2026-10-03)
+
+- [x] 4.1 Hold the slot through the export: `convertRender` (`internal/reconcile/converted.go`) exports each resource once through `status.RenderDigestJSON`, hashes and decodes the same bytes, and drops `Resources`; ModuleInstance runs it in `renderAndConvertInstance` inside `Slots.Run`, ModulePackage inside the `renderModulePackage` closure (design.md section 4). Verify: `toUnstructuredSlice` is gone, `go test ./internal/status ./internal/controller` passes, and `task dev:lint` reports no gocyclo finding.
+- [x] 4.2 The cancelled-wait specs count write attempts (Patch, Update, status Patch and Update) through an interceptor, assert no event, and for ModuleInstance an unchanged NoOp reconcile counter. Verify: with both `skipCommit = true` replaced by `_ = skipCommit`, both specs fail on "no status patch is attempted"; restored, they pass.
+- [x] 4.3 Nits: `NewSlots` panics below 1; the manifest comment and `docs/RENDERING.md` say a limit lowered below `GOMEMLIMIT` disables the soft limit; the two-instance overlap specs in `test/integration/reconcile` use `render.NewSlots(2)`; `TestInstallerManagerMemoryLimits` pins `limits.memory: 4Gi` and `GOMEMLIMIT=3276MiB` in `dist/install.yaml`.
+- [x] 4.4 `docs/RENDERING.md`, design.md sections 2 and 4, the proposal and the spec say the slot is held through the export. Cross-kind head-of-line blocking at the default of 1 is accepted and documented.

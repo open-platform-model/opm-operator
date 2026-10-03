@@ -295,7 +295,7 @@ func main() {
 	resourceManager := apply.NewResourceManager(mgr.GetClient(), "opm-controller")
 
 	// One render slot pool for the process: both render paths take a slot
-	// around each render, so --max-concurrent-renders bounds renders of both
+	// around each render and the export of its result for apply, so --max-concurrent-renders bounds renders of both
 	// kinds together, which is what sizes the pod's memory. Pass this one
 	// pointer to every render-bearing reconciler; a nil pool never blocks.
 	renderSlots := render.NewSlots(maxConcurrentRenders)

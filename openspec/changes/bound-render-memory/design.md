@@ -22,8 +22,8 @@ they return: `moduleinstance.go` converts at `:294` and still reads `renderResul
 `modulepackage.go` converts at `:438` inside `applyAndPruneModulePackage` and reads the result again
 at `:494`, and the caller holds it until return.
 
-Reconcile phase impact: Render (a slot is taken around the renderer call) and Apply (the
-CUE-backed resources are dropped right after conversion, before apply). Source, Prune and Status
+Reconcile phase impact: Render (a slot is taken around the renderer call and the export of its
+result for apply) and Apply (the CUE-backed resources are dropped inside that slot, before apply). Source, Prune and Status
 are unchanged; no status condition, reason or event is added.
 
 ## Goals / Non-Goals
@@ -72,21 +72,23 @@ func (s *Slots) Run(ctx context.Context, fn func()) error
 to both reconcilers (`RenderSlots` field), which pass it into `ModuleInstanceParams` and
 `ModulePackageParams`. No `golang.org/x/sync` dependency: a channel is enough for a fixed count.
 
-### 2. The slot spans the renderer call, taken before the platform lease
+### 2. The slot spans the renderer call and the export, taken before the platform lease
 
 The reconcile wraps `params.Renderer.RenderModule` (`moduleinstance.go:254`) and
-`params.Renderer.Render` (`renderModulePackage`, `modulepackage.go:369`) in `Slots.Run`:
+`params.Renderer.Render` (`renderModulePackage`, `modulepackage.go:369`), together with the export
+of the result for apply (section 4), in `Slots.Run`:
 
 ```go
 var (
     renderResult *render.RenderResult
-    renderErr    error
+    converted    *convertedRender
+    err          error
 )
-if err := params.RenderSlots.Run(ctx, func() {
-    renderResult, renderErr = params.Renderer.RenderModule(ctx, ...)
-}); err != nil {
+if waitErr := params.RenderSlots.Run(ctx, func() {
+    renderResult, converted, err = renderAndConvertInstance(ctx, params.Renderer, &mi)
+}); waitErr != nil {
     skipCommit = true // the wait was cut short: see below
-    return ctrl.Result{}, fmt.Errorf("waiting for a render slot: %w", err)
+    return ctrl.Result{}, fmt.Errorf("waiting for a render slot: %w", waitErr)
 }
 ```
 
@@ -97,8 +99,9 @@ inline release would never run on that path, the slot would leak, and at the def
 render of either kind would block forever while the pod stays healthy. The platform lease beside it
 is released the same way (`defer releaseLease()`, `kernel_module_renderer.go:82`).
 
-That covers exactly the section the owner named: the lease, acquisition (module fetch or package
-load), synthesis and the render build, plus the adapter's conversion of `Compiled` into resources.
+That covers the section the owner named (the lease, acquisition by module fetch or package load,
+synthesis and the render build, plus the adapter's conversion of `Compiled` into resources) and the
+export after it, so the flag is a true process-wide bound on builds held in memory (section 4).
 Taking the slot in the reconcile layer rather than inside `KernelModuleRenderer` and
 `KernelPackageRenderer` has two effects: the stub renderers the reconcile tests inject are bounded
 too, so the cross-kind bound is testable without a registry; and the slot is taken before the
@@ -115,7 +118,7 @@ serves both kinds: a `skipCommit` flag, set only on a cancelled slot wait, makes
 return before it touches status or records metrics.
 
 - ModuleInstance: the reconcile sets `skipCommit` and returns `ctrl.Result{}, err` directly.
-- ModulePackage: `renderModulePackage` returns `(*render.RenderResult, *phaseFail, error)`; the
+- ModulePackage: `renderModulePackage` returns `(*convertedRender, *phaseFail, error)`; the
   third value is non-nil only for a cancelled wait. The caller sets `skipCommit` and returns
   `ctrl.Result{}, err`, so the error is not folded into the `phaseFail` path (which always returns a
   nil error with a requeue).
@@ -134,26 +137,45 @@ flag was rejected (Principle VII: no new knob without a need), and halving it pe
 express an odd total. The `MaxConcurrentRenders` field comments say the controller uses it as its
 reconcile concurrency, and that renders across both kinds are bounded by the shared slots.
 
-### 4. Drop the CUE-backed resources right after conversion
+### 4. Export under the slot, then drop the CUE-backed resources
+
+The rendered values pin the whole build until they are exported, and the export is not cheap: the
+render digest (`status.RenderDigest`) and the unstructured conversion (`toUnstructuredSlice`) each
+called `cue.Value.MarshalJSON` on every resource, two full exports of the rendered set, plus a sort
+that reads paths from the CUE values. The memprobe baseline for a cert-manager-sized module (42
+objects) measured the heap peak during that conversion at 1920 MiB, above the render's own 1896 MiB.
+A slot released when the renderer returns would therefore let the next render start while the
+previous build is still being exported, so at N=1 two builds could be resident at their peaks.
+
+The reconcile instead exports inside the slot, through one helper both kinds use:
 
 ```go
-resources, err := toUnstructuredSlice(renderResult.Resources)
-// error path unchanged
-renderResult.Resources = nil // the unstructured copies are all later phases need
+// convertRender exports each rendered resource to JSON once, hashes those
+// bytes into the render digest, decodes the same bytes into the unstructured
+// copies for apply, and then drops result.Resources.
+func convertRender(result *render.RenderResult) (*convertedRender, error)
 ```
 
-In `moduleinstance.go` after `:294`; in `applyAndPruneModulePackage` after `:438`, through the
-pointer the caller also holds, so the caller's later reads (`renderResult.InventoryEntries` at
-`:494` via the return value) are unaffected. `status.RenderDigest(renderResult.Resources)` runs
-before conversion in both paths (`:278`, `:410`) and needs no change. On the ModulePackage no-op
-path the conversion never runs, and the result goes out of scope when the reconcile returns, which
-follows the no-op check directly.
+- `status.RenderDigestJSON` marshals each resource once and returns the digest (same bytes, same
+  order, so the same value `RenderDigest` gives) together with the JSON. The conversion decodes
+  those bytes, so the rendered set is exported once, not twice.
+- On success it sets `result.Resources = nil` before it returns, still inside the slot. Every later
+  phase reads `convertedRender.resources` or the result's plain data (inventory entries, warnings,
+  required contracts, platform identity).
+- A failure keeps its reason: a marshal failure marks the object Stalled with `RenderFailed`
+  ("computing render digest"), a decode failure with `ApplyFailed` ("converting resources"), as
+  before. The helper returns a `*conversionError` carrying that reason.
+- ModuleInstance: `renderAndConvertInstance` renders and converts inside the `Run` closure. A
+  conversion failure still returns the render result, so `ModuleResolved` and the render
+  diagnostics are reported as before. The helper keeps `ReconcileModuleInstance` below the gocyclo
+  limit of 30.
+- ModulePackage: `renderModulePackage` converts inside its closure when the render succeeded with
+  the expected kind, and returns the `*convertedRender`; `computeModulePackageDigests` and
+  `applyAndPruneModulePackage` take it. The conversion now also runs on the no-op path. Since the
+  digest already exported every resource, the extra cost there is the JSON decode only.
 
-The retained build therefore lives from slot release to conversion: digests, diagnostics events
-and, for a ModulePackage, the no-op check. That stretch does no I/O and no evaluation, so a render
-that takes the freed slot reaches its own peak only after registry acquisition, long after the
-previous build was dropped. Holding the slot until conversion would close it entirely but would
-thread a release function into `applyAndPruneModulePackage`; not worth it for an I/O-free stretch.
+After the slot is released a reconcile holds no CUE value from its render, so the flag bounds the
+builds resident in the process, not only the renders in flight.
 
 ### 5. `GOMEMLIMIT` as a literal next to the limit
 
@@ -177,19 +199,22 @@ of why the limit is 4Gi and adds the soft limit and the shared render bound.
 ## Risks / Trade-offs
 
 - [Throughput at the default] → a cluster with both kinds now renders them serially. That is the
-  documented meaning of the default; the flag raises it.
+  documented meaning of the default; the flag raises it. Holding the slot through the export
+  lengthens each slot by the export, which the render digest already paid before this change.
 - [Something else retains the build] → `RenderResult` is the only value the reconcile keeps across
   phases, and its other fields are plain data. If a heap profile later shows the build still
   reachable after conversion, the measurement task finds it; this change does not claim a number.
 - [A literal drifts from the limit] → a kustomize patch that raises the memory limit without
-  touching `GOMEMLIMIT` leaves the soft limit low, which costs extra GC but never an OOMKill. The
-  manifest comment and `docs/RENDERING.md` say to move both.
+  touching `GOMEMLIMIT` leaves the soft limit low, which costs extra GC but never an OOMKill. One
+  that lowers the limit below `GOMEMLIMIT` silently disables the soft limit. The manifest comment
+  and `docs/RENDERING.md` say to move both, and a test pins both values in `dist/install.yaml`.
 - [Slot starvation] → a channel semaphore is not FIFO, so under sustained load a reconcile can wait
   longer than its arrival order suggests. Every slot is released on every return path, a panic
   included (section 2).
 - [Cross-kind head-of-line blocking] → nothing on the render path has a timeout, so a render stuck
   on registry I/O holds its slot until it returns. At the default of 1 that now delays every render
-  of both kinds, where before it delayed only its own kind. The proposal and `docs/RENDERING.md` say
-  so; a render timeout is a separate change and out of scope here.
+  of both kinds, where before it delayed only its own kind. Accepted at the default of 1 and
+  documented in the proposal and `docs/RENDERING.md`; a render timeout is a separate change and out
+  of scope here.
 - [Slots count renders, not bytes] → at N above 1, N renders of the largest module can still
   coincide. The sizing rule in `docs/RENDERING.md` stays: size N against the largest module.

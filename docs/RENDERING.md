@@ -41,8 +41,13 @@ The flag (default `1`) is the number of renders in flight across the whole
 process, ModuleInstances and ModulePackages together. The manager builds one
 pool of that many render slots and both controllers share it: a reconcile
 takes a slot just before it calls the renderer (platform lease, acquisition,
-synthesis and the render build) and gives it back when the renderer returns,
-on success, error or a recovered panic. Each of the two controllers also
+synthesis and the render build) and holds it through the export of the
+result for apply (the render digest and the unstructured conversion, one CUE
+export per resource). It gives the slot back once the rendered CUE values are
+dropped, on success, error or a recovered panic. The export is part of the
+window because the rendered values pin the whole build until then, and it is
+where the heap peaks: for a cert-manager-sized module the export peaks higher
+than the render itself. Each of the two controllers also
 reconciles up to that many objects of its kind at once, so apply, prune,
 deletion and suspend of one kind never queue behind the other kind's renders;
 only the renders share the bound. A reconcile waiting for a slot holds no
@@ -58,10 +63,11 @@ The shipped manager Deployment (`config/manager/manager.yaml`) sets the
 container's memory limit to `4Gi` and the Go soft memory limit
 `GOMEMLIMIT=3276MiB`, about 80% of it, so the runtime collects harder as the
 heap nears the limit instead of the container being killed at it. The value
-is a literal, since the downward API cannot scale the limit. Raising the
-memory limit (for example to allow more concurrent renders) means raising
-`GOMEMLIMIT` with it; a limit raised alone leaves the soft limit low, which
-costs extra garbage collection but never an OOMKill.
+is a literal, since the downward API cannot scale the limit, so move both
+together. A memory limit lowered below `GOMEMLIMIT` silently disables the soft
+limit, and the container is killed at the hard limit as before. A limit raised
+alone (for example to allow more concurrent renders) leaves the soft limit
+low, which costs extra garbage collection but never an OOMKill.
 
 The bound is memory, not cores. A render is single-threaded and its working
 set grows with the module's component count. Measured in enhancement 0019

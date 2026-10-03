@@ -23,15 +23,16 @@ controllers, plus nil-out of renderResult.Resources after conversion (decided ea
 
 ## What Changes
 
-- **Rendered values are dropped once converted.** Right after `toUnstructuredSlice`, the
-  ModuleInstance reconcile and `applyAndPruneModulePackage` set `renderResult.Resources` to nil.
+- **Rendered values are dropped once converted.** Right after the conversion to unstructured
+  objects, both reconciles set `renderResult.Resources` to nil, still inside the render slot.
   `RenderResult` holds no other CUE value (`InventoryEntries`, `Warnings`, `UnhandledTraits`,
   `ResolvedVersions`, `RequiredContracts` and `PlatformIdentity` are plain data), so from that point
   the reconcile no longer pins the build while it applies, prunes and patches status.
 - **One render slot pool for the whole process.** `--max-concurrent-renders` becomes the number of
   render slots shared by the ModuleInstance and ModulePackage reconcilers. A reconcile takes a slot
-  before it calls the renderer (lease, acquisition, synthesis, render) and gives it back when the
-  renderer returns. At the default of 1, one render is in flight across both kinds; at N, N in
+  before it calls the renderer (lease, acquisition, synthesis, render) and gives it back once the
+  result is exported for apply and its CUE values are dropped; the export is where the heap peaks
+  (design.md section 4). The render digest and the conversion now share one export per resource. At the default of 1, one render is in flight across both kinds; at N, N in
   total. Each controller keeps `MaxConcurrentReconciles` at the flag's value, so phases outside the
   render (apply, prune, deletion, suspend, CLI-owned handling) of one kind never queue behind the
   other kind's renders (design.md, "Reconcile concurrency stays per controller"). The flag's help,

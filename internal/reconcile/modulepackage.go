@@ -440,6 +440,10 @@ func applyAndPruneModulePackage(
 		status.MarkStalled(pkg, status.ApplyFailedReason, "converting resources: %s", err)
 		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
 	}
+	// A rendered resource carries its CUE value, which pins the whole build;
+	// every later phase reads the unstructured copies, so drop them now. The
+	// caller holds the same result and reads only its plain data after this.
+	renderResult.Resources = nil
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
 	if pkg.Status.Inventory != nil {

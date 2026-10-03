@@ -299,6 +299,9 @@ func ReconcileModuleInstance(
 		retryAfter = StalledRecheckInterval
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
+	// A rendered resource carries its CUE value, which pins the whole build;
+	// every later phase reads the unstructured copies, so drop them now.
+	renderResult.Resources = nil
 
 	// Persist the rendered instance UUID on Status. All rendered resources
 	// carry the same UUID (stamped by the CUE catalog's moduleLabels merge);

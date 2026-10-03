@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	fluxssa "github.com/fluxcd/pkg/ssa"
@@ -112,7 +113,8 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 //
 // Watches:
 //   - ModuleInstance CRs (primary, generation-change predicate)
-//   - Platform (cluster singleton) — an update re-enqueues ModuleInstances via
+//   - Platform (cluster singleton) — an update re-enqueues the operator-managed,
+//     unsuspended ModuleInstances (moduleInstancePlatformIndex) via
 //     mapPlatformToModuleInstances only when a field they consume moves
 //     (platformConsumedFieldsChanged), so releases blocked on PlatformNotReady
 //     recover promptly when the platform is generated, and instances rendered
@@ -126,6 +128,10 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // controller's MaxConcurrentReconciles: renders share nothing (library
 // ADR-005, ADR-007), so the only bound is memory.
 func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(),
+		&releasesv1alpha1.ModuleInstance{}, moduleInstancePlatformIndex, moduleInstancePlatform); err != nil {
+		return fmt.Errorf("indexing ModuleInstances by the Platform they render against: %w", err)
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&releasesv1alpha1.ModuleInstance{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
@@ -203,14 +209,32 @@ func skewPolicyOf(p *releasesv1alpha1.Platform) string {
 	return *p.Spec.SkewPolicy
 }
 
-// mapPlatformToModuleInstances enqueues every ModuleInstance in the cluster when
-// the (singleton) Platform changes. This unblocks releases sitting in
-// PlatformNotReady the moment the platform is generated, rather than waiting
-// for the stalled-recheck backoff. List-all is cheap: the Platform is a cluster
-// singleton, its changes are rare, and the instance count is bounded.
-func (r *ModuleInstanceReconciler) mapPlatformToModuleInstances(ctx context.Context, _ client.Object) []reconcile.Request {
+// moduleInstancePlatformIndex is the field index naming the Platform a
+// ModuleInstance renders against.
+const moduleInstancePlatformIndex = ".platform"
+
+// moduleInstancePlatform is the Platform an instance renders against: the
+// cluster singleton for an operator-managed, unsuspended instance, and none
+// for a CLI-owned or suspended one, which the reconcile returns from before
+// rendering. It mirrors those two early returns exactly.
+func moduleInstancePlatform(obj client.Object) []string {
+	mi, ok := obj.(*releasesv1alpha1.ModuleInstance)
+	if !ok || mi.Spec.Owner == releasesv1alpha1.OwnerCLI || mi.Spec.Suspend {
+		return nil
+	}
+	return []string{platformSingletonName}
+}
+
+// mapPlatformToModuleInstances enqueues the ModuleInstances that render
+// against the changed Platform, through moduleInstancePlatformIndex. This
+// unblocks releases sitting in PlatformNotReady the moment the platform is
+// generated, rather than waiting for the transient backoff. CLI-owned and
+// suspended instances are not enqueued: neither renders, and resuming one or
+// handing it to the operator is a spec change that reconciles it through its
+// own watch. A Platform not named for the singleton maps to nothing.
+func (r *ModuleInstanceReconciler) mapPlatformToModuleInstances(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list releasesv1alpha1.ModuleInstanceList
-	if err := r.List(ctx, &list); err != nil {
+	if err := r.List(ctx, &list, client.MatchingFields{moduleInstancePlatformIndex: obj.GetName()}); err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to list ModuleInstances for Platform-triggered re-enqueue")
 		return nil
 	}

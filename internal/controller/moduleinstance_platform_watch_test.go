@@ -17,11 +17,19 @@ limitations under the License.
 package controller
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -138,5 +146,55 @@ var _ = Describe("Platform watch predicate", func() {
 			ObjectNew: &releasesv1alpha1.ModuleInstance{},
 		})).To(BeTrue())
 		Expect(update(func(*releasesv1alpha1.Platform) {})).To(BeFalse())
+	})
+})
+
+var _ = Describe("Platform watch index and mapper", func() {
+	instance := func(ns, name string, owner releasesv1alpha1.OwnerType, suspend bool) *releasesv1alpha1.ModuleInstance {
+		return &releasesv1alpha1.ModuleInstance{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Spec: releasesv1alpha1.ModuleInstanceSpec{
+				Module:  releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+				Owner:   owner,
+				Suspend: suspend,
+			},
+		}
+	}
+
+	DescribeTable("indexes an instance by the Platform it renders against",
+		func(obj client.Object, want []string) {
+			Expect(moduleInstancePlatform(obj)).To(Equal(want))
+		},
+		Entry("owner absent", instance("a", "mi", "", false), []string{platformSingletonName}),
+		Entry("owner operator", instance("a", "mi", releasesv1alpha1.OwnerOperator, false), []string{platformSingletonName}),
+		Entry("owner cli", instance("a", "mi", releasesv1alpha1.OwnerCLI, false), nil),
+		Entry("suspended", instance("a", "mi", "", true), nil),
+		Entry("suspended operator-owned", instance("a", "mi", releasesv1alpha1.OwnerOperator, true), nil),
+		Entry("not a ModuleInstance", &corev1.ConfigMap{}, nil),
+	)
+
+	It("enqueues only the operator-managed, unsuspended instances of the changed Platform", func() {
+		managedA := instance("ns-a", "managed", "", false)
+		managedB := instance("ns-b", "managed", releasesv1alpha1.OwnerOperator, false)
+		cliOwned := instance("ns-a", "cli-owned", releasesv1alpha1.OwnerCLI, false)
+		suspended := instance("ns-b", "suspended", "", true)
+
+		c := fake.NewClientBuilder().
+			WithScheme(scheme.Scheme).
+			WithObjects(managedA, managedB, cliOwned, suspended).
+			WithIndex(&releasesv1alpha1.ModuleInstance{}, moduleInstancePlatformIndex, moduleInstancePlatform).
+			Build()
+		r := &ModuleInstanceReconciler{Client: c, Scheme: scheme.Scheme}
+
+		reqs := r.mapPlatformToModuleInstances(context.Background(),
+			&releasesv1alpha1.Platform{ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName}})
+		Expect(reqs).To(ConsistOf(
+			reconcile.Request{NamespacedName: types.NamespacedName{Namespace: "ns-a", Name: "managed"}},
+			reconcile.Request{NamespacedName: types.NamespacedName{Namespace: "ns-b", Name: "managed"}},
+		))
+
+		Expect(r.mapPlatformToModuleInstances(context.Background(),
+			&releasesv1alpha1.Platform{ObjectMeta: metav1.ObjectMeta{Name: "other"}})).To(BeEmpty(),
+			"a Platform other than the singleton maps to nothing")
 	})
 })

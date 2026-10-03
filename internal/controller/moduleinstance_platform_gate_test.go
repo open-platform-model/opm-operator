@@ -59,7 +59,7 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 		return types.NamespacedName{Name: name, Namespace: namespace}
 	}
 
-	Context("when a platform module is recorded (5.1)", func() {
+	Context("when a platform module is recorded", func() {
 		It("renders the module and applies the resulting resources", func() {
 			ctx := context.Background()
 
@@ -102,7 +102,7 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 		})
 	})
 
-	Context("when no platform module is recorded (5.2)", func() {
+	Context("when no platform module is recorded", func() {
 		It("blocks with PlatformNotReady, applying and pruning nothing", func() {
 			ctx := context.Background()
 
@@ -168,37 +168,6 @@ var _ = Describe("ModuleInstance platform-gated rendering", func() {
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, &mr)).To(Succeed())
-		})
-	})
-
-	Context("when the platform changes (5.3)", func() {
-		It("re-enqueues every ModuleInstance in the cluster", func() {
-			ctx := context.Background()
-
-			nn1 := newModuleInstance(ctx, "gate-enqueue-mr-1")
-			nn2 := newModuleInstance(ctx, "gate-enqueue-mr-2")
-
-			reconciler := &ModuleInstanceReconciler{
-				Client:        k8sClient,
-				Scheme:        k8sClient.Scheme(),
-				EventRecorder: events.NewFakeRecorder(10),
-			}
-
-			platform := &releasesv1alpha1.Platform{
-				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
-			}
-			reqs := reconciler.mapPlatformToModuleInstances(ctx, platform)
-
-			Expect(reqs).To(ContainElement(reconcile.Request{NamespacedName: nn1}))
-			Expect(reqs).To(ContainElement(reconcile.Request{NamespacedName: nn2}))
-
-			// Cleanup
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
-				ObjectMeta: metav1.ObjectMeta{Name: nn1.Name, Namespace: namespace},
-			})).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
-				ObjectMeta: metav1.ObjectMeta{Name: nn2.Name, Namespace: namespace},
-			})).To(Succeed())
 		})
 	})
 })

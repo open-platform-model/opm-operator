@@ -28,8 +28,8 @@ var ErrPlatformNotReady = errors.New("platform not ready: no generated platform 
 // the registry (ModuleInstance) or loading a package and resolving its CUE
 // dependencies (ModulePackage). The reconcile loops retry it on the bounded
 // backoff unless a typed terminal cause (an identity mismatch, a wrong kind,
-// a structurally invalid package) sits underneath. It never changes the
-// message: errors.Is finds it beside the original error.
+// a structurally invalid package, a missing required field) sits underneath.
+// It never changes the message: errors.Is finds it beside the original error.
 var ErrAcquire = errors.New("acquiring module source")
 
 // acquireError marks err as an acquisition failure (ErrAcquire) without

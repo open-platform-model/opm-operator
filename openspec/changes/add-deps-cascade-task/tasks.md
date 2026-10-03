@@ -24,21 +24,21 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 ## 2. Pin report, class map, title and body tasks
 
-- [ ] 2.1 Add `.tasks/cascade/classes` with Phase 2 cascade contract §5.3's opm-operator block, verbatim.
-- [ ] 2.2 Add `.tasks/cascade/pins.sh <WORKTREE|ref>` (executable, `set -euo pipefail`), printing the four TSV rows in design.md ("Pin report and class map"):
+- [x] 2.1 Add `.tasks/cascade/classes` with Phase 2 cascade contract §5.3's opm-operator block, verbatim.
+- [x] 2.2 Add `.tasks/cascade/pins.sh <WORKTREE|ref>` (executable, `set -euo pipefail`), printing the four TSV rows in design.md ("Pin report and class map"):
   - library from the `go.mod` require line;
   - the catalog from the sample Platform's `version:` after the `opmodel.dev/catalogs/opm@v4:` key, with a `v` added;
   - core from `test/fixtures/modules/hello/cue.mod/module.cue`;
   - the opm CLI from `.opm-cli-version`.
 
   A file missing at the ref omits its row. Any other failure exits 1.
-- [ ] 2.3 In `.tasks/deps.yaml`, add `cascade:title` and `cascade:body`. They run `"$CASCADE_RESOLVER" title|body --classes .tasks/cascade/classes --pins .tasks/cascade/pins.sh`, with the task-level `CASCADE_RESOLVER_PATH` var (a top-level `x-` anchor), the `CASCADE_RESOLVER` env and the `test -x` precondition with the contract's message (Phase 2 cascade contract §3).
-- [ ] 2.4 Check by hand:
+- [x] 2.3 In `.tasks/deps.yaml`, add `cascade:title` and `cascade:body`. They run `"$CASCADE_RESOLVER" title|body --classes .tasks/cascade/classes --pins .tasks/cascade/pins.sh`, with the task-level `CASCADE_RESOLVER_PATH` var (a top-level `x-` anchor), the `CASCADE_RESOLVER` env and the `test -x` precondition with the contract's message (Phase 2 cascade contract §3).
+- [x] 2.4 Check by hand:
   - `pins.sh WORKTREE` and `pins.sh HEAD` print identical rows on the clean tree;
   - `pins.sh HEAD~5` reads the older values;
   - `CASCADE_RESOLVER=relative task deps:cascade:title` fails with "must be absolute";
   - a missing resolver fails with the precondition message.
-- [ ] 2.5 `shellcheck .tasks/cascade/pins.sh`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): add the cascade pin report, class map, and title and body tasks`
+- [x] 2.5 `shellcheck .tasks/cascade/pins.sh`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): add the cascade pin report, class map, and title and body tasks`
 
 ## 3. task deps:cascade
 

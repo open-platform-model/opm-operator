@@ -126,6 +126,7 @@ access.
 .tasks/deps.yaml                    # + deps:cascade, deps:cascade:title, deps:cascade:body, deps:cascade:test
 .tasks/cascade/cascade.sh           # the mover (phases A, B, C)
 .tasks/cascade/pins.sh              # contract §4.1 pin report
+.tasks/cascade/lib.sh               # stdin readers shared by pins.sh and cascade.sh
 .tasks/cascade/classes              # contract §5.3, verbatim
 .tasks/cascade/test.sh              # contract §8
 .tasks/cascade/testdata/stub-resolve.sh   # contract §7, byte-identical, mode 0755

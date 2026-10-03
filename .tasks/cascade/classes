@@ -1,0 +1,9 @@
+# Path classes for the cascade PR title (Phase 2 cascade contract §5.3, opm-operator block).
+release-tool .opm-cli-version
+test config/samples/
+test test/
+test **/testdata/
+test *_test.go
+# Not in the contract block: hack/crdref regenerates this page from config/samples, so a
+# sample-only move stays test(fixtures) (workspace RELEASING.md, "Pin classes").
+test docs/site/reference/operator-resources.md

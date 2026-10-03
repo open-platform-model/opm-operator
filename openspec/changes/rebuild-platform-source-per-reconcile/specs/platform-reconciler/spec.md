@@ -2,7 +2,7 @@
 
 ### Requirement: Build failures requeue on a bounded interval
 
-When closure derivation, generation or the build fails, the `PlatformReconciler` SHALL requeue the `Platform` after a bounded interval rather than waiting for a spec change; no such failure is terminal. The reconciler SHALL set the failure reason (`BuildFailed` or `GenerateFailed`) and SHALL preserve any previously recorded good module. Each reconcile SHALL resolve module files for closure derivation through a module-file source built for that reconcile, so that no fetch failure an earlier reconcile met, cached or otherwise, decides a later reconcile's result. A module-file source injected into the reconciler (tests) SHALL be used as given.
+When closure derivation, generation or the build fails, the `PlatformReconciler` SHALL requeue the `Platform` after a bounded interval rather than waiting for a spec change; no such failure is terminal. The reconciler SHALL set the failure reason (`BuildFailed` or `GenerateFailed`) and SHALL preserve any previously recorded good module. Each reconcile SHALL resolve module files for closure derivation through a module-file source built for that reconcile, so that no module-file lookup failure met by an earlier reconcile's closure derivation decides a later reconcile's closure derivation. A module-file source injected into the reconciler (tests) SHALL be used as given.
 
 #### Scenario: Failure requeues instead of stalling indefinitely
 

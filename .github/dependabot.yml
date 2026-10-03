@@ -14,8 +14,10 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      # "deps" is not a Conventional Commit type, so release-please drops such
-      # merge commits from the changelog. Use "build(deps)".
+      # build is a hidden type here, so a Dependabot Go bump releases nothing as
+      # titled; retitle it fix(deps) before merging when the image should ship
+      # (workspace RELEASING.md, "Dependabot PRs"). deps would release: it is a
+      # visible section in release-please-config.json.
       prefix: "build"
       include: "scope"
     groups:

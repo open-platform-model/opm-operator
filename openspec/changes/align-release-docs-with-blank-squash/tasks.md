@@ -8,9 +8,9 @@
 
 ## 2. Correct the Dependabot gomod prefix comment
 
-- [ ] 2.1 `.github/dependabot.yml:17-18`: replace the comment above `prefix: "build"` with the four lines in design.md D4. Keep `prefix: "build"`, `include: "scope"`, the `kubernetes` group and the `github.com/open-platform-model/*` ignore unchanged.
-- [ ] 2.2 Verify: `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/dependabot.yml` parses. `git diff origin/main -- .github/dependabot.yml` shows comment lines only.
-- [ ] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci: say what the build prefix does to Dependabot Go bumps`
+- [x] 2.1 `.github/dependabot.yml:17-18`: replace the comment above `prefix: "build"` with the four lines in design.md D4. Keep `prefix: "build"`, `include: "scope"`, the `kubernetes` group and the `github.com/open-platform-model/*` ignore unchanged.
+- [x] 2.2 Verify: `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/dependabot.yml` parses. `git diff origin/main -- .github/dependabot.yml` shows comment lines only.
+- [x] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci: say what the build prefix does to Dependabot Go bumps`
 
 ## 3. Archive
 

@@ -124,7 +124,60 @@ var _ = Describe("Reconcile State Recovery", func() {
 		By("history reflects the failure → success transition")
 		Expect(len(recovered.Status.History)).To(BeNumerically(">=", 2))
 		Expect(recovered.Status.History[0].Phase).To(Equal("complete"))
-		Expect(recovered.Status.History[1].Message).To(ContainSubstring("module not found"))
+		Expect(recovered.Status.History[1].Message).To(ContainSubstring("identity mismatch"))
+
+		// Cleanup
+		Expect(k8sClient.Delete(ctx, &cm)).To(Succeed())
+		cleanupInstance(nn)
+	})
+
+	// Validates transient acquisition failure → Ready recovery: a module the
+	// registry did not serve retries on the bounded backoff as a non-stalled
+	// ResolutionFailed, and recovers once it is served.
+	It("should recover from a transient acquisition failure", func() {
+		mrName := "acquire-recover-mr"
+		createModuleInstance(mrName)
+		nn := types.NamespacedName{Name: mrName, Namespace: namespace}
+
+		params := reconcileParams()
+		params.Renderer = acquireFailureRenderer()
+		ensureFinalizer(params, nn)
+
+		By("first reconcile retries the acquisition on the backoff")
+		result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred(), "transient failures return nil error with backoff")
+		Expect(result.RequeueAfter).To(Equal(opmreconcile.ComputeBackoff(1)))
+
+		var failing releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &failing)).To(Succeed())
+		ready := apimeta.FindStatusCondition(failing.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(status.ResolutionFailedReason))
+		Expect(apimeta.FindStatusCondition(failing.Status.Conditions, status.StalledCondition)).To(BeNil(),
+			"an acquisition failure without a typed cause does not stall")
+		Expect(failing.Status.NextRetryAt).NotTo(BeNil())
+		Expect(failing.Status.FailureCounters).NotTo(BeNil())
+		Expect(failing.Status.FailureCounters.Reconcile).To(Equal(int64(1)))
+
+		By("second reconcile recovers once the module is served")
+		params.Renderer = &stubRenderer{}
+		result, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeZero())
+
+		var recovered releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &recovered)).To(Succeed())
+		ready = apimeta.FindStatusCondition(recovered.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		Expect(recovered.Status.NextRetryAt).To(BeNil(), "nextRetryAt is cleared on success")
+		if recovered.Status.FailureCounters != nil {
+			Expect(recovered.Status.FailureCounters.Reconcile).To(BeZero(), "the reconcile counter resets on success")
+		}
+
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)).To(Succeed())
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, &cm)).To(Succeed())

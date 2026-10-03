@@ -1162,14 +1162,15 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 		It("should increment reconcile counter on failed reconcile", func() {
 			ctx := context.Background()
 
-			// ModuleInstance points to a non-existent source → FailedStalled.
+			// The module cannot be acquired → FailedTransient (the counter
+			// increments on every failed outcome, transient or stalled).
 			createModuleInstance(ctx, "counter-fail-mr")
 
 			reconciler := &ModuleInstanceReconciler{
 				Client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				EventRecorder: events.NewFakeRecorder(10),
-				Renderer:      resolutionErrorRenderer(),
+				Renderer:      acquireFailureRenderer(),
 			}
 
 			nn := types.NamespacedName{Name: "counter-fail-mr", Namespace: namespace}
@@ -1178,9 +1179,9 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Second reconcile fails (source not found → FailedStalled).
+			// Second reconcile fails (module not acquired → FailedTransient).
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred()) // FailedStalled returns nil error
+			Expect(err).NotTo(HaveOccurred()) // a classified failure returns nil error
 
 			var mr releasesv1alpha1.ModuleInstance
 			Expect(k8sClient.Get(ctx, nn, &mr)).To(Succeed())

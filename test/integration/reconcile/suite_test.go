@@ -19,6 +19,7 @@ package reconcile_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	oerrors "github.com/open-platform-model/library/opm/errors"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
@@ -191,11 +194,33 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 	}
 }
 
-// resolutionErrorRenderer returns a stub whose error matches the reconcile
-// loop's isResolutionError() classification.
+// acquireErr marks cause as an acquisition failure (render.ErrAcquire), the
+// way the module renderer does when moduleacquire.Acquire fails.
+func acquireErr(cause error) error {
+	return fmt.Errorf("acquiring module: %w: %w", cause, render.ErrAcquire)
+}
+
+// resolutionErrorRenderer returns a stub whose error is an acquisition
+// failure with a typed terminal cause (an identity mismatch), which the
+// reconcile loop classifies as a stalled ResolutionFailed on the 30-minute
+// recheck.
 func resolutionErrorRenderer() *stubRenderer {
 	return &stubRenderer{
-		err: fmt.Errorf("loading synthesized release: module not found in registry"),
+		err: acquireErr(oerrors.IdentityError{
+			Field:      "path",
+			Declared:   "opmodel.dev/other",
+			Fetched:    "opmodel.dev/test",
+			Coordinate: "opmodel.dev/test v0.1.0",
+		}),
+	}
+}
+
+// acquireFailureRenderer returns a stub whose error is an acquisition failure
+// with no typed terminal cause (a registry outage), which the reconcile loop
+// classifies as a transient ResolutionFailed on the bounded backoff.
+func acquireFailureRenderer() *stubRenderer {
+	return &stubRenderer{
+		err: acquireErr(errors.New("fetching opmodel.dev/test@v0.1.0: dial tcp registry.example:443: connection refused")),
 	}
 }
 

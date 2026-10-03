@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	fluxssa "github.com/fluxcd/pkg/ssa"
@@ -266,7 +265,10 @@ func ReconcileModuleInstance(
 		// re-enqueues promptly when the platform is generated, but that edge
 		// is missed when the controller restarts into an already-Ready
 		// Platform (the regeneration emits no status event), leaving the
-		// bounded backoff as the real recovery path. Genuinely stalled
+		// bounded backoff as the real recovery path. An acquisition failure
+		// without a typed terminal cause (a registry outage) joins it on the
+		// bounded backoff: nothing else re-triggers the instance, and the
+		// registry may answer a minute later. Genuinely stalled
 		// render/resolution errors keep the long recheck.
 		retryAfter = retryIntervalFor(outcome, reconcileFailureCount(mi.Status.FailureCounters))
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -919,9 +921,14 @@ func pruneStaleResources(
 // waiting for the cluster Platform, so it is marked Ready=False/PlatformNotReady
 // (not Stalled), applies and prunes nothing, and requeues. The Platform watch
 // (mapPlatformToModuleInstances) re-enqueues it promptly when the platform is
-// generated; the bounded backoff is the safety net. All other errors are
-// terminal render/resolution stalls, classified by the kernel's typed cause
-// (renderFailureReason): ResolutionFailed, SkewRefused or RenderFailed.
+// generated; the bounded backoff is the safety net.
+//
+// An acquisition failure (render.ErrAcquire) with no typed terminal cause is
+// transient too (isTransientAcquireFailure): Ready=False/ResolutionFailed, not
+// Stalled, retried on the bounded backoff. All other errors are terminal
+// render/resolution stalls, classified by their typed cause
+// (renderFailureReason): ResolutionFailed, SkewRefused, DuplicateIdentities
+// or RenderFailed. No error is classified by its message text.
 func classifyRenderError(
 	mi *releasesv1alpha1.ModuleInstance,
 	recorder events.EventRecorder,
@@ -932,19 +939,15 @@ func classifyRenderError(
 		status.MarkNotReady(mi, status.PlatformNotReadyReason, "%s", err)
 		return FailedTransient, err.Error()
 	}
-	reason := renderFailureReason(err, isResolutionError)
+	if isTransientAcquireFailure(err) {
+		recorder.Eventf(mi, nil, corev1.EventTypeWarning, status.ResolutionFailedReason, "Render", "%s", err)
+		status.MarkNotReady(mi, status.ResolutionFailedReason, "%s", err)
+		return FailedTransient, err.Error()
+	}
+	reason := renderFailureReason(err)
 	recorder.Eventf(mi, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
 	status.MarkStalled(mi, reason, "%s", err)
 	return FailedStalled, err.Error()
-}
-
-// isResolutionError returns true if the error indicates a module resolution
-// failure (CUE couldn't resolve the module from the OCI registry), as opposed
-// to a render/evaluation error.
-func isResolutionError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "loading synthesized release") ||
-		strings.Contains(msg, "synthesizing release")
 }
 
 // isForbidden returns true if the error chain contains a Kubernetes Forbidden (403) status error.

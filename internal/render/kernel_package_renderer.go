@@ -61,7 +61,7 @@ func (r *KernelPackageRenderer) Render(
 			// Only #ModuleInstance is renderable; any other kind is unsupported.
 			return "", nil, fmt.Errorf("%w: %w", ErrUnsupportedKind, err)
 		}
-		return KindModuleInstance, nil, fmt.Errorf("loading package: %w", err)
+		return KindModuleInstance, nil, acquireFailed("loading package", err)
 	}
 
 	// Gate on platform readiness ahead of the build so a package with no

@@ -83,7 +83,7 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 ## 4. task deps:cascade:test
 
-- [ ] 4.1 Add `.tasks/cascade/test.sh`, following Phase 2 cascade contract §8.
+- [x] 4.1 Add `.tasks/cascade/test.sh`, following Phase 2 cascade contract §8.
   - Pre-checks:
     - `yq --version` names mikefarah;
     - the stub's `sha256sum` matches;
@@ -94,14 +94,14 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
     - export `CASCADE_RESOLVER` (the stub), `CASCADE_STUB_TABLE`, `CASCADE_STUB_LOG` and `CASCADE_TODAY=2026-10-03`;
     - a cleanup `trap`.
   - Build the stub tables at test time, from `pins.sh WORKTREE`, the `pin-of` of the tree catalog, `published` rows for each advance module's `B`, and `older.tsv`. Assert with the stub's `semver-cmp` that each `older.tsv` version is strictly older than the tree's.
-- [ ] 4.2 Offline scenarios (asserted with `task -x deps:cascade`):
+- [x] 4.2 Offline scenarios (asserted with `task -x deps:cascade`):
   - **S1:** exit 3, a clean tree, the normalized stub log equal to `testdata/s1-calls.txt`, and every `newest` line carrying `--current` and `--repo-root`;
   - **S3:** the library `newest` row is `ERROR`; the exit is neither 0 nor 3, and the tree is clean;
   - **S6:** with an untracked file, exit 1 and nothing else changed;
   - **S3b:** no `pin-of` row for the tree's catalog; the exit is neither 0 nor 3, and the tree is clean (design.md, "S3b").
 
   Write `testdata/s1-calls.txt` from the first green S1 run, and check it against the list in design.md ("`s1-calls.txt`").
-- [ ] 4.3 Network scenarios:
+- [x] 4.3 Network scenarios:
   - **S2:** lower every pin location to `older.tsv`, with library through `go mod edit -require` (design.md, "S2 setup for the Go pin"), and run. Expect:
     - exit 0;
     - the diff against the original tree is exactly the design.md golden list;
@@ -110,9 +110,9 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
   - **S5:** runs only when `CASCADE_RESOLVER_REAL` is set, after S2. Expect:
     - `title` prints `fix(deps): bump 4 upstream pins` (library, the opm catalog, core and the opm CLI all move back from `older.tsv`);
     - the body has both markers, one table row per moved pin and `## Notes` last.
-- [ ] 4.4 In `.tasks/deps.yaml`, add `cascade:test`, running `.tasks/cascade/test.sh` and honouring `CASCADE_TEST_SET` (`offline` or `all`, default `all`). It has no `CASCADE_RESOLVER_PATH` var and no resolver precondition, because `test.sh` exports the stub itself and CI has no `.github` checkout beside the repo (design.md, "File layout and task wiring"; a contract §3 deviation reported to the supervisor).
-- [ ] 4.5 Run `CASCADE_TEST_SET=offline task -x deps:cascade:test` (expect PASS for the pre-checks and S1, S3 and S6). Then run `task -x deps:cascade:test` with network (expect PASS for S2 and S4), and once more with `CASCADE_RESOLVER_REAL` pointing at the resolver's worktree (expect PASS for S5). Then confirm the real checkout's `git status` is unchanged.
-- [ ] 4.6 `shellcheck .tasks/cascade/*.sh`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(cascade): test task deps:cascade against the stub resolver`
+- [x] 4.4 In `.tasks/deps.yaml`, add `cascade:test`, running `.tasks/cascade/test.sh` and honouring `CASCADE_TEST_SET` (`offline` or `all`, default `all`). It has no `CASCADE_RESOLVER_PATH` var and no resolver precondition, because `test.sh` exports the stub itself and CI has no `.github` checkout beside the repo (design.md, "File layout and task wiring"; a contract §3 deviation reported to the supervisor).
+- [x] 4.5 Run `CASCADE_TEST_SET=offline task -x deps:cascade:test` (expect PASS for the pre-checks and S1, S3 and S6). Then run `task -x deps:cascade:test` with network (expect PASS for S2 and S4), and once more with `CASCADE_RESOLVER_REAL` pointing at the resolver's worktree (expect PASS for S5). Then confirm the real checkout's `git status` is unchanged.
+- [x] 4.6 `shellcheck .tasks/cascade/*.sh`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(cascade): test task deps:cascade against the stub resolver`
 
 ## 5. CI and docs
 

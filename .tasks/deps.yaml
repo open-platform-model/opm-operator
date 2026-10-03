@@ -51,3 +51,11 @@ tasks:
     preconditions: *cascade_resolver_found
     cmds:
       - '"$CASCADE_RESOLVER" body --classes .tasks/cascade/classes --pins .tasks/cascade/pins.sh'
+
+  # No resolver var or precondition: test.sh exports the stub itself and reads the real
+  # resolver only from CASCADE_RESOLVER_REAL, so the offline set runs in CI with no .github
+  # checkout (a deviation from Phase 2 cascade contract §3, reported to the supervisor).
+  cascade:test:
+    desc: 'Test task deps:cascade against the stub resolver in throwaway copies of the tree. CASCADE_TEST_SET=offline runs the offline scenarios; all (default) adds the network ones, and the title and body check when CASCADE_RESOLVER_REAL is set. Run with task -x.'
+    cmds:
+      - .tasks/cascade/test.sh

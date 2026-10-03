@@ -23,6 +23,9 @@ import (
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	"github.com/open-platform-model/library/opm/kernel"
 	"golang.org/x/time/rate"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -32,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -40,6 +44,7 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
 // ModuleInstanceReconciler reconciles a ModuleInstance object.
@@ -107,12 +112,14 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 //
 // Watches:
 //   - ModuleInstance CRs (primary, generation-change predicate)
-//   - Platform (cluster singleton) — every change re-enqueues all
-//     ModuleInstances via mapPlatformToModuleInstances so releases blocked on
-//     PlatformNotReady recover promptly when the platform is generated, and
-//     instances rendered under a superseded pin set or skew policy re-render.
-//     The generation predicate lives on For() (not as a global event filter)
-//     so it does not suppress the Platform watch, whose trigger (the
+//   - Platform (cluster singleton) — an update re-enqueues ModuleInstances via
+//     mapPlatformToModuleInstances only when a field they consume moves
+//     (platformConsumedFieldsChanged), so releases blocked on PlatformNotReady
+//     recover promptly when the platform is generated, and instances rendered
+//     under a superseded pin set or skew policy re-render, while a Platform
+//     status write that only reports something renders nothing. The
+//     generation predicate lives on For() (not as a global event filter) so
+//     it does not suppress the Platform watch, whose trigger (the
 //     reconciler's status update) does not bump generation.
 //
 // MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
@@ -124,6 +131,7 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&releasesv1alpha1.Platform{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToModuleInstances),
+			builder.WithPredicates(platformConsumedFieldsChanged()),
 		).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentRenders,
@@ -134,6 +142,65 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		Named("moduleinstance").
 		Complete(r)
+}
+
+// platformConsumedFieldsChanged passes a Platform update only when a field a
+// ModuleInstance render consumes differs between the old and the new object:
+//   - the Ready condition's status (the only True reason is Generated, so the
+//     status alone carries the recovery edge),
+//   - the pin set: status.packageIdentity, the field that identifies the pin
+//     set an instance renders against, and status.registry beside it, so a
+//     regression in how the identity is computed cannot silently stop a
+//     re-render under a new pin,
+//   - spec.skewPolicy,
+//   - metadata.generation and status.observedGeneration.
+//
+// It also passes a status.operatorVersion change. The platform store is in
+// memory, so after an operator upgrade every instance renders into
+// PlatformNotReady before the platform is regenerated, and the status write
+// that follows the regeneration differs only in operatorVersion: that event
+// is what recovers them promptly.
+//
+// The Ready reason and message are excluded: a build failure rewrites the
+// message per error and can move between False reasons, while a refusal
+// keeps the last good package in the store, so neither changes what an
+// instance renders against. ContractsFulfilled is a report too. Create,
+// delete and generic events pass, and so does an update whose objects are
+// not Platforms: failing open costs a render per instance, failing closed
+// could leave one blocked.
+func platformConsumedFieldsChanged() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			old, okOld := e.ObjectOld.(*releasesv1alpha1.Platform)
+			cur, okNew := e.ObjectNew.(*releasesv1alpha1.Platform)
+			if !okOld || !okNew {
+				return true
+			}
+			return old.Generation != cur.Generation ||
+				old.Status.ObservedGeneration != cur.Status.ObservedGeneration ||
+				old.Status.PackageIdentity != cur.Status.PackageIdentity ||
+				!equality.Semantic.DeepEqual(old.Status.Registry, cur.Status.Registry) ||
+				skewPolicyOf(old) != skewPolicyOf(cur) ||
+				readyStatus(old) != readyStatus(cur) ||
+				old.Status.OperatorVersion != cur.Status.OperatorVersion
+		},
+	}
+}
+
+// readyStatus is the Platform's Ready condition status; absent reads as "".
+func readyStatus(p *releasesv1alpha1.Platform) metav1.ConditionStatus {
+	if c := apimeta.FindStatusCondition(p.Status.Conditions, status.ReadyCondition); c != nil {
+		return c.Status
+	}
+	return ""
+}
+
+// skewPolicyOf is spec.skewPolicy as written; unset reads as "".
+func skewPolicyOf(p *releasesv1alpha1.Platform) string {
+	if p.Spec.SkewPolicy == nil {
+		return ""
+	}
+	return *p.Spec.SkewPolicy
 }
 
 // mapPlatformToModuleInstances enqueues every ModuleInstance in the cluster when

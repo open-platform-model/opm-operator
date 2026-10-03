@@ -1,33 +1,4 @@
-# platform-gated-rendering
-
-## Purpose
-
-ModuleRelease rendering is gated on a generated platform: the reconciler renders through the kernel-backed renderer against the platform held in the platform store, blocks inertly when no platform is generated, retries promptly when the platform becomes ready, and no longer derives rendering output from the startup-loaded provider.
-
-## Requirements
-
-### Requirement: ModuleRelease renders through the kernel against the generated platform
-
-The ModuleInstance reconciler SHALL render via the kernel-backed renderer through the single-build render, against the generated platform module the store records: the renderer takes a lease on the record, renders with the instance's staged source and the platform's on-disk module, and releases the lease when the render returns. Successful rendering SHALL apply the resulting resources through the existing apply/inventory/prune path unchanged.
-
-#### Scenario: ModuleRelease renders and applies when a platform is generated
-
-- **WHEN** the `cluster` Platform is `Ready` (reason `Generated`) and a `ModuleInstance` referencing a resolvable module is applied
-- **THEN** the reconciler renders through the single-build render against the recorded module and applies the rendered resources as before
-
-### Requirement: Block ModuleRelease when no platform is generated
-
-When the store holds no generated-module record, the reconciler SHALL set the ModuleInstance `Ready=False` with reason `PlatformNotReady`, apply nothing, prune nothing, emit a warning event and requeue.
-
-#### Scenario: No platform present blocks the release inertly
-
-- **WHEN** a `ModuleInstance` is applied while the Platform has not been generated and built
-- **THEN** its status carries `Ready=False` with reason `PlatformNotReady` and nothing is applied or pruned
-
-#### Scenario: Platform-not-ready is distinct from render failure
-
-- **WHEN** rendering is blocked because no platform module is recorded
-- **THEN** the reason is `PlatformNotReady`, not `RenderFailed`, `ResolutionFailed` or `SkewRefused`
+## MODIFIED Requirements
 
 ### Requirement: Re-enqueue ModuleInstances when the platform becomes ready
 

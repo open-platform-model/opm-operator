@@ -32,12 +32,13 @@ func (e *conversionError) Unwrap() error { return e.err }
 
 // convertRender exports each rendered resource to JSON once, hashes those
 // bytes into the render digest, decodes the same bytes into the unstructured
-// copies for apply, and then drops result.Resources. A rendered resource
-// carries its CUE value, which pins the whole build, so the caller runs this
-// inside its render slot: the slot is released only once the build can be
-// collected. The memprobe baseline puts the peak heap in this export, not in
-// the render itself.
+// copies for apply, and then drops result.Resources on every exit, failures
+// included. A rendered resource carries its CUE value, which pins the whole
+// build, so the caller runs this inside its render slot: the slot is released
+// only once the build can be collected. The memprobe baseline puts the peak
+// heap in this export, not in the render itself.
 func convertRender(result *render.RenderResult) (*convertedRender, error) {
+	defer func() { result.Resources = nil }()
 	digest, encoded, err := status.RenderDigestJSON(result.Resources)
 	if err != nil {
 		return nil, &conversionError{reason: status.RenderFailedReason, step: "computing render digest", err: err}
@@ -51,6 +52,5 @@ func convertRender(result *render.RenderResult) (*convertedRender, error) {
 		}
 		resources = append(resources, &unstructured.Unstructured{Object: obj})
 	}
-	result.Resources = nil
 	return &convertedRender{result: result, digest: digest, resources: resources}, nil
 }

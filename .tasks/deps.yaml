@@ -25,6 +25,15 @@ tasks:
     cmds:
       - hack/release-pin-check.sh
 
+  cascade:
+    desc: 'Move upstream pins (library, the opm catalog and core with fixtures and consumers, .opm-cli-version) to the newest published versions in the working tree. Exit 0 changed, 3 nothing to do, other on error; run with task -x.'
+    vars: *cascade_resolver
+    env:
+      CASCADE_RESOLVER: '{{.CASCADE_RESOLVER_PATH}}'
+    preconditions: *cascade_resolver_found
+    cmds:
+      - .tasks/cascade/cascade.sh
+
   cascade:title:
     desc: 'Print the cascade PR title for the working tree against CASCADE_BASE (default origin/main); exit 3 when nothing changed. Run with task -x.'
     vars: *cascade_resolver

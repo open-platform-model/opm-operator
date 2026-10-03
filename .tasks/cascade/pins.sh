@@ -37,7 +37,7 @@ fi
 
 f=config/samples/opmodel.dev_v1alpha1_platform.yaml
 if has "$f"; then
-  v=$(show "$f" | yaml_version_after opmodel.dev/catalogs/opm@v4)
+  v=$(show "$f" | yaml_version_after opmodel.dev/catalogs/opm@v4:)
   row opmodel.dev/catalogs/opm@v4 "opm catalog" test "$f" "v$v"
 fi
 

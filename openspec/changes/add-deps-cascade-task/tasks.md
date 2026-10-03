@@ -42,12 +42,12 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 ## 3. task deps:cascade
 
-- [ ] 3.1 Add `.tasks/cascade/cascade.sh` with the prologue from design.md ("`cascade.sh`: three phases"):
+- [x] 3.1 Add `.tasks/cascade/cascade.sh` with the prologue from design.md ("`cascade.sh`: three phases"):
   - the clean-start check, or the `CASCADE_ALLOW_DIRTY=1` snapshot (Phase 2 cascade contract §5.2 rule 1);
   - the state directory and the warnings file;
   - the GHCR `CUE_REGISTRY` and `OPM_REGISTRY`;
   - `check-files --repo-root .`.
-- [ ] 3.2 Phase A, resolve. Implement it as follows:
+- [x] 3.2 Phase A, resolve. Implement it as follows:
   - `newest` for library, the catalog (`--current` = the sample, with `v` added) and the opm CLI, each with `--current <now> --repo-root .`, plus `--expect <v>` when `CASCADE_EXPECT` names that pin;
   - `pin-of` for the core of each distinct per-file catalog `C = max(file catalog, K)`, and `hold opmodel.dev/core@v2`;
   - `language-of` for each moved CUE upstream, compared with `CUE_VERSION` at `.github/workflows/test.yml:19`;
@@ -56,30 +56,30 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
   - `f_changed` for each advance module against the unmodified tree, to decide whether phase B is needed.
 
   Every resolver call, in every phase, sits inside an `if` or a `case` (0 move, 3 stay or "no", other: exit with that code); a 3 from `pin-of`, which means the catalog pins no core, is an error. An `EXIT` trap rewrites a status of 3 to 1 unless `result()` set the result. There is no `|| true`, no `2>/dev/null ||` and no `set +e`.
-- [ ] 3.3 Phase B: when any pin will move or any advance module already changed (`f_changed`), run `GOBIN=$STATE/bin go install github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)` from the unmodified tree.
-- [ ] 3.4 Phase C, edits in Phase 2 cascade contract §5.2 rule 12 order:
+- [x] 3.3 Phase B: when any pin will move or any advance module already changed (`f_changed`), run `GOBIN=$STATE/bin go install github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)` from the unmodified tree.
+- [x] 3.4 Phase C, edits in Phase 2 cascade contract §5.2 rule 12 order:
   - library: `go get library@<v>`, then `go mod tidy`, warning on a raised third-party pin;
   - the catalog, as text: the sample Platform (bare, quoted) and `test/fixtures/catalog.go` (bare; `gofmt -l` must be clean);
   - the four fixture modules and the provider catalog: `cue mod get` with exact versions and no frozen keys, then one `cue mod tidy`, then the frozen-key byte check;
   - the core-ahead and core-hold warnings (design.md, "Consistent set across the operator's files").
-- [ ] 3.5 Version advance for the four fixture modules and the provider catalog:
+- [x] 3.5 Version advance for the four fixture modules and the provider catalog:
   - `f_changed` is copied verbatim from Phase 2 cascade contract §5.2 rule 11;
   - `B` comes from the merge-base;
   - the target follows the `published cue <module>@v0 v<B>` rule;
   - the version is written with `$STATE/bin/opm module|catalog version set`, only when it differs.
-- [ ] 3.6 Consumers, each edit preceded by `is-frozen`:
+- [x] 3.6 Consumers, each edit preceded by `is-frozen`:
   - the modulepackage `cue.mod/module.cue` text re-pin of the fixture `v:`, the catalog and core, with no `tidy`;
   - `moduleinstance.yaml`;
   - the sample ModuleInstance for the module it instantiates.
 
   Then, when any file under `config/samples/` changed, regenerate the resource reference with `go run ./hack/crdref`, warning with key `-` and continuing if it fails (design.md, "Regenerating the resource reference"). Then write `.opm-cli-version` last, as `<v>\n`. Then the result: exit 0 if changed, 3 if not (rule 13).
-- [ ] 3.7 In `.tasks/deps.yaml`, add `cascade`, which runs `.tasks/cascade/cascade.sh`. It gets the same resolver var, env and precondition as 2.3, and a `desc` that names the exit codes and `task -x`.
-- [ ] 3.8 Smoke-test by hand in a scratch copy (`git ls-files | tar` into a temp dir, `git init`), with the stub and a hand-written table:
+- [x] 3.7 In `.tasks/deps.yaml`, add `cascade`, which runs `.tasks/cascade/cascade.sh`. It gets the same resolver var, env and precondition as 2.3, and a `desc` that names the exit codes and `task -x`.
+- [x] 3.8 Smoke-test by hand in a scratch copy (`git ls-files | tar` into a temp dir, `git init`), with the stub and a hand-written table:
   - current values give exit 3 and a clean tree;
   - an `ERROR` row gives a non-0/3 exit and a clean tree;
   - an untracked file gives exit 1;
   - a missing `pin-of` row gives a non-0/3 exit and a clean tree.
-- [ ] 3.9 `shellcheck .tasks/cascade/cascade.sh`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): add task deps:cascade`
+- [x] 3.9 `shellcheck .tasks/cascade/cascade.sh`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): add task deps:cascade`
 
 ## 4. task deps:cascade:test
 

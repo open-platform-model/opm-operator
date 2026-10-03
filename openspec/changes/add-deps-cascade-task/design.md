@@ -266,7 +266,8 @@ library's module loop works (contract §6.2 step 4):
   "catalog `<t>` needs core `<c>`, above the hold `<max>`; catalog held too" (contract §9.11).
 - **The `cue mod get` call.** In each fixture module where a pin moved, the task runs one
   `cue mod get` that names `opmodel.dev/catalogs/opm@<K>` and `opmodel.dev/core@<core>` with
-  exact versions. It leaves out any key frozen for that file, then runs `cue mod tidy` once. A
+  exact versions (the module path without its `@vN`: `cue mod get` refuses
+  `opmodel.dev/core@v2@v2.0.0-beta.1`). It leaves out any key frozen for that file, then runs `cue mod tidy` once. A
   module where nothing moved is not touched (rule 6).
 - **The frozen check after tidy.** After `tidy`, the `v:` of each frozen key in that file is
   compared byte for byte. If MVS raised it, the task exits 1 with "freeze the whole module, or

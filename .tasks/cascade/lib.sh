@@ -15,10 +15,10 @@ cue_dep_v() {
     f && /}/ { exit }'
 }
 
-# yaml_version_after KEY: the first version: line after the line holding KEY:,
+# yaml_version_after ANCHOR: the first version: line after the line holding ANCHOR,
 # unquoted (the sample Platform stores the catalog bare: version: "4.4.4").
 yaml_version_after() {
-  awk -v k="$1:" '
+  awk -v k="$1" '
     index($0, k) { f = 1; next }
     f && /^[[:space:]]*version:/ { v = $0; sub(/^[[:space:]]*version:[[:space:]]*/, "", v); gsub(/"/, "", v); print v; exit }'
 }

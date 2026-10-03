@@ -305,6 +305,33 @@ jobs:
           .github/scripts/release-guard.sh assert-draft "${TAG}"
           gh release upload "${TAG}" dist/examples/*.yaml --repo "${GH_REPO}" --clobber
 
+  # The operator docs bundle of the release (docs-kit.cue, opm-operator), built
+  # from the released tag and published as <version>.0 by docs-kit's
+  # publish.yml (docs-kit docs/contracts.md C5). It runs here, in the run the
+  # release-PR merge starts, because publish.yml publishes only from
+  # refs/heads/main: a `release: published` trigger would run on the tag ref
+  # and be refused. It waits for image-release, so the reference never
+  # describes a release whose image failed; publish-release does not wait for
+  # it, so a docs failure never holds the release a draft. When this job does
+  # not run or fails, docs.yml's dispatch publishes the release instead. No
+  # version is passed: opm-docs reads it from the tag.
+  # publish.yml is pinned by docs-kit release tag, not a SHA: the signing
+  # certificate names it at this ref, and the site trusts only docs-kit's v*
+  # tags (C5, C9). It moves with .opm-docs-version in one PR.
+  publish-docs:
+    name: Publish the operator docs bundle
+    needs: [release-please, image-release]
+    if: needs.release-please.outputs.releases_created == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: open-platform-model/docs-kit/.github/workflows/publish.yml@v0.4.0
+    with:
+      project: opm-operator
+      mode: release
+      tag: ${{ needs.release-please.outputs.tag_name }}
+
   publish-release:
     name: Publish the draft release
     # The single publish point: the release becomes public only after every

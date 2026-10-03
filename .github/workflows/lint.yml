@@ -35,6 +35,12 @@ jobs:
       - name: Run linter
         run: task dev:lint
 
+      # .opm-docs-version and every docs-kit publish.yml ref under
+      # .github/workflows/ name one docs-kit release (docs-kit C5, C12).
+      # Offline: no opm-docs install.
+      - name: docs-kit pins agree
+        run: task docs:pins:check
+
       # docs/site/reference/operator-resources.md is generated from the
       # committed CRDs, config/samples and internal/controller (hack/crdref).
       - name: Generated resource reference is current

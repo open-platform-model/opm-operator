@@ -30,8 +30,9 @@ import (
 // API and the module is derived state (0019:D6).
 type PlatformSpec struct {
 	// Type is the informational discriminator for the platform (core
-	// #Platform.type). It does not affect matching; it labels the platform
-	// flavor for operators and downstream tooling.
+	// #Platform.type). It is required and shown in the Type column of
+	// kubectl get. The operator passes it on to the generated platform
+	// module, and nothing in OPM acts on its value.
 	// +kubebuilder:validation:MinLength=1
 	// +required
 	Type string `json:"type"`

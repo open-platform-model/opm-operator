@@ -41,8 +41,8 @@ The resource definition declares these `kubectl get` columns. A column with a pr
 | `spec.module` | `object` | Yes | Module identifies the CUE module to evaluate from the OCI registry. |
 | `spec.module.path` | `string` | Yes | Path is the CUE module import path. Example: "opmodel.dev/modules/cert\_manager@v0" |
 | `spec.module.version` | `string` | Yes | Version is the pinned module version to resolve from the registry. Example: "v0.2.1" |
-| `spec.owner` | `string` | No | Owner identifies which actor manages this instance. An absent, empty, or "operator" value means operator-managed: the controller reconciles normally. Only an explicit "cli" makes the operator skip the instance (no render/apply/prune, no finalizer) and record a single ManagedExternally acknowledgement. There is no CRD default; the reconciler carries the operator-managed default semantics. |
-| `spec.prune` | `boolean` | No |  |
+| `spec.owner` | `string` | No | Owner identifies which actor manages this instance. An absent or "operator" value means operator-managed: the controller reconciles normally. The API server rejects any other value, including an explicit empty string. Only an explicit "cli" makes the operator skip the instance (no render/apply/prune, no finalizer) and record a single ManagedExternally acknowledgement. There is no CRD default; the reconciler carries the operator-managed default semantics. |
+| `spec.prune` | `boolean` | No | Prune controls whether the operator deletes what an instance no longer renders. When true, the operator deletes stale resources on reconcile and every applied object when the ModuleInstance is deleted. When false or absent, it leaves them in place: deleting the ModuleInstance leaves its applied objects running. Namespaces and CustomResourceDefinitions are never deleted. |
 | `spec.rollout` | `object` | No | RolloutSpec configures apply behavior for a release. |
 | `spec.rollout.forceConflicts` | `boolean` | No | ForceConflicts enables SSA force ownership when desired. |
 | `spec.rollout.strategy` | `string` | No | Strategy controls how apply operations are performed. |
@@ -151,10 +151,10 @@ The resource definition declares these `kubectl get` columns. A column with a pr
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `spec.dependsOn` | `[]object` | No | DependsOn references other ModulePackage CRs that must be Ready=True before this ModulePackage is reconciled. References are same-namespace only. |
+| `spec.dependsOn` | `[]object` | No | DependsOn references other ModulePackage CRs that must be Ready=True before this ModulePackage is reconciled. References are same-namespace only: an entry whose namespace is set to anything other than this ModulePackage's own is refused: the ModulePackage reports Ready=False with reason DependenciesNotReady and does not reconcile. |
 | `spec.dependsOn[].name` | `string` | Yes | Name of the referent. |
 | `spec.dependsOn[].namespace` | `string` | No | Namespace of the referent, when not specified it acts as LocalObjectReference. |
-| `spec.interval` | `string` | No | Interval at which the reconciler re-evaluates the package to detect drift and re-apply. Also the requeue interval after transient failures. |
+| `spec.interval` | `string` | No | Interval at which the reconciler runs again: it re-fetches the source artifact, re-renders the package and compares the source, render and inventory digests with the last applied ones, and skips the apply when they all match. It does not compare the live objects, so a change made directly to an applied object is not detected or reverted until the rendered output changes. Also the requeue interval after transient failures. Defaults to 5 minutes. |
 | `spec.path` | `string` | Yes | Path is the directory within the artifact containing instance.cue. Example: "releases/prod/minecraft". |
 | `spec.prune` | `boolean` | No | Prune enables deletion of stale resources on reconcile and of all owned resources on ModulePackage deletion. |
 | `spec.rollout` | `object` | No | Rollout configures apply behavior. |
@@ -300,7 +300,7 @@ The resource definition declares these `kubectl get` columns. A column with a pr
 | `spec.registry.<key>.enable` | `boolean` | No | Enable toggles the subscription. A pointer so that an omitted value defers to the schema default (true) rather than serializing as an explicit false. A disabled subscription is still pinned and imported by the generated module, with enable set to false on its entry. |
 | `spec.registry.<key>.version` | `string` | Yes | Version names exactly one published catalog build as a bare SemVer string (e.g. "2.0.0-alpha.3") — the platform module IS the resolution ([0010:D14](/enhancements/0010/decisions/)); there is no range or allow/deny vocabulary. The version's major must agree with the subscription key's `@vN` suffix. The operator uses it twice: as the generated cue.mod pin and as the entry's stamped expected version, which unifies with the imported catalog's own version so wrong bytes fail the build naming the entry ([0019:D13](/enhancements/0019/decisions/)). CRD-required is safe against the stored pre-reshape singleton: API server validation ratcheting keeps status-subresource patches working against a stored object lacking the field (measured in test/integration/crdvalidation). |
 | `spec.skewPolicy` | `string` | No | SkewPolicy is the operator's response to catalog version skew: a module whose cue.mod requires a newer build of an OPM-namespace path (core or a catalog) than the platform pins ([0019:D7/D18](/enhancements/0019/decisions/)). "Warn" (the default when unset) renders against the platform's build and reports the skew as a RenderWarning event on the workload; "Refuse" refuses the render before evaluation and the workload reports Ready=False with reason SkewRefused, naming the path and both versions. The policy is not part of the generated platform module; it is recorded beside it, so changing the field alone bumps the generation, regenerates and re-enqueues the workloads. |
-| `spec.type` | `string` | Yes | Type is the informational discriminator for the platform (core \#Platform.type). It does not affect matching; it labels the platform flavor for operators and downstream tooling. |
+| `spec.type` | `string` | Yes | Type is the informational discriminator for the platform (core \#Platform.type). It is required and shown in the Type column of kubectl get. The operator passes it on to the generated platform module, and nothing in OPM acts on its value. |
 
 ### Status
 
@@ -398,7 +398,7 @@ The resource definition declares these `kubectl get` columns. A column with a pr
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `status.accepted` | `boolean` | No | accepted reports whether the claim passed acceptance: the catalog resolved, its Provides re-derived equal, and no other instance holds the same provider. |
-| `status.active` | `boolean` | No | active reports whether an accepted claim's provider is serving. An accepted claim stays inactive until its ModulePackage is Ready. |
+| `status.active` | `boolean` | No | active reports whether an accepted claim's provider is serving. An accepted claim stays inactive until its provider ModuleInstance (named by spec.providerRef) reports Ready, and once active it stays active. |
 | `status.conditions` | `[]Condition` | No | conditions represent the current state of the TransformerRegistration resource. |
 | `status.observedGeneration` | `integer` | No | observedGeneration is the .metadata.generation this claim was last reconciled for, whether or not that reconcile reached a verdict: a claim waiting on the platform or on its provider's inventory records the generation it observed rather than reading as un-reconciled. A claim whose generation is ahead of this has been edited since, so whatever conditions report is stale. |
 

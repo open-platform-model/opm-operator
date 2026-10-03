@@ -64,9 +64,13 @@ this change and its three siblings in catalog_opm, library and cli to one shared
   - S5: title and body against the real resolver;
   - S6: a dirty tree is refused.
 
-  The offline set runs as a step in the existing `Run on Ubuntu` job of
-  `.github/workflows/test.yml`. The network set runs in a new, non-required workflow,
-  `.github/workflows/cascade-task.yml`.
+  The offline set runs as a step in the existing `Lint` job of `.github/workflows/lint.yml`, the
+  opm-operator check workspace RELEASING.md ("Rulesets on main") makes required. The network set
+  runs in a new, non-required workflow, `.github/workflows/cascade-task.yml`.
+- **The resource reference follows the samples.** When the task moves a file under
+  `config/samples/`, it regenerates the `hack/crdref` block of
+  `docs/site/reference/operator-resources.md`, so the required `Lint` check stays green, and
+  `classes` marks that page `test` so a sample-only cascade stays `test(fixtures)`.
 - **`AGENTS.md`** ("Registry") gains one bullet naming the task, its exit codes and `task -x`.
 
 Release class: none. Every commit is `ci`, `test` or `docs`, which are hidden sections, so this
@@ -125,7 +129,7 @@ stay as they are.
   - `.github/workflows/cascade-task.yml`.
 - **Changed files:**
   - `.tasks/deps.yaml`: four tasks;
-  - `.github/workflows/test.yml`: one step in `Run on Ubuntu`;
+  - `.github/workflows/lint.yml`: one step in `Lint`;
   - `AGENTS.md`: one bullet.
 - **Untouched:**
   - `hack/fixtures.sh`, which stays byte-identical to the cli copy (root `task fixtures:lint`);
@@ -134,5 +138,7 @@ stay as they are.
 - **Tools the task needs at run time:** `git`, `go`, `cue` and `awk`, and mikefarah `yq` v4,
   which the stub and the resolver use. The opm CLI is installed by the task itself into
   `$(git rev-parse --git-dir)/cascade/bin`.
-- **Delivery:** one PR. The OpenSpec archive commit rides that PR, and nothing is pushed to
+- **Delivery:** one PR, titled `ci(cascade): add the deps:cascade tasks` (Phase 2 cascade
+  contract §10). With squash messages set to BLANK only the title reaches `main`, and `ci` cuts
+  no release. The OpenSpec archive commit rides that PR, and nothing is pushed to
   `main` (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings").

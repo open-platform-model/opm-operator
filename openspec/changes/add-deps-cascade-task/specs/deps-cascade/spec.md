@@ -15,6 +15,10 @@ The repo SHALL provide `task deps:cascade`, which moves opm-operator's upstream 
 - **WHEN** `CASCADE_RESOLVER` is unset and no `.github` checkout sits beside the repo
 - **THEN** the task fails before running and says to check out `open-platform-model/.github` or set `CASCADE_RESOLVER`
 
+#### Scenario: A predicate's "no" is not "nothing to do"
+- **WHEN** a resolver call other than `newest`, such as `pin-of` for the target catalog, exits 3
+- **THEN** the task exits with a code other than 0 or 3 and `git status --porcelain` is empty
+
 #### Scenario: Relative resolver path
 - **WHEN** `CASCADE_RESOLVER` is set to a relative path
 - **THEN** the task fails and says the path must be absolute
@@ -39,8 +43,9 @@ The task SHALL move exactly these pins:
   - the four `test/fixtures/modules/*/cue.mod/module.cue` files.
 
   A file whose catalog is above `K` SHALL NOT be lowered.
-- **Core.** It moves core in those modules and in `test/fixtures/catalogs/provider/cue.mod/module.cue` to the version catalog `K` pins, and only when that is greater than the file's own core. Core SHALL never come from the newest published core directly.
+- **Core.** It moves core in those modules and in `test/fixtures/catalogs/provider/cue.mod/module.cue` to the version that the file's catalog after the move pins (the higher of the file's catalog and `K`; `K` for the provider fixture), and only when that is greater than the file's own core. Core SHALL never come from the newest published core directly.
 - **The opm CLI.** It writes `.opm-cli-version` last.
+- **The resource reference.** When it changed any file under `config/samples/`, it regenerates the `hack/crdref` block of `docs/site/reference/operator-resources.md` before writing `.opm-cli-version`. If `hack/crdref` fails, it SHALL warn and still produce the rest of the diff.
 
 `cue mod get` SHALL name only `opmodel.dev/*` and `testing.opmodel.dev/*` modules, each with an exact version, and SHALL run, followed by one `cue mod tidy`, only in a module where a pin moved. Third-party pins SHALL never be named. A third-party pin raised by `tidy` SHALL be reported as a warning. The task SHALL never edit an import path or a `@vN` key; a new major SHALL appear only as the resolver's warning.
 
@@ -55,6 +60,10 @@ The task SHALL move exactly these pins:
 #### Scenario: Newer core published but not pinned by the catalog
 - **WHEN** core `v2.0.0-beta.2` is published and the newest catalog pins core `v2.0.0-beta.1`
 - **THEN** the fixtures' core stays at `v2.0.0-beta.1`
+
+#### Scenario: Sample Platform moved
+- **WHEN** the task moves the catalog `version:` in the sample Platform
+- **THEN** `go run ./hack/crdref -check` passes on the resulting tree
 
 #### Scenario: Third-party pins untouched
 - **WHEN** the task runs `cue mod get` in a fixture module
@@ -103,7 +112,7 @@ The task SHALL NOT modify:
 - `.cascade-frozen` or `.cascade-hold`;
 - `.release-please-manifest.json`, `release-please-config.json` or `CHANGELOG.md`;
 - anything under `.github/`;
-- `.opm-docs-version`;
+- `.opm-docs-version`, `docs-kit.cue` or any docs-kit ref;
 - `hack/fixtures.sh` or `.tasks/examples.yaml`;
 - any CUE `language.version`;
 - the Jellyfin sample or `ocirepository.yaml`.
@@ -120,7 +129,7 @@ It SHALL only read from registries and SHALL never publish or seed. When an upst
 
 ### Requirement: Title and body come from the shared resolver
 `task deps:cascade:title` and `task deps:cascade:body` SHALL call the resolver's `title` and `body` subcommands with `.tasks/cascade/classes` and `.tasks/cascade/pins.sh`.
-- **`classes`** SHALL classify `.opm-cli-version` as release-tool and `config/samples/`, `test/`, any `testdata/` directory and `*_test.go` as test. Any other path, including `go.mod` and `go.sum`, SHALL be shipped.
+- **`classes`** SHALL classify `.opm-cli-version` as release-tool and `config/samples/`, `test/`, any `testdata/` directory, `*_test.go` and the generated `docs/site/reference/operator-resources.md` as test. Any other path, including `go.mod` and `go.sum`, SHALL be shipped.
 - **`pins.sh <ref>`** SHALL print one row per logical pin for the working tree (`WORKTREE`) or a git ref, as `<pin-key>`, `<display>`, `<class>`, `<v-prefixed version>`, `<labels>` separated by tabs. The rows are library (shipped), the opm catalog (test, from the sample Platform), core (test, from `test/fixtures/modules/hello`) and the opm CLI (release-tool).
 
 #### Scenario: Library and catalog moved
@@ -129,6 +138,10 @@ It SHALL only read from registries and SHALL never publish or seed. When an upst
 
 #### Scenario: Only fixtures moved
 - **WHEN** the diff changes only paths under `test/` and `config/samples/`
+- **THEN** the title type is `test(fixtures)`
+
+#### Scenario: Only samples and fixtures moved, reference regenerated
+- **WHEN** the diff changes only paths under `test/` and `config/samples/` and the regenerated `docs/site/reference/operator-resources.md`
 - **THEN** the title type is `test(fixtures)`
 
 #### Scenario: Only the opm CLI moved
@@ -140,10 +153,10 @@ It SHALL only read from registries and SHALL never publish or seed. When an upst
 - **THEN** `pins.sh WORKTREE` and `pins.sh HEAD` print the same rows
 
 ### Requirement: deps:cascade is tested offline in required CI and online on demand
-`task deps:cascade:test` SHALL run `deps:cascade` in throwaway copies of the tree against the contract's stub resolver, and SHALL report `PASS` or `FAIL` per scenario. It SHALL exit 0 only when every scenario passes. It SHALL fail when the stub's `sha256sum` differs from the contract's checksum. With `CASCADE_TEST_SET=offline` it SHALL need no network, and it SHALL run in the required `Run on Ubuntu` job of `.github/workflows/test.yml`. The full set SHALL run in a separate, non-required workflow on changes to the cascade files, by hand, and weekly. That set SHALL include older pins restored to the tree's versions with the expected version-advance diff, frozen pins, and the title and body checked against the real resolver.
+`task deps:cascade:test` SHALL run `deps:cascade` in throwaway copies of the tree against the contract's stub resolver, and SHALL report `PASS` or `FAIL` per scenario. It SHALL exit 0 only when every scenario passes. It SHALL fail when the stub's `sha256sum` differs from the contract's checksum. With `CASCADE_TEST_SET=offline` it SHALL need no GHCR or module proxy access beyond a warm Go module cache, and it SHALL run in the `Lint` job of `.github/workflows/lint.yml`, the check workspace RELEASING.md makes required. It SHALL NOT need the real resolver or a `.github` checkout, except for the title and body check. The full set SHALL run in a separate, non-required workflow on changes to the cascade files, by hand, and weekly. That set SHALL include older pins restored to the tree's versions with the expected version-advance diff, frozen pins, and the title and body checked against the real resolver.
 
 #### Scenario: Offline set in PR CI
-- **WHEN** a pull request runs the `Run on Ubuntu` job
+- **WHEN** a pull request runs the `Lint` job
 - **THEN** the job runs `task -x deps:cascade:test` with `CASCADE_TEST_SET=offline`, and the job fails if a scenario fails
 
 #### Scenario: Older pins produce the expected diff

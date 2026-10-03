@@ -51,7 +51,18 @@ not pins):
 - `.tasks/examples.yaml`.
 - Synthetic skew literals such as `v4.0.1` in `internal/reconcile/warnings_test.go`. They are not
   pins (workspace RELEASING.md, section "Cascade files").
-- Version prose in `docs/site/` (see "Open questions").
+- Two deliberately old catalog literals that tests do resolve from a registry:
+  `skewedCatalogVersion()` in `test/integration/reconcile/skew_test.go:42-51` (`4.0.0`) and
+  `pinned` in `internal/controller/platform_controller_test.go:614` (`4.0.0`). Both must stay
+  older than `CatalogVersion()`. Workspace RELEASING.md, section "Cascade files", calls such a pin
+  frozen ("An old pin without an entry is stale"). The task edits no Go test file, so it never
+  moves them, but the operator has no `.cascade-frozen` entry for them and the RELEASING.md "Pin
+  classes" table has no operator frozen row. Whether to add one is for the supervisor (see "Open
+  Questions").
+- Version prose in `docs/site/start/install-the-operator.md` (see "Open questions"). The
+  generated block of `docs/site/reference/operator-resources.md` is not prose: the task
+  regenerates it (see "Regenerating the resource reference").
+- `docs-kit.cue`, `.opm-docs-version` and every docs-kit ref.
 - Everything in contract §5.2 rule 14.
 
 ### Live facts the design relies on
@@ -78,8 +89,9 @@ Read-only checks on 2026-10-04:
   The expected catch-up title is therefore
   `fix(deps): bump library to v1.0.0-beta.3 and opm catalog to v4.5.1`.
 - **The opm CLI has both setters.** `opm module version set <version> [path]` and
-  `opm catalog version set <version> [path]` exist (cli `internal/cmd/module/version.go:31`,
-  `internal/cmd/catalog/version.go:31`).
+  `opm catalog version set <version> [path]` exist (cli `internal/cmd/module/version.go:30`,
+  `internal/cmd/catalog/version.go:31`). Both are also present at cli `v1.0.0-beta.4`, the
+  version S2 lowers `.opm-cli-version` to and therefore the one phase B installs there.
 - **go-task** is 3.52.0 locally. Contract §3 records that only `task -x` propagates exit 3.
 
 ## Goals / Non-Goals
@@ -120,10 +132,16 @@ Read-only checks on 2026-10-04:
 - **Task names.** The tasks are added to the existing `.tasks/deps.yaml`, which `Taskfile.yml:116-117`
   includes as `deps`. That yields `deps:cascade`, `deps:cascade:title`, `deps:cascade:body` and
   `deps:cascade:test`, so the invoked names match contract §5.1 exactly.
-- **The resolver path.** Each of the four tasks declares the `CASCADE_RESOLVER_PATH` var at task
-  level, through a YAML anchor, never as a global `vars:` entry. It exports
-  `CASCADE_RESOLVER: '{{.CASCADE_RESOLVER_PATH}}'` and has the `test -x` precondition with the
-  contract's message (contract §3).
+- **The resolver path.** `deps:cascade`, `deps:cascade:title` and `deps:cascade:body` declare
+  the `CASCADE_RESOLVER_PATH` var at task level, through a YAML anchor, never as a global `vars:`
+  entry. Each exports `CASCADE_RESOLVER: '{{.CASCADE_RESOLVER_PATH}}'` and has the `test -x`
+  precondition with the contract's message (contract §3).
+- **`deps:cascade:test` has no resolver var and no precondition.** This deviates from contract §3,
+  which gives all four tasks both, and is reported to the supervisor. `test.sh` exports the
+  stub itself (contract §8 step 5) and reads the real resolver only from
+  `CASCADE_RESOLVER_REAL` (S5). With the precondition, the offline CI step would fail on every
+  PR: CI has no `.github` checkout beside the repo and sets no `CASCADE_RESOLVER`, so the
+  default path does not exist.
 - **Working directory.** An included taskfile runs in the root Taskfile's directory unless it
   sets `dir:`, so the scripts are called with repo-relative paths.
 
@@ -151,7 +169,7 @@ tasks:
 ```
 
 Whether go-task accepts a top-level `x-` key is a spike item (1.3). If it does not, the anchor
-goes on the first task's `vars:` and the other three alias it.
+goes on the first task's `vars:` and the other two alias it.
 
 ### `cascade.sh`: three phases
 
@@ -178,14 +196,15 @@ resolve() { # resolve <var> <kind> <coord|-> <current>   → sets <var> to targe
 resolve LIB  go  github.com/open-platform-model/library  "$(go_pin)"            github.com/open-platform-model/library
 resolve CAT  cue opmodel.dev/catalogs/opm@v4            "v$(sample_catalog)"    opmodel.dev/catalogs/opm@v4
 K=${CAT:-v$(sample_catalog)}
-CORE_OF_K=$("$R" pin-of opmodel.dev/catalogs/opm@v4 "$K" opmodel.dev/core@v2)   # exit 3 → error: a catalog always pins core
+core_of "$K"                                       # pin-of, inside a case: 3 (no core row) is an error, never "nothing to do"
 HOLD_CORE=$(hold_or_empty opmodel.dev/core@v2)     # rule 7: a hold caps core, and the catalog with it
 resolve CLI  opm-cli ""                                  "$(cat .opm-cli-version)" github.com/open-platform-model/cli
-language_warnings "$K" "$CORE_OF_K"                # rule 10, against .github/workflows/test.yml:19 CUE_VERSION
-plan_fixture_edits                                  # per-file targets; frozen lookups (rule 8)
+language_warnings "$K"                             # rule 10, against .github/workflows/test.yml:19 CUE_VERSION
+plan_fixture_edits                                  # per-file targets: C = max(file catalog, K), core = pin-of C; frozen lookups (rule 8)
+plan_advances                                       # which advance modules will change: a pin moves there, or f_changed already true
 
-# Phase B: tools, from the unmodified tree, only if something will move
-[ -z "$anything_moves" ] || GOBIN="$STATE/bin" go install \
+# Phase B: tools, from the unmodified tree, only if a setter may run
+[ -z "$setter_needed" ] || GOBIN="$STATE/bin" go install \
   "github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)"
 
 # Phase C: edit (rule 12 order)
@@ -193,14 +212,26 @@ move_library            # go get library@$LIB; go mod tidy; warn on a raised thi
 move_catalog_core       # sample (bare), catalog.go (bare), cue mod get/tidy per moved module, provider core
 advance_versions        # rule 11: f_changed, published, next-patch, opm {module,catalog} version set
 follow_consumers        # modulepackages (text), moduleinstance.yaml, sample ModuleInstance
+regenerate_reference    # go run ./hack/crdref when a file under config/samples/ changed
 write_cli_version       # last
 result                  # rule 13: exit 0 changed, 3 not
 ```
 
-The only `set +e` in the script is the one inside `resolve` that captures the exit code. The
-`case` re-raises every code other than 0 and 3, which keeps rule 5's "no `set +e` around resolver
-calls" in substance. The implementer may use `if out=$(…); then rc=0; else rc=$?; fi` instead,
-which avoids `set +e` entirely; that form is preferred.
+- **Every resolver call is inside an `if` or a `case`.** Under `set -e`, a bare
+  `X=$("$R" pin-of …)` that answers 3 would end the script with status 3, which the caller reads
+  as "nothing to do", even in phase C with a partly edited tree. So every call (`newest`,
+  `pin-of`, `hold`, `is-frozen`, `published`, `language-of`, `next-patch`, `check-files`) is
+  written `if out=$("$R" …); then …; else rc=$?; case $rc in 3) …;; *) exit "$rc";; esac; fi`,
+  never with `set +e`.
+- **An `EXIT` trap is the backstop.** It rewrites an exit status of 3 to 1 unless `result()` set
+  `CASCADE_RESULT_SET=1` first, and names the line that failed. Only `result()` can report
+  "nothing to do".
+- **Phase B decides from the plan, not from "a pin moves".** A fixture can already differ from
+  the merge-base before the run (a human commit on the `deps/cascade` branch), while no pin
+  moves. If `B` is published, the target is `next-patch(B)`, so the setter must exist. Phase A
+  therefore evaluates `f_changed` for each advance module against the unmodified tree, and phase B
+  installs the binary when any pin moves or any advance module already changed. The setter is
+  only called when the target differs from the file.
 
 ### Consistent set across the operator's files (contract §5.2 rule 7)
 
@@ -213,10 +244,13 @@ library's module loop works (contract §6.2 step 4):
   - Every catalog-pinning file whose catalog is below `K` moves to `K`. A file above `K` is never
     lowered. This covers the sample, `catalog.go` and the four fixture modules.
 - **Core per file.**
-  - The target is `pin-of opmodel.dev/catalogs/opm@v4 K opmodel.dev/core@v2`, but only if it is
-    greater than the file's own core.
+  - `C` is the file's catalog after the move: `max(file catalog, K)`. That is `K` when the file
+    moved to it, and the file's own catalog when that is above `K` (contract §5.2 rule 7: "`C` =
+    the catalog target if it moved, otherwise the file's current catalog version").
+  - The target is `pin-of opmodel.dev/catalogs/opm@v4 C opmodel.dev/core@v2`, but only if it is
+    greater than the file's own core. `pin-of` is called once per distinct `C`.
   - Otherwise core stays, with the warning "core `<cur>` is ahead of the core `<x>` that catalog
-    `<K>` pins" (contract §9.10, reported to the owner).
+    `<C>` pins" (contract §9.10, reported to the owner).
   - The provider catalog fixture pins core only. It uses the same `pin-of` value with the
     representative `K`, never `newest cue opmodel.dev/core@v2`.
 - **A hold on core.** If `hold opmodel.dev/core@v2` is in date and its `max` is below the
@@ -280,6 +314,34 @@ consumers must name the tree's fixture version. For each fixture module `m`, aft
 
 Each edit is preceded by `is-frozen <file> <key>`.
 
+### Regenerating the resource reference
+
+`docs/site/reference/operator-resources.md:10-434` is a block that `hack/crdref` generates from
+`config/crd/bases`, `config/samples` and `internal/controller`. Its line 329 is the sample
+Platform's `version: 4.4.4`. The required `Lint` job runs `task dev:docs:reference:check`
+(`.github/workflows/lint.yml`), and `task docs:bundle:parity` compares the docs bundle's page with
+that block. A cascade PR that moves the sample Platform without regenerating the block fails
+`Lint`.
+
+- When any file under `config/samples/` changed in this run, phase C runs `go run ./hack/crdref`
+  as its regenerator (contract §5.2 rule 12), after the consumers and before `.opm-cli-version`.
+  It never runs `task dev:docs:reference`, whose `manifests` dependency installs and runs
+  controller-gen.
+- If `crdref` fails to build or run (a library move that breaks compilation), the task warns with
+  key `-` ("`hack/crdref` failed; regenerate `docs/site/reference/operator-resources.md` by
+  hand") and continues, so the PR is still produced and its own `Lint` shows the break. This
+  mirrors the cli's `docskit-dump` rule (contract §6.4 step 6). The failure is handled by an
+  explicit `if`, never `|| true`.
+- **Class.** The regenerated page changes only because a test pin moved. Under the contract's
+  §5.3 map it matches no line and is therefore `shipped`, which would title a catalog-only
+  cascade `fix(deps)` and cut an operator release. That contradicts workspace RELEASING.md,
+  section "Pin classes" (opm-operator test class: `config/samples/`, `test/fixtures/`) and
+  `AGENTS.md` ("a pin bump there is `test(fixtures)` and must not release the operator").
+  RELEASING.md wins over the contract (contract preamble), so `classes` adds one line after the
+  verbatim contract block: `test docs/site/reference/operator-resources.md`. This is reported to
+  the supervisor as a contract conflict, with the proposal that the contract's opm-operator map
+  gain the same line.
+
 ### `.opm-cli-version` last
 
 `newest opm-cli --current "$(cat .opm-cli-version)"`. On 0 the task writes `<v>\n`. The opm CLI
@@ -301,7 +363,9 @@ used for phase B is the version before this write, so a run never depends on the
   - The labels column is empty. `need-human-review` is library-only (contract §6.2).
   - The library version is read from the `require` line of `go.mod` with awk, not
     `go list` / `go mod edit`, so that the same code works on `git show` output.
-- **`classes`** is contract §5.3's opm-operator block, verbatim:
+- **`classes`** is contract §5.3's opm-operator block, verbatim, plus one line for the
+  regenerated resource reference (see "Regenerating the resource reference"; reported to the
+  supervisor):
 
   ```
   release-tool .opm-cli-version
@@ -309,10 +373,12 @@ used for phase B is the version before this write, so a run never depends on the
   test test/
   test **/testdata/
   test *_test.go
+  test docs/site/reference/operator-resources.md
   ```
 
   `go.mod` and `go.sum` fall through to `shipped`. With the catch-up diff above, the title is
-  therefore `fix(deps)`, and a catalog-only or core-only diff is `test(fixtures)`.
+  therefore `fix(deps)`, and a catalog-only or core-only diff, including the regenerated
+  reference, is `test(fixtures)`.
 
 ## Research & Decisions
 
@@ -331,7 +397,7 @@ port is about 30 lines and leaves `examples.yaml` untouched for the e2e path tha
 
 ### Where `language.version` is compared
 **Context**: Contract §5.2 rule 10 says each repo names one file for "the local `CUE_VERSION`".
-**Decision**: `.github/workflows/test.yml:19` (`CUE_VERSION: 'v0.17.1'`), the required PR job's
+**Decision**: `.github/workflows/test.yml:19` (`CUE_VERSION: 'v0.17.1'`), the PR test job's (contract §5.2 rule 10 names this file)
 env. It is read with `grep -oP "CUE_VERSION: '\K[^']+"`. If the value cannot be read, the task
 warns with key `-` and continues.
 **Rationale**: It is the version that PR CI installs (`test.yml:49-52`) and that runs the
@@ -414,12 +480,28 @@ pin-of opmodel.dev/catalogs/opm@v4 V opmodel.dev/core@v2
 - The exact argument order is fixed by the implementation in section 3. This file is written
   from the first green S1 run and reviewed against this list.
 
+### S3b: a non-`newest` answer of 3 is never "nothing to do"
+**Decision**: The offline set adds one scenario beyond contract §8, S3b. The stub table has no
+`pin-of` row for the tree's catalog, so `pin-of` exits 3. The task must exit with a code other
+than 0 or 3 and leave `git status --porcelain` empty.
+**Rationale**: It proves the `if`/`case` rule and the `EXIT` trap in "`cascade.sh`: three phases"
+(the spec's "never turns a failure into 0 or 3").
+
 ### Test placement (contract §8, §9.12)
+**Context**: Contract §8 places the offline step in `test.yml` job `Run on Ubuntu`, calling it
+"an existing required job". Workspace RELEASING.md, section "Rulesets on main", lists
+opm-operator's only required check as `Lint`. RELEASING.md wins (contract preamble); the conflict
+is reported to the supervisor.
 **Decision**:
 - **Offline set.** `CASCADE_TEST_SET=offline task -x deps:cascade:test` runs as a step in
-  `.github/workflows/test.yml` job `Run on Ubuntu` (`:28-30`). It goes after "Install Task"
-  (`:54-57`) and before the registry steps. It needs `git`, `awk`, `tar`, `sha256sum` and `yq`,
-  which `ubuntu-latest` has.
+  `.github/workflows/lint.yml` job `Lint`, after "Install Task" and the G1 step. `Lint` already
+  has setup-go (with its module cache restore) and setup-task. The offline set needs `git`,
+  `awk`, `tar`, `sha256sum` and `yq`, which `ubuntu-latest` has, and no `cue` and no opm CLI
+  (S1, S3 and S6 move nothing).
+- **Sandbox commits.** `actions/checkout` sets no git identity, so every sandbox `git commit` in
+  `test.sh` runs with `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and
+  `GIT_COMMITTER_EMAIL` exported and `-c commit.gpgsign=false`, so a runner (or a developer with
+  signing on) never aborts with "Author identity unknown".
 - **Network set.** It runs in the new `.github/workflows/cascade-task.yml`, job
   `Cascade task (network)`, with `timeout-minutes: 20` and `permissions: contents: read`.
   - Triggers: `pull_request` on `.tasks/cascade/**`, `Taskfile.yml`, `.tasks/*.yaml` and the
@@ -463,19 +545,45 @@ These are recorded as contract §9 states them. The owner may override any of th
 - **[Stub vs real resolver]** → The stub does not apply holds inside `newest` and has no title or
   body (contract §7). Holds and title/body are tested once in `.github`, and S5 covers this
   repo's title and body against the real resolver.
+- **[Every task runs two global `go list -m` vars]** → `Taskfile.yml:19-28` (`ENVTEST_VERSION`,
+  `ENVTEST_K8S_VERSION`) run for every task, including `deps:*`. With an empty module cache and
+  `GOPROXY=off`, even `task --dry deps:release-check` fails. The "offline" set therefore needs a
+  warm Go module cache or the proxy; in CI it runs after setup-go's cache restore, which holds in
+  `Lint`.
 - **[`yq` on a developer machine]** → The stub needs mikefarah `yq` v4 only when a `.cascade-*`
   file exists. The operator has none, so only S4 needs it. `test.sh` checks `yq --version` up
   front and fails naming the tool.
 
 ## Open Questions
 
-- **Docs prose drifts.** `docs/site/start/install-the-operator.md:35,87,190` and
-  `docs/site/reference/operator-resources.md:329` print `4.4.4` and `v2.0.0-beta.1` as example
-  output. The contract gives the operator no warning for them (library has a similar one for
-  `docs/getting-started.md`, contract §6.2 step 5). Proposed: leave them out of the task. Should a
-  `-` warning be added? This is for the supervisor.
+- **Docs prose drifts.** `docs/site/start/install-the-operator.md:35,87,190` prints `4.4.4` and
+  `v2.0.0-beta.1` as example output. The contract gives the operator no warning for it (library
+  has a similar one for `docs/getting-started.md`, contract §6.2 step 5). Proposed: leave it out
+  of the task. Should a `-` warning be added? This is for the supervisor.
+  (`docs/site/reference/operator-resources.md:329` is generated, not prose; the task regenerates
+  it.)
+- **A `.cascade-frozen` for the operator?** The two `4.0.0` catalog literals in "Never touched"
+  are frozen pins in RELEASING.md's sense but have no entry. Should opm-operator ship a
+  `.cascade-frozen` listing them (and RELEASING.md "Pin classes" gain an operator frozen row)?
+  This change does not create one. For the supervisor.
 - **The provider identity comment.** It says the catalog version is "Hand-managed"
   (`test/fixtures/catalogs/provider/identity/identity.cue:12-15`). After this change the cascade
   advances it too, through the same `opm catalog version set`. Editing that comment changes the
   fixture and forces a republish (`0.1.0` to `0.1.1`) in this PR. Proposed: leave the comment,
   which is still true about how a bump is made, and correct it with the next real provider bump.
+
+## Plan review
+
+The plan review of 2026-10-04 raised 14 findings. Applied: 1 (regenerate the resource
+reference), 2 (its class; reported as a contract conflict), 3 (`deps:cascade:test` without the
+resolver precondition; reported as a contract §3 deviation), 4 (offline step in `Lint`; reported
+as a contract §8 conflict with RELEASING.md), 5 (`if`/`case` for every resolver call, the `EXIT`
+trap, S3b), 6 (sandbox git identity), 7 (phase B decides from `f_changed` too), 8 (the two `4.0.0`
+literals listed, `.cascade-frozen` asked), 9 (setters checked at cli `v1.0.0-beta.4` too), 10
+(global `go list` vars in Risks), 11 (`C = max(file catalog, K)`), 12 (docs-kit refs in the
+spec), 14 (line reference).
+
+Rejected: 13 (a tasks.md item that opens the PR). The repo's `openspec/config.yaml` allows no
+delivery operation in tasks.md besides the section commit, and PRs are opened by the supervisor.
+The PR title, `ci(cascade): add the deps:cascade tasks` (contract §10), is recorded in the
+proposal instead.

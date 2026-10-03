@@ -30,6 +30,13 @@ jobs:
         if: startsWith(github.head_ref || github.ref_name, 'release-please--')
         run: task deps:release-check
 
+      # task deps:cascade against the stub resolver, offline scenarios only
+      # (.tasks/cascade/test.sh). The network scenarios run in cascade-task.yml.
+      - name: Cascade task (offline)
+        env:
+          CASCADE_TEST_SET: offline
+        run: task -x deps:cascade:test
+
       # .opm-docs-version and every docs-kit publish.yml ref under
       # .github/workflows/ name one docs-kit release (docs-kit C5, C12).
       # Offline: no opm-docs install.

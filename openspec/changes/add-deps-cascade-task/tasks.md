@@ -116,17 +116,17 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 ## 5. CI and docs
 
-- [ ] 5.1 In `.github/workflows/lint.yml` job `Lint`, after the G1 step, add the step `Cascade task (offline)`, which runs `task -x deps:cascade:test` with `env: CASCADE_TEST_SET: offline`.
-- [ ] 5.2 Add `.github/workflows/cascade-task.yml`, as in design.md ("Test placement"):
+- [x] 5.1 In `.github/workflows/lint.yml` job `Lint`, after the G1 step, add the step `Cascade task (offline)`, which runs `task -x deps:cascade:test` with `env: CASCADE_TEST_SET: offline`.
+- [x] 5.2 Add `.github/workflows/cascade-task.yml`, as in design.md ("Test placement"):
   - job `Cascade task (network)`, with `timeout-minutes: 20` and `permissions: contents: read`;
   - triggers: `pull_request` paths `.tasks/cascade/**`, `Taskfile.yml`, `.tasks/*.yaml` and the workflow; `workflow_dispatch`; and a weekly `schedule`;
   - checkout with `fetch-depth: 0`, then Go (`go-version-file: go.mod`), CUE (`CUE_VERSION` env) and Task, every action SHA-pinned like `test.yml`;
   - a checkout of `open-platform-model/.github` at `main` into `org-github`, with `persist-credentials: false`, and `CASCADE_RESOLVER_REAL` set to its `cascade-resolve.sh`;
   - then `task -x deps:cascade:test`.
-- [ ] 5.3 Check that both workflows parse (`python3 -c 'import yaml,sys;[yaml.safe_load(open(f)) for f in sys.argv[1:]]' .github/workflows/*.yml`, and `actionlint` if available).
+- [x] 5.3 Check that both workflows parse (`python3 -c 'import yaml,sys;[yaml.safe_load(open(f)) for f in sys.argv[1:]]' .github/workflows/*.yml`, and `actionlint` if available).
 - [ ] 5.4 Once `.github` `add-cascade-resolver` has merged, run `cascade-task.yml` on the PR (or locally with `CASCADE_RESOLVER_REAL` pointing at a `.github` checkout of `main`), and confirm S5 passes. Until then, leave this box open and say so in the PR body.
-- [ ] 5.5 Add one bullet to `AGENTS.md` "Registry". It says that `task -x deps:cascade` moves the upstream pins (library, the opm catalog and core with fixtures and consumers, and `.opm-cli-version`) and exits 0 changed, 3 nothing, or other on error; that `deps:cascade:title|body|test` exist; and that `.tasks/cascade/` holds the scripts (workspace RELEASING.md, section "What each repo's task moves").
-- [ ] 5.6 `task dev:fmt dev:vet dev:lint dev:test` and `CASCADE_TEST_SET=offline task -x deps:cascade:test` green, then commit `ci(cascade): run the deps:cascade tests in CI`
+- [x] 5.5 Add one bullet to `AGENTS.md` "Registry". It says that `task -x deps:cascade` moves the upstream pins (library, the opm catalog and core with fixtures and consumers, and `.opm-cli-version`) and exits 0 changed, 3 nothing, or other on error; that `deps:cascade:title|body|test` exist; and that `.tasks/cascade/` holds the scripts (workspace RELEASING.md, section "What each repo's task moves").
+- [x] 5.6 `task dev:fmt dev:vet dev:lint dev:test` and `CASCADE_TEST_SET=offline task -x deps:cascade:test` green, then commit `ci(cascade): run the deps:cascade tests in CI`
 
 ## 6. Archive
 

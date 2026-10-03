@@ -1,0 +1,79 @@
+name: Cascade task
+
+# The full task deps:cascade test set (.tasks/cascade/test.sh): the offline
+# scenarios plus S2 and S4, which resolve older pins from GHCR and the Go
+# module proxy, and S5, the PR title and body against the shared resolver in
+# open-platform-model/.github. Not a required check: a GHCR or proxy blip must
+# not block an unrelated PR. The offline set runs in the required Lint job.
+
+on:
+  pull_request:
+    paths:
+      - '.tasks/cascade/**'
+      - 'Taskfile.yml'
+      - '.tasks/*.yaml'
+      - '.github/workflows/cascade-task.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  CUE_VERSION: 'v0.17.1'
+
+jobs:
+  cascade-task:
+    name: Cascade task (network)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # The repo and the resolver are checked out side by side, so the
+      # resolver never shows up in the tree the scenarios copy.
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - name: Clone the cascade resolver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: open-platform-model/.github
+          ref: main
+          path: org-github
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: repo/go.mod
+          cache-dependency-path: repo/go.sum
+
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0
+        with:
+          version: ${{ env.CUE_VERSION }}
+
+      - name: Install Task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.x
+
+      # S5 runs only once the resolver is on .github main; until then the
+      # scenario reports SKIP.
+      - name: Point S5 at the resolver
+        run: |
+          r="$GITHUB_WORKSPACE/org-github/.github/scripts/cascade/cascade-resolve.sh"
+          if [ -x "$r" ]; then
+            echo "CASCADE_RESOLVER_REAL=$r" >> "$GITHUB_ENV"
+          else
+            echo "::notice::no cascade resolver on open-platform-model/.github main yet; S5 is skipped"
+          fi
+
+      - name: Cascade task tests (all scenarios)
+        working-directory: repo
+        env:
+          CASCADE_TEST_SET: all
+        run: task -x deps:cascade:test

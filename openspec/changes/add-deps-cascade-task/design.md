@@ -515,8 +515,11 @@ is reported to the supervisor.
   `Cascade task (network)`, with `timeout-minutes: 20` and `permissions: contents: read`.
   - Triggers: `pull_request` on `.tasks/cascade/**`, `Taskfile.yml`, `.tasks/*.yaml` and the
     workflow itself; `workflow_dispatch`; and a weekly `schedule`.
-  - It checks out `open-platform-model/.github` at `main` (`path: org-github`,
-    `persist-credentials: false`) and sets `CASCADE_RESOLVER_REAL`, so S5 runs.
+  - It checks out this repo at `path: repo` and `open-platform-model/.github` at `main`
+    beside it (`path: org-github`, `persist-credentials: false`), so the resolver is never an
+    untracked directory inside the tree that the scenarios copy (contract §3, "In CI"). It sets
+    `CASCADE_RESOLVER_REAL` only when `cascade-resolve.sh` exists there, so S5 reports SKIP until
+    the resolver is on `.github` `main`.
   - Every action is SHA-pinned as in `test.yml`.
   - It is not a required check.
 

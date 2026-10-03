@@ -74,8 +74,9 @@ func liveBuildKernelOrSkip() (*kernel.Kernel, string, string) {
 // predicate.
 //
 // The "registry condition clears" is modelled by swapping the reconciler's
-// registry seams (Kernel, Registry mapping and module-file source) from ones
-// pointed at a dead endpoint to ones pointed at the working registry.
+// registry seams (Kernel and Registry mapping) from ones pointed at a dead
+// endpoint to ones pointed at the working registry; the module-file source
+// is built per reconcile from the current mapping.
 // WithRegistry is construction-only, so a fresh Kernel is the reconciler's only
 // window onto a recovered registry; the Platform CR and its generation stay
 // untouched throughout, which is the property the scenario asserts.
@@ -134,11 +135,9 @@ var _ = Describe("Platform build recovery (registry-backed)", func() {
 
 		// Phase 2: the registry condition clears — no edit to the Platform CR.
 		// Swap in the working registry seams and reconcile the same object
-		// again. The module-file source is dropped so it is rebuilt from the
-		// live mapping on the next reconcile.
+		// again.
 		r.Kernel = liveKernel
 		r.Registry = liveRegistry
-		r.ModFiles = nil
 
 		res, err = r.Reconcile(ctx, req)
 		Expect(err).NotTo(HaveOccurred())

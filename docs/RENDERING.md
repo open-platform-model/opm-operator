@@ -82,10 +82,13 @@ bumps the Platform generation, regenerates a byte-identical module in a new
 directory and re-enqueues every ModulePackage and every operator-managed,
 unsuspended ModuleInstance through the Platform watch, so a switch to
 `Refuse` takes effect on the next reconcile of each object. ModuleInstances
-are re-enqueued only when the Platform's `Ready` status, pin set
-(`status.packageIdentity`, `status.registry`), skew policy, generation or
-`status.operatorVersion` changes; a Platform status write that changes only
-a message or a report such as `ContractsFulfilled` re-enqueues none of them.
+are re-enqueued on a Platform create or delete, and on an update only when
+the Platform's `Ready` status, pin set (`status.packageIdentity`,
+`status.registry`), skew policy, `status.observedGeneration` or
+`status.operatorVersion` changes. A Platform status write that changes only
+a message or a report such as `ContractsFulfilled`, and a spec edit's
+`metadata.generation` bump before the platform is regenerated, re-enqueue
+none of them.
 
 Every render also logs the resolved-versions rows (each OPM path the module
 requires, the build it asked for and the build the platform carries) at

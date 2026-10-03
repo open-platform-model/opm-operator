@@ -34,8 +34,8 @@ See `proposal.md` § Why. Current state, read 2026-10-03 (opm-operator main at `
 ```go
 // platformConsumedFieldsChanged passes a Platform update only when a field a
 // ModuleInstance render consumes differs: the Ready condition's status, the
-// pin set (status.packageIdentity, status.registry), the skew policy, or the
-// generation. It also passes an operatorVersion change: that write is the
+// pin set (status.packageIdentity, status.registry), the skew policy, or
+// status.observedGeneration. It also passes an operatorVersion change: that write is the
 // only status change an operator upgrade makes, and it is the event that
 // recovers instances that rendered into PlatformNotReady before the new
 // process regenerated the platform. A Ready message or reason rewrite and a
@@ -49,8 +49,7 @@ func platformConsumedFieldsChanged() predicate.Predicate {
 			if !okOld || !okNew {
 				return true
 			}
-			return old.Generation != cur.Generation ||
-				old.Status.ObservedGeneration != cur.Status.ObservedGeneration ||
+			return old.Status.ObservedGeneration != cur.Status.ObservedGeneration ||
 				old.Status.PackageIdentity != cur.Status.PackageIdentity ||
 				!equality.Semantic.DeepEqual(old.Status.Registry, cur.Status.Registry) ||
 				skewPolicyOf(old) != skewPolicyOf(cur) ||
@@ -74,7 +73,7 @@ A type assertion that fails passes the event. Failing open costs one render per 
 
 **`operatorVersion`, to keep `PlatformNotReady` recovery after an upgrade.** The platform store is in memory and starts empty. After an operator restart every instance renders before the Platform reconciler repopulates the store, and reports `PlatformNotReady`. The status patch that follows the regeneration carries the same `packageIdentity`, the same `Ready=True/Generated` with the same message, the same `observedGeneration` and the same registry. On an upgrade the one field that changes is `operatorVersion`, and today that write is the event that recovers the fleet promptly. Dropping it would leave recovery after every upgrade to the transient backoff (5s doubling, capped at 5 minutes), with instances reporting `Ready=False` for longer. Passing it costs one fleet render per operator upgrade, which is the recovery itself. A restart under the same version writes an identical status, so no update event fires; that gap is today's behavior, and the transient backoff covers it. A `Store.SetGenerated` signal delivered through a `source.Channel` watch would close it, and is left as a follow-up.
 
-**Generation and observedGeneration.** `spec.skewPolicy` and `spec.registry` edits bump `metadata.generation`. The new package then arrives as a later status update that moves `observedGeneration` and `packageIdentity`. Both values are compared, so the instance renders on the edge where the new package actually lands. The early generation edge can render once against the previous package; that render is correct, just early. It is kept because the owner's decision names generation as a trigger, and that edge is rare (one per spec edit).
+**`observedGeneration`, not `metadata.generation`.** `spec.skewPolicy` and `spec.registry` edits bump `metadata.generation`. The new package then arrives as a later status update that moves `observedGeneration` and `packageIdentity`: `Store.SetGenerated` runs before that status patch, so the event finds the new package in the store. A render on the `metadata.generation` edge would run against the previous package and be repeated by the status write, so only `observedGeneration` is compared. The supervisor's triage of the owner's word "generation" reads it this way (status.observedGeneration, plus `packageIdentity`). `spec.skewPolicy` is compared because the owner named skew; a skew edit is a spec edit too, so its edge also arrives before the regenerated package and costs one early render, and the `observedGeneration` write that follows renders under the new policy.
 
 **`status.registry` beside `packageIdentity`.** `packageIdentity` changes whenever the resolved registry changes, so comparing the registry as well is redundant today. It is kept so that a regression in how the identity is computed cannot silently stop instances from re-rendering under a new pin.
 
@@ -107,10 +106,11 @@ An instance that is being deleted stays indexed. Its deletion path does not rend
 - **Index and mapper:** `moduleInstancePlatform` returns the singleton for an operator-owned instance, an empty-owner instance and an explicit `operator` instance, and returns nothing for CLI-owned and suspended instances. The mapper runs over a `fake.NewClientBuilder().WithIndex(...)` client holding one instance of each kind and enqueues only the operator-managed, unsuspended ones. `k8sClient` in the envtest suite is a direct client and cannot serve a custom field index, so the mapper's unit test uses the fake client.
 - **Manager-driven envtest** in `test/integration/reconcile` (the `concurrent_render_test.go` pattern, with no registry). A real manager runs only the ModuleInstance controller with a counting stub renderer. The stub returns `render.ErrPlatformNotReady` until it is told the platform is ready.
   1. Create an operator-managed instance and a CLI-owned instance, and wait for the managed one to report `PlatformNotReady` and for the CLI-owned one to report `ManagedExternally`.
-  2. Create the `cluster` Platform with `Ready=False`, and wait for the render the create event causes. Then read the time of the stub's last `NotReady` call, mark the stub ready and write `Ready=True/Generated` with a `packageIdentity`. The managed instance must render successfully before that last `NotReady` call plus `BackoffBaseDelay` (5s). Every backoff requeue lands at or after that instant, so a render before it can only come from the Platform watch.
-  3. Once the managed instance is `Ready`, the success path does not requeue it. Change only the Platform's `Ready` message and the `ContractsFulfilled` condition, and use `Consistently` to check that the render count does not move. Then change `packageIdentity`, use `Eventually` to check that the count reaches at least one more, and then `Consistently` to check that it stays there.
+  2. Create the `cluster` Platform with `Ready=False`, wait for the render the create and status events cause, and wait until the render count stays still, so no earlier event is still queued. Then mark the stub ready and write `Ready=True/Generated` with a `packageIdentity`. The managed instance must render successfully exactly once, before the stub's first `NotReady` call plus `BackoffBaseDelay` (5s). Every backoff requeue is scheduled by a `NotReady` render at least `BackoffBaseDelay` after it, and every `NotReady` render happens at or after the first, so a render before that instant can only come from the Platform watch. The last `NotReady` call would not do: a requeue scheduled from the first call fires before the last call plus 5s.
+  3. Once the managed instance is `Ready`, the success path does not requeue it. Wait (by polling the clock, with no sleep) past the instant a requeue scheduled while blocked could fire, then until the render count stays still. Change only the Platform's `Ready` message and the `ContractsFulfilled` condition, and use `Consistently` to check that the render count does not move. Then change `packageIdentity`, use `Eventually` to check that the count reaches at least one more, and then `Consistently` to check that it stays there.
+  4. The upgrade edge: mark the stub not ready and change `packageIdentity`, wait for the `NotReady` render, then mark the stub ready and write a status whose only change is `operatorVersion`. The instance must render successfully before that `NotReady` render plus `BackoffBaseDelay`.
 
-  The reconciler's `Client` is a counting `client.Client` that embeds `mgr.GetClient()`, so the field index still answers its `List`, and that counts `Get` calls per key. The CLI-owned instance's `Get` count must not move across steps 2 and 3. Its `ManagedExternally` condition cannot show an enqueue, because re-acknowledging a CLI-owned instance is specified to change nothing.
+  The reconciler's `Client` is a counting `client.Client` that embeds `mgr.GetClient()`, so the field index still answers its `List`, and that counts `Get` calls per key. The CLI-owned instance's `Get` count must not move across steps 2 to 4. Cleanup runs through `DeferCleanup`. Its `ManagedExternally` condition cannot show an enqueue, because re-acknowledging a CLI-owned instance is specified to change nothing.
 
   The order matters. While an instance is in `PlatformNotReady`, its own transient backoff re-renders it every few seconds, which would make a `Consistently` check flaky. The dropped-write check therefore runs only after recovery.
 
@@ -124,7 +124,7 @@ An instance that is being deleted stays indexed. Its deletion path does not rend
 
 **Context**: The owner's decision lists the `Ready` condition, the pin set and skew data, and the generation. The fields had to be mapped to concrete Platform fields.
 **Explored**: `api/v1alpha1/platform_types.go` and the Platform reconciler's status writes (`patchStatus` call sites, `failReconcile`). Background research for this task is in `claude-stuff/kernel-plan-beta1/research.json`, task `j1`.
-**Decision**: `Ready` status; `status.packageIdentity` and `status.registry`; `spec.skewPolicy`; `metadata.generation` and `status.observedGeneration`; and `status.operatorVersion`, which is not consumed but carries the upgrade recovery.
+**Decision**: `Ready` status; `status.packageIdentity` and `status.registry`; `spec.skewPolicy`; `status.observedGeneration` (not `metadata.generation`, whose edge renders against the previous package); and `status.operatorVersion`, which is not consumed but carries the upgrade recovery.
 **Rationale**: Each of these either moves what the store holds or moves the policy the renderer applies. `operatorVersion` is not an input to a render, but it is the only status change an operator upgrade makes, and it is what recovers instances that rendered into `PlatformNotReady` before the new process regenerated the platform (see § The predicate compares the consumed fields). The `Ready` reason and message, and `ContractsFulfilled`, are reports about the platform, not inputs to a render.
 
 ### Which field names the pin set for the pre-render skip

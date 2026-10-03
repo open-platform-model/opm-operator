@@ -104,8 +104,6 @@ var _ = Describe("Platform watch predicate", func() {
 				refuse := releasesv1alpha1.SkewPolicyRefuse
 				p.Spec.SkewPolicy = &refuse
 			}),
-		Entry("generation bumped", func(*releasesv1alpha1.Platform) {},
-			func(p *releasesv1alpha1.Platform) { p.Generation++ }),
 		Entry("observedGeneration bumped", func(*releasesv1alpha1.Platform) {},
 			func(p *releasesv1alpha1.Platform) { p.Status.ObservedGeneration++ }),
 		Entry("operatorVersion changed (the upgrade recovery edge)", func(*releasesv1alpha1.Platform) {},
@@ -131,6 +129,8 @@ var _ = Describe("Platform watch predicate", func() {
 			func(p *releasesv1alpha1.Platform) {
 				setPlatformCondition(p, status.ContractsFulfilledCondition, metav1.ConditionFalse, status.UnfulfilledContractsReason, "one contract has no provider")
 			}),
+		Entry("metadata.generation only (the package has not been regenerated yet)", func(*releasesv1alpha1.Platform) {},
+			func(p *releasesv1alpha1.Platform) { p.Generation++ }),
 		Entry("identical objects", func(*releasesv1alpha1.Platform) {}, func(*releasesv1alpha1.Platform) {}),
 	)
 

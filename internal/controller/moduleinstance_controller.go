@@ -159,7 +159,13 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //     regression in how the identity is computed cannot silently stop a
 //     re-render under a new pin,
 //   - spec.skewPolicy,
-//   - metadata.generation and status.observedGeneration.
+//   - status.observedGeneration: the platform reconciler writes it with the
+//     package it generated for that generation, so the event finds the new
+//     package already in the store.
+//
+// metadata.generation is excluded: a spec edit bumps it before the platform
+// is regenerated, so a render on that edge would run against the old
+// package and the observedGeneration write that follows renders again.
 //
 // It also passes a status.operatorVersion change. The platform store is in
 // memory, so after an operator upgrade every instance renders into
@@ -182,8 +188,7 @@ func platformConsumedFieldsChanged() predicate.Predicate {
 			if !okOld || !okNew {
 				return true
 			}
-			return old.Generation != cur.Generation ||
-				old.Status.ObservedGeneration != cur.Status.ObservedGeneration ||
+			return old.Status.ObservedGeneration != cur.Status.ObservedGeneration ||
 				old.Status.PackageIdentity != cur.Status.PackageIdentity ||
 				!equality.Semantic.DeepEqual(old.Status.Registry, cur.Status.Registry) ||
 				skewPolicyOf(old) != skewPolicyOf(cur) ||

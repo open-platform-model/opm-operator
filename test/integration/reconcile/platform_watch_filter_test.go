@@ -107,7 +107,9 @@ func (c *getCountingClient) getsOf(key client.ObjectKey) int {
 // The manager-driven proof of the filtered Platform watch: an instance
 // blocked on PlatformNotReady still recovers through the watch, a Platform
 // status write that changes nothing an instance consumes renders nothing, a
-// pin-set change renders again, and a CLI-owned instance is never enqueued.
+// pin-set change renders again, an operatorVersion-only write recovers an
+// instance blocked after an operator upgrade, and a CLI-owned instance is
+// never enqueued.
 // No Platform reconciler runs, so the spec owns every Platform status write
 // and needs no registry.
 var _ = Describe("filtered Platform watch (manager-driven)", func() {
@@ -235,6 +237,17 @@ var _ = Describe("filtered Platform watch (manager-driven)", func() {
 			})
 		}
 
+		// quiesce waits until no render happens for window and returns the
+		// render count, so the next write is the only event in flight.
+		quiesce := func(window time.Duration) int {
+			var n int
+			Eventually(func(g Gomega) {
+				n = stub.renders()
+				g.Consistently(stub.renders).WithTimeout(window).WithPolling(25 * time.Millisecond).Should(Equal(n))
+			}).WithTimeout(20 * time.Second).Should(Succeed())
+			return n
+		}
+
 		before := len(notReady)
 		writePlatformStatus(func(p *releasesv1alpha1.Platform) {
 			setReady(p, metav1.ConditionFalse, status.BuildFailedReason, "building platform module: not yet")
@@ -244,6 +257,12 @@ var _ = Describe("filtered Platform watch (manager-driven)", func() {
 			return len(n)
 		}).WithTimeout(5*time.Second).WithPolling(20*time.Millisecond).Should(BeNumerically(">", before),
 			"the Platform's create and status events re-render the blocked instance")
+		// Drain the create and BuildFailed events before the platform is
+		// generated, so the recovering render below can only come from the
+		// Ready=True write.
+		quiesce(300 * time.Millisecond)
+		Expect(time.Now()).To(BeTemporally("<", backoffFloor),
+			"the spec needs the backoff floor still ahead to tell the watch from the backoff")
 
 		// The platform is generated: the status write the Platform reconciler
 		// makes after recording the package.
@@ -258,20 +277,17 @@ var _ = Describe("filtered Platform watch (manager-driven)", func() {
 			g.Expect(readyOf(g, managedKey).Status).To(Equal(metav1.ConditionTrue))
 		}).WithTimeout(10 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 		_, successes := stub.calls()
-		Expect(successes).NotTo(BeEmpty())
+		Expect(successes).To(HaveLen(1), "the Ready=True write renders the instance exactly once")
 		Expect(successes[0]).To(BeTemporally("<", backoffFloor),
 			"the recovering render must come from the Platform watch, not the transient backoff")
 
-		// (c) Let any backoff requeue scheduled while blocked fire and
-		// settle, so the success path (which does not requeue) is quiet.
-		time.Sleep(time.Until(backoffFloor.Add(opmreconcile.BackoffBaseDelay)))
-		var settled int
-		Eventually(func() bool {
-			first := stub.renders()
-			time.Sleep(time.Second)
-			settled = stub.renders()
-			return first == settled
-		}).WithTimeout(15 * time.Second).Should(BeTrue())
+		// (c) Wait past the last instant a backoff requeue scheduled while
+		// blocked could fire, then for quiet, so the success path (which does
+		// not requeue) is settled.
+		settleAfter := backoffFloor.Add(opmreconcile.BackoffBaseDelay)
+		Eventually(time.Now).WithTimeout(time.Until(settleAfter) + 5*time.Second).WithPolling(100 * time.Millisecond).
+			Should(BeTemporally(">", settleAfter))
+		settled := quiesce(time.Second)
 
 		// A message-only Ready rewrite and a ContractsFulfilled update change
 		// nothing an instance renders against: no render.
@@ -295,6 +311,38 @@ var _ = Describe("filtered Platform watch (manager-driven)", func() {
 				"a pin-set change re-enqueues the instance")
 		afterPin := stub.renders()
 		Consistently(stub.renders).WithTimeout(2 * time.Second).WithPolling(100 * time.Millisecond).Should(Equal(afterPin))
+
+		// (d) An operator upgrade into an already-Ready Platform: the new
+		// process's store starts empty, so the instance renders into
+		// PlatformNotReady, and the regenerated Platform's status write moves
+		// only status.operatorVersion. That write alone must recover it.
+		stub.ready.Store(false)
+		blockedBefore, _ := stub.calls()
+		writePlatformStatus(func(p *releasesv1alpha1.Platform) {
+			p.Status.PackageIdentity = "g1+claims+restart"
+		})
+		Eventually(func() int {
+			n, _ := stub.calls()
+			return len(n)
+		}).WithTimeout(5*time.Second).WithPolling(20*time.Millisecond).Should(BeNumerically(">", len(blockedBefore)),
+			"the instance renders into PlatformNotReady")
+		quiesce(300 * time.Millisecond)
+		blocked, successesBefore := stub.calls()
+		upgradeFloor := blocked[len(blockedBefore)].Add(opmreconcile.BackoffBaseDelay)
+		Expect(time.Now()).To(BeTemporally("<", upgradeFloor))
+
+		stub.ready.Store(true)
+		writePlatformStatus(func(p *releasesv1alpha1.Platform) {
+			p.Status.OperatorVersion = "v1.0.0-beta.2"
+		})
+		Eventually(func() int {
+			_, ok := stub.calls()
+			return len(ok)
+		}).WithTimeout(10*time.Second).WithPolling(20*time.Millisecond).Should(BeNumerically(">", len(successesBefore)),
+			"an operatorVersion-only write re-renders the blocked instance")
+		_, successes = stub.calls()
+		Expect(successes[len(successesBefore)]).To(BeTemporally("<", upgradeFloor),
+			"the upgrade recovery must come from the Platform watch, not the transient backoff")
 
 		// The CLI-owned instance was never enqueued by a Platform event.
 		Expect(counting.getsOf(cliKey)).To(Equal(cliGets),

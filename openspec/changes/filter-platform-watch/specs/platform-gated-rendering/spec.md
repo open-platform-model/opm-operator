@@ -7,9 +7,9 @@ The ModuleInstance reconciler SHALL watch the `Platform`. It SHALL re-enqueue Mo
 - the `Ready` condition's status
 - the pin set: `status.packageIdentity` or `status.registry`
 - `spec.skewPolicy`
-- `metadata.generation` or `status.observedGeneration`
+- `status.observedGeneration`
 
-The trigger includes the Platform reconciler's own status update, which does not bump the Platform's generation. A change to `status.operatorVersion` SHALL also re-enqueue: after an operator upgrade it is the only status change the regenerated Platform writes, and it is what recovers instances that rendered into `PlatformNotReady` while the new process's platform store was empty. A Platform update that changes none of these fields SHALL NOT enqueue any ModuleInstance. Examples of such updates are a change to the `Ready` message or to its reason while it stays `False`, or a `ContractsFulfilled` update. Platform create and delete events SHALL re-enqueue.
+The trigger includes the Platform reconciler's own status update, which does not bump the Platform's generation. A change to `status.operatorVersion` SHALL also re-enqueue: after an operator upgrade it is the only status change the regenerated Platform writes, and it is what recovers instances that rendered into `PlatformNotReady` while the new process's platform store was empty. A Platform update that changes none of these fields SHALL NOT enqueue any ModuleInstance. Examples of such updates are a change to the `Ready` message or to its reason while it stays `False`, a `ContractsFulfilled` update, or a bump of `metadata.generation` alone: the platform has not been regenerated yet, so a render on that edge would run against the previous package, and the `status.observedGeneration` write that follows carries the new one. Platform create and delete events SHALL re-enqueue.
 
 The reconciler SHALL enqueue only the ModuleInstances that render against the changed Platform: those that are operator-managed (`spec.owner` absent, empty or `operator`) and not suspended. A ModuleInstance with `spec.owner: cli` or `spec.suspend: true` SHALL NOT be enqueued by a Platform event; a change to either field is a spec change and reconciles the instance through its own watch.
 
@@ -27,8 +27,13 @@ The reconciler SHALL enqueue only the ModuleInstances that render against the ch
 
 #### Scenario: A message-only status write enqueues nothing
 
-- **WHEN** the Platform reconciler rewrites the `Ready` condition's message, and its status, `packageIdentity`, `registry`, `operatorVersion` and generation are unchanged
+- **WHEN** the Platform reconciler rewrites the `Ready` condition's message, and its status, `packageIdentity`, `registry`, `operatorVersion` and `observedGeneration` are unchanged
 - **THEN** no `ModuleInstance` is enqueued and no render runs
+
+#### Scenario: A spec edit renders once the regenerated package lands
+
+- **WHEN** a Platform spec edit bumps `metadata.generation`, and the Platform reconciler later writes the regenerated package's `status.observedGeneration` and `status.packageIdentity`
+- **THEN** the generation bump alone enqueues no `ModuleInstance`, and the status write re-enqueues every operator-managed, unsuspended `ModuleInstance`
 
 #### Scenario: CLI-owned and suspended instances are not enqueued
 

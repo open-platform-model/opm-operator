@@ -53,6 +53,11 @@ type ModulePackageParams struct {
 	// required — a nil Renderer is a programming error.
 	Renderer render.PackageRenderer
 
+	// RenderSlots is the process-wide render pool shared with the
+	// ModuleInstance reconciler; every call to Renderer holds one slot. Nil
+	// leaves renders unbounded.
+	RenderSlots *render.Slots
+
 	// DefaultServiceAccount is the fallback SA name used when a ModulePackage has
 	// an empty spec.serviceAccountName. Empty disables the default and
 	// preserves the controller-client fallback.
@@ -143,9 +148,17 @@ func ReconcileModulePackage(
 		errMsg     string
 		retryAfter time.Duration
 		phases     phaseOutcomes
+
+		// skipCommit is set only when the wait for a render slot is cut
+		// short: nothing was attempted, so there is nothing to record, and
+		// the zero outcome (NoOp) would otherwise report a success.
+		skipCommit bool
 	)
 
 	defer func() {
+		if skipCommit {
+			return
+		}
 		now := metav1.Now()
 		pkg.Status.ObservedGeneration = pkg.Generation
 
@@ -243,7 +256,11 @@ func ReconcileModulePackage(
 	}
 
 	// Phase 4+5: load CUE, detect kind, render.
-	renderResult, fail := renderModulePackage(ctx, params, &pkg, packageDir, interval)
+	renderResult, fail, waitErr := renderModulePackage(ctx, params, &pkg, packageDir, interval)
+	if waitErr != nil {
+		skipCommit = true
+		return ctrl.Result{}, waitErr
+	}
 	if fail != nil {
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -365,8 +382,21 @@ func renderModulePackage(
 	pkg *releasesv1alpha1.ModulePackage,
 	packageDir string,
 	interval time.Duration,
-) (*render.RenderResult, *phaseFail) {
-	kind, result, err := params.Renderer.Render(ctx, packageDir)
+) (*render.RenderResult, *phaseFail, error) {
+	// The render holds one slot of the process-wide pool for the whole call.
+	var (
+		kind   string
+		result *render.RenderResult
+		err    error
+	)
+	if waitErr := params.RenderSlots.Run(ctx, func() {
+		kind, result, err = params.Renderer.Render(ctx, packageDir)
+	}); waitErr != nil {
+		// The context ended while waiting for a slot (manager shutdown).
+		// Nothing was rendered: the caller returns this error as is and
+		// commits nothing, and no classifier sees it.
+		return nil, nil, fmt.Errorf("waiting for a render slot: %w", waitErr)
+	}
 	if err != nil {
 		// PlatformNotReady is a blocked-on-dependency state, not a stall: the
 		// store holds no generated platform module yet. Mark Ready=False/
@@ -376,20 +406,20 @@ func renderModulePackage(
 		if errors.Is(err, render.ErrPlatformNotReady) {
 			status.MarkNotReady(pkg, status.PlatformNotReadyReason, "%s", err)
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.PlatformNotReadyReason, "Render", "%s", err)
-			return nil, &phaseFail{FailedTransient, err.Error(), interval}
+			return nil, &phaseFail{FailedTransient, err.Error(), interval}, nil
 		}
 		reason := renderErrorReason(err)
 		status.MarkStalled(pkg, reason, "%s", err)
 		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
-		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
+		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}, nil
 	}
 	if kind != render.KindModuleInstance {
 		msg := fmt.Sprintf("unexpected instance kind %q", kind)
 		status.MarkStalled(pkg, status.UnsupportedKindReason, "%s", msg)
-		return nil, &phaseFail{FailedStalled, msg, StalledRecheckInterval}
+		return nil, &phaseFail{FailedStalled, msg, StalledRecheckInterval}, nil
 	}
 	reportRenderDiagnostics(ctx, params.Warnings, params.EventRecorder, pkg, result)
-	return result, nil
+	return result, nil, nil
 }
 
 // renderErrorReason maps a failed package render to its reason: an

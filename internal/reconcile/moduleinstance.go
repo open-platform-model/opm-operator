@@ -50,6 +50,10 @@ type ModuleInstanceParams struct {
 	// Renderer produces the render result for a ModuleInstance. Must be non-nil;
 	// production wires render.KernelModuleRenderer, tests wire a stub.
 	Renderer render.ModuleRenderer
+	// RenderSlots is the process-wide render pool shared with the
+	// ModulePackage reconciler; every call to Renderer holds one slot. Nil
+	// leaves renders unbounded.
+	RenderSlots *render.Slots
 	// DefaultServiceAccount is the fallback SA name used when a
 	// ModuleInstance has an empty spec.serviceAccountName. Empty disables
 	// the default and preserves the controller-client fallback.
@@ -57,6 +61,43 @@ type ModuleInstanceParams struct {
 	// Warnings remembers each instance's last render warnings so RenderWarning
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
+}
+
+// commitNoOpStatus is the deferred status commit of a NoOp reconcile. Drift
+// detection ran and may have set or cleared the Drifted condition, and phase
+// counters may need an increment or reset, so they are persisted through a
+// bounded patch; lastAttempted, history and inventory are not touched.
+//
+// NoOp implies the digests match LastApplied (a previous reconcile applied
+// successfully), so Ready=True is the correct state. MarkReconciling at the
+// start of this reconcile transiently set Ready=Unknown; it is reset before
+// patching.
+func commitNoOpStatus(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	mi *releasesv1alpha1.ModuleInstance,
+	phases phaseOutcomes,
+	reconcileStart time.Time,
+) {
+	status.MarkReady(mi, "Reconciliation succeeded")
+	updateFailureCounters(&mi.Status, NoOp, phases)
+	mi.Status.NextRetryAt = nil
+	if patchErr := patcher.Patch(ctx, mi,
+		patch.WithOwnedConditions{
+			Conditions: []string{
+				status.ReadyCondition,
+				status.ReconcilingCondition,
+				status.StalledCondition,
+				status.ModuleResolvedCondition,
+				status.DriftedCondition,
+			},
+		},
+		patch.WithStatusObservedGeneration{},
+	); patchErr != nil {
+		logf.FromContext(ctx).Error(patchErr, "Failed to patch NoOp status")
+	}
+	recordReconcileMetrics(mi.Name, mi.Namespace, NoOp, time.Since(reconcileStart), false, 0)
+	opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
 }
 
 // ReconcileModuleInstance orchestrates all phases of the reconcile loop.
@@ -134,6 +175,11 @@ func ReconcileModuleInstance(
 
 		// Phase outcome tracking for failure counters (updated in Phase 7).
 		phases phaseOutcomes
+
+		// skipCommit is set only when the wait for a render slot is cut
+		// short: nothing was attempted, so there is nothing to record, and
+		// the zero outcome (NoOp) would otherwise report a success.
+		skipCommit bool
 	)
 
 	// Deferred status commit — patches status on every reconcile attempt,
@@ -143,34 +189,11 @@ func ReconcileModuleInstance(
 	// Storm-safe: GenerationChangedPredicate on the controller's event filter
 	// prevents status-only patches from triggering watch-driven reconciles.
 	defer func() {
+		if skipCommit {
+			return
+		}
 		if outcome == NoOp {
-			// Drift detection ran and may have set/cleared the Drifted
-			// condition; phase counters may need increment/reset. Persist
-			// these via a bounded patch.
-			//
-			// NoOp implies digests match LastApplied — a previous reconcile
-			// applied successfully — so Ready=True is the correct state.
-			// MarkReconciling at the start of this reconcile transiently set
-			// Ready=Unknown; reset it now before patching.
-			status.MarkReady(&mi, "Reconciliation succeeded")
-			updateFailureCounters(&mi.Status, outcome, phases)
-			mi.Status.NextRetryAt = nil
-			if patchErr := patcher.Patch(ctx, &mi,
-				patch.WithOwnedConditions{
-					Conditions: []string{
-						status.ReadyCondition,
-						status.ReconcilingCondition,
-						status.StalledCondition,
-						status.ModuleResolvedCondition,
-						status.DriftedCondition,
-					},
-				},
-				patch.WithStatusObservedGeneration{},
-			); patchErr != nil {
-				log.Error(patchErr, "Failed to patch NoOp status")
-			}
-			recordReconcileMetrics(mi.Name, mi.Namespace, outcome, time.Since(reconcileStart), false, 0)
-			opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
+			commitNoOpStatus(ctx, patcher, &mi, phases, reconcileStart)
 			return
 		}
 
@@ -251,12 +274,24 @@ func ReconcileModuleInstance(
 
 	// Phase 1: Synthesize, resolve, and render module from OCI registry.
 	// CUE's native module system resolves the target module from the registry.
-	renderResult, err := params.Renderer.RenderModule(
-		ctx,
-		mi.Name, mi.Namespace,
-		mi.Spec.Module.Path, mi.Spec.Module.Version,
-		mi.Spec.Values,
+	// The render holds one slot of the process-wide pool for the whole call.
+	var (
+		renderResult *render.RenderResult
+		err          error
 	)
+	if waitErr := params.RenderSlots.Run(ctx, func() {
+		renderResult, err = params.Renderer.RenderModule(
+			ctx,
+			mi.Name, mi.Namespace,
+			mi.Spec.Module.Path, mi.Spec.Module.Version,
+			mi.Spec.Values,
+		)
+	}); waitErr != nil {
+		// The context ended while waiting for a slot (manager shutdown).
+		// Nothing was rendered, so commit nothing and classify nothing.
+		skipCommit = true
+		return ctrl.Result{}, fmt.Errorf("waiting for a render slot: %w", waitErr)
+	}
 	if err != nil {
 		outcome, errMsg = classifyRenderError(&mi, params.EventRecorder, err)
 		// PlatformNotReady is a transient blocked-on-dependency state (the

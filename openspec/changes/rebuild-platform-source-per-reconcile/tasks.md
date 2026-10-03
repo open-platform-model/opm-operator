@@ -7,9 +7,9 @@ Every focused verify below runs with the registry and the force flag, so a regis
 
 ## 1. Shared setup for the registry-backed platform specs (test/integration/reconcile)
 
-- [ ] 1.1 Add `useEmptyCUECache` in a test file: it points the process `CUE_CACHE_DIR` at a new `os.MkdirTemp` directory, returns an explicit restore func and also registers it with `DeferCleanup`, and walks the directory back to writable before removing it at cleanup. Add `createClusterPlatform(catalogPath)`: delete any leftover `cluster` Platform, create one subscribing to the catalog at the test version, delete it at cleanup, and return it with its generation.
-- [ ] 1.2 Rewire `platform_recovery_test.go` onto both helpers. It keeps calling restore before its live phase, so that phase still runs against the warm cache. Verify: `go vet ./test/integration/...` passes and the focused run with focus `Platform build recovery` passes.
-- [ ] 1.3 `task dev:fmt dev:vet dev:lint` green, then commit `test(reconcile): share the empty CUE cache and cluster Platform setup`.
+- [x] 1.1 Add `useEmptyCUECache` in a test file: it points the process `CUE_CACHE_DIR` at a new `os.MkdirTemp` directory, returns an explicit restore func and also registers it with `DeferCleanup`, and walks the directory back to writable before removing it at cleanup. Add `createClusterPlatform(catalogPath)`: delete any leftover `cluster` Platform, create one subscribing to the catalog at the test version, delete it at cleanup, and return it with its generation.
+- [x] 1.2 Rewire `platform_recovery_test.go` onto both helpers. It keeps calling restore before its live phase, so that phase still runs against the warm cache. Verify: `go vet ./test/integration/...` passes and the focused run with focus `Platform build recovery` passes.
+- [x] 1.3 `task dev:fmt dev:vet dev:lint` green, then commit `test(reconcile): share the empty CUE cache and cluster Platform setup`.
 
 ## 2. A module-file source per reconcile (internal/controller, test/integration/reconcile)
 

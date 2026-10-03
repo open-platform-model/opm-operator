@@ -17,10 +17,8 @@ limitations under the License.
 package reconcile_test
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -88,31 +86,7 @@ var _ = Describe("Platform build recovery (registry-backed)", func() {
 		// other registry-backed specs in this suite).
 		liveKernel, liveRegistry, catalogPath := liveBuildKernelOrSkip()
 
-		// Defensive: drop any cluster Platform a sibling spec may have left.
-		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &releasesv1alpha1.Platform{
-			ObjectMeta: metav1.ObjectMeta{Name: recoveryPlatformName},
-		}))).To(Succeed())
-		Eventually(func() bool {
-			err := k8sClient.Get(ctx, client.ObjectKey{Name: recoveryPlatformName}, &releasesv1alpha1.Platform{})
-			return err != nil && client.IgnoreNotFound(err) == nil
-		}).WithTimeout(10 * time.Second).WithPolling(200 * time.Millisecond).Should(BeTrue())
-
-		plat := &releasesv1alpha1.Platform{
-			ObjectMeta: metav1.ObjectMeta{Name: recoveryPlatformName},
-			Spec: releasesv1alpha1.PlatformSpec{
-				Type:     "kubernetes",
-				Registry: map[string]releasesv1alpha1.Subscription{catalogPath: {Version: testCatalogVersion()}},
-			},
-		}
-		Expect(k8sClient.Create(ctx, plat)).To(Succeed())
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(plat), plat)).To(Succeed())
-		generation := plat.Generation
-		Expect(generation).NotTo(BeZero())
-		DeferCleanup(func() {
-			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &releasesv1alpha1.Platform{
-				ObjectMeta: metav1.ObjectMeta{Name: recoveryPlatformName},
-			}))).To(Succeed())
-		})
+		plat, generation := createClusterPlatform(catalogPath)
 
 		store := platformstore.NewStore()
 		// A registry mapping pointed at a closed port: module-file and catalog
@@ -139,30 +113,7 @@ var _ = Describe("Platform build recovery (registry-backed)", func() {
 		// actually consulted; the environment is restored before the recovery
 		// phase, whose live pull must see the same process environment the
 		// other specs use.
-		origCache, hadCache := os.LookupEnv("CUE_CACHE_DIR")
-		restoreCache := func() {
-			if hadCache {
-				Expect(os.Setenv("CUE_CACHE_DIR", origCache)).To(Succeed())
-			} else {
-				Expect(os.Unsetenv("CUE_CACHE_DIR")).To(Succeed())
-			}
-		}
-		DeferCleanup(restoreCache)
-		// Not GinkgoT().TempDir(): CUE marks extracted cache files read-only,
-		// which breaks Ginkgo's automatic removal. Restore write permission
-		// before removing, best-effort.
-		emptyCache, err := os.MkdirTemp("", "opm-dead-registry-cache-")
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			_ = filepath.WalkDir(emptyCache, func(p string, _ fs.DirEntry, walkErr error) error {
-				if walkErr == nil {
-					_ = os.Chmod(p, 0o755)
-				}
-				return nil
-			})
-			_ = os.RemoveAll(emptyCache)
-		})
-		Expect(os.Setenv("CUE_CACHE_DIR", emptyCache)).To(Succeed())
+		restoreCache := useEmptyCUECache()
 
 		res, err := r.Reconcile(ctx, req)
 		restoreCache()

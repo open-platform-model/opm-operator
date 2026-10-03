@@ -79,8 +79,8 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		gateNamespace = "platform-gate-ns"
 		mrName        = "platform-gate-mr"
 		// The Platform is a cluster singleton; "cluster" is the only name the
-		// CRD validation permits. This spec is the only one in the suite that
-		// creates a Platform, so there is no contention.
+		// CRD validation permits. The specs that create one run serially and
+		// each deletes it on the way out, so there is no contention.
 		platformName = "cluster"
 	)
 
@@ -140,9 +140,8 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		Expect(k8sClient.Create(ctx, mr)).To(Succeed())
 
 		// Phase 1: with no platform, the release blocks on PlatformNotReady and
-		// applies nothing. The reconcile requeues only on the 30-minute
-		// stalled-recheck, so anything that unblocks it within the test window
-		// must come from the Platform watch.
+		// applies nothing. The reconcile requeues on the transient backoff;
+		// the filtered Platform watch spec proves which of the two recovers it.
 		Eventually(func(g Gomega) {
 			var current releasesv1alpha1.ModuleInstance
 			g.Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
@@ -159,9 +158,8 @@ var _ = Describe("Platform-gated re-enqueue (manager-driven)", func() {
 		// Phase 2: record a generated platform in the store, then apply the
 		// Platform CR. The CR change triggers the watch → mapPlatformToModuleInstances
 		// re-enqueues the blocked release; the store is now populated, so the
-		// renderer succeeds and the resources are applied. The watch enqueues
-		// every release on any Platform change, independent of the Platform's
-		// contents.
+		// renderer succeeds and the resources are applied. A Platform create
+		// event always passes the watch's predicate.
 		store.SetGenerated(platformstore.Generated{
 			Identity: platformstore.NewPackageIdentity(1, nil),
 			Platform: &platform.Platform{},

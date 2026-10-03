@@ -312,8 +312,10 @@ jobs:
   # refs/heads/main: a `release: published` trigger would run on the tag ref
   # and be refused. It waits for image-release, so the reference never
   # describes a release whose image failed; publish-release does not wait for
-  # it, so a docs failure never holds the release a draft. When this job does
-  # not run or fails, docs.yml's dispatch publishes the release instead. No
+  # it, so a docs failure never holds the release a draft; it can therefore
+  # promote the bundle while the GitHub release is still a draft (accepted in
+  # publish-crd-bundle's design). When this job does not run or fails,
+  # docs.yml's dispatch publishes the release instead. No
   # version is passed: opm-docs reads it from the tag.
   # publish.yml is pinned by docs-kit release tag, not a SHA: the signing
   # certificate names it at this ref, and the site trusts only docs-kit's v*

@@ -29,7 +29,7 @@ Gate: section 1 is merged. Part of gate G2-pins (core `v2.0.0-beta.1`, library `
 Gate G2-switch: opmodel.dev's v1.0 reads core, cli, library and opm-operator from bundles (docs-kit `docs/orchestration.md`).
 
 - [ ] 3.1 `internal/controller/docskit_reconciledby_test.go`: the `reconciledBy` test of design.md D5, with crdref's controller scan moved into it. Verify: it passes, and fails naming the kind when one `Named(...)` is changed locally.
-- [ ] 3.2 Delete `hack/crdref/`. `.tasks/dev.yaml`: delete `docs:reference` and `docs:reference:check`. `.github/workflows/lint.yml`: delete the "Generated resource reference is current" step and its comment. The committed page keeps its old block for now; it is excluded from the bundle and no longer read from git.
+- [ ] 3.2 Delete `hack/crdref/`. `.tasks/dev.yaml`: delete `docs:reference` and `docs:reference:check`. `.github/workflows/lint.yml`: delete the "Generated resource reference is current" step and its comment, and the "Docs bundle matches crdref" step with its comment. `Taskfile.yml`: delete `docs:bundle:parity` and its comment (the `reconciledBy` test of 3.1 replaces it, design.md D5); drop it from `AGENTS.md` in 3.3. The committed page keeps its old block for now; it is excluded from the bundle and no longer read from git.
 - [ ] 3.3 `AGENTS.md`: drop the `dev:docs:reference` commands and the marker rule; API marker and `config/samples` edits now need `task docs:bundle:check`, controller renames a `reconciledBy` edit. Verify: `grep -rn "crdref\|docs:reference" --exclude-dir=archive . | grep -v operator-resources.md` finds nothing outside `openspec/changes/`.
 - [ ] 3.4 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green, then commit `ci(docs): retire hack/crdref`.
 

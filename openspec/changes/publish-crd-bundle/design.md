@@ -107,6 +107,8 @@ The reduction lands on `main` as its own Markdown-only commit (its own section, 
 
 ### D5. `reconciledBy` stays true (after G2-switch)
 
+**Until section 3 (added in review of section 1):** crdref's block is the guard. `task docs:bundle:parity`, a `Lint` step after "Generated resource reference is current", builds the bundle and diffs the generated page from its first `## ` heading on against crdref's block in the committed page (the blank lines padding the marker comments dropped). crdref reads "Served by" from the controllers, so a renamed `Named(...)` without a `reconciledBy` edit fails `Lint` instead of publishing a wrong page into an immutable release bundle. Checked at adoption: it passes, works in a depth-1 clone, and fails naming both controller names when `Named("platform")` becomes `Named("platform-reconciler")` and crdref is rerun. Section 3 deletes the task and its step with crdref; the test below replaces it.
+
 crdref's guarantee that "Served by" names the real controller would be lost with the scan. A test, `internal/controller/docskit_reconciledby_test.go`, keeps it: it reads `docs-kit.cue` with `cuelang.org/go` (already a dependency), takes the `crd` source's `reconciledBy`, scans `internal/controller/*.go` with `go/parser` for builder chains holding one `For(&v1alpha1.<Kind>{})` and one `Named("<name>")` (crdref's scan, moved), and fails naming the kind when the two maps differ. It runs in `task dev:test`.
 
 ## Research & Decisions

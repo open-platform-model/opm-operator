@@ -164,6 +164,7 @@ var _ = Describe("Concurrent renders (manager-driven)", func() {
 			EventRecorder:        events.NewFakeRecorder(64),
 			Renderer:             newRendezvousRenderer(2, 15*time.Second),
 			MaxConcurrentRenders: 2,
+			RenderSlots:          render.NewSlots(2),
 		}
 		Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
 
@@ -272,6 +273,7 @@ var _ = Describe("Concurrent kernel renders (manager-driven, registry-backed)", 
 			Renderer:             renderer,
 			Kernel:               k,
 			MaxConcurrentRenders: 2,
+			RenderSlots:          render.NewSlots(2),
 		}
 		Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
 

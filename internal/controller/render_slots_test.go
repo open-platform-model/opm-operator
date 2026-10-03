@@ -25,6 +25,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
@@ -34,6 +35,8 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
+	opmmetrics "github.com/open-platform-model/opm-operator/internal/metrics"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 )
@@ -173,6 +176,49 @@ func (f *cancellingFetcher) Fetch(ctx context.Context, url, digest, dir string, 
 	return err
 }
 
+// writeCounter counts every write a reconcile attempts on an object or its
+// status, whether or not it lands. A patch made with a cancelled context
+// fails on its own, so only the attempt count shows a skipped commit.
+type writeCounter struct {
+	n atomic.Int32
+}
+
+// wrap returns funcs with write counting added; the reads in funcs are kept.
+func (w *writeCounter) wrap(funcs interceptor.Funcs) interceptor.Funcs {
+	funcs.Patch = func(ctx context.Context, c client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
+		w.n.Add(1)
+		return c.Patch(ctx, obj, p, opts...)
+	}
+	funcs.Update = func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+		w.n.Add(1)
+		return c.Update(ctx, obj, opts...)
+	}
+	funcs.SubResourcePatch = func(ctx context.Context, c client.Client, sub string, obj client.Object, p client.Patch, opts ...client.SubResourcePatchOption) error {
+		w.n.Add(1)
+		return c.SubResource(sub).Patch(ctx, obj, p, opts...)
+	}
+	funcs.SubResourceUpdate = func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+		w.n.Add(1)
+		return c.SubResource(sub).Update(ctx, obj, opts...)
+	}
+	return funcs
+}
+
+// newWatchClient returns a fresh client of the envtest API server that
+// interceptors can wrap.
+func newWatchClient() client.WithWatch {
+	c, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	return c
+}
+
+// expectNoEvents asserts r's fake recorder holds no event.
+func expectNoEvents(recorder events.EventRecorder) {
+	fake, ok := recorder.(*events.FakeRecorder)
+	Expect(ok).To(BeTrue())
+	Expect(fake.Events).To(BeEmpty(), "no event is emitted")
+}
+
 // expectSlotFree asserts a slot of pool can be taken at once.
 func expectSlotFree(pool *render.Slots) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -199,9 +245,9 @@ var _ = Describe("Render slots", func() {
 			RenderSlots:     pool,
 		}
 	}
-	newMPReconciler := func(fetcher opmsource.Fetcher, renderer render.PackageRenderer, pool *render.Slots) *ModulePackageReconciler {
+	newMPReconciler := func(c client.Client, fetcher opmsource.Fetcher, renderer render.PackageRenderer, pool *render.Slots) *ModulePackageReconciler {
 		return &ModulePackageReconciler{
-			Client:          k8sClient,
+			Client:          c,
 			Scheme:          k8sClient.Scheme(),
 			ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
 			EventRecorder:   events.NewFakeRecorder(32),
@@ -229,7 +275,7 @@ var _ = Describe("Render slots", func() {
 		mi := newMIReconciler(k8sClient, &probedModuleRenderer{
 			probe: probe, self: miArrive, peer: mpArrive, inner: &stubRenderer{},
 		}, pool)
-		mp := newMPReconciler(&stubFetcher{pathInArtifact: renderTestPath}, &probedPackageRenderer{
+		mp := newMPReconciler(k8sClient, &stubFetcher{pathInArtifact: renderTestPath}, &probedPackageRenderer{
 			probe: probe, self: mpArrive, peer: miArrive,
 			inner: &stubPackageRenderer{result: stubRenderResult(mpNS, nil)},
 		}, pool)
@@ -278,20 +324,25 @@ var _ = Describe("Render slots", func() {
 		// cancelled: the reconcile meets the cancellation at the slot wait.
 		reconcileCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		withWatch, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
-		Expect(err).NotTo(HaveOccurred())
-		cancelAfterGet := interceptor.NewClient(withWatch, interceptor.Funcs{
+		writes := &writeCounter{}
+		cancelAfterGet := interceptor.NewClient(newWatchClient(), writes.wrap(interceptor.Funcs{
 			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 				err := c.Get(ctx, key, obj, opts...)
 				cancel()
 				return err
 			},
-		})
+		}))
+		noOps := testutil.ToFloat64(opmmetrics.ReconcileTotal.WithLabelValues(nn.Name, nn.Namespace, opmreconcile.NoOp.MetricLabel()))
 
-		_, err = newMIReconciler(cancelAfterGet, renderer, pool).Reconcile(reconcileCtx, reconcile.Request{NamespacedName: nn})
+		r := newMIReconciler(cancelAfterGet, renderer, pool)
+		_, err = r.Reconcile(reconcileCtx, reconcile.Request{NamespacedName: nn})
 		Expect(errors.Is(err, context.Canceled)).To(BeTrue(), "got %v", err)
 		Expect(renderer.calls.Load()).To(BeZero(), "the renderer is never called")
-		Expect(statusVersion(ctx, nn, &releasesv1alpha1.ModuleInstance{})).To(Equal(before), "status is not patched")
+		Expect(writes.n.Load()).To(BeZero(), "no status patch is attempted")
+		Expect(testutil.ToFloat64(opmmetrics.ReconcileTotal.WithLabelValues(nn.Name, nn.Namespace, opmreconcile.NoOp.MetricLabel()))).
+			To(Equal(noOps), "no reconcile is recorded")
+		expectNoEvents(r.EventRecorder)
+		Expect(statusVersion(ctx, nn, &releasesv1alpha1.ModuleInstance{})).To(Equal(before), "status is unchanged")
 	})
 
 	It("commits nothing when a ModulePackage's wait for a slot is cancelled", func() {
@@ -301,7 +352,7 @@ var _ = Describe("Render slots", func() {
 
 		pool := render.NewSlots(1)
 		renderer := &countingPackageRenderer{inner: &stubPackageRenderer{result: stubRenderResult(ns, nil)}}
-		addFinalizer(ctx, newMPReconciler(&stubFetcher{pathInArtifact: renderTestPath}, renderer, pool), nn)
+		addFinalizer(ctx, newMPReconciler(k8sClient, &stubFetcher{pathInArtifact: renderTestPath}, renderer, pool), nn)
 		before := statusVersion(ctx, nn, &releasesv1alpha1.ModulePackage{})
 
 		hold, err := pool.Acquire(ctx)
@@ -312,10 +363,16 @@ var _ = Describe("Render slots", func() {
 		defer cancel()
 		fetcher := &cancellingFetcher{stubFetcher: stubFetcher{pathInArtifact: renderTestPath}, cancel: cancel}
 
-		_, err = newMPReconciler(fetcher, renderer, pool).Reconcile(reconcileCtx, reconcile.Request{NamespacedName: nn})
+		writes := &writeCounter{}
+		counted := interceptor.NewClient(newWatchClient(), writes.wrap(interceptor.Funcs{}))
+
+		r := newMPReconciler(counted, fetcher, renderer, pool)
+		_, err = r.Reconcile(reconcileCtx, reconcile.Request{NamespacedName: nn})
 		Expect(errors.Is(err, context.Canceled)).To(BeTrue(), "got %v", err)
 		Expect(renderer.calls.Load()).To(BeZero(), "the renderer is never called")
-		Expect(statusVersion(ctx, nn, &releasesv1alpha1.ModulePackage{})).To(Equal(before), "status is not patched")
+		Expect(writes.n.Load()).To(BeZero(), "no status patch is attempted")
+		expectNoEvents(r.EventRecorder)
+		Expect(statusVersion(ctx, nn, &releasesv1alpha1.ModulePackage{})).To(Equal(before), "status is unchanged")
 	})
 
 	It("frees the slot when a ModuleInstance render panics", func() {
@@ -340,7 +397,7 @@ var _ = Describe("Render slots", func() {
 		nn := createRenderTestPackage(ctx, ns, "slots-panic-mp")
 
 		pool := render.NewSlots(1)
-		r := newMPReconciler(&stubFetcher{pathInArtifact: renderTestPath}, panickingPackageRenderer{}, pool)
+		r := newMPReconciler(k8sClient, &stubFetcher{pathInArtifact: renderTestPath}, panickingPackageRenderer{}, pool)
 		addFinalizer(ctx, r, nn)
 
 		func() {

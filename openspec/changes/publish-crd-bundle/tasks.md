@@ -2,7 +2,7 @@ Delivery: one PR per section (proposal.md). Each section has its own gate, named
 
 ## 1. Adopt docs-kit
 
-Gate G2-operator: docs-kit's `add-crd-extractor` (with the sample-selection fix: kubebuilder file-name pick, scaffold-label stripping, `hideSamplesMatching`, `weight`), `add-authored-docs` and `generalize-build-assembly` are released. Use the first docs-kit release that carries all three as `vX.Y.Z` below.
+Gate G2-operator: docs-kit's `add-crd-extractor` (with C18's sample selection: the automatic kubebuilder file-name pick and the `hideSamplesMatching`, `stripLabels` and `weight` config fields), `add-authored-docs` and `generalize-build-assembly` are released. Use the first docs-kit release that carries all three as `vX.Y.Z` below.
 
 - [ ] 1.1 `.opm-docs-version`: `vX.Y.Z`. `.tasks/opm-docs.sh`: copy catalog_opm's byte for byte. `.gitignore`: `/out/` and `/.bin/`.
 - [ ] 1.2 `Taskfile.yml`: `tools:opm-docs`, `docs:bundle` (`--project opm-operator --out out`), `docs:pins:check`, `docs:bundle:check`, as catalog_opm has them (design.md D3).

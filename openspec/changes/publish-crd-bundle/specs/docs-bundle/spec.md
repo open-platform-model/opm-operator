@@ -2,7 +2,7 @@
 
 ### Requirement: The operator publishes one docs bundle
 
-The repository SHALL declare one docs-kit project, `opm-operator`, in `docs-kit.cue`: placed in a site version's `/docs/` tree, owning `reference/operator-resources.md`, versioned from tags with the prefix `v`, built from a `markdown` source over `docs/site` and a `crd` source over `config/crd/bases` with samples from `config/samples` (picked by kubebuilder file name, those referencing `testing.opmodel.dev` hidden), the page weight 7, one `reconciledBy` entry per kind, and decision citations turned into links. The bundle SHALL carry the authored pages under `docs/site/` and the generated resource reference together (docs-kit DESIGN decision 20). `task docs:bundle` SHALL build it into `out/opm-operator/` and `task docs:bundle:check` SHALL build and lint it without publishing.
+The repository SHALL declare one docs-kit project, `opm-operator`, in `docs-kit.cue`: placed in a site version's `/docs/` tree, owning `reference/operator-resources.md`, versioned from tags with the prefix `v`, built from a `markdown` source over `docs/site` and a `crd` source over `config/crd/bases` with samples from `config/samples` (picked by kubebuilder file name, those referencing `testing.opmodel.dev` hidden, the two kubebuilder scaffold labels stripped), the page weight 7, one `reconciledBy` entry per kind, and decision citations turned into links. The bundle SHALL carry the authored pages under `docs/site/` and the generated resource reference together (docs-kit DESIGN decision 20). `task docs:bundle` SHALL build it into `out/opm-operator/` and `task docs:bundle:check` SHALL build and lint it without publishing.
 
 #### Scenario: The bundle holds both kinds of page
 

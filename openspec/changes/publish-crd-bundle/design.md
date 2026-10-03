@@ -38,6 +38,12 @@ bundles: "opm-operator": {
 			order:       ["ModuleInstance", "ModulePackage", "Platform", "TransformerRegistration"]
 			// The hello fixture is a test module, not an example to copy (crdref's rule).
 			hideSamplesMatching: ["testing.opmodel.dev"]
+			// kubebuilder's scaffold labels on every sample, which crdref strips
+			// (hack/crdref/main.go:205-208); removed only when the value matches.
+			stripLabels: {
+				"app.kubernetes.io/name":       "opm-operator"
+				"app.kubernetes.io/managed-by": "kustomize"
+			}
 			// The Named(...) of the controller whose builder calls For(&<Kind>{})
 			// in internal/controller; the reconciledBy test keeps these in step.
 			reconciledBy: {
@@ -58,7 +64,7 @@ The names are what crdref's scan finds at `9835474` (`internal/controller/module
 
 `config/samples` holds two ModuleInstance documents: `opmodel.dev_v1alpha1_moduleinstance.yaml` (the `testing.opmodel.dev` hello fixture, used by kustomize and `test/integration/crdvalidation`) and `opmodel.dev_v1alpha1_moduleinstance_jellyfin.yaml`, plus a Flux `OCIRepository` and `kustomization.yaml`. crdref reads only the file named `<group>_<version>_<kind>.yaml`, takes its first document of the kind, strips the kubebuilder scaffold labels, and hides a sample that references `testing.opmodel.dev`; so today's ModuleInstance entry has no Example and the jellyfin file is never read.
 
-The cross-repo review of docs-kit's plan made this a blocking docs-kit item: `add-crd-extractor` gains the kubebuilder file-name pick, scaffold-label stripping, `hideSamplesMatching: [...string]` and `weight?: int & >=1`. This plan assumes that fix and sets `hideSamplesMatching: ["testing.opmodel.dev"]` and `weight: 7` (D1). If the released extractor lacks any of it, adoption stops for docs-kit rather than move or rename samples, which kustomize, `task examples:pin` and the crdvalidation tier depend on.
+docs-kit#13 settled this in `add-crd-extractor` (C18): the kubebuilder file-name pick (`<group>_<version>_<kind>.yaml`, first matching document) is automatic, and the rest is config, not defaults: `hideSamplesMatching` (a sample containing one of the strings is not shown), `stripLabels` (each label removed when its value matches, `labels` dropped when empty) and `weight`. This plan sets `hideSamplesMatching: ["testing.opmodel.dev"]`, `stripLabels` with crdref's two scaffold labels (`app.kubernetes.io/name: opm-operator`, `app.kubernetes.io/managed-by: kustomize`) and `weight: 7` (D1). If the released extractor lacks any of it, adoption stops for docs-kit rather than move or rename samples, which kustomize, `task examples:pin` and the crdvalidation tier depend on.
 
 ### D3. Publishing
 

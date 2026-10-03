@@ -26,16 +26,16 @@ Gate: section 1 is merged. Part of gate G2-pins (core `v2.0.0-beta.1`, library `
 
 ## 3. Retire hack/crdref
 
-Gate G2-switch: opmodel.dev's v1.0 reads core, cli, library and opm-operator from bundles (docs-kit `docs/orchestration.md`).
+Gates (docs-kit `docs/orchestration.md` step 8): G2-switch, opmodel.dev's v1.0 reads core, cli, library and opm-operator from bundles (holds since opmodel.dev#38, 2026-10-04); and G2-edge, opmodel.dev `add-edge-build` section 2 merged, so the site's `sources-main` job reads the operator's `main` from its `edge` docs bundle (design.md D4).
 
 - [ ] 3.1 `internal/controller/docskit_reconciledby_test.go`: the `reconciledBy` test of design.md D5, with crdref's controller scan moved into it. Verify: it passes, and fails naming the kind when one `Named(...)` is changed locally.
 - [ ] 3.2 Delete `hack/crdref/`. `.tasks/dev.yaml`: delete `docs:reference` and `docs:reference:check`. `.github/workflows/lint.yml`: delete the "Generated resource reference is current" step and its comment, and the "Docs bundle matches crdref" step with its comment. `Taskfile.yml`: delete `docs:bundle:parity` and its comment (the `reconciledBy` test of 3.1 replaces it, design.md D5); drop it from `AGENTS.md` in 3.3. The committed page keeps its old block for now; it is excluded from the bundle and no longer read from git.
-- [ ] 3.3 `AGENTS.md`: drop the `dev:docs:reference` commands and the marker rule; API marker and `config/samples` edits now need `task docs:bundle:check`, controller renames a `reconciledBy` edit. Verify: `grep -rn "crdref\|docs:reference" --exclude-dir=archive . | grep -v operator-resources.md` finds nothing outside `openspec/changes/`.
+- [ ] 3.3 `AGENTS.md`: drop the `dev:docs:reference` and `docs:bundle:parity` commands and the marker rule; the API-marker, `*_types.go` and `config/samples` checklist lines name `task docs:bundle:check` where they name `dev:docs:reference`; in the "Docs bundles" paragraph, the sentences "Until then the committed ... crdref keeps it current" and "Until crdref is retired, `task docs:bundle:parity` ... keeps it true" become: the `reconciledBy` test in `task dev:test` keeps it true. Controller renames still need a `reconciledBy` edit. Verify: `grep -rn "crdref\|docs:reference" --exclude-dir=archive . | grep -v operator-resources.md` finds nothing outside `openspec/changes/`.
 - [ ] 3.4 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green, then commit `ci(docs): retire hack/crdref`.
 
 ## 4. Reduce the resource page to its intro
 
-Gate: section 3 is merged. A Markdown-only commit, alone in its PR, so a docs revision of `1.0.0-beta.4` can apply it (design.md D4).
+Gate: section 3 is merged. A Markdown-only commit, alone in its PR, so a docs revision of any release cut before it (`1.0.0-beta.4`, `1.0.0-beta.5`) can apply it (design.md D4).
 
 - [ ] 4.1 `docs/site/reference/operator-resources.md`: front matter and intro only, the See-also brief folded into the intro's brief, no marker lines and no `## <Kind>` heading (design.md D4). Nothing else changes in this section. Verify: `git diff --stat` lists only that file; `task docs:bundle:check` passes (the page is still excluded).
 - [ ] 4.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(site): reduce the operator resource page to its intro`.
@@ -45,6 +45,7 @@ Gate: section 3 is merged. A Markdown-only commit, alone in its PR, so a docs re
 Gate: section 4 is merged.
 
 - [ ] 5.1 `docs-kit.cue`: the `markdown` source becomes `{kind: "markdown", dir: "docs/site"}`. Verify: `task docs:bundle:check` passes and the built page starts with the authored front matter (`weight: 7`) and intro, then `## ModuleInstance`.
-- [ ] 5.2 design.md D4 records section 4's squash commit as the one the next `1.0.0-beta.4` docs revision must apply first.
-- [ ] 5.3 `openspec archive publish-crd-bundle --yes`; then set `openspec/specs/operator-resource-reference/spec.md`'s Purpose to the bundle-built page. Verify: `openspec validate --specs --strict` passes for `docs-bundle` and `operator-resource-reference`.
-- [ ] 5.4 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green, then commit `ci(docs): complete the operator resource page from the bundle`.
+- [ ] 5.2 design.md D4 records section 4's squash commit as the one the next docs revision of each release cut before it must apply first.
+- [ ] 5.3 Check `main` together with this tree: `task docs:bundle`, then in an opmodel.dev checkout `OPM_BUNDLES_LOCAL="opm-operator@v1.0=<this worktree>/out/opm-operator" task build:edge`. Verify: it builds green, so every link from another repository's `main` into `/docs/reference/operator-resources/` resolves.
+- [ ] 5.4 `openspec archive publish-crd-bundle --yes`; then set `openspec/specs/operator-resource-reference/spec.md`'s Purpose to the bundle-built page. Verify: `openspec validate --specs --strict` passes for `docs-bundle` and `operator-resource-reference`.
+- [ ] 5.5 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green, then commit `ci(docs): complete the operator resource page from the bundle`.

@@ -657,6 +657,21 @@ var _ = Describe("Platform Controller", func() {
 		})
 	})
 
+	Context("module-file source", func() {
+		It("builds a new source on every call and stores none", func() {
+			// The registry-backed transient-failure spec proves the behaviour
+			// end to end; this guard runs offline, so a change that stores the
+			// source again fails in a plain go test too.
+			r := &PlatformReconciler{Registry: "opmodel.dev=registry.invalid/opm"}
+			first, err := r.modFiles()
+			Expect(err).NotTo(HaveOccurred())
+			second, err := r.modFiles()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(second).NotTo(BeIdenticalTo(first), "each reconcile must get its own source")
+			Expect(r.ModFiles).To(BeNil(), "the built source must not be stored on the reconciler")
+		})
+	})
+
 	Context("stored legacy singleton (versionless subscription)", func() {
 		It("surfaces the missing version as BuildFailed naming the subscription path", func() {
 			// A versionless subscription cannot be created through admission —

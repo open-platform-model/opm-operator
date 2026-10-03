@@ -76,7 +76,7 @@ On a non-deleting `ModuleInstance` with `spec.owner == cli`, the controller MUST
 #### Scenario: Re-acknowledgement is a no-op
 
 - **GIVEN** a `ModuleInstance` with `spec.owner == cli` already carrying `Ready: Unknown / ManagedExternally`
-- **WHEN** the controller reconciles it again (e.g. after a Platform change re-enqueue)
+- **WHEN** the controller reconciles it again (e.g. after a requeue or an informer resync)
 - **THEN** the resulting status patch is empty and no condition transition timestamp changes
 
 ### Requirement: Ownership handoff falls through to a normal reconcile

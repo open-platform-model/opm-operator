@@ -204,12 +204,17 @@ The module package SHALL set `draft: true` and `force-tag-creation: true`. Every
 
 ### Requirement: A stranded module draft is recovered by dispatch
 
-The release workflow SHALL accept a `workflow_dispatch` with the input `module_tag`, for a module release whose run left its draft unpublished. The dispatch SHALL refuse, before any registry login, unless it runs in `open-platform-model/opm-operator` on `main`, `module_tag` matches `^opm_operator-v[0-9]+\.[0-9]+\.[0-9]+$`, the tag exists, and exactly one release carries it as a draft. It SHALL run only the module jobs, never release-please, the identity advance or an operator job. They SHALL check the tag's tree out and run `main`'s release scripts (`hack/operator-module/` and `.github/scripts/`) against it, so a script fixed after the tag is the one that runs; the release gate and the opm CLI stay the tag's. In order: the publish, which finds the version already published and reuses it only when it equals what the tag's tree publishes; the install manifest rendered from the published version and attached to the draft; then the draft's publication with `make_latest=false`. A push-triggered release SHALL run the tag's own scripts, as before. Recovery never moves, deletes or re-creates a tag and never edits a release by hand.
+The release workflow SHALL accept a `workflow_dispatch` with the input `module_tag`, for a module release whose run left its draft unpublished. The dispatch SHALL refuse, before any registry login, unless it runs in `open-platform-model/opm-operator` on `main`, `module_tag` matches `^opm_operator-v[0-9]+\.[0-9]+\.[0-9]+$`, the tag exists and is reachable from `main`, and exactly one release carries it as a draft. It SHALL run only the module jobs, never release-please, the identity advance or an operator job. They SHALL check the tag's tree out and run `main`'s release scripts (`hack/operator-module/` and `.github/scripts/`) against it, so a script fixed after the tag is the one that runs; the release gate and the opm CLI stay the tag's. Each module job SHALL gate on its predecessor's result explicitly, never on the implicit success check, which would skip it behind the skipped release-please. In order: the publish, which reuses a version GHCR already holds only when it equals what the tag's tree publishes, and publishes the tag's tree when GHCR does not hold the version yet (a draft stranded before its first publish); the install manifest rendered from the published version and attached to the draft; then the draft's publication with `make_latest=false`. The dispatch SHALL run in a concurrency group of its own per tag, so it never replaces or is replaced by a pending push run. A push-triggered release SHALL run the tag's own scripts and start the module jobs only when release-please succeeded and created a module release, as before. Recovery never moves, deletes or re-creates a tag and never edits a release by hand.
 
 #### Scenario: Recover after a broken read-back
 
 - **WHEN** `opm_operator-v0.1.0` was published to GHCR but the run failed reading it back, and the release is a draft without `install.yaml`
 - **THEN** a dispatch with `module_tag=opm_operator-v0.1.0` on `main` reuses the held `v0.1.0` after comparing it with the tag's tree, attaches `install.yaml`, and publishes the release with `make_latest=false`
+
+#### Scenario: Stranded before its first publish
+
+- **WHEN** a module release's run failed before it published, and GHCR does not hold the version
+- **THEN** the dispatch publishes the tag's tree, attaches `install.yaml`, and publishes the release with `make_latest=false`
 
 #### Scenario: Held version differs from the tag
 
@@ -223,7 +228,7 @@ The release workflow SHALL accept a `workflow_dispatch` with the input `module_t
 
 #### Scenario: Not a module tag, or not main
 
-- **WHEN** the dispatch names `v1.0.0-beta.7`, or runs on a branch other than `main`
+- **WHEN** the dispatch names `v1.0.0-beta.7`, a module tag not reachable from `main`, or runs on a branch other than `main`
 - **THEN** it fails before any module job runs
 
 ### Requirement: Only this repository's module release publishes under the module path

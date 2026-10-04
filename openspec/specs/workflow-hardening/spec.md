@@ -63,6 +63,13 @@ A job triggered by `pull_request` that holds any write scope or `id-token: write
 - **WHEN** a same-repo pull request from any other head opens or updates
 - **THEN** `publish-fixtures` publishes the pre-release fixtures holding `packages: write`, and the `test-e2e` job pins them and runs the suite holding only read scopes, with a docker config built from its own read-only token
 
+### Requirement: Tools installed at an exact version
+Every workflow step that installs a tool SHALL name an exact version, never a floating range such as `3.x` or `latest`. A tool action SHALL NOT receive the job token unless it needs it.
+
+#### Scenario: Task installed at an exact version
+- **WHEN** a workflow uses `go-task/setup-task`
+- **THEN** its `version:` is an exact release such as `3.54.0`, and the step passes no `repo-token`
+
 ### Requirement: Code owners on the release machinery
 `.github/CODEOWNERS` SHALL name code owners for `/.github/`, `/.tasks/`, `/Taskfile*.yml`, `/release-please-config.json`, `/.release-please-manifest.json`, `/.cascade-frozen` and `/hack/` (scripts that run in jobs holding write tokens).
 

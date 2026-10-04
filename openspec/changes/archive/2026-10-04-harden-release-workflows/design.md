@@ -122,6 +122,15 @@ The supervisor's spec, keeping only paths that exist here: `/.github/`, `/.tasks
 `image-release` (`contents`, `packages`, `id-token`, `attestations: write`). The file has no
 effect until the supervisor turns on `require_code_owner_review` (decision 28).
 
+### D7. Exact tool versions
+
+Added in review. `go-task/setup-task` installed `version: 3.x`, whatever Task release came out
+last, in jobs that hold `contents: write`, `packages: write`, `id-token: write` and
+`attestations: write`. Every setup-task step now names `3.54.0`, the release the PR's green CI
+resolved `3.x` to. Bumping it is an ordinary reviewed edit. `publish-fixtures.yml` also passed
+`repo-token: secrets.GITHUB_TOKEN` (a `packages: write` token) to the action, which needs it
+only to list releases when resolving a range; that line is gone.
+
 ## Risks / Trade-offs
 
 - Release image builds take longer without layer caching (multi-arch with QEMU). This is

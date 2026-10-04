@@ -52,6 +52,8 @@ than they need to code that no human has reviewed yet:
 - `.github/CODEOWNERS` assigns `/.github/`, `/.tasks/`, `/Taskfile*.yml`, the release-please
   config and manifest, `/.cascade-frozen` and `/hack/` (`hack/fixtures.sh` and
   `hack/render-config.sh` run in jobs that hold write tokens) to both admins.
+- Every `go-task/setup-task` step pins an exact Task version instead of `3.x`, and
+  `publish-fixtures.yml` stops passing the job token to it as `repo-token`.
 - `AGENTS.md` records these rules.
 
 Not changed: the cascade key-holding jobs (`notify-downstream`, `publish`), the `.github` pin,

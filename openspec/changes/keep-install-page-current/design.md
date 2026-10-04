@@ -66,4 +66,4 @@ The repositories squash-merge, so a commit reaches `main` alone only as its own 
 
 ## Follow-ups
 
-- cli: `docs/site/start/install-the-cli.md` and other start pages may name cli or operator versions the same way; the cli can adopt the same blocks (it releases with release-please too). Not filed; named for the supervisor.
+- cli: `docs/site/start/install-the-cli.md` names `v1.0.0-beta.5` in a page published from later releases; filed as cli#295 (release-please blocks cover its version literals, not its sample digests, SHAs and dates).

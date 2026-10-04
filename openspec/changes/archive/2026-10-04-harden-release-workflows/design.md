@@ -12,17 +12,18 @@ grants explicit and removes the over-grants.
 
 Threats this change addresses:
 
-- (b) code from a bot head (`deps/cascade`, `release-please--*`, `dependabot/*`) that no human has reviewed;
+- (b) code from a bot head (`deps/cascade`, `release-please--*`, `module/*`, `dependabot/*`) that no human has reviewed;
 - (c) code that the cascade's compute job runs in a `main`-ref run, which holds main's Actions
   cache scope;
 - (d) a branch push whose workflow reads an org secret.
 
 ## Decisions
 
-### D1. `environment: release` only on `release-please`
+### D1. `environment: release` only on the key readers
 
-`release.yml`'s `release-please` job is the only reader of `RELEASE_APP_PRIVATE_KEY` in this
-repo (`grep -rn RELEASE_APP .github`). It runs only on a push to `main`, which the Environment's
+When this change was proposed, `release.yml`'s `release-please` job was the only reader of
+`RELEASE_APP_PRIVATE_KEY` in this repo (`grep -rn RELEASE_APP .github`); D9 adds the operator
+module's three. It runs only on a push to `main`, which the Environment's
 branch policy admits. Before the owner stores the key in the Environment, the job reads the org
 secret. GitHub resolves an Environment secret first, then a repo secret, then an org secret, so
 the job works before, during and after the move. No other job declares `release`, so a push of
@@ -148,6 +149,42 @@ workflow. The flux CLI comes from the `flux_<FLUX_VERSION>_linux_amd64.tar.gz` r
 checked against `FLUX_CLI_SHA256_LINUX_AMD64`, which sits beside `FLUX_VERSION` in
 `.tasks/flux.yaml` so the single version pin and its digest move together.
 
+### D9. The operator module's release train (merged from `main`)
+
+`main` gained the operator module's own release train (PRs 221, 224, 226 to 229) while this
+change was in review. It added three more readers of the release key, all on `main` only:
+`release.yml`'s `module-identity-advance` (pushes the identity commit to the module's release
+PR branch), and the `publish` jobs of `module-image.yml` and `module-deps.yml` (push
+`module/operator-image` and `module/deps` through `hack/operator-module/bot-pr.sh`). Each now
+declares `environment: release`.
+
+`module-image-pr` calls `module-image.yml` as a reusable workflow and passed the key through
+`secrets:`. A calling job cannot declare an Environment, so that call read the key outside
+`release`. GitHub's rule for reusable workflows: "If you include `environment` in the reusable
+workflow at the job level, the environment secret will be used, and not the secret passed from
+the caller workflow." So the call passes no `secrets:` and `module-image.yml` declares no
+`workflow_call` secret: the called `publish` job reads the Environment secret itself. The cost
+is ordering: a called workflow sees no org or repo secret that is not passed, so until the
+owner stores the key in Environment `release`, the called `publish` job gets an empty key and
+fails to mint (after `publish-release`, so the operator release itself is unaffected). A
+dispatch of `module-image.yml` is a top-level run, which falls back to the org secret and
+opens the PR.
+
+`module-publish` and `module-manifest` publish, and `module-identity-advance` holds the key
+after it builds, so all three set up Go with `cache: false`; `module-publish` and
+`module-deps.yml` install Task `3.54.0` (D7). `module-image.yml` and `module-deps.yml` use no
+cache, so both go on the canonical wiring check's `publish-workflows` list.
+
+`module/deps` and `module/operator-image` are bot heads like `deps/cascade`: the release App
+pushes them and no human has reviewed their content. `image-pr.yml` and the e2e
+`publish-fixtures` job skip `module/*`.
+
+Not redesigned here (supervisor follow-up): `module-deps.yml` is a second publisher that
+mints the release App token and opens PRs whose title and body come from repo code
+(`task deps:cascade:module:title`/`:body`), outside the `.github` publish boundary of
+`bound-cascade-publish`. Its resolver checkout is also a `.github` reference that the
+canonical wiring check's fixed reference list does not know.
+
 ## Risks / Trade-offs
 
 - Release image builds take longer without layer caching (multi-arch with QEMU). This is
@@ -160,4 +197,8 @@ checked against `FLUX_CLI_SHA256_LINUX_AMD64`, which sits beside `FLUX_VERSION` 
   they lock the content seen on 2026-10-04 rather than prove its origin. A bump has to update
   the digest with the version, by hand.
 - The wiring check (`.tasks/cascade/wiring-check.sh`) is unchanged and passes. It asserts
-  nothing about `release-please` or the cache lines.
+  nothing about `release-please` or the cache lines. The canonical check at `.github`
+  `7b9ad1b` passes its release-key and cache rules on this branch; its remaining mismatches
+  belong to the wave-2 pin bump, except the `module-deps.yml` resolver reference (D9).
+- Until the owner moves the key into Environment `release`, `module-image-pr`'s called
+  `publish` job fails to mint (D9); dispatch `module-image.yml` instead.

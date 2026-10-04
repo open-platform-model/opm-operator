@@ -2,7 +2,7 @@
 
 ### Requirement: Pull-request image build trigger and tags
 
-The PR image workflow SHALL run on `pull_request` events (types: `opened`, `synchronize`, `reopened`) whatever paths they touch (the workflow has no `paths` filter), except for a head named `deps/cascade` or starting with `release-please--` or `dependabot/`, where the job SHALL be skipped so that unreviewed bot-head code never builds under a `packages: write` and `id-token: write` token. On every run it SHALL build and push exactly two tags: `:sha-<short>` where `<short>` is the 7-character short commit SHA of the PR head, and `:pr-<PR_ID>` where `<PR_ID>` is the GitHub pull request number. The `:pr-<PR_ID>` tag MAY be overwritten by subsequent pushes to the same PR; `:sha-<short>` is effectively immutable because the SHA changes when the commit changes. The build SHALL NOT use the GitHub Actions cache.
+The PR image workflow SHALL run on `pull_request` events (types: `opened`, `synchronize`, `reopened`) whatever paths they touch (the workflow has no `paths` filter), except for a head named `deps/cascade` or starting with `release-please--`, `module/` (the operator module's bot heads) or `dependabot/`, where the job SHALL be skipped so that unreviewed bot-head code never builds under a `packages: write` and `id-token: write` token. On every run it SHALL build and push exactly two tags: `:sha-<short>` where `<short>` is the 7-character short commit SHA of the PR head, and `:pr-<PR_ID>` where `<PR_ID>` is the GitHub pull request number. The `:pr-<PR_ID>` tag MAY be overwritten by subsequent pushes to the same PR; `:sha-<short>` is effectively immutable because the SHA changes when the commit changes. The build SHALL NOT use the GitHub Actions cache.
 
 #### Scenario: New PR opened
 - **WHEN** a contributor opens a pull request whose head commit is `abcd123...`
@@ -17,7 +17,7 @@ The PR image workflow SHALL run on `pull_request` events (types: `opened`, `sync
 - **THEN** the workflow SHALL NOT run an image build
 
 #### Scenario: Bot head skipped
-- **WHEN** a pull request from `deps/cascade`, a `release-please--*` head or a `dependabot/*` head opens or updates
+- **WHEN** a pull request from `deps/cascade`, a `release-please--*` head, a `module/*` head or a `dependabot/*` head opens or updates
 - **THEN** the image job SHALL be skipped and SHALL push nothing
 
 ### Requirement: Multi-architecture support

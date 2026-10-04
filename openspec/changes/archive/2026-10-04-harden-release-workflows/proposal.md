@@ -58,6 +58,12 @@ than they need to code that no human has reviewed yet:
 - `test-e2e.yml` installs `kind` and the `flux` CLI from pinned release assets checked against
   in-tree sha256 digests, instead of `dl/latest` and `curl | sudo bash`.
 - `AGENTS.md` records these rules.
+- After merging `main`'s operator module release train (PRs 221 to 229): the three new readers
+  of the release key (`release.yml`'s `module-identity-advance`, the `publish` jobs of
+  `module-image.yml` and `module-deps.yml`) declare `environment: release`; `module-image-pr`
+  passes no `secrets:` and `module-image.yml` declares no `workflow_call` secret; the module
+  release jobs set up Go with `cache: false` and install Task `3.54.0`; `image-pr.yml` and the
+  e2e `publish-fixtures` job also skip `module/*` heads.
 
 Not changed: the cascade key-holding jobs (`notify-downstream`, `publish`), the `.github` pin,
 `.tasks/cascade/wiring-check.sh` and `deps-cascade.yml`. A later change moves those. The
@@ -81,9 +87,11 @@ Dependabot `github-actions` entry already exists with the `.github` ignore; revi
 ## Impact
 
 - Workflows: `release.yml`, `lint.yml`, `test.yml`, `test-e2e.yml`, `image-pr.yml`, `cascade-task.yml`,
-  `publish-fixtures.yml`, `.github/dependabot.yml`. New file `.github/CODEOWNERS`. `.tasks/flux.yaml`. `AGENTS.md`.
+  `publish-fixtures.yml`, `module-image.yml`, `module-deps.yml`, `.github/dependabot.yml`. New file `.github/CODEOWNERS`. `.tasks/flux.yaml`. `AGENTS.md`.
 - No Go, API, CRD or reconcile change, and no release: every commit is `ci` or `docs` typed.
 - Cascade, release and Dependabot PRs lose the PR image. They run the full e2e suite against
   a job-local registry seeded from the tree. Release image builds get slower without the layer cache.
 - Owner follow-up (not in this repo): store `RELEASE_APP_PRIVATE_KEY` in Environment `release`
-  and delete the org secret (decision 29).
+  and delete the org secret (decision 29). Until then, the `module-image-pr` call's `publish`
+  job gets no key (design D9) and the module image PR must be opened by dispatching
+  `module-image.yml`.

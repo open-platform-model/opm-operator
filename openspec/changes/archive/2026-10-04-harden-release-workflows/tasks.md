@@ -45,3 +45,11 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 - [x] 7.5 `.github/CODEOWNERS`: add `/.opm-cli-version`, `/.opm-docs-version` and `/docs-kit.cue` (design D6). Commit `ci: code-own the opm and docs-kit pins`
 - [x] 7.6 `container-image-publish`: drop the `paths` claim, name the `dependabot/*` skip, and say the PR image is amd64 and arm64. Commit `docs(openspec): match the PR image spec to image-pr.yml`
 - [x] 7.7 `test-e2e.yml`: install `kind` `v0.33.0` and the flux CLI from release assets checked against in-tree sha256 digests (`.tasks/flux.yaml` gains `FLUX_CLI_SHA256_LINUX_AMD64`) (design D8). Commit `ci: install kind and flux from checked release assets`
+
+## 8. Merge main's operator module release train
+
+- [x] 8.1 `git merge origin/main`; resolve `lint.yml` (keep `permissions` and `CUE_VERSION`), `release.yml` (main's outputs, this branch's Environment and grant) and `AGENTS.md`.
+- [x] 8.2 `environment: release` on `module-identity-advance` and the `publish` jobs of `module-image.yml` and `module-deps.yml`; drop `secrets:` from `module-image-pr` and the `workflow_call` secret from `module-image.yml` (design D9). Commit `ci: read the release key only in the release environment everywhere`
+- [x] 8.3 `cache: false` on setup-go in `module-identity-advance`, `module-publish`, `module-manifest`; Task `3.54.0` in `module-publish` and `module-deps.yml`.
+- [x] 8.4 `image-pr.yml` and the e2e `publish-fixtures` job skip `module/*` heads. Commit `ci: keep write tokens away from the operator module's bot heads`
+- [x] 8.5 Canonical wiring check at `.github` `7b9ad1b` with the refreshed config: the release-key and cache rules pass; update `workflow-hardening`, `container-image-publish`, `AGENTS.md` and this change's files.

@@ -1,18 +1,22 @@
 ## Purpose
-Limit what each GitHub Actions workflow in this repo can hold. Workflows declare least-privilege permissions explicitly. Only the release-please job reads the release App key, and only inside the main-only `release` Environment. Publishing jobs never use the Actions cache. Code from the cascade, release-please and Dependabot heads never runs with a write token or OIDC. Code owners guard the release machinery.
+Limit what each GitHub Actions workflow in this repo can hold. Workflows declare least-privilege permissions explicitly. Only jobs in the main-only `release` Environment read the release App key. Publishing jobs never use the Actions cache. Code from the cascade, release-please, operator module bot and Dependabot heads never runs with a write token or OIDC. Code owners guard the release machinery.
 
 ## Requirements
 
 ### Requirement: Release App key read only in the release Environment
-Every job that reads `secrets.RELEASE_APP_PRIVATE_KEY` SHALL declare `environment: release`, and no other job SHALL declare that Environment. Today the only such job is `release.yml`'s `release-please`, which runs only on a push to `main`.
+Every job that reads `secrets.RELEASE_APP_PRIVATE_KEY` SHALL declare `environment: release`, and no other job SHALL declare that Environment. Today those jobs are `release.yml`'s `release-please` and `module-identity-advance` (on a push to `main`), and the `publish` jobs of `module-image.yml` and `module-deps.yml` (which run only on `refs/heads/main`). A reusable-workflow call SHALL NOT pass the key through `secrets:` (nor `secrets: inherit`): a calling job cannot declare an Environment, so the called job that declares `environment: release` reads the Environment secret itself, and the called workflow declares no `workflow_call` secret for it.
 
-#### Scenario: Release-please job holds the key
+#### Scenario: Every key reader runs in the release Environment
 - **WHEN** `.github/workflows/` is searched for `RELEASE_APP_PRIVATE_KEY`
 - **THEN** every job that names it declares `environment: release`, and no other job declares `release`
 
+#### Scenario: Module image PR call passes no key
+- **WHEN** `release.yml`'s `module-image-pr` job calls `module-image.yml`
+- **THEN** it has no `secrets:` key, `module-image.yml` declares no `workflow_call` secret, and its `publish` job declares `environment: release`
+
 #### Scenario: Key not yet moved
 - **WHEN** Environment `release` has no `RELEASE_APP_PRIVATE_KEY` and the org secret still exists
-- **THEN** the `release-please` job reads the org secret and runs as before
+- **THEN** the jobs of a top-level run (`release-please`, `module-identity-advance`, and `module-image.yml` or `module-deps.yml` run by dispatch) read the org secret and run as before, while `module-image.yml`'s `publish` job called from `module-image-pr` gets no key until the owner moves it into the Environment (a called workflow sees no org secret that is not passed), and a dispatch of `module-image.yml` recovers that run
 
 ### Requirement: Explicit least-privilege permissions in every workflow
 Every workflow file under `.github/workflows/` SHALL declare a top-level `permissions:` block granting at most `contents: read`, and every job that needs more SHALL declare its own grant naming exactly the scopes its steps use. No workflow SHALL rely on the repository's default token permissions. A job whose steps act only with an App token SHALL grant nothing (`permissions: {}`).
@@ -44,8 +48,12 @@ A job that publishes, signs or attests anything (a container image, a CUE module
 - **WHEN** `release.yml`'s `publish-examples`, `publish-fixtures.yml` or `test-e2e.yml`'s `publish-fixtures` job sets up Go
 - **THEN** `actions/setup-go` runs with `cache: false`
 
+#### Scenario: Operator module release jobs skip the Go cache
+- **WHEN** `release.yml`'s `module-identity-advance` (which later holds the release App key), `module-publish` or `module-manifest` job sets up Go
+- **THEN** `actions/setup-go` runs with `cache: false`, and `module-image.yml` and `module-deps.yml` use no cache in any job
+
 ### Requirement: Bot-head code never holds a write token or OIDC
-A job triggered by `pull_request` that holds any write scope or `id-token: write` SHALL NOT run for a head named `deps/cascade` or starting with `release-please--` or `dependabot/`. The code on those heads comes from the release cascade, release-please or Dependabot, and no human has reviewed it yet; a Dependabot `github-actions` bump runs a new upstream action release in the job itself. A job that runs such code SHALL hold only read scopes.
+A job triggered by `pull_request` that holds any write scope or `id-token: write` SHALL NOT run for a head named `deps/cascade` or starting with `release-please--`, `module/` or `dependabot/`. The code on those heads comes from the release cascade, release-please, the operator module's bot (`module/deps`, `module/operator-image`, pushed with the release App's token) or Dependabot, and no human has reviewed it yet; a Dependabot `github-actions` bump runs a new upstream action release in the job itself. A job that runs such code SHALL hold only read scopes.
 
 #### Scenario: Cascade PR image build skipped
 - **WHEN** a pull request from `deps/cascade` opens or updates
@@ -56,11 +64,11 @@ A job triggered by `pull_request` that holds any write scope or `id-token: write
 - **THEN** `test-e2e.yml`'s `publish-fixtures` job is skipped, and the `test-e2e` job runs the suite with `contents: read` and `packages: read`, without the pre-release pins or a GHCR credential
 
 #### Scenario: E2E without a publish still runs the podinfo spec
-- **WHEN** `test-e2e.yml`'s `publish-fixtures` job is skipped (a fork, or a `deps/cascade`, `release-please--*` or `dependabot/*` head)
+- **WHEN** `test-e2e.yml`'s `publish-fixtures` job is skipped (a fork, or a `deps/cascade`, `release-please--*`, `module/*` or `dependabot/*` head)
 - **THEN** the `test-e2e` job seeds a job-local registry from the tree, connects it to the kind network, sets `LOCAL_REGISTRY` so the controller resolves the fixtures from it, and the podinfo and redis specs run instead of skipping
 
-#### Scenario: Dependabot PR holds no write token
-- **WHEN** a pull request from a `dependabot/*` head opens or updates
+#### Scenario: Dependabot and operator module bot PRs hold no write token
+- **WHEN** a pull request from a `dependabot/*` or `module/*` head opens or updates
 - **THEN** `image-pr.yml`'s job and `test-e2e.yml`'s `publish-fixtures` job are skipped
 
 #### Scenario: Human PR e2e publishes in its own job
@@ -79,7 +87,7 @@ Every workflow step that installs a tool SHALL name an exact version, never a fl
 - **THEN** it downloads the pinned release assets (`KIND_VERSION`, and `FLUX_VERSION` from `.tasks/flux.yaml`), checks each against its in-tree sha256 (`KIND_SHA256`, `FLUX_CLI_SHA256_LINUX_AMD64`), and pipes no install script into `bash`
 
 ### Requirement: Code owners on the release machinery
-`.github/CODEOWNERS` SHALL name code owners for `/.github/`, `/.tasks/`, `/Taskfile*.yml`, `/release-please-config.json`, `/.release-please-manifest.json`, `/.cascade-frozen`, `/hack/` (scripts that run in jobs holding write tokens), `/.opm-cli-version` (the opm binary the publishing jobs install), and `/.opm-docs-version` and `/docs-kit.cue` (the signed docs publish).
+`.github/CODEOWNERS` SHALL name code owners for `/.github/`, `/.tasks/`, `/Taskfile*.yml`, `/release-please-config.json`, `/.release-please-manifest.json`, `/.cascade-frozen`, `/hack/` (scripts that run in jobs holding write tokens or the release App key, `hack/operator-module/` included), `/.opm-cli-version` (the opm binary the publishing jobs install), and `/.opm-docs-version` and `/docs-kit.cue` (the signed docs publish).
 
 #### Scenario: Workflow edit needs a code owner
 - **WHEN** a pull request edits a file under `.github/workflows/`

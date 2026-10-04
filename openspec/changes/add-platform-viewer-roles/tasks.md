@@ -8,8 +8,8 @@
 
 ## 2. Document the roles
 
-- [ ] 2.1 In `docs/site/start/install-the-operator.md`, after the ModuleInstance roles, name the three viewer roles, say which binding each needs (ClusterRoleBinding for Platforms and TransformerRegistrations, RoleBinding or ClusterRoleBinding for ModulePackages), that none is bound or aggregated into `view`, with one `kubectl create clusterrolebinding` example; verify with `task docs:bundle:check`.
-- [ ] 2.2 `task docs:bundle:check dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(site): name the platform viewer roles on the install page`
+- [x] 2.1 In `docs/site/start/install-the-operator.md`, after the ModuleInstance roles, name the three viewer roles, say which binding each needs (ClusterRoleBinding for Platforms and TransformerRegistrations, RoleBinding or ClusterRoleBinding for ModulePackages), that none is bound or aggregated into `view`, with one `kubectl create clusterrolebinding` example; verify with `task docs:bundle:check`.
+- [x] 2.2 `task docs:bundle:check dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(site): name the platform viewer roles on the install page`
 
 ## 3. Archive
 

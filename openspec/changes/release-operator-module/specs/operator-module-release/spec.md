@@ -1,6 +1,6 @@
 ## Purpose
 
-Release the operator module `opmodel.dev/modules/opm_operator` from this repository as its own release unit: its version train, release PR and tags, its release gate, its publish with signature, provenance and install manifest, the PR that moves its operator image after each operator release, and its place in the release cascade.
+Release the operator module `opmodel.dev/modules/opm_operator` from this repository as its own release unit: its version train, release PR and tags, its release gate, its publish with the install manifest, the PR that moves its operator image after each operator release, and its place in the release cascade.
 
 ## ADDED Requirements
 
@@ -44,8 +44,13 @@ A module release is breaking when its `#config` change is breaking, when the ope
 
 #### Scenario: The first release
 
-- **WHEN** the module package has never released and a releasable commit touches `modules/opm_operator/`
-- **THEN** the module's release PR proposes `0.1.0`
+- **WHEN** the module package has never released and a squash commit titled `feat(module): ...` that changes only `modules/opm_operator/` lands on `main`
+- **THEN** the module's release PR proposes `0.1.0`, and the operator's release PR is unchanged
+
+#### Scenario: Hidden module commits open no release
+
+- **WHEN** only `build`, `test`, `docs`, `ci` or `chore` commits have changed `modules/opm_operator/` since the module's last release, or since it was added
+- **THEN** release-please opens no module release PR
 
 #### Scenario: 1.0.0 before operator GA is refused
 
@@ -76,7 +81,7 @@ On the module's release PR, the required `Lint` job SHALL run a module release c
 - the proposed version breaks the v0 rules of "The module version follows the 0.x bump rule on the v0 path";
 - the module's generated CRDs or controller RBAC differ from what the operator source at `<tag>` generates.
 
-The last check exists because a module release must render exactly the CRDs the controller it deploys serves and exactly the cluster permissions that controller declares, and `main` can move ahead of the deployed operator release. The check SHALL also run in the module publish job before anything is pushed, so a release merged past a red check still publishes nothing.
+The last check exists because a module release must render exactly the CRDs the controller it deploys serves and exactly the cluster permissions that controller declares, and `main` can move ahead of the deployed operator release. Because the module's generated data follow `main`'s `config/` on every pull request, module releases are frozen while `main`'s `config/` differs from the deployed tag's, until the image-bump PR of an operator release carrying that change merges. The check SHALL also run in the module publish job before anything is pushed, so a release merged past a red check still publishes nothing. The checks that need no network (development pin, `local-module.cue`, version and major, the `1.0.0` rule, reporting every failure) SHALL be covered by an offline test that the `Lint` job runs on every pull request.
 
 #### Scenario: Image digest does not match GHCR
 
@@ -98,6 +103,11 @@ The last check exists because a module release must render exactly the CRDs the 
 - **WHEN** the module's `cue.mod/module.cue` pins catalog `v4.6.0-0.dev.3`
 - **THEN** the check fails naming the pin
 
+#### Scenario: Several failures named at once
+
+- **WHEN** the offline test runs the check over a fixture tree with a development pin and an `identity.Version` that differs from the proposed version
+- **THEN** the check exits non-zero and its output names both failures
+
 #### Scenario: Not a release PR
 
 - **WHEN** the `Lint` job runs on any other pull request
@@ -114,32 +124,13 @@ When release-please creates a module release, the module publish job SHALL check
 
 #### Scenario: Re-run after a later step failed
 
-- **WHEN** the job is re-run with "Re-run failed jobs" after the publish succeeded and the signing step failed
+- **WHEN** the job is re-run with "Re-run failed jobs" after the publish succeeded and the install-manifest upload failed
 - **THEN** the publish step reports the version as already present with the same content, pushes nothing, and the later steps run against the recorded digest
 
 #### Scenario: Version held by other content
 
 - **WHEN** GHCR already holds `v0.2.0` with a digest that differs from what the tagged tree publishes
 - **THEN** the job fails, the release stays a draft, and the fix is the next module version
-
-### Requirement: The module artifact carries the image's signature and provenance
-
-The module publish job SHALL sign the published module's manifest digest with cosign keyless (GitHub Actions OIDC, Fulcio certificate, Rekor entry) and SHALL attach a SLSA build provenance attestation for that digest, pushed to the registry, as the image release job does for the image. Signing and attestation SHALL complete before the module's release is published.
-
-#### Scenario: Signature verifies
-
-- **WHEN** a consumer runs `cosign verify ghcr.io/open-platform-model/modules/opm_operator@<digest>` with the repository's documented certificate identity and the GitHub Actions OIDC issuer
-- **THEN** verification succeeds for the release workflow's identity
-
-#### Scenario: Provenance discoverable
-
-- **WHEN** the module release completes
-- **THEN** a SLSA provenance attestation for the module digest is listed by `gh attestation verify oci://ghcr.io/open-platform-model/modules/opm_operator@<digest> --repo open-platform-model/opm-operator`
-
-#### Scenario: Signing fails
-
-- **WHEN** the signing step fails
-- **THEN** the module's release stays a draft
 
 ### Requirement: Every module release publishes the install manifest rendered from it
 
@@ -195,12 +186,12 @@ No workflow, task or script in this repository other than the module publish job
 
 ### Requirement: An operator release opens the PR that moves the module's image
 
-Once an operator release has been published, the release workflow SHALL open or update one pull request on the branch `module/operator-image`. The PR SHALL set the operator release the module deploys to that release's tag and the manifest-list digest GHCR serves under it. It SHALL regenerate the module's CRDs and controller RBAC from the operator source at that tag, and SHALL change no file outside `modules/opm_operator/`. The PR's title SHALL be `fix(deps): deploy operator <tag> from the operator module`. The title SHALL be `fix(deps)!: ...` instead when the operator CHANGELOG sections between the module's previous operator tag and `<tag>` carry a breaking-change entry, or when a regenerated CRD stops serving a version it served before. The PR SHALL be created with the release App's token so its CI runs. A `workflow_dispatch` with a `tag` input SHALL do the same for a published operator release, for recovery. While the branch carries only bot commits, a later run SHALL rebuild it from `main`. Once a human commit is on it, the run SHALL add its own commit on top and never rewrite the branch.
+Once an operator release has been published, the release workflow SHALL open or update one pull request on the branch `module/operator-image`. The PR SHALL set the operator release the module deploys to that release's tag and the manifest-list digest GHCR serves under it, and SHALL change nothing else: no file outside `modules/opm_operator/`, and not the module's generated CRD and RBAC files, which follow `main`'s `config/`. When the CRDs or RBAC roles under `config/` at that tag differ from `main`'s, the run SHALL fail naming the files and open no PR, because the module release gate would refuse that module. The PR's title SHALL be `fix(deps): deploy operator <tag> from the operator module`. The title SHALL be `fix(deps)!: ...` instead when the operator CHANGELOG sections between the module's previous operator tag and `<tag>` carry a breaking-change entry, or when a CRD under `config/crd/bases` at `<tag>` stops serving a version it served at the module's previous operator tag. The PR SHALL be created with the release App's token so its CI runs. A `workflow_dispatch` with a `tag` input SHALL do the same for a published operator release, for recovery. While the branch carries only bot commits, a later run SHALL rebuild it from `main`. Once a human commit is on it, the run SHALL add its own commit on top and never rewrite the branch.
 
 #### Scenario: Operator release published
 
 - **WHEN** `v1.0.0-beta.6` is published with manifest-list digest `sha256:abc…`
-- **THEN** a PR from `module/operator-image` sets the module's image to `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.6@sha256:abc…` with the regenerated CRDs and RBAC, titled `fix(deps): deploy operator v1.0.0-beta.6 from the operator module`
+- **THEN** a PR from `module/operator-image` sets the module's image to `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.6@sha256:abc…`, changes only `modules/opm_operator/operator/operator.cue`, and is titled `fix(deps): deploy operator v1.0.0-beta.6 from the operator module`
 
 #### Scenario: Breaking operator release
 
@@ -211,6 +202,11 @@ Once an operator release has been published, the release workflow SHALL open or 
 
 - **WHEN** the dispatch names an operator tag whose release is still a draft
 - **THEN** the run fails and opens no PR
+
+#### Scenario: Tag behind main
+
+- **WHEN** the dispatch names `v1.0.0-beta.6` and `main` changed a CRD after that tag
+- **THEN** the run fails naming the CRD file and opens no PR
 
 #### Scenario: Image PR never releases the operator
 

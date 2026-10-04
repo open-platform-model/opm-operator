@@ -15,8 +15,38 @@ The workflow SHALL generate and maintain a `CHANGELOG.md` file at the repository
 - **WHEN** `fix(deps): deploy operator v1.0.0-beta.6 from the operator module`, which changes only `modules/opm_operator/`, is merged
 - **THEN** the operator's Release PR and root `CHANGELOG.md` do not list it
 
+### Requirement: Git tag and GitHub Release on merge
+When a Release PR is merged to `main`, release-please SHALL create the git tag eagerly at the release commit and a GitHub Release in draft state with the changelog section as release notes. The operator package `"."` tags `vX.Y.Z` (e.g. `v0.2.0`, or `v1.0.0-beta.6` on the beta line); the operator module's package tags `opm_operator-vX.Y.Z` (see `operator-module-release`). Each release-please package SHALL be configured with `draft: true` and `force-tag-creation: true`. An operator release's draft SHALL become public only through the final publish step defined in "Release published once after every release job"; a module release's draft only through the module's final publish job.
+
+#### Scenario: Release PR merged
+- **WHEN** the Release PR is merged to `main`
+- **THEN** release-please creates a git tag matching the version (prefixed with `v` for the operator, with `opm_operator-v` for the module) at the release commit and a draft GitHub Release with the changelog for that version as the body, and the release is not visible as published until every release job has succeeded
+
+#### Scenario: Release PR closed without merge
+- **WHEN** the Release PR is closed without merging
+- **THEN** no tag or release SHALL be created; the next push to `main` re-opens or creates a new Release PR
+
+#### Scenario: Config enables draft-first
+- **WHEN** `release-please-config.json` is inspected on `main`
+- **THEN** package `"."` and package `"modules/opm_operator"` SHALL each set `"draft": true` and `"force-tag-creation": true`
+
+### Requirement: Release assets upload only to a draft release
+Every step that uploads an asset to the GitHub Release (`install.yaml` of an operator or a module release, `opm-examples.tar.gz`, the example manifests) SHALL first confirm that the single release for the tag is a draft and SHALL fail without uploading when it is published. Replacing an existing asset (`--clobber`) SHALL be used only on a draft. Every GitHub CLI call in the release workflow SHALL name the repository explicitly. Source: 0021:D10:R8.
+
+#### Scenario: Upload to the draft
+- **WHEN** the image job uploads `install.yaml` for a release that is still a draft
+- **THEN** the upload succeeds, and re-running the job replaces the asset on the draft
+
+#### Scenario: Module manifest upload to the draft
+- **WHEN** the module publish job uploads `install.yaml` for `opm_operator-v0.2.0` while its release is a draft
+- **THEN** the upload succeeds, and re-running the job replaces the asset on the draft
+
+#### Scenario: Upload to a published release refused
+- **WHEN** an upload step runs for a tag whose release is already published
+- **THEN** the step fails before uploading and tells the operator to release the next version instead
+
 ### Requirement: Release published once after every release job
-The release workflow SHALL contain a final job that depends on every job producing an operator release artifact (the image job and the example publishing job). It SHALL run only when the operator package created a release, hold `contents: write` and no other write permission, and check out only the files it runs. It SHALL confirm that the required asset `opm-examples.tar.gz` is attached to the draft, and then publish the draft. It SHALL leave the Pre-release flag set by release-please unchanged. When the release is already published it SHALL succeed without changing anything. An operator release SHALL NOT carry `install.yaml`: the install manifest is an asset of the module's release (`operator-module-release`).
+The release workflow SHALL contain a final job that depends on every job producing a release artifact (the image job and the example publishing job), runs only when the operator package `"."` created a release (a module-only release does not run it), holds `contents: write` and no other write permission, checks out only the files it runs, confirms the required assets (`install.yaml`, `opm-examples.tar.gz`) are attached to the draft, and then publishes the draft. It SHALL leave the Pre-release flag set by release-please unchanged. When the release is already published it SHALL succeed without changing anything.
 
 #### Scenario: All release jobs succeed
 - **WHEN** the image and example jobs finish successfully for `v1.0.0-beta.3`
@@ -27,7 +57,7 @@ The release workflow SHALL contain a final job that depends on every job produci
 - **THEN** the final job does not run, the release stays a draft, and "Re-run failed jobs" on the same workflow run completes and publishes it
 
 #### Scenario: Required asset missing
-- **WHEN** the final job runs and the draft lacks `opm-examples.tar.gz`
+- **WHEN** the final job runs and the draft lacks `install.yaml`
 - **THEN** the job fails and the release stays a draft
 
 #### Scenario: Module-only release
@@ -39,7 +69,7 @@ The release-please package `"."` SHALL be configured with `versioning: prereleas
 
 #### Scenario: Beta releases are flagged Pre-release
 - **WHEN** the Release PR for `1.0.0-beta.N` is merged
-- **THEN** release-please creates tag `v1.0.0-beta.N` and a GitHub Release marked Pre-release, and the image and the example assets are published under that tag
+- **THEN** release-please creates tag `v1.0.0-beta.N` and a GitHub Release marked Pre-release, and the image and `install.yaml` asset are published under that tag
 
 #### Scenario: Breaking change during beta carries its migration note
 - **WHEN** a pull request titled `feat(api)!: ...`, whose body describes the migration, is squash-merged on the beta line

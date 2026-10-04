@@ -58,6 +58,10 @@ Inside a block release-please replaces every version, so a block holds only the 
 
 The repositories squash-merge, so a commit reaches `main` alone only as its own PR. Section 1 (the page edit, Markdown-only) is PR A and merges first; sections 2 and the archive (config, test, `AGENTS.md`) are PR B. A docs revision of `1.0.0-beta.5` (dispatched by hand, opm-operator#188) can then apply PR A's squash commit, recorded here at 1.3 as the `fix=` to pass, so v1.0 shows the fix before the next release if the owner wants it. beta.5's tree carries its own `docs-kit.cue` with the operator-resources exclude, so this revision has no ordering constraint with `publish-crd-bundle`'s reduction commit, which only `1.0.0-beta.4` revisions need.
 
+Delivered: PR A merged as opm-operator#200, squash `e268cbd2ed6e80916e6db8b2d58fbe0b094b6524`. The docs revision of `1.0.0-beta.5` with `fix=e268cbd` ran as [Actions run 37177763682](https://github.com/open-platform-model/opm-operator/actions/runs/37177763682) and published `docs/opm-operator:1.0.0-beta.5.1`, which `1.0.0-beta.5` now resolves to; the site rebuild (run 37177794431) shows v1.0.0-beta.5 on the live page.
+
+The cascade rule. opm-operator#199 (`deps:cascade`), merged while this change was planned, added a warning when the install page's sample catalog or core version drifted from the tree, with test S13. PR A removes those versions, so the rule would have warned on `4.Y.Z`, and S13 failed PR A's Lint. opm-operator#201 removed the rule and S13 before PR A merged, with no operator-version check in their place, since release-please owns that version. PR A then took `main` by a merge commit, never by rewriting its history, so its squash stayed Markdown-only.
+
 ## Risks / Trade-offs
 
 - [release-please's generic updater misses the Markdown file] -> The next Release PR shows it: the page must change in the PR's diff; whoever reviews that PR checks it. The test catches a page that release-please left behind once the PR's `Version` moves. Fallback: drop `extra-files` for the page and let the test fail the Release PR until someone edits it, which still never ships a stale page.

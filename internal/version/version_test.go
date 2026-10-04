@@ -17,6 +17,7 @@ limitations under the License.
 package version
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -59,5 +60,69 @@ func TestFullPrefixAndMetadata(t *testing.T) {
 	want := "v" + Version
 	if full != want && !strings.HasPrefix(full, want+"+g") {
 		t.Fatalf("Full() = %q; want %q or %q with a +g<rev>[.dirty] suffix", full, want, want)
+	}
+}
+
+// installPage is the docs page whose operator versions release-please
+// rewrites through extra-files (keep-install-page-current).
+const installPage = "../../docs/site/start/install-the-operator.md"
+
+// pageVersionRe matches a version as release-please's generic updater does.
+var pageVersionRe = regexp.MustCompile(`v?\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?`)
+
+// installPageBlockVersions returns the versions inside the page's
+// x-release-please-start-version ... x-release-please-end blocks, each with
+// its line number, and an error when the page has no block or a marker is
+// unbalanced.
+func installPageBlockVersions(src string) ([][2]string, error) {
+	var found [][2]string
+	blocks, open := 0, 0
+	for i, line := range strings.Split(src, "\n") {
+		n := i + 1
+		switch {
+		case strings.Contains(line, "x-release-please-start-version"):
+			if open != 0 {
+				return nil, fmt.Errorf("line %d: a start marker inside the block opened at line %d", n, open)
+			}
+			open = n
+		case strings.Contains(line, "x-release-please-end"):
+			if open == 0 {
+				return nil, fmt.Errorf("line %d: an end marker without a start marker", n)
+			}
+			open = 0
+			blocks++
+		case open != 0:
+			for _, v := range pageVersionRe.FindAllString(line, -1) {
+				found = append(found, [2]string{fmt.Sprint(n), strings.TrimRight(v, ".")})
+			}
+		}
+	}
+	if open != 0 {
+		return nil, fmt.Errorf("line %d: a start marker without an end marker", open)
+	}
+	if blocks == 0 {
+		return nil, fmt.Errorf("no x-release-please-start-version block")
+	}
+	return found, nil
+}
+
+// TestInstallPageNamesThisRelease guards the install page's release-please
+// blocks: release-please rewrites every version inside them in the Release
+// PR, so they must exist, be balanced, and name only the operator's Version.
+// A core or catalog version inside a block would be rewritten to the
+// operator's version.
+func TestInstallPageNamesThisRelease(t *testing.T) {
+	src, err := os.ReadFile(installPage)
+	if err != nil {
+		t.Fatalf("reading %s: %v", installPage, err)
+	}
+	found, err := installPageBlockVersions(string(src))
+	if err != nil {
+		t.Fatalf("%s: %v", installPage, err)
+	}
+	for _, f := range found {
+		if strings.TrimPrefix(f[1], "v") != Version {
+			t.Errorf("%s:%s: version %s inside a release-please block, want %s (the operator's Version)", installPage, f[0], f[1], Version)
+		}
 	}
 }

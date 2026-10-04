@@ -317,7 +317,7 @@ elif ! grep -qF "declares CUE language \`v0.99.0\`, newer than the local \`CUE_V
   fail S11 "no warning names the catalog's language and the local CUE_VERSION" "$D/.git/cascade/warnings"
 elif [ "$s11_status" != "$(printf ' M %s\n M %s\n' "$SAMPLE_PLATFORM" "$CATALOG_GO" | LC_ALL=C sort)" ]; then
   printf '%s\n' "$s11_status" >"$TMP/s11.status"
-  fail S11 "more than the sample Platform and catalog.go changed (the crdref block must come back identical)" "$TMP/s11.status"
+  fail S11 "more than the sample Platform and catalog.go changed" "$TMP/s11.status"
 else
   pass S11
 fi

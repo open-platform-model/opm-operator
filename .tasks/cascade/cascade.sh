@@ -497,7 +497,6 @@ if [ -n "$LIB" ]; then
 fi
 
 # 2. The catalog in the sample Platform and CatalogVersion() (test).
-SAMPLES_EDITED=
 apply_text() { # KIND FILE ANCHOR VALUE [OLD]
   case $1 in
     yamlver) set_yaml_version_after "$2" "$3" "$4" ;;
@@ -505,7 +504,6 @@ apply_text() { # KIND FILE ANCHOR VALUE [OLD]
     catalogo) set_catalog_go "$5" "$4" ;;
     *) die "unknown edit kind $1" ;;
   esac
-  case $2 in config/samples/*) SAMPLES_EDITED=1 ;; esac
 }
 consumer_edits=()
 for e in "${TEXT_EDITS[@]}"; do
@@ -563,14 +561,8 @@ for e in "${consumer_edits[@]}"; do
   apply_text "$kind" "$file" "$anchor" "$value" "$old"
 done
 
-# 6. Regenerators: the hack/crdref block of the resource reference follows config/samples.
-if [ -n "$SAMPLES_EDITED" ]; then
-  if go run ./hack/crdref; then :; else
-    warn - "\`hack/crdref\` failed; regenerate \`docs/site/reference/operator-resources.md\` by hand (\`task dev:docs:reference\`)"
-  fi
-fi
-
-# 7. The opm CLI pin, last.
+# 6. The opm CLI pin, last. The resource reference needs no regeneration: the docs bundle
+# builds it from config/samples (publish-crd-bundle).
 if [ -n "$CLI" ]; then
   printf '%s\n' "$CLI" >.opm-cli-version
 fi

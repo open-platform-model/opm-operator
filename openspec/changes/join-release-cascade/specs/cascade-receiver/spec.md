@@ -34,7 +34,7 @@ The receiver SHALL pass `dry-run: true` to the called workflow unless the repo v
 - **WHEN** `CASCADE_DRY_RUN` is `false` and a dispatch arrives that moves a pin
 - **THEN** the run pushes `deps/cascade` and creates or updates the cascade PR
 
-### Requirement: Receiver runs never displace a pending real run
+### Requirement: Gates-only and branch runs never displace a pending real run
 The receiver SHALL declare `cancel-in-progress: false` and the concurrency group `deps-cascade` for real runs on `main` (dispatch, schedule, manual), `deps-cascade-gates` for gates-only runs on `main`, and `deps-cascade-<ref>` for runs from any other ref (Phase 3 wiring contract §5; workspace RELEASING.md, "Concurrency").
 
 #### Scenario: Burst of releases

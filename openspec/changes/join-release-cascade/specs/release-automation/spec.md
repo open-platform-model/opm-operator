@@ -1,18 +1,33 @@
 ## MODIFIED Requirements
 
+### Requirement: Git tag and GitHub Release on merge
+When the Release PR is merged to `main`, release-please SHALL create the git tag (e.g., `v0.2.0`) eagerly at the release commit and a GitHub Release in draft state with the changelog section as release notes. The release-please package SHALL be configured with `draft: true` and `force-tag-creation: true`. The draft SHALL become public only through the publish job `publish-release` defined in "Release published once after every release job".
+
+#### Scenario: Release PR merged
+- **WHEN** the Release PR is merged to `main`
+- **THEN** release-please creates a git tag matching the version (prefixed with `v`) at the release commit and a draft GitHub Release with the changelog for that version as the body, and the release is not visible as published until every release job has succeeded
+
+#### Scenario: Release PR closed without merge
+- **WHEN** the Release PR is closed without merging
+- **THEN** no tag or release SHALL be created; the next push to `main` re-opens or creates a new Release PR
+
+#### Scenario: Config enables draft-first
+- **WHEN** `release-please-config.json` is inspected on `main`
+- **THEN** package `"."` SHALL set `"draft": true` and `"force-tag-creation": true`
+
 ### Requirement: Release published once after every release job
 The release workflow SHALL contain a publish job (`publish-release`) that depends on every job producing a release artifact (the image job and the example publishing job), runs only when a release was cut, holds `contents: write` and no other write permission, checks out only the files it runs, confirms the required assets (`install.yaml`, `opm-examples.tar.gz`) are attached to the draft, and then publishes the draft. It SHALL leave the Pre-release flag set by release-please unchanged. When the release is already published it SHALL succeed without changing anything. The only job that SHALL depend on it is the cascade notify job, which produces no release artifact.
 
 #### Scenario: All release jobs succeed
 - **WHEN** the image and example jobs finish successfully for `v1.0.0-beta.3`
-- **THEN** the final job publishes the draft, and the GitHub Release is public, flagged Pre-release and carries every asset
+- **THEN** `publish-release` publishes the draft, and the GitHub Release is public, flagged Pre-release and carries every asset
 
 #### Scenario: A release job fails
 - **WHEN** the example publishing job fails for `v1.0.0-beta.3`
-- **THEN** the final job does not run, the release stays a draft, and "Re-run failed jobs" on the same workflow run completes and publishes it
+- **THEN** `publish-release` does not run, the release stays a draft, and "Re-run failed jobs" on the same workflow run completes and publishes it
 
 #### Scenario: Required asset missing
-- **WHEN** the final job runs and the draft lacks `install.yaml`
+- **WHEN** `publish-release` runs and the draft lacks `install.yaml`
 - **THEN** the job fails and the release stays a draft
 
 ## ADDED Requirements

@@ -68,9 +68,14 @@ type, CRD, controller or reconcile phase changes.
   - **E1 and E1b** show that `environment: cascade` inside a called workflow reads this repo's
     Environment and that the `main`-only policy refuses a branch.
   - **E6** shows whether `sha_pinning_required: true`, which opm-operator has and no other
-    cascade repo has, refuses a `uses: …/cascade-*.yml@main` call.
+    cascade repo has, refuses a `uses: …/cascade-*.yml@main` call (a branch ref).
   - If E1 fails, wiring contract §13.1 replaces notify and publish with composite actions, and
-    this change's callers change shape. If E6 refuses `@main`, the owner chooses between turning
+    this change's callers change shape. Composite actions at `@main` are action references,
+    which opm-operator's `sha_pinning_required` refuses, so §13.1 also needs an owner decision
+    here.
+  - GitHub's docs exempt reusable workflows referenced by tag from `sha_pinning_required`; E6
+    settles only whether a branch ref (`@main`) is treated the same. The setting does apply to
+    every action step inside the called workflows, and task 1.3 checks those are SHA-pinned. If E6 refuses `@main`, the owner chooses between turning
     the setting off and pinning opm-operator's calls to a `.github` SHA (wiring contract §15
     item 2). Either result stops this change until the supervisor reports the decision. Section
     1 of tasks.md is that check.
@@ -83,6 +88,8 @@ type, CRD, controller or reconcile phase changes.
 - **Phase 3 gate, after merge (supervisor):**
   - `gh workflow run deps-cascade.yml -R open-platform-model/opm-operator -f dry_run=true` shows
     mode `fresh` and action `noop`, or the diff `task -x deps:cascade` gives locally on `main`.
+  - One run not started with `dry_run=true` (the daily sweep or a real dispatch) shows "DRY RUN:
+    nothing was pushed" while `CASCADE_DRY_RUN` is `true`, so the variable alone keeps it dry.
   - `cascade/freshness` and `cascade/settled` appear on the next PR.
 - **Not dependent on** the core, catalog_opm, library or cli `join-release-cascade` changes. A
   dispatch to a repo with no receiver returns 204 and starts nothing (wiring contract §1).

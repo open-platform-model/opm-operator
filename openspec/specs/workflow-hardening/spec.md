@@ -92,3 +92,14 @@ Every workflow step that installs a tool SHALL name an exact version, never a fl
 #### Scenario: Workflow edit needs a code owner
 - **WHEN** a pull request edits a file under `.github/workflows/`
 - **THEN** GitHub requests review from the code owners listed for `/.github/`
+
+### Requirement: Operator module bot PRs commit plain files only
+The `publish` jobs of `module-image.yml` and `module-deps.yml` SHALL refuse a handed-over change tarball holding any member that is not a plain file or a directory, before extracting it. `hack/operator-module/bot-pr.sh` SHALL refuse a changed path that is a symlink or a hard link, and a staged change whose mode is anything but `100644` (an executable bit, a symlink or a gitlink), before it commits or pushes.
+
+#### Scenario: A link member in the tarball is refused
+- **WHEN** the module change tarball holds a symlink or hard link member under `modules/opm_operator/`
+- **THEN** the publish job fails before extracting it, and no token-bearing step reads the link's target
+
+#### Scenario: bot-pr.sh refuses a symlink, a hard link or a mode change
+- **WHEN** the working tree under `modules/opm_operator/` holds a symlink, a hard link, or a file whose mode changed
+- **THEN** `bot-pr.sh` exits non-zero naming the path or the mode change, and pushes nothing

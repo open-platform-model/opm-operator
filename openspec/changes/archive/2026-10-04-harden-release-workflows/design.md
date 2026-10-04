@@ -179,6 +179,19 @@ cache, so both go on the canonical wiring check's `publish-workflows` list.
 pushes them and no human has reviewed their content. `image-pr.yml` and the e2e
 `publish-fixtures` job skip `module/*`.
 
+Merge order: this change merges only after the owner has stored the key in opm-operator's
+Environment `release`, or with a manual dispatch of `module-image.yml` accepted as a release
+step until then. The org secret is deleted only after every repo that reads it (nine, owner
+decision 29) holds the key in its own `release` Environment; deleting it earlier breaks the
+release in every repo that does not yet.
+
+The module publish path writes plain files only. `bot-pr.sh` and the two `publish` jobs
+checked member names alone, so a symlink or hard link under `modules/opm_operator/` (to the
+checkout's `.git/config`, which holds the App token) would have been copied into a commit
+pushed with the token, and a mode change would have been committed. The `publish` jobs now
+refuse any tarball member that is not a plain file or directory, and `bot-pr.sh` refuses a
+symlink, a hard link or any staged mode but `100644`.
+
 Not redesigned here (supervisor follow-up): `module-deps.yml` is a second publisher that
 mints the release App token and opens PRs whose title and body come from repo code
 (`task deps:cascade:module:title`/`:body`), outside the `.github` publish boundary of
@@ -201,4 +214,5 @@ canonical wiring check's fixed reference list does not know.
   `7b9ad1b` passes its release-key and cache rules on this branch; its remaining mismatches
   belong to the wave-2 pin bump, except the `module-deps.yml` resolver reference (D9).
 - Until the owner moves the key into Environment `release`, `module-image-pr`'s called
-  `publish` job fails to mint (D9); dispatch `module-image.yml` instead.
+  `publish` job fails to mint (D9); merge after the key move, or dispatch `module-image.yml`
+  by hand until then. Delete the org secret only after all nine repos' Environments hold the key.

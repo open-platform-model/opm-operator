@@ -53,3 +53,9 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 - [x] 8.3 `cache: false` on setup-go in `module-identity-advance`, `module-publish`, `module-manifest`; Task `3.54.0` in `module-publish` and `module-deps.yml`.
 - [x] 8.4 `image-pr.yml` and the e2e `publish-fixtures` job skip `module/*` heads. Commit `ci: keep write tokens away from the operator module's bot heads`
 - [x] 8.5 Canonical wiring check at `.github` `7b9ad1b` with the refreshed config: the release-key and cache rules pass; update `workflow-hardening`, `container-image-publish`, `AGENTS.md` and this change's files.
+
+## 9. Review fixes on the operator module publish path
+
+- [x] 9.1 `bot-pr.sh` refuses symlinks, hard links and mode changes; `test-bot-pr.sh` cases `symlink`, `hardlink`, `mode` fail against the old script. Commit `fix(cascade): refuse symlinks, hard links and mode changes in bot-pr.sh`
+- [x] 9.2 The `publish` jobs of `module-image.yml` and `module-deps.yml` refuse tarball members that are not plain files or directories. Commit `fix(ci): refuse link members in the operator module change tarball`
+- [x] 9.3 Record the key-move merge order and the bounded module publish path in design D9 and `workflow-hardening`.

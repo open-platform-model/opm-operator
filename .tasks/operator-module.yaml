@@ -1,0 +1,47 @@
+version: '3'
+
+# The operator's own OPM module, modules/opm_operator (opmodel.dev/modules/opm_operator@v0).
+# Its CRD and RBAC data are generated from config/ with `cue import`
+# (hack/operator-module/generate.sh); the drift check keeps them equal.
+# Both scripts need a `cue` CLI at CI's CUE_VERSION (.github/workflows/test.yml),
+# since `cue import` formatting is part of the compared bytes.
+
+tasks:
+  generate:
+    desc: Regenerate the operator module's CRD and RBAC data from config/ (run after dev:manifests)
+    cmds:
+      - hack/operator-module/generate.sh
+
+  drift:
+    desc: 'Fail when the operator module''s CUE is not cue fmt clean, when config/ is stale against dev:manifests, then when the module''s generated data are stale against config/. REF=<tag> checks the data against that ref''s config/ instead (no manifests stage).'
+    cmds:
+      - task: fmt:check
+      - task: drift:manifests
+        if: '[ -z "{{.REF}}" ]'
+      - cmd: hack/operator-module/drift-check.sh
+        if: '[ -z "{{.REF}}" ]'
+      - cmd: hack/operator-module/drift-check.sh --ref "{{.REF}}"
+        if: '[ -n "{{.REF}}" ]'
+    vars:
+      REF: '{{.REF | default ""}}'
+
+  drift:manifests:
+    internal: true
+    cmds:
+      - task: :dev:manifests
+      - |
+        stale=$( { git diff --name-only -- config/crd/bases config/rbac/role.yaml;
+          git ls-files --others --exclude-standard -- config/crd/bases; } )
+        if [ -n "$stale" ]; then
+          echo "DRIFT: config/ is stale against 'task dev:manifests' (differs from the index):"
+          echo "$stale" | sed 's/^/  /'
+          git --no-pager diff -- config/crd/bases config/rbac/role.yaml | head -80
+          echo "run 'task dev:manifests operator-module:generate' and commit the result" >&2
+          exit 1
+        fi
+
+  fmt:check:
+    desc: Fail when a CUE file of the operator module is not cue fmt clean
+    dir: modules/opm_operator
+    cmds:
+      - cue fmt --check ./...

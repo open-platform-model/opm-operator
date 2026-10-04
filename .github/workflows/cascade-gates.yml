@@ -1,0 +1,30 @@
+name: Cascade gates
+
+# Posts the release cascade gate statuses cascade/freshness (G2) and
+# cascade/settled (G3) on every pull request (workspace RELEASING.md, "Gates";
+# Phase 3 wiring contract 8.3). An ordinary PR gets both as success with
+# "n/a: not a release PR"; a release PR dispatches a gates-only Deps cascade
+# run that evaluates them on the new head. The called workflow checks nothing
+# out, so no pull request code runs under pull_request_target. Neither context
+# is a required check before Phase 5.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: cascade-gates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: Cascade gates
+    permissions:
+      statuses: write
+      actions: write
+    uses: open-platform-model/.github/.github/workflows/cascade-gates.yml@main
+    with:
+      g2-mode: ${{ vars.CASCADE_G2_MODE || 'warn' }}
+      g3-mode: ${{ vars.CASCADE_G3_MODE || 'warn' }}

@@ -38,19 +38,19 @@ Every section runs `actionlint` (the local binary, contract §10) on the workflo
 
 ## 4. Gates caller and docs
 
-- [ ] 4.1 Add `.github/workflows/cascade-gates.yml`, exactly as contract §8.3:
+- [x] 4.1 Add `.github/workflows/cascade-gates.yml`, exactly as contract §8.3:
   - `pull_request_target` with types `opened`, `reopened` and `synchronize`;
   - `permissions: {}`;
   - concurrency `cascade-gates-${{ github.event.pull_request.number }}` with `cancel-in-progress: true`;
   - one job `gates`, named `Cascade gates`, granting `statuses: write` and `actions: write`, which calls `cascade-gates.yml@main` with `g2-mode` and `g3-mode` from the repo variables (default `warn`).
 
   Check that it has no `steps:` and no checkout.
-- [ ] 4.2 Add one bullet to `AGENTS.md`, after the `task -x deps:cascade` bullet (`AGENTS.md:149`):
+- [x] 4.2 Add one bullet to `AGENTS.md`, after the `task -x deps:cascade` bullet (`AGENTS.md:149`):
   - `release.yml`'s `notify-downstream` dispatches `upstream-released` to the cli once `publish-release` has published the draft; `CASCADE_NOTIFY=off` stops it;
   - `deps-cascade.yml` runs the shared receiver on dispatch, daily at 05:47 UTC and by hand (`dry_run`), and it pushes only when `CASCADE_DRY_RUN` is exactly `false`;
   - `cascade-gates.yml` posts `cascade/freshness` and `cascade/settled` on every PR, in `warn` mode until `CASCADE_G2_MODE` and `CASCADE_G3_MODE` say `enforce`;
   - all three call `open-platform-model/.github` at `@main` (workspace RELEASING.md, "The cascade", "Gates", "Stop switches").
-- [ ] 4.3 `actionlint .github/workflows/*.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): post the cascade gate statuses on every pull request`
+- [x] 4.3 `actionlint .github/workflows/*.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): post the cascade gate statuses on every pull request`
 
 ## 5. Archive
 

@@ -51,6 +51,7 @@ includes:
     vars:
       LOCALBIN: '{{.LOCALBIN}}'
       CONTROLLER_GEN: '{{.CONTROLLER_GEN}}'
+      KUSTOMIZE: '{{.KUSTOMIZE}}'
       ENVTEST: '{{.ENVTEST}}'
       GOLANGCI_LINT: '{{.GOLANGCI_LINT}}'
       ENVTEST_K8S_VERSION: '{{.ENVTEST_K8S_VERSION}}'

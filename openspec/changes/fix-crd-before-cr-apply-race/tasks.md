@@ -56,6 +56,7 @@ Run the binary from `test/integration/apply`.
     - A no-match for a set CRD's kind, then success: two attempts, no error.
     - The bound ends the retry: with `discoveryRetryTimeout` and `discoveryRetryInterval` shortened, a stub that always returns the no-match makes `Apply` return an error with `meta.IsNoMatchError` true and more than one attempt, while the caller's context is still live.
     - The caller's context ends the retry: the error wraps the no-match, including when the in-flight attempt returns a context error.
+    - The caller's context ends after an attempt hit a real error (a conflict): the error wraps the conflict, not the earlier no-match.
     - A non-no-match error and a no-match for a kind outside the set: one attempt each.
 
   Verify: with stubs for `pendingCRDKind` that return false and an empty ledger, `go test ./internal/apply -run 'PendingCRDKind|Ledger|DiscoveryRetry'` fails on the true rows, the ledger row and the retry tests. Record the failing output.

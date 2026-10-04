@@ -243,6 +243,30 @@ func TestDiscoveryRetry_ContextEndsTheRetry(t *testing.T) {
 	}
 }
 
+func TestDiscoveryRetry_ContextEndKeepsARealError(t *testing.T) {
+	shortenDiscoveryRetry(t, 5*time.Millisecond, time.Minute)
+	crd := testCRD(gadgetGK.Group, gadgetGK.Kind)
+	gadget := testObject(gadgetGK.Group, gadgetGK.Kind, "g")
+	conflict := apierrors.NewConflict(schema.GroupResource{Resource: "gadgets"}, "g", errors.New("conflict"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	attempts := 0
+	_, err := applyWithDiscoveryRetry(ctx, func(context.Context) (*fluxssa.ChangeSet, error) {
+		attempts++
+		if attempts == 2 {
+			cancel()
+			return nil, conflict
+		}
+		return changeSet(crd, fluxssa.CreatedAction), gadgetNoMatch()
+	}, []*unstructured.Unstructured{gadget, crd})
+	if !errors.Is(err, conflict) {
+		t.Fatalf("error = %v, want it to wrap the conflict", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
 func TestDiscoveryRetry_OtherErrorsFailAtOnce(t *testing.T) {
 	shortenDiscoveryRetry(t, time.Millisecond, time.Minute)
 	crd := testCRD(gadgetGK.Group, gadgetGK.Kind)

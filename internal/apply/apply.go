@@ -27,7 +27,7 @@ type ApplyResult struct {
 }
 
 // The discovery retry's pacing. They are variables so the package's unit
-// tests can shorten them.
+// tests can shorten them; tests that shorten these must not call t.Parallel.
 var (
 	// discoveryRetryInterval is the wait between two staged apply attempts.
 	discoveryRetryInterval = 500 * time.Millisecond
@@ -94,8 +94,12 @@ func applyWithDiscoveryRetry(
 		if err == nil {
 			return ledger.result(cs), nil
 		}
-		// An attempt that ctx cut short reports the context, not the cause.
-		if pending != nil && ctx.Err() != nil {
+		// An attempt that ctx cut short reports the context, not the cause, so
+		// return the earlier no-match. A real error the attempt hit first,
+		// such as a conflict once discovery served the kind, still returns.
+		if pending != nil && ctx.Err() != nil &&
+			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+				pendingCRDKind(err, resources)) {
 			return nil, fmt.Errorf("failed to apply resources: %w", pending)
 		}
 		if !pendingCRDKind(err, resources) {

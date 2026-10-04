@@ -118,6 +118,7 @@ func pendingCRDKind(err error, resources []*unstructured.Unstructured) bool {
 
 ```go
 // The bound and interval are variables so the package's unit tests can shorten them.
+// Tests that shorten them must not call t.Parallel.
 var (
 	discoveryRetryInterval = 500 * time.Millisecond
 	discoveryRetryTimeout  = 10 * time.Second
@@ -135,7 +136,8 @@ func applyWithDiscoveryRetry(ctx context.Context, apply stagedApply, resources [
 		if err == nil {
 			return ledger.result(cs), nil
 		}
-		if pending != nil && ctx.Err() != nil {
+		if pending != nil && ctx.Err() != nil &&
+			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || pendingCRDKind(err, resources)) {
 			return nil, fmt.Errorf("failed to apply resources: %w", pending)
 		}
 		if !pendingCRDKind(err, resources) {
@@ -163,7 +165,7 @@ func applyWithDiscoveryRetry(ctx context.Context, apply stagedApply, resources [
 - **The bound limits when a new attempt may start, not how long an attempt may run.** Each attempt runs under the caller's `ctx`, exactly as the single call does today. A large module, a slow API server, a CRD stage that waits several seconds or a force-recreate whose finalizer holds keeps today's behaviour. The first draft used `wait.PollUntilContextTimeout`, which wraps `ctx` in a 10 s `context.WithTimeout` and hands that to every attempt, the first one included (apimachinery v0.36.4 `pkg/util/wait/poll.go:45-48`); it would have added a new `ApplyFailed` on any apply that runs past 10 s. A unit test with a stub that records whether its context has a deadline guards this.
 - **Interval and bound.** 500 ms and 10 s. The observed lag is milliseconds. 10 s bounds a reconcile's extra time in the worst case and is far below the 60 s `WaitTimeout` that Flux already allows the CRD stage (`DefaultApplyOptions`, `manager_apply.go:111-118`).
 - **The caller's context ends the retry too.** The wait between attempts selects on `ctx.Done()`.
-- **On the bound or a context end** after a retryable error, `Apply` returns the last no-match error, wrapped as today (`failed to apply resources: ...`). That includes an attempt that the context cut short in flight: its error is a context error, not the cause, so the earlier no-match is returned. The reconcile then reports `ApplyFailed` with the message it gives today. A first attempt that fails keeps its own error, whatever it is.
+- **On the bound or a context end** after a retryable error, `Apply` returns the last no-match error, wrapped as today (`failed to apply resources: ...`). That includes an attempt that the context cut short in flight: its error is a context error, not the cause, so the earlier no-match is returned. An attempt that the context cut short after it hit a real error, such as a conflict once discovery served the kind, returns that error, not the old no-match. The reconcile then reports `ApplyFailed` with the message it gives today. A first attempt that fails keeps its own error, whatever it is.
 - **No new log at Info.** The V(1) line, once per retry, follows the logging rules in `AGENTS.md` (capitalised message, structured keys).
 - The first attempt starts at once, so the common path costs nothing.
 
@@ -224,7 +226,7 @@ The V(1) retry line shows under `-ginkgo.v` (2 retries in a lag spec run), and 1
 
 ## Risks / Trade-offs
 
-- **Up to 10 s of extra reconcile time** when a set's CRD never becomes served, for example when the CRD is Established but its version is `served: false`. Previously this failed at once. The error and reason are unchanged. The 10 s is bounded and only applies to a set that contains the defining CRD (or, on the group-only path, a CRD of the same group).
+- **Up to 10 s of extra reconcile time** when a set's CRD never becomes served, for example when the CRD is Established but its version is `served: false`. Previously this failed at once. The error and reason are unchanged. The 10 s is bounded and only applies to a set that contains the defining CRD (or, on the group-only path, a CRD of the same group). Each of the about 20 attempts in that window re-runs the whole CRD stage (a Get and a dry run per CRD, then `WaitForSet`), so a module with N CRDs makes about 20 × 2N extra API calls per failed reconcile, on every requeue. That cost is accepted: it is bounded, and it only arises for a CRD that is Established but never served.
 - **A whole-set retry repeats the dry runs of already-applied objects.** SSA is idempotent, and the dry runs are cheap compared with a reconcile requeue. The CRD stage's `WaitForSet` returns at once on the retry, because the CRD is already Established.
 - **The lag mapper tests the retry, not the API server.** See D5. The real window is exercised only by the stress spec and the existing Widget spec (`apply_test.go:176`) staying in the suite.
 - **The cli does not share this race.** Checked on cli main 19f19cd2: `internal/kubernetes/apply.go` `applyOne` builds the GroupVersionResource from the kind by name (`GVRFromUnstructured`, `KindToResource` in `resource.go`) and calls the dynamic client directly. No client-side RESTMapper or discovery lookup sits between its Established wait (`waitEstablished`) and the custom resource's request, so the client-side discovery miss this change fixes cannot happen there. No cli issue is filed.

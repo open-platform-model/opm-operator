@@ -27,9 +27,9 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 
 ## 5. Code owners and docs
 
-- [ ] 5.1 Add `.github/CODEOWNERS` (design D6).
-- [ ] 5.2 `AGENTS.md`: record the release Environment, explicit permissions, the no-cache rule, the bot-head rule and the e2e split.
-- [ ] 5.3 `task dev:test`, gates green, `openspec validate harden-release-workflows --strict`, then commit `ci: add code owners for the release machinery`
+- [x] 5.1 Add `.github/CODEOWNERS` (design D6).
+- [x] 5.2 `AGENTS.md`: record the release Environment, explicit permissions, the no-cache rule, the bot-head rule and the e2e split.
+- [x] 5.3 `task dev:test`, gates green, `openspec validate harden-release-workflows --strict`, then commit `ci: add code owners for the release machinery`
 
 ## 6. Verify and archive
 

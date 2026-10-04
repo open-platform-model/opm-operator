@@ -25,6 +25,7 @@ Delivery: one PR per section (cli needs the docs/opm-operator 1.0.0-beta.4 bundl
 ### Modified Capabilities
 
 - `operator-resource-reference`: the resource reference is generated into the docs bundle by docs-kit, completed by the authored intro; crdref, its markers and its staleness check are gone; the sample admission test and a `reconciledBy` test remain.
+- `deps-cascade`: the cascade no longer regenerates the resource page after moving a sample (added at section 3: `task deps:cascade`, merged after this plan, ran crdref).
 
 ## Impact
 

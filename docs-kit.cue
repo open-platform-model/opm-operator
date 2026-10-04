@@ -19,16 +19,17 @@ bundles: "opm-operator": {
 			description: "One generated entry per operator resource kind: ModuleInstance, ModulePackage, Platform and TransformerRegistration."
 			weight:      7 // the committed page's weight, so the page keeps its place before the intro completes it
 			order: ["ModuleInstance", "ModulePackage", "Platform", "TransformerRegistration"]
-			// The hello fixture is a test module, not an example to copy (crdref's rule).
+			// The hello fixture is a test module, not an example to copy.
 			hideSamplesMatching: ["testing.opmodel.dev"]
-			// kubebuilder's scaffold labels on every sample, which crdref strips;
-			// removed only when the value matches.
+			// kubebuilder's scaffold labels on every sample; removed only when the
+			// value matches.
 			stripLabels: {
 				"app.kubernetes.io/name":       "opm-operator"
 				"app.kubernetes.io/managed-by": "kustomize"
 			}
 			// The Named(...) of the controller whose builder calls For(&<Kind>{})
-			// in internal/controller. Rename a controller, edit this map.
+			// in internal/controller. Rename a controller, edit this map:
+			// internal/controller/docskit_reconciledby_test.go fails until they agree.
 			reconciledBy: {
 				ModuleInstance:          "moduleinstance"
 				ModulePackage:           "modulepackage"

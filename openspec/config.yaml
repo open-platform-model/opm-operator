@@ -44,9 +44,10 @@ context: |
     text the squash commit carries (`squash_merge_commit_message: BLANK`); the title is the
     CHANGELOG entry, and the migration note goes in the PR body, which that entry links. It
     advances the `-beta.N` counter and never moves the module path to a new major. Stable lines
-    (`opmodel.dev/catalogs/opm@v4` and the module fleets) keep the normal SemVer rule: a break is a new major. A core beta break that would force
-    a catalogs/opm major needs owner sign-off. GA drops the suffix: `prerelease: false` plus a
-    visible carrier commit per package, in dependency order.
+    (`opmodel.dev/catalogs/opm@v4` and the module fleets) keep the normal SemVer rule:
+    a break is a new major. A core beta break that would force a catalogs/opm major needs owner
+    sign-off. GA drops the suffix: `prerelease: false` plus a visible carrier commit per package,
+    in dependency order.
 
   ### VII. Simplicity & YAGNI
   Start simple. Complexity MUST be justified.
@@ -204,7 +205,9 @@ operations:
         again: the checked boxes plus a clean tree are the resume state."
       - "Delivery mode: unless proposal.md carries `Delivery: one PR per section`, all section
         commits ship in one PR after the last section and the PR title carries the change's
-        release class. In per-section mode each section commit is the PR title and therefore a
+        release class: the highest class among its section commits (`!` over `feat` over `fix`
+        over a hidden type), because under the `BLANK` squash message only the title reaches
+        `main`. In per-section mode each section commit is the PR title and therefore a
         release trigger; the change stays active on main between PRs, and spec sync and enhancement
         delivery logging wait for archive after the last PR."
   archive:

@@ -1,7 +1,7 @@
 ## Why
 
-On 2026-10-02 the owner set the squash merge message of the releasing repos to `BLANK` (workspace
-`RELEASING.md`, "Owner settings", "Merge settings"): a squash commit carries only the PR title.
+On 2026-10-02 the owner decided the squash merge message of the releasing repos is `BLANK` (not yet
+applied, see Depends on; workspace `RELEASING.md`, "Owner settings", "Merge settings"): a squash commit carries only the PR title.
 The PR body and the branch commit messages never reach `main`, so no footer does either. Under
 that setting:
 
@@ -56,8 +56,11 @@ same-named change for its own copies.
     CHANGELOG entry links. "No minor or major hop (such as `Release-As: 1.1.0-beta.1`)" becomes
     "such as a `release-as` of `1.1.0-beta.1`".
   - `openspec/config.yaml:196` keeps its rule with a true reason.
+  - `openspec/config.yaml` apply guidance "Delivery mode": the PR title carries the highest release
+    class among the change's section commits, since only the title reaches `main`.
 - **`.github/dependabot.yml`:** the `gomod` prefix comment states what `build(deps)` does here:
-  hidden, so no release unless retitled. The prefix itself does not change.
+  hidden, so no release unless a human retitles it `fix(deps)` for a security fix, merged with an
+  explicit squash subject until the owner applies `PR_TITLE`. The prefix itself does not change.
 
 No workflow, task, script, Go code, CRD or `release-please-config.json` value changes.
 

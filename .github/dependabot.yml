@@ -15,9 +15,12 @@ updates:
       interval: "weekly"
     commit-message:
       # build is a hidden type here, so a Dependabot Go bump releases nothing as
-      # titled; retitle it fix(deps) before merging when the image should ship
-      # (workspace RELEASING.md, "Dependabot PRs"). deps would release: it is a
-      # visible section in release-please-config.json.
+      # titled. Retitle it fix(deps) only for a security fix the image must ship
+      # (workspace RELEASING.md, "Dependabot PRs"); until the owner applies the
+      # PR_TITLE squash setting, merge that retitled PR with
+      # gh pr merge --squash --subject "<PR title> (#N)" --body '' (root AGENTS.md,
+      # "Beta line"), or the squash keeps the build(deps) commit subject. deps would
+      # release: it is a visible section in release-please-config.json.
       prefix: "build"
       include: "scope"
     groups:

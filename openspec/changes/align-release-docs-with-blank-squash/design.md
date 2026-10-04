@@ -1,6 +1,7 @@
 ## Context
 
-The owner set `squash_merge_commit_message: BLANK` on 2026-10-02, reversing `PR_BODY` (workspace
+The owner decided `squash_merge_commit_message: BLANK` on 2026-10-02 (not yet applied, see D5),
+reversing `PR_BODY` (workspace
 `RELEASING.md`, "Owner settings", "Merge settings"). The reason: a ruleset-required mention-guard
 ignores the `edited` event, so a PR body edited after a green run could reach `main` unchecked.
 Under `BLANK` a squash commit is the PR title alone. That rules out both commit footers that
@@ -93,22 +94,25 @@ migration note" keeps its name and now asserts that link instead of footer text 
 `build` is hidden (`release-please-config.json:28`), so a Dependabot Go bump releases nothing as
 titled. `deps` is a visible section here (`:23`), so the old reason ("release-please drops
 `deps`") is false. `RELEASING.md` ("Runbook", "Dependabot PRs") tells the merger to check the
-title's type before merging, and `AGENTS.md:146` says a `go.mod` bump that changes the image is
-`deps`/`fix(deps)`. So the merger retitles a bump that should release. Keeping `build` keeps
+title's type before merging, and `AGENTS.md:147` says a `go.mod` bump that changes the image is
+`deps`/`fix(deps)`. Review triage settled on 2026-10-04 that the prefix stays `build(deps)` and a human retitles a bump
+to `fix(deps)` only for a security fix. Keeping `build` keeps
 today's behaviour, and the comment now says so:
 
 ```yaml
     commit-message:
       # build is a hidden type here, so a Dependabot Go bump releases nothing as
-      # titled; retitle it fix(deps) before merging when the image should ship
-      # (workspace RELEASING.md, "Dependabot PRs"). deps would release: it is a
-      # visible section in release-please-config.json.
+      # titled. Retitle it fix(deps) only for a security fix the image must ship
+      # (workspace RELEASING.md, "Dependabot PRs"); until the owner applies the
+      # PR_TITLE squash setting, merge that retitled PR with
+      # gh pr merge --squash --subject "<PR title> (#N)" --body '' (root AGENTS.md,
+      # "Beta line"), or the squash keeps the build(deps) commit subject. deps would
+      # release: it is a visible section in release-please-config.json.
       prefix: "build"
 ```
 
 Switching the prefix to `fix` would make every third-party Go bump release the operator and
-cascade into the cli. That policy belongs to the owner, so it is raised as an open question
-rather than decided here.
+cascade into the cli. Review triage kept `build(deps)` (see Open Questions); flipping it stays an owner call.
 
 ### D5 Interim before the owner applies `BLANK`
 
@@ -133,7 +137,7 @@ settings are verified, which is outside this change.
 **Context**: The new requirement must not promise that the carrier PR cuts the release.
 **Explored**: release-please `src/strategies/base.ts` at v17.6.0, the version the pinned action bundles (see Rationale):
 `buildReleasePullRequest` returns early with "No user facing commits found" when the release notes
-are empty (`:331-337`), before any version logic matters; `buildNewVersion` takes `releaseAs` first
+are empty (`:331-337`), after the version is computed, so a `release-as` value alone opens nothing; `buildNewVersion` takes `releaseAs` first
 (`:547-551`).
 **Decision**: The spec says a `release-as` value opens no Release PR by itself. A scenario covers
 a hidden-type carrier.
@@ -145,10 +149,11 @@ a hidden-type carrier.
 
 ### Keep or flip the Dependabot prefix?
 **Context**: The comment is wrong; the prefix it defends has an effect the comment does not state.
-**Explored**: `release-please-config.json:19-30`, `RELEASING.md` "Dependabot PRs", `AGENTS.md:146`,
+**Explored**: `release-please-config.json:19-30`, `RELEASING.md` "Dependabot PRs", `AGENTS.md:147`,
 and the commit that introduced the prefix (`641f713`, opm-operator#101: "deps is not a
 Conventional Commit type").
-**Decision**: Keep `build`; rewrite the comment (D4).
+**Decision**: Keep `build`; rewrite the comment (D4). Review triage 2026-10-04: retitle to `fix(deps)`
+only for a security fix.
 **Rationale**: This is a docs-alignment change. Changing which third-party bumps release is a
 release-policy decision for the owner.
 
@@ -170,10 +175,10 @@ release-policy decision for the owner.
 
 ## Migration Plan
 
-One PR with three commits: prose, Dependabot comment, then the archive commit, which syncs the
+One PR (squash-merged): prose, Dependabot comment, review fixes, then the archive commit, which syncs the
 delta into the main spec. Nothing is published and nothing releases. Rollback is reverting the PR.
 
 ## Open Questions
 
-- Owner: should Dependabot `gomod` bumps release by default, with prefix `fix` and scope `deps`,
-  instead of relying on a retitle (D4)? The answer does not block this change.
+- Settled in review triage 2026-10-04: Dependabot `gomod` bumps keep prefix `build` and release nothing; a human
+  retitles one to `fix(deps)` for a security fix (D4).

@@ -64,6 +64,20 @@ type ModuleInstanceParams struct {
 	// Warnings remembers each instance's last render warnings so RenderWarning
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
+
+	// convert exports a render result for apply. Nil, as in production,
+	// means convertRender; tests in this package set it to observe the
+	// conversion, for example that it runs while the render slot is held.
+	convert func(*render.RenderResult) (*convertedRender, error)
+}
+
+// convertFn is the conversion this reconcile uses: convert when a test set
+// it, convertRender otherwise.
+func (p *ModuleInstanceParams) convertFn() func(*render.RenderResult) (*convertedRender, error) {
+	if p.convert != nil {
+		return p.convert
+	}
+	return convertRender
 }
 
 // commitNoOpStatus is the deferred status commit of a NoOp reconcile. Drift
@@ -339,7 +353,7 @@ func ReconcileModuleInstance(
 		convErr      *conversionError
 	)
 	if waitErr := params.RenderSlots.Run(ctx, func() {
-		renderResult, converted, err = renderAndConvertInstance(ctx, params.Renderer, &mi)
+		renderResult, converted, err = renderAndConvertInstance(ctx, params.Renderer, params.convertFn(), &mi)
 	}); waitErr != nil {
 		// The context ended while waiting for a slot (manager shutdown).
 		// Nothing was rendered, so commit nothing and classify nothing.
@@ -1208,13 +1222,14 @@ func extractInstanceUUID(resources []*unstructured.Unstructured) string {
 	return ""
 }
 
-// renderAndConvertInstance renders mi and exports the result for apply. It
-// runs inside the reconcile's render slot. On a conversion failure it still
-// returns the render result, whose plain data the caller reports, and a
-// *conversionError.
+// renderAndConvertInstance renders mi and exports the result for apply with
+// convert. It runs inside the reconcile's render slot. On a conversion
+// failure it still returns the render result, whose plain data the caller
+// reports, and a *conversionError.
 func renderAndConvertInstance(
 	ctx context.Context,
 	renderer render.ModuleRenderer,
+	convert func(*render.RenderResult) (*convertedRender, error),
 	mi *releasesv1alpha1.ModuleInstance,
 ) (*render.RenderResult, *convertedRender, error) {
 	result, err := renderer.RenderModule(
@@ -1226,6 +1241,6 @@ func renderAndConvertInstance(
 	if err != nil {
 		return nil, nil, err
 	}
-	converted, err := convertRender(result)
+	converted, err := convert(result)
 	return result, converted, err
 }

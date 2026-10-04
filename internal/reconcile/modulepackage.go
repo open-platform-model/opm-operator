@@ -66,6 +66,20 @@ type ModulePackageParams struct {
 	// Warnings remembers each package's last render warnings so RenderWarning
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
+
+	// convert exports a render result for apply. Nil, as in production,
+	// means convertRender; tests in this package set it to observe the
+	// conversion, for example that it runs while the render slot is held.
+	convert func(*render.RenderResult) (*convertedRender, error)
+}
+
+// convertFn is the conversion this reconcile uses: convert when a test set
+// it, convertRender otherwise.
+func (p *ModulePackageParams) convertFn() func(*render.RenderResult) (*convertedRender, error) {
+	if p.convert != nil {
+		return p.convert
+	}
+	return convertRender
 }
 
 // ReconcileModulePackage runs the full ModulePackage reconcile loop: source resolution,
@@ -429,7 +443,7 @@ func renderModulePackage(
 	if waitErr := params.RenderSlots.Run(ctx, func() {
 		kind, result, err = params.Renderer.Render(ctx, packageDir)
 		if err == nil && kind == render.KindModuleInstance {
-			converted, err = convertRender(result)
+			converted, err = params.convertFn()(result)
 		}
 	}); waitErr != nil {
 		// The context ended while waiting for a slot (manager shutdown).

@@ -131,3 +131,24 @@ func TestNewSlots_RefusesFewerThanOne(t *testing.T) {
 	assert.Panics(t, func() { NewSlots(0) })
 	assert.Panics(t, func() { NewSlots(-1) })
 }
+
+// Held counts the slots taken: none on a nil or fresh pool, one inside Run,
+// and none again once Run returns, whether fn returned or panicked.
+func TestSlots_Held(t *testing.T) {
+	var nilPool *Slots
+	assert.Equal(t, 0, nilPool.Held(), "a nil pool holds none")
+
+	s := NewSlots(2)
+	assert.Equal(t, 0, s.Held(), "a fresh pool holds none")
+
+	var inside int
+	require.NoError(t, s.Run(context.Background(), func() { inside = s.Held() }))
+	assert.Equal(t, 1, inside, "Run holds one slot while fn runs")
+	assert.Equal(t, 0, s.Held(), "Run gives the slot back")
+
+	func() {
+		defer func() { assert.NotNil(t, recover(), "fn panicked") }()
+		_ = s.Run(context.Background(), func() { panic("boom") })
+	}()
+	assert.Equal(t, 0, s.Held(), "a panicking fn gives the slot back")
+}

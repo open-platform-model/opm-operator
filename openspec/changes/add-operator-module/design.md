@@ -102,12 +102,11 @@ Experiment 01 derived every name from `#ctx.instance`, which reproduces the mani
 ```cue
 #ctx: _ // re-declared: a field of the embedded #Module is not in lexical scope in other files
 
-let _instance = {name: "opm-operator", namespace: "opm-operator-system"}
-#ctx: instance: name:      _instance.name
-#ctx: instance: namespace: _instance.namespace
+// The module renders only for these coordinates.
+_instanceGuard: "\(#ctx.instance.namespace)/\(#ctx.instance.name)" & "opm-operator-system/opm-operator"
 ```
 
-A mismatched instance fails unification at render, naming both values. The Namespace, every `metadata.name` and every subject namespace read the constants. Whether a module constraint on `#ctx.instance` surfaces through the kernel as a readable render error is unverified; section 1 checks it. If it does not, the fallback is a `#config`-independent guard field whose failure names the expected coordinates.
+A mismatched instance fails unification when the instance is synthesized, naming the given and the expected coordinates (`#module._instanceGuard: conflicting values "opm-system/opm" and "opm-operator-system/opm-operator"`). The Namespace, every `metadata.name` and every subject namespace read the constants. Section 1 measured that a direct constraint on `#ctx.instance.name` and `.namespace` names only the one field that differs, so the module uses the `#config`-independent guard field, which always names both expected coordinates ("Research & Decisions", "Instance-coordinate guard").
 
 The module renders the operator's Namespace itself, so the install records it as an object of the instance; experiment 02 showed that a Namespace created outside the module is refused as foreign.
 
@@ -214,13 +213,13 @@ files, _ := platformmodule.Generate(platformmodule.Input{ /* one entry: the pinn
 platformDir := writeTemp(files)
 plat, _ := k.AcquirePlatformFromDir(ctx, platformDir)
 mod, _ := k.AcquireModuleFromDir(ctx, "../../../modules/opm_operator")
-inst, _ := k.SynthesizeInstance(ctx, kernel.InstanceInput{Module: mod, Name: "opm-operator", Namespace: "opm-operator-system", Values: values})
+inst, _ := k.SynthesizeInstance(ctx, kernel.InstanceInput{Module: mod, Name: "opm-operator", Namespace: "opm-operator-system", Values: values}) // values: at least {}
 res, _ := k.Render(ctx, kernel.RenderInput{Instance: inst, Platform: plat, RuntimeName: "operator-module-test"})
 ```
 
 It asserts the 19 objects and their names, the fixed selector as a literal, the `admin-roles` component as the only raw-objects component holding exactly the five administrator ClusterRoles, the operator version at or above `hack/operator-module/min-operator-version` (in a case that runs before the registry skip, since it needs no registry), CRD `spec` equality with `config/crd/bases`, role rules equal to `config/rbac`, the operator version read from `./operator` with `cue eval` matching the rendered image, the image and every `#config` effect, the refusals (tag value, a typed flag in `extraArgs` in both spellings, another instance name, a byte-count memory limit), and runs the Pod Security admission check. Two assertions use scratch copies of the module tree: one adds `conversion: strategy: None` to a CRD's imported `spec` and expects a render refusal naming `conversion`; one adds a verb to a copy of `config/rbac/role.yaml`, regenerates into the copy with `SRC=`/`OUT=`, and expects the rendered manager ClusterRole to differ by exactly that verb. The test is written in Ginkgo v2 with Gomega, as AGENTS.md "Testing Style" asks. It follows the repository's registry-backed pattern: it skips when GHCR is unreachable and fails under `OPM_TEST_REGISTRY_FORCE=1`, which PR CI sets.
 
-Whether `SynthesizeInstance` resolves a module acquired from a directory whose path (`opmodel.dev/modules/opm_operator`) has no published version is unverified: the kernel imports the module by path and version, and the operator's own renders always acquire from a registry. Section 1 checks it. Fallback: the test drives the pinned cli (`.opm-cli-version`, `v1.0.0-beta.7`, installed by `test.yml`) with `opm module build modules/opm_operator --name opm-operator -n opm-operator-system` under `KUBECONFIG=/nonexistent` (any other instance name is refused by the module's own guard), which experiment 01 measured renders against the module's own pins, and parses its YAML.
+Section 1 verified that `SynthesizeInstance` renders a module acquired from a directory whose path (`opmodel.dev/modules/opm_operator`) has no published version: the instance package is staged inside the module's own tree ("Research & Decisions", "Render path"). The test therefore renders in Go, and passes a values source on every render (`{}` for the defaults), because synthesis never falls back to `debugValues`.
 
 ### The Deployment and Service stay equal to `config/` until the module is the only source
 
@@ -260,6 +259,7 @@ release-please's single package `.` covers the whole tree (`release-please-confi
 **Context**: the seccomp field and the subject-less role do not exist in catalog opm `4.5.2`, the latest release.
 **Explored**: `catalog_opm/src/resources/v1beta1/role.cue` (`#RoleSchema.subjects` requires one subject; the transformer always renders a binding); the catalog's security-context schema has no seccomp field. catalog_opm PR #141 (change `add-seccomp-and-subjectless-roles`) first carried both. Its dry-run publish was refused by the cli's compatibility gate (`spec.role.subjects default changed` with no authored default), a cli false positive. The supervisor split it on 2026-10-04: PR #141 ships `seccompProfile` on `#SecurityContextSchema`, rendered at pod and container level; optional `subjects` moves to `add-subjectless-roles`, gated on a cli release with the fix (cli `fix-compat-unauthored-defaults`).
 **Decision**: gate implementation on a catalog release carrying PR #141 (proposal, "Dependencies / gates"); render the five administrator ClusterRoles through `objects@v1alpha1` until a release carries `add-subjectless-roles`, then switch (task 6.1). Task 1.1 records the released version and field names in this section before any module code is written.
+**Recorded (task 1.1, 2026-10-04)**: catalog `opmodel.dev/catalogs/opm@v4` **v4.6.0** carries PR #141 and resolves from GHCR (`cue mod get opmodel.dev/catalogs/opm@v4.6.0`). The field is `seccompProfile?: #SeccompProfileSchema` on `resources/v1beta1 #SecurityContextSchema` (`src/resources/v1beta1/container.cue`), a Kubernetes-shaped `{type: "RuntimeDefault"}` that accepts only `RuntimeDefault`; it renders at pod level from `traits/v1beta1 #SecurityContext` (`spec.securityContext.seccompProfile`) and at container level from `#ContainerSchema.securityContext.seccompProfile`. v4.6.0 requires core `v2.0.0-beta.1`; the module pins core **v2.0.0-beta.2**, the release the operator's library (`v1.0.0-beta.4` after the merge of `main`) pins as `schema.DefaultSchemaModule`, and the spike rendered against it. No catalog release carries `add-subjectless-roles` yet: v4.6.0's `#RoleSchema` still has `subjects!: [...] & [_, ...]`.
 **Rationale**: the module pins a published release; designing against unreleased field names would fix names the catalog change could still change, and waiting for the second catalog release would block the module on a cli release for five objects.
 
 ### Minimum operator version
@@ -268,6 +268,21 @@ release-please's single package `.` covers the whole tree (`release-please-confi
 **Explored**: a floor field in the module's `operator` package; a floor file outside the module read by the render test and the release check.
 **Decision**: gate implementation on an operator release carrying PR #211, record that release in `hack/operator-module/min-operator-version`, and fail the render test (and, in `release-operator-module`, the release check) when the module names an older operator.
 **Rationale**: the floor is a release-engineering fact about this repository, not data a consumer of the module needs.
+**Recorded (task 1.1, 2026-10-04)**: PR #211 squashed as `8d34b6b`; `git tag --contains 8d34b6b` gives **`v1.0.0-beta.6`**, whose GitHub Release is published (not a draft). It is the minimum operator version and, being the latest release, the version the module deploys: `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.6@sha256:7871a5dd6c2251196b4ac7ce50136a9491f4004e33036c64fa63a20ffaa9825e` (`crane digest`, equal to the image the release's `install.yaml` asset names).
+
+### Render path (spike, task 1.2)
+
+**Context**: whether the kernel renders a module acquired from a directory whose path has no published version.
+**Explored**: a scratch module at `opmodel.dev/modules/opm_operator@v0` (one `#StatelessWorkload` with the `#SecurityContext` trait, one `resources/v1alpha1 #Objects` component holding one unbound ClusterRole), pinned to catalog v4.6.0 and core v2.0.0-beta.2, rendered from Go with `Kernel.AcquireModuleFromDir`, `SynthesizeInstance` and `Render` against a platform from `platformmodule.Generate` over the catalog pin, under the GHCR mapping.
+**Decision**: the render test renders in Go through the kernel; the `opm module build` fallback is not needed.
+**Rationale**: the render succeeded: `SynthesizeInstance` stages the instance package inside the module's own staged tree, so the import of `opmodel.dev/modules/opm_operator` resolves locally with no published version; the Deployment carried `seccompProfile: {type: RuntimeDefault}` at pod level and the ClusterRole rendered unbound. One requirement surfaced: `SynthesizeInstance` with no values source fails `values: incomplete value _` (it never falls back to `debugValues`), so the test always passes a values source, `{}` for the defaults.
+
+### Instance-coordinate guard (spike, task 1.3)
+
+**Context**: whether a module constraint on `#ctx.instance` surfaces as a readable error naming the expected coordinates.
+**Explored**: `#ctx: instance: name: "opm-operator"` and `namespace: "opm-operator-system"` in the scratch module, synthesized as `opm` in `opm-system`; then a hidden guard field unifying `"<namespace>/<name>"` with `"opm-operator-system/opm-operator"`.
+**Decision**: the guard field (see "Names are constants and the instance coordinates are fixed").
+**Rationale**: the direct constraints fail at synthesis with `#module.#ctx.instance.name: conflicting values "opm" and "opm-operator"`, naming only the first differing field and never the namespace. The guard fails `#module._instanceGuard: conflicting values "opm-system/opm" and "opm-operator-system/opm-operator"` for a wrong name and for a wrong namespace alone (`"other/opm-operator"`), always naming both expected coordinates, and leaves the right coordinates rendering.
 
 ## Risks / Trade-offs
 

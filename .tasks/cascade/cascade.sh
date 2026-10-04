@@ -45,6 +45,8 @@ SAMPLE_MI=config/samples/opmodel.dev_v1alpha1_moduleinstance.yaml
 CATALOG_GO=test/fixtures/catalog.go
 PROVIDER=test/fixtures/catalogs/provider
 CUE_VERSION_FILE=.github/workflows/test.yml
+INSTALL_DOC=docs/site/start/install-the-operator.md
+REPRESENTATIVE=test/fixtures/modules/hello/cue.mod/module.cue
 
 # --- Rule 1: clean start, or a snapshot under CASCADE_ALLOW_DIRTY=1 -----------------------
 
@@ -536,6 +538,34 @@ fi
 # 7. The opm CLI pin, last.
 if [ -n "$CLI" ]; then
   printf '%s\n' "$CLI" >.opm-cli-version
+fi
+
+# 8. Example output in the install page that names a catalog or core other than the tree's
+# (the sample Platform's catalog, the representative fixture's core): a warning only, never
+# an edit.
+doc_versions() { # KIND: catalog or core versions the install page prints
+  case $1 in
+    catalog)
+      { grep -oP 'opmodel\.dev/catalogs/opm@v4 \K[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' "$INSTALL_DOC" || [ $? -eq 1 ]
+        awk -v k="$CATKEY:" '
+          index($0, k) { f = 1; next }
+          f && /^[[:space:]]*version:/ { v = $0; sub(/^[[:space:]]*version:[[:space:]]*/, "", v); gsub(/"/, "", v); print v; f = 0 }' "$INSTALL_DOC"
+      } ;;
+    core)
+      grep -oP 'core schema resolved.*"version": "\Kv[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' "$INSTALL_DOC" || [ $? -eq 1 ] ;;
+  esac
+}
+if [ -f "$INSTALL_DOC" ]; then
+  doc_cat=$(yaml_version_after "$CATKEY:" <"$SAMPLE_PLATFORM")
+  doc_core=$(cue_dep_v "$COREKEY" <"$REPRESENTATIVE")
+  while IFS= read -r v; do
+    [ -n "$v" ] && [ "$v" != "$doc_cat" ] || continue
+    warn - "\`$INSTALL_DOC\` example output still names catalog \`$v\`; the sample Platform pins \`$doc_cat\`"
+  done < <(doc_versions catalog | LC_ALL=C sort -u)
+  while IFS= read -r v; do
+    [ -n "$v" ] && [ "$v" != "$doc_core" ] || continue
+    warn - "\`$INSTALL_DOC\` example output still names core \`$v\`; \`$REPRESENTATIVE\` pins \`$doc_core\`"
+  done < <(doc_versions core | LC_ALL=C sort -u)
 fi
 
 # ===========================================================================================

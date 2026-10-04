@@ -58,8 +58,11 @@ not pins):
   frozen ("An old pin without an entry is stale"). The task edits no Go test file, so it never
   moves them. The supervisor's triage of 2026-10-04 settled the question: the repo-root
   `.cascade-frozen` lists both files for `opmodel.dev/catalogs/opm@v4`, so G2 ignores them too.
-- Version prose in `docs/site/start/install-the-operator.md` (see "Open questions"). The
-  generated block of `docs/site/reference/operator-resources.md` is not prose: the task
+- Version prose in `docs/site/start/install-the-operator.md`. Its example output (the seeded
+  Platform's catalog, the sample Platform `version:` and the "OPM core schema resolved" log
+  line) is checked after the edits: a catalog other than the sample Platform's, or a core other
+  than `test/fixtures/modules/hello`'s, is a warning with key `-`, as library warns for
+  `docs/getting-started.md` (supervisor triage, 2026-10-04). The generated block of `docs/site/reference/operator-resources.md` is not prose: the task
   regenerates it (see "Regenerating the resource reference").
 - `docs-kit.cue`, `.opm-docs-version` and every docs-kit ref.
 - Everything in contract §5.2 rule 14.
@@ -515,7 +518,9 @@ hold found a real defect (a consumer lowered to its held module; fixed in sectio
   catalog only. Core comes from the file's current catalog (contract §5.2 rule 7), so the file
   is byte-unchanged and the task exits 3. Before the implementation review's fix, the catalog
   freeze was checked after core was chosen, and core moved to what the newest catalog pins.
-**Rationale**: Each runs in seconds, and S7 to S9 and S12 need no network, so they join the
+- **S13** (offline): the sandbox's install page names a catalog and a core the tree does not
+  pin. Exit 3, a clean tree, and exactly two warnings.
+**Rationale**: Each runs in seconds, and S7 to S9, S12 and S13 need no network, so they join the
 required offline set.
 
 ### Test placement (contract §8, §9.12)
@@ -590,12 +595,9 @@ These are recorded as contract §9 states them. The owner may override any of th
 
 ## Open Questions
 
-- **Docs prose drifts.** `docs/site/start/install-the-operator.md:35,87,190` prints `4.4.4` and
-  `v2.0.0-beta.1` as example output. The contract gives the operator no warning for it (library
-  has a similar one for `docs/getting-started.md`, contract §6.2 step 5). Proposed: leave it out
-  of the task. Should a `-` warning be added? This is for the supervisor.
-  (`docs/site/reference/operator-resources.md:329` is generated, not prose; the task regenerates
-  it.)
+- **Docs prose drifts.** Settled by the supervisor's triage (2026-10-04): the task warns with key
+  `-` when `docs/site/start/install-the-operator.md` example output names a catalog or core the
+  tree no longer pins, and never edits the page (scenario S13).
 - **A `.cascade-frozen` for the operator?** Settled by the supervisor's triage (2026-10-04): the
   change ships one listing the two `4.0.0` catalog literals. Whether workspace RELEASING.md "Pin
   classes" gains an opm-operator frozen row is a workspace follow-up, outside this change.

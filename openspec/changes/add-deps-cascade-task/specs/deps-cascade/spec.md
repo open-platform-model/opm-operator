@@ -121,11 +121,15 @@ The task SHALL NOT modify:
 - any CUE `language.version`;
 - the Jellyfin sample or `ocirepository.yaml`.
 
-It SHALL only read from registries and SHALL never publish or seed. When an upstream's `language.version` is newer than the `CUE_VERSION` in `.github/workflows/test.yml`, it SHALL warn.
+It SHALL only read from registries and SHALL never publish or seed. When an upstream's `language.version` is newer than the `CUE_VERSION` in `.github/workflows/test.yml`, it SHALL warn. When the example output in `docs/site/start/install-the-operator.md` names a catalog other than the sample Platform's, or a core other than `test/fixtures/modules/hello`'s, it SHALL warn and SHALL NOT edit that page.
 
 #### Scenario: Release files untouched
 - **WHEN** the task moves every pin
 - **THEN** `git diff --name-only` names no path under `.github/`, no release-please file and no `.cascade-*` file
+
+#### Scenario: Install page example output drifted
+- **WHEN** `docs/site/start/install-the-operator.md` prints a catalog or core version the tree no longer pins
+- **THEN** the task writes a warning naming the page and both versions, and leaves the page unchanged
 
 #### Scenario: Newer CUE language warned
 - **WHEN** the target catalog's `language.version` is newer than `.github/workflows/test.yml`'s `CUE_VERSION`

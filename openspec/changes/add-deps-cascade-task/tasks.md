@@ -140,6 +140,8 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 - [x] 7.2 Add a repo-root `.cascade-frozen` that freezes `opmodel.dev/catalogs/opm@v4` at `test/integration/reconcile/skew_test.go` and `internal/controller/platform_controller_test.go` (both resolve catalog `4.0.0` on purpose). Commit `test(cascade): freeze the two deliberately old catalog literals`
 
+- [x] 7.3 Warn with key `-` when the example output in `docs/site/start/install-the-operator.md` names a catalog other than the sample Platform's or a core other than `test/fixtures/modules/hello`'s, without editing the page, and script it as S13 (offline). Commit `ci(cascade): warn when the install page's example output drifts`
+
 ## 8. Archive
 
 - [ ] 8.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`

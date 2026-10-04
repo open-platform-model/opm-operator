@@ -56,7 +56,7 @@ this change and its three siblings in catalog_opm, library and cli to one shared
   (Phase 2 cascade contract §5.3, verbatim).
 - **`task deps:cascade:test`** runs `.tasks/cascade/test.sh`. It runs `deps:cascade` in sandbox
   copies of the tree against a stub resolver (Phase 2 cascade contract §7, §8), covering the
-  contract's six scenarios and six more:
+  contract's six scenarios and seven more:
   - S1: nothing to do;
   - S2: older pins, with the expected diff and idempotence;
   - S3: a resolver error leaves the tree untouched;
@@ -65,7 +65,8 @@ this change and its three siblings in catalog_opm, library and cli to one shared
   - S6: a dirty tree is refused;
   - S3b, S7 to S10: a missing `pin-of` row, a core hold, a pending fixture, a core ahead of its
     catalog, and MVS raising a frozen key;
-  - S12: a catalog-only freeze keeps core at what that catalog pins.
+  - S12: a catalog-only freeze keeps core at what that catalog pins;
+  - S13: drifted install-page example output is a warning, never an edit.
 
   The offline set runs as a step in the existing `Lint` job of `.github/workflows/lint.yml`, the
   opm-operator check workspace RELEASING.md ("Rulesets on main") makes required. The network set

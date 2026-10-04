@@ -17,6 +17,10 @@ limitations under the License.
 package apply_test
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	fluxssa "github.com/fluxcd/pkg/ssa"
@@ -24,9 +28,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/open-platform-model/opm-operator/internal/apply"
 )
@@ -48,6 +56,73 @@ func newUnstructuredConfigMap(name string, data map[string]string) *unstructured
 		_ = unstructured.SetNestedMap(obj.Object, dataMap, "data")
 	}
 	return obj
+}
+
+// newTestCRD returns a namespaced CustomResourceDefinition for group/kind,
+// served and stored at v1, with a spec.size integer field.
+func newTestCRD(group, kind, plural string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "apiextensions.k8s.io/v1",
+		"kind":       "CustomResourceDefinition",
+		"metadata": map[string]any{
+			"name": plural + "." + group,
+		},
+		"spec": map[string]any{
+			"group": group,
+			"names": map[string]any{
+				"plural":   plural,
+				"singular": strings.ToLower(kind),
+				"kind":     kind,
+				"listKind": kind + "List",
+			},
+			"scope": "Namespaced",
+			"versions": []any{map[string]any{
+				"name":    "v1",
+				"served":  true,
+				"storage": true,
+				"schema": map[string]any{
+					"openAPIV3Schema": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"spec": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"size": map[string]any{"type": "integer"},
+								},
+							},
+						},
+					},
+				},
+			}},
+		},
+	}}
+}
+
+// newTestCustomResource returns a group/v1 kind object named name in the
+// default namespace.
+func newTestCustomResource(group, kind, name string) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: group, Version: "v1", Kind: kind})
+	obj.SetNamespace("default")
+	obj.SetName(name)
+	_ = unstructured.SetNestedField(obj.Object, int64(1), "spec", "size")
+	return obj
+}
+
+// deleteCRDsAndWait deletes the given CustomResourceDefinitions, which may
+// not exist, and waits until the API server no longer has any of them.
+func deleteCRDsAndWait(crds ...*unstructured.Unstructured) {
+	for _, crd := range crds {
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, crd))).To(Succeed())
+	}
+	Eventually(func(g Gomega) {
+		for _, crd := range crds {
+			got := &unstructured.Unstructured{}
+			got.SetGroupVersionKind(crd.GroupVersionKind())
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: crd.GetName()}, got)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "CRD %s still exists", crd.GetName())
+		}
+	}, 30*time.Second, 100*time.Millisecond).Should(Succeed())
 }
 
 var _ = Describe("Apply", func() {
@@ -170,7 +245,7 @@ var _ = Describe("Apply", func() {
 		})
 	})
 
-	// Spec reference: openspec/changes/08-ssa-apply/specs/ssa-apply/spec.md
+	// Spec reference: openspec/specs/ssa-apply/spec.md
 	//   "Scenario: CRD applied before custom resource"
 	Context("When applying a CRD and an instance of it together", func() {
 		It("should apply the CRD before the custom resource regardless of input order", func() {
@@ -242,6 +317,88 @@ var _ = Describe("Apply", func() {
 			By("cleaning up the custom resource and CRD")
 			Expect(k8sClient.Delete(ctx, fetched)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, crd)).To(Succeed())
+		})
+	})
+
+	Context("When discovery serves a new CRD's kind late", func() {
+		It("applies the custom resource once discovery serves its kind", func() {
+			const lag = time.Second
+			crd := newTestCRD("lag.example.com", "Gadget", "gadgets")
+			gadget := newTestCustomResource("lag.example.com", "Gadget", "lag-gadget")
+			DeferCleanup(deleteCRDsAndWait, crd)
+			lagRM := newLaggingResourceManager(schema.GroupKind{Group: "lag.example.com", Kind: "Gadget"}, lag)
+
+			By("applying the custom resource and its CRD while discovery lags the CRD")
+			start := time.Now()
+			result, err := apply.Apply(ctx, lagRM, []*unstructured.Unstructured{gadget, crd}, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(time.Since(start)).To(BeNumerically(">=", lag))
+			Expect(result.Created).To(Equal(2))
+
+			By("verifying the custom resource exists in the cluster")
+			fetched := newTestCustomResource("lag.example.com", "Gadget", "lag-gadget")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "lag-gadget"}, fetched)).To(Succeed())
+		})
+
+		It("fails at once for a custom resource whose CRD is not in the set", func() {
+			unrelated := newTestCRD("unrelated.example.com", "Thing", "things")
+			gizmo := newTestCustomResource("nocrd.example.com", "Gizmo", "orphan-gizmo")
+			DeferCleanup(deleteCRDsAndWait, unrelated)
+
+			By("establishing the unrelated CRD first, so only the failure path is timed")
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{unrelated}, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("applying a custom resource whose kind no CRD in the set defines")
+			start := time.Now()
+			_, err = apply.Apply(ctx, rm, []*unstructured.Unstructured{gizmo, unrelated}, false)
+			Expect(err).To(HaveOccurred())
+			Expect(meta.IsNoMatchError(err)).To(BeTrue(), "error: %v", err)
+			Expect(time.Since(start)).To(BeNumerically("<", 5*time.Second))
+		})
+
+		It("returns the no-match error when the context ends before discovery serves the kind", func() {
+			gk := schema.GroupKind{Group: "never.example.com", Kind: "Doohickey"}
+			crd := newTestCRD(gk.Group, gk.Kind, "doohickeys")
+			doohickey := newTestCustomResource(gk.Group, gk.Kind, "never-doohickey")
+			DeferCleanup(deleteCRDsAndWait, crd)
+
+			By("establishing the CRD first, so the deadline only covers the retry")
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{crd}, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("applying under a deadline that falls between two retries while discovery never serves the kind")
+			lagRM := newLaggingResourceManager(gk, time.Hour)
+			applyCtx, cancelApply := context.WithTimeout(ctx, 4750*time.Millisecond)
+			defer cancelApply()
+			_, err = apply.Apply(applyCtx, lagRM, []*unstructured.Unstructured{doohickey, crd}, false)
+			Expect(err).To(HaveOccurred())
+			Expect(meta.IsNoMatchError(err)).To(BeTrue(), "error: %v", err)
+			kindErr, ok := errors.AsType[*meta.NoKindMatchError](err)
+			Expect(ok).To(BeTrue(), "error: %v", err)
+			Expect(kindErr.GroupKind).To(Equal(gk))
+		})
+	})
+
+	Context("When applying many new CRDs and their instances together", func() {
+		It("applies every custom resource in one call", func() {
+			const n = 20
+			crds := make([]*unstructured.Unstructured, 0, n)
+			objs := make([]*unstructured.Unstructured, 0, 2*n)
+			for i := range n {
+				group := fmt.Sprintf("s%d.stress.example.com", i)
+				kind := fmt.Sprintf("Stress%d", i)
+				crd := newTestCRD(group, kind, fmt.Sprintf("stress%ds", i))
+				crds = append(crds, crd)
+				// Each instance before its CRD, so only staging puts the CRD first.
+				objs = append(objs, newTestCustomResource(group, kind, "stress"), crd)
+			}
+			DeferCleanup(func() { deleteCRDsAndWait(crds...) })
+
+			By("applying the CRDs and their instances in one call through the real mapper")
+			result, err := apply.Apply(ctx, rm, objs, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Created).To(Equal(2 * n))
 		})
 	})
 })

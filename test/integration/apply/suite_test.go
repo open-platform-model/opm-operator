@@ -20,17 +20,24 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	fluxssa "github.com/fluxcd/pkg/ssa"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/open-platform-model/opm-operator/internal/apply"
 )
 
 var (
@@ -89,4 +96,67 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+// laggingMapper simulates API discovery lagging a CustomResourceDefinition's
+// Established condition: for one GroupKind, RESTMapping and RESTMappings
+// report a no-match until lag has passed since the first lookup of that kind,
+// the error a client sees when it resolves a custom resource whose CRD the
+// API server has established but discovery does not serve yet. Every other
+// lookup goes to the wrapped mapper.
+type laggingMapper struct {
+	meta.RESTMapper
+
+	gk  schema.GroupKind
+	lag time.Duration
+
+	mu    sync.Mutex
+	first time.Time
+}
+
+// lagging reports whether a lookup of gk falls inside the lag window, and
+// starts the window on the first lookup of the lagged kind.
+func (m *laggingMapper) lagging(gk schema.GroupKind) bool {
+	if gk != m.gk {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.first.IsZero() {
+		m.first = time.Now()
+	}
+	return time.Since(m.first) < m.lag
+}
+
+// RESTMapping reports a no-match for the lagged kind inside the lag window.
+func (m *laggingMapper) RESTMapping(gk schema.GroupKind, versions ...string) (*meta.RESTMapping, error) {
+	if m.lagging(gk) {
+		return nil, &meta.NoKindMatchError{GroupKind: gk, SearchedVersions: versions}
+	}
+	return m.RESTMapper.RESTMapping(gk, versions...)
+}
+
+// RESTMappings reports a no-match for the lagged kind inside the lag window.
+func (m *laggingMapper) RESTMappings(gk schema.GroupKind, versions ...string) ([]*meta.RESTMapping, error) {
+	if m.lagging(gk) {
+		return nil, &meta.NoKindMatchError{GroupKind: gk, SearchedVersions: versions}
+	}
+	return m.RESTMapper.RESTMappings(gk, versions...)
+}
+
+// newLaggingResourceManager returns a ResourceManager whose client resolves
+// kinds through a fresh dynamic RESTMapper that simulates discovery serving
+// gk only lag after its first lookup, as if the API server's discovery lagged
+// the Established condition of gk's CustomResourceDefinition.
+func newLaggingResourceManager(gk schema.GroupKind, lag time.Duration) *fluxssa.ResourceManager {
+	httpClient, err := rest.HTTPClientFor(cfg)
+	Expect(err).NotTo(HaveOccurred())
+	mapper, err := apiutil.NewDynamicRESTMapper(cfg, httpClient)
+	Expect(err).NotTo(HaveOccurred())
+	c, err := client.New(cfg, client.Options{
+		HTTPClient: httpClient,
+		Mapper:     &laggingMapper{RESTMapper: mapper, gk: gk, lag: lag},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	return apply.NewResourceManager(c, "test-owner")
 }

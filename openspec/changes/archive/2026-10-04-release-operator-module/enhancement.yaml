@@ -1,0 +1,14 @@
+# Declares which enhancement decisions this change implements. Consumed by
+# `task enhancements:delivery:log` at archive time.
+implements:
+  - enhancement: "0021"
+    # D11 (the operator's install artifact is a registry module on its own
+    # train), its release half only: R3 (the module's own version train), R4
+    # (the v0 path until operator GA, enforced by the release gate), R5 (one
+    # operator version per module version, by tag and digest) and R12 (no
+    # module release is ever "latest"). R1, R2 and R6 to R11 are the cli's
+    # install-operator-from-module and the operator's own-instance changes.
+    # D4 (amended) is NOT claimed: operator releases still attach their own
+    # install.yaml until stop-operator-install-manifest.
+    decisions: [D11]
+    resolves: []

@@ -1,0 +1,204 @@
+name: Operator module deps
+
+# The operator module's own cascade PR (deps-cascade, "The operator module's
+# pin move opens its own pull request"). The repository's cascade
+# (deps-cascade.yml, task deps:cascade) never touches modules/opm_operator; this
+# workflow moves only the module's opm catalog and core with
+# `task -x deps:cascade:module` and opens the move as its own fix(deps) PR on
+# module/deps, which changes nothing outside the module, so its squash commit
+# releases the module and not the operator.
+#
+# It runs on the same upstream-released dispatch the receiver takes, and by
+# hand (gh workflow run module-deps.yml --repo open-platform-model/opm-operator
+# -f dry_run=true). It is a dry run unless the repo variable CASCADE_DRY_RUN is
+# exactly false: the diff goes to the job summary and nothing is pushed.
+#
+# Two jobs, as the receiver splits its work: compute runs the task with no
+# token and hands the change on as an artifact; publish mints the release App
+# token and only runs hack/operator-module/bot-pr.sh. The resolver checkout
+# names the one pinned .github SHA; task cascade:wiring:check lists it.
+
+on:
+  repository_dispatch:
+    types: [upstream-released]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Compute and show the diff in the job summary; push nothing
+        type: boolean
+        default: false
+
+permissions: {}
+
+# bash -eo pipefail: a failing script piped into tee fails its step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: module-deps-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CUE_VERSION: 'v0.17.1'
+
+jobs:
+  compute:
+    name: Move the operator module's catalog and core
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.task.outputs.changed }}
+      title: ${{ steps.text.outputs.title }}
+      dry-run: ${{ steps.mode.outputs.dry-run }}
+    steps:
+      - name: Dry run or not
+        id: mode
+        env:
+          DRY: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
+        run: echo "dry-run=${DRY}" >> "${GITHUB_OUTPUT}"
+
+      - name: Clone main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Clone the cascade resolver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: open-platform-model/.github
+          ref: 2376ffae4bfc665f327d51581350dea694c01504 # .github main
+          path: org-github
+          persist-credentials: false
+
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0
+        with:
+          version: ${{ env.CUE_VERSION }}
+
+      - name: Install Task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.x
+
+      - name: Point the tasks at the resolver
+        run: |
+          r="${GITHUB_WORKSPACE}/org-github/.github/scripts/cascade/cascade-resolve.sh"
+          [ -x "$r" ] || { echo "::error::no cascade resolver at the pinned .github commit" >&2; exit 1; }
+          echo "CASCADE_RESOLVER=$r" >> "${GITHUB_ENV}"
+
+      # Runs the repo's task: no token reaches this step.
+      - name: Run task deps:cascade:module
+        id: task
+        working-directory: repo
+        run: |
+          rc=0
+          task -x deps:cascade:module || rc=$?
+          case $rc in
+          0) echo "changed=true" >> "${GITHUB_OUTPUT}" ;;
+          3) echo "nothing to move"; echo "changed=false" >> "${GITHUB_OUTPUT}" ;;
+          *) echo "::error::task deps:cascade:module failed (exit $rc)"; exit "$rc" ;;
+          esac
+
+      # The dispatch payload is untrusted: it reaches the resolver only as
+      # data, which drops anything off-pattern.
+      - name: Title and body
+        id: text
+        if: steps.task.outputs.changed == 'true'
+        working-directory: repo
+        env:
+          CASCADE_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          CASCADE_BASE: origin/main
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = repository_dispatch ]; then
+            CASCADE_SOURCE=$(jq -r '.source // empty | tostring' <<<"${CASCADE_PAYLOAD}")
+            CASCADE_TAGS=$(jq -r '(.tags // []) | map(tostring) | join(" ")' <<<"${CASCADE_PAYLOAD}")
+            export CASCADE_SOURCE CASCADE_TAGS
+          fi
+          title=$(task -x deps:cascade:module:title)
+          mkdir -p "${RUNNER_TEMP}/change"
+          task -x deps:cascade:module:body > "${RUNNER_TEMP}/change/body.md"
+          echo "title=${title}" >> "${GITHUB_OUTPUT}"
+
+      - name: Show the move
+        if: always() && steps.task.outputs.changed == 'true'
+        working-directory: repo
+        env:
+          TITLE: ${{ steps.text.outputs.title }}
+        run: |
+          {
+            echo "## ${TITLE:-operator module pin move}"
+            echo
+            echo '```diff'
+            git diff
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Package the module change
+        if: steps.task.outputs.changed == 'true'
+        working-directory: repo
+        run: |
+          { git diff --name-only; git ls-files --others --exclude-standard; } | sort -u \
+            | tar -cf "${RUNNER_TEMP}/change/module.tar" -T -
+
+      - name: Hand the change to the publish job
+        if: steps.task.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: module-deps-change
+          path: ${{ runner.temp }}/change/
+          retention-days: 3
+
+  publish:
+    name: Open or update the operator module deps PR
+    needs: compute
+    if: >-
+      needs.compute.outputs.changed == 'true'
+      && needs.compute.outputs.dry-run == 'false'
+      && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Mint the release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Clone main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Fetch the module change
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: module-deps-change
+          path: ${{ runner.temp }}/change
+
+      - name: Push module/deps and open or update its PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          TITLE: ${{ needs.compute.outputs.title }}
+        run: |
+          # Only the module may ride the PR: refuse any other member (a .git/
+          # hook or config would never show in git status) before extracting.
+          bad=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -vE '^modules/opm_operator/' | head -n5 || true)
+          bad+=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -E '(^|/)\.\.(/|$)' | head -n5 || true)
+          [ -z "${bad}" ] || { echo "::error::the handed-over change holds paths outside modules/opm_operator/: ${bad}"; exit 1; }
+          tar -xf "${RUNNER_TEMP}/change/module.tar" --no-same-owner
+          id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
+          BOT_NAME="${APP_SLUG}[bot]" BOT_EMAIL="${id}+${APP_SLUG}[bot]@users.noreply.github.com" \
+            hack/operator-module/bot-pr.sh module/deps "${TITLE}" "${RUNNER_TEMP}/change/body.md"

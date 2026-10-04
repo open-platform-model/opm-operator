@@ -9,7 +9,8 @@
 #   SRC=/path/to/config hack/operator-module/drift-check.sh  # against an extracted tree
 #
 # PR CI runs it through `task operator-module:drift`, which first checks that
-# config/ itself is current against `task dev:manifests`. The --ref mode is for
+# config/ itself is current against controller-gen (the config/ half of
+# `task dev:manifests`, which leaves the module files untouched). The --ref mode is for
 # the module's release gate: a module release must match the config/ of the
 # operator release it deploys, not main's.
 set -euo pipefail
@@ -59,7 +60,7 @@ for f in zz_generated_crds.cue zz_generated_rbac.cue; do
 	committed=$MOD/$f
 	fresh=$tmp/out/$f
 	if [ ! -f "$committed" ]; then
-		echo "DRIFT: modules/opm_operator/$f is missing; run 'task operator-module:generate'"
+		echo "DRIFT: modules/opm_operator/$f is missing; run 'task dev:manifests'"
 		rc=1
 		continue
 	fi
@@ -76,6 +77,6 @@ done
 if [ "$rc" -eq 0 ]; then
 	echo "no drift: modules/opm_operator/zz_generated_*.cue match $src"
 else
-	echo "regenerate with 'task dev:manifests operator-module:generate'" >&2
+	echo "regenerate with 'task dev:manifests'" >&2
 fi
 exit "$rc"

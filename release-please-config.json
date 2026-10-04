@@ -4,6 +4,8 @@
   "bump-patch-for-minor-pre-major": false,
   "include-component-in-tag": false,
   "include-v-in-tag": true,
+  "separate-pull-requests": true,
+  "bootstrap-sha": "81a640dbbbb8a1d6d5adc8eae6afbabf31116498",
   "packages": {
     ".": {
       "release-type": "go",
@@ -11,10 +13,39 @@
       "force-tag-creation": true,
       "package-name": "opm-operator",
       "changelog-path": "CHANGELOG.md",
+      "exclude-paths": ["modules/opm_operator"],
       "extra-files": ["internal/version/version.go", "docs/site/start/install-the-operator.md"],
       "versioning": "prerelease",
       "prerelease": true,
       "prerelease-type": "beta",
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance Improvements" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "docs", "section": "Documentation", "hidden": true },
+        { "type": "refactor", "section": "Code Refactoring", "hidden": false },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "ci", "section": "Continuous Integration", "hidden": true },
+        { "type": "build", "section": "Build System", "hidden": true },
+        { "type": "chore", "section": "Miscellaneous Chores", "hidden": true }
+      ]
+    },
+    "modules/opm_operator": {
+      "release-type": "simple",
+      "component": "opm_operator",
+      "include-component-in-tag": true,
+      "package-name": "opm_operator",
+      "draft": true,
+      "force-tag-creation": true,
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [{ "type": "generic", "path": "RELEASE" }],
+      "versioning": "default",
+      "prerelease": false,
+      "initial-version": "0.1.0",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },

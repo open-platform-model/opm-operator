@@ -29,7 +29,7 @@ The operator release the module names SHALL be at or above the repository's reco
 
 ### Requirement: Every object renders through a catalog resource
 
-The module SHALL render the operator's CRDs, its Namespace, the controller Deployment, its ServiceAccount, the metrics Service, and every Role, ClusterRole, RoleBinding and ClusterRoleBinding through the first-party catalog resource made for that kind, apart from the exception below. The administrator ClusterRoles the operator ships for users to bind SHALL render with no binding. Until a catalog release the module pins can render a role with no subjects, those administrator ClusterRoles SHALL render through the catalog's raw-objects resource, in one component that holds them and nothing else, with their rules taken from the generated RBAC data; no other object SHALL use the raw-objects resource. The module SHALL render the operator's Namespace itself, so an install records it as an object of the instance.
+The module SHALL render the operator's CRDs, its Namespace, the controller Deployment, its ServiceAccount, the metrics Service, and every Role, ClusterRole, RoleBinding and ClusterRoleBinding through the first-party catalog resource made for that kind, apart from the exception below. The administrator ClusterRoles the operator ships for users to bind SHALL render with no binding. Those administrator ClusterRoles SHALL render through the catalog's raw-objects resource, in one component that holds them and nothing else, with their rules taken from the generated RBAC data; no other object SHALL use the raw-objects resource. The module SHALL render the operator's Namespace itself, so an install records it as an object of the instance.
 
 #### Scenario: The render contains the whole install shape
 

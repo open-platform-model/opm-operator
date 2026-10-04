@@ -2,9 +2,12 @@ name: Cascade task
 
 # The full task deps:cascade test set (.tasks/cascade/test.sh): the offline
 # scenarios plus S2 and S4, which resolve older pins from GHCR and the Go
-# module proxy, and S5, the PR title and body against the shared resolver in
-# open-platform-model/.github. Not a required check: a GHCR or proxy blip must
-# not block an unrelated PR. The offline set runs in the required Lint job.
+# module proxy, and S5, the PR title and body against the shared resolver at
+# the repo's pinned open-platform-model/.github commit (the same SHA as every
+# other cascade reference, Phase 3 wiring contract (version 3.1) 2.4), so CI
+# tests the resolver the receiver runs. Not a required check: a GHCR or proxy
+# blip must not block an unrelated PR. The offline set runs in the required
+# Lint job.
 
 on:
   pull_request:
@@ -41,7 +44,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: open-platform-model/.github
-          ref: main
+          ref: 2376ffae4bfc665f327d51581350dea694c01504 # .github main
           path: org-github
           persist-credentials: false
 
@@ -61,16 +64,11 @@ jobs:
         with:
           version: 3.x
 
-      # S5 runs only once the resolver is on .github main; until then the
-      # scenario reports SKIP.
       - name: Point S5 at the resolver
         run: |
           r="$GITHUB_WORKSPACE/org-github/.github/scripts/cascade/cascade-resolve.sh"
-          if [ -x "$r" ]; then
-            echo "CASCADE_RESOLVER_REAL=$r" >> "$GITHUB_ENV"
-          else
-            echo "::notice::no cascade resolver on open-platform-model/.github main yet; S5 is skipped"
-          fi
+          [ -x "$r" ] || { echo "::error::no cascade resolver at the pinned .github commit" >&2; exit 1; }
+          echo "CASCADE_RESOLVER_REAL=$r" >> "$GITHUB_ENV"
 
       - name: Cascade task tests (all scenarios)
         working-directory: repo

@@ -33,5 +33,5 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 
 ## 6. Verify and archive
 
-- [ ] 6.1 Run openspec verify for `harden-release-workflows` and resolve its findings.
-- [ ] 6.2 Archive on this branch; check `openspec/specs/workflow-hardening/spec.md` has a real Purpose and `openspec validate workflow-hardening --strict` passes. Commit `chore(openspec): archive harden-release-workflows`
+- [x] 6.1 Run openspec verify for `harden-release-workflows` and resolve its findings.
+- [x] 6.2 Archive on this branch; check `openspec/specs/workflow-hardening/spec.md` has a real Purpose and `openspec validate workflow-hardening --strict` passes. Commit `chore(openspec): archive harden-release-workflows`

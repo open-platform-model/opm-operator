@@ -18,7 +18,7 @@ The CI pipeline SHALL publish the controller manager container image to `ghcr.io
 
 ### Requirement: Pull-request image build trigger and tags
 
-The PR image workflow SHALL run on `pull_request` events (types: `opened`, `synchronize`, `reopened`) that touch any path affecting the produced image. On every run it SHALL build and push exactly two tags: `:sha-<short>` where `<short>` is the 7-character short commit SHA of the PR head, and `:pr-<PR_ID>` where `<PR_ID>` is the GitHub pull request number. The `:pr-<PR_ID>` tag MAY be overwritten by subsequent pushes to the same PR; `:sha-<short>` is effectively immutable because the SHA changes when the commit changes.
+The PR image workflow SHALL run on `pull_request` events (types: `opened`, `synchronize`, `reopened`) that touch any path affecting the produced image, except for a head named `deps/cascade` or starting with `release-please--`, where the job SHALL be skipped so that unreviewed bot-head code never builds under a `packages: write` and `id-token: write` token. On every run it SHALL build and push exactly two tags: `:sha-<short>` where `<short>` is the 7-character short commit SHA of the PR head, and `:pr-<PR_ID>` where `<PR_ID>` is the GitHub pull request number. The `:pr-<PR_ID>` tag MAY be overwritten by subsequent pushes to the same PR; `:sha-<short>` is effectively immutable because the SHA changes when the commit changes. The build SHALL NOT use the GitHub Actions cache.
 
 #### Scenario: New PR opened
 - **WHEN** a contributor opens a pull request whose head commit is `abcd123...`
@@ -31,6 +31,10 @@ The PR image workflow SHALL run on `pull_request` events (types: `opened`, `sync
 #### Scenario: Non-applicable event
 - **WHEN** a comment-only or label-only event fires on a pull request (without code changes)
 - **THEN** the workflow SHALL NOT run an image build
+
+#### Scenario: Bot head skipped
+- **WHEN** a pull request from `deps/cascade` or a `release-please--*` head opens or updates
+- **THEN** the image job SHALL be skipped and SHALL push nothing
 
 ### Requirement: Release image build trigger gated on release-please
 

@@ -55,7 +55,7 @@ job that publishes or signs must not restore the cache:
 - `test-e2e.yml` `publish-fixtures` (D4): `cache: false`.
 
 Jobs that publish nothing keep their caches: Lint, Tests, the e2e test job and Cascade task.
-`docs.yml` calls docs-kit's reusable `publish.yml`, and caching there is docs-kit's to decide.
+`docs.yml` and `release.yml`'s `publish-docs` call docs-kit's reusable `publish.yml` (v0.7.0), which already sets up Go with `cache: false` and uses no other cache.
 
 ### D4. Split `test-e2e.yml` so the suite never holds a write token
 

@@ -56,7 +56,7 @@ export CASCADE_TODAY=2026-10-03
 
 TMP=$(mktemp -d)
 # The test's verdict is the exit status; a cleanup hiccup never replaces it.
-# shellcheck disable=SC2329 # invoked by the EXIT trap
+# shellcheck disable=SC2317,SC2329 # invoked by the EXIT trap
 cleanup() {
   local rc=$?
   chmod -R u+w "$TMP" 2>/dev/null || printf 'warning: chmod of %s failed\n' "$TMP" >&2

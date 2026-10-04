@@ -21,7 +21,7 @@ note() { printf 'deps:cascade: %s\n' "$1" >&2; }
 # Only result() may report "nothing to do": a stray exit 3 from any other command (a
 # resolver predicate outside an if, say) becomes an error.
 RESULT_SET=
-# shellcheck disable=SC2329 # invoked by the EXIT trap
+# shellcheck disable=SC2317,SC2329 # invoked by the EXIT trap
 on_exit() {
   local rc=$?
   if [ "$rc" = 3 ] && [ -z "$RESULT_SET" ]; then
@@ -384,7 +384,7 @@ plan_cue_module() {
 MODULE_DIRS=()
 for d in test/fixtures/modules/*/; do
   d=${d%/}
-  [ -f "$d/identity/identity.cue" ] && [ -f "$d/cue.mod/module.cue" ] || continue
+  if [ ! -f "$d/identity/identity.cue" ] || [ ! -f "$d/cue.mod/module.cue" ]; then continue; fi
   MODULE_DIRS+=("$d")
 done
 [ "${#MODULE_DIRS[@]}" -gt 0 ] || die "no fixture modules under test/fixtures/modules"
@@ -596,11 +596,11 @@ if [ -f "$INSTALL_DOC" ]; then
   doc_cat=$(yaml_version_after "$CATKEY:" <"$SAMPLE_PLATFORM")
   doc_core=$(cue_dep_v "$COREKEY" <"$REPRESENTATIVE")
   while IFS= read -r v; do
-    [ -n "$v" ] && [ "$v" != "$doc_cat" ] || continue
+    if [ -z "$v" ] || [ "$v" = "$doc_cat" ]; then continue; fi
     warn - "\`$INSTALL_DOC\` example output still names catalog \`$v\`; the sample Platform pins \`$doc_cat\`"
   done < <(doc_versions catalog | LC_ALL=C sort -u)
   while IFS= read -r v; do
-    [ -n "$v" ] && [ "$v" != "$doc_core" ] || continue
+    if [ -z "$v" ] || [ "$v" = "$doc_core" ]; then continue; fi
     warn - "\`$INSTALL_DOC\` example output still names core \`$v\`; \`$REPRESENTATIVE\` pins \`$doc_core\`"
   done < <(doc_versions core | LC_ALL=C sort -u)
 fi

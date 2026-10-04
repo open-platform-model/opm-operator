@@ -12,7 +12,7 @@ The repository SHALL carry the operator's OPM module at the path `opmodel.dev/mo
 #### Scenario: The operator version is read without a render
 
 - **WHEN** a tool evaluates the module's operator-version value from the source tree, with no cluster and no instance
-- **THEN** it reads one operator release version, such as `1.0.0-beta.5`, and the tag and digest the module renders the image with
+- **THEN** it reads one operator release version, such as `1.0.0-beta.6`, and the tag and digest the module renders the image with
 
 #### Scenario: The rendered image matches the named release
 
@@ -98,6 +98,11 @@ The CRDs the module renders SHALL be identical, in `spec` and in the controller-
 - **WHEN** a generated CRD carries a field the catalog's CRD resource does not accept, such as `spec.conversion`
 - **THEN** the render fails naming that field, instead of rendering the CRD without it
 
+#### Scenario: CRD metadata the catalog cannot carry refuses the render
+
+- **WHEN** a generated CRD carries a metadata field other than its name and annotations, such as `metadata.labels`
+- **THEN** the render fails naming the CRD and the field, instead of dropping it
+
 ### Requirement: The controller's RBAC is the RBAC it declares
 
 The rules of every Role and ClusterRole the module renders SHALL equal the rules of the corresponding role in `config/rbac` of the same tree: `opm-operator-manager-role` the rules `task dev:manifests` generates from the controller's RBAC markers, and the other seven roles the rules of their `config/rbac` files. The module SHALL hold no hand-written rule, and SHALL grant the controller's ServiceAccount no rule beyond those.
@@ -147,12 +152,17 @@ The pod template the module renders SHALL satisfy the Kubernetes Pod Security `r
 
 ### Requirement: The controller's pod and Service stay those of the kustomize tree
 
-While `config/manager` and `config/default` still produce the operator's install manifest, the controller Deployment's pod spec and the metrics Service the module renders SHALL equal those of a kustomize build of `config/default`, apart from the image, labels, the selector, the fields the catalog sets to Kubernetes API defaults, and the bindings' names. A test SHALL compare them on every pull request, so the two sources of the install shape cannot drift apart before the module becomes the only one.
+While `config/manager` and `config/default` still produce the operator's install manifest, the set of objects the module renders, the controller Deployment's spec and pod spec, and the metrics Service SHALL equal those of a kustomize build of `config/default`, apart from the image, labels, the selector, the fields the catalog sets to Kubernetes API defaults, and the bindings' names (a binding is matched by its role and subjects). A test SHALL compare them on every pull request, so the two sources of the install shape cannot drift apart before the module becomes the only one.
 
 #### Scenario: A manifest-only edit fails the test
 
 - **WHEN** a pull request changes the manager container's arguments, probes, environment, volumes or security context in `config/manager` and not in the module
 - **THEN** the module's render test fails naming the differing field
+
+#### Scenario: An object added to the kustomize tree only fails the test
+
+- **WHEN** a pull request adds an object to `config/default`, such as a binding in `config/rbac` that grants the controller's ServiceAccount an existing role, and not to the module
+- **THEN** the module's render test fails naming the object, a binding by its role and subjects
 
 ### Requirement: The operator's tuning is typed instance values
 

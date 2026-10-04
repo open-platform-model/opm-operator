@@ -44,3 +44,11 @@
 ## 6. Follow-up
 
 - [x] 6.1 Open an opm-operator issue (it is not done in this change) for the follow-up change that renders the five administrator ClusterRoles through `resources/v1beta1 #Role` with `subjects` omitted once a catalog release carries catalog_opm `add-subjectless-roles`: pin that release, drop the `admin-roles` raw-objects component keeping every kind and name, restore the spec rule that no component uses the raw-objects resource, and ship it as a module patch release. Name the issue in the PR body and in design.md, "The five administrator ClusterRoles stay raw objects until the catalog can render them"
+
+## 7. Review fixes (PR #216)
+
+- [x] 7.1 Parity: compare the rendered object set with the kustomize build of `config/default` (bindings matched by role and subjects) and the Deployment spec outside the pod spec; a binding added to `config/rbac` only, and a replica change in `config/manager` only, fail naming it
+- [x] 7.2 `#config` refuses a CPU string of cores (`"4"`, `"0.5"`) naming the field and the accepted forms; the memory refusal names `<n>Mi` and `<n>Gi` and covers `"4G"` and `"1.5Gi"`
+- [x] 7.3 The CRDs component refuses CRD metadata other than the name and annotations, naming the CRD and the field
+- [x] 7.4 `task operator-module:drift` runs `cue fmt --check` over the module; `dev:test:local` gets kustomize; the drift report names unquoted keys
+- [x] 7.5 README: vetting and building the module with the cli's instance flags; follow-up issue #219 for the module's pins in `task deps:cascade`

@@ -10,9 +10,9 @@
 
 ## 2. Document the refusal
 
-- [ ] 2.1 Add a `Ready`: `SelfManagementRefused` row to `docs/site/diagnostics/operator-conditions.md` after the `ManagedExternally` row, in the page's outline style (ModuleInstance; False, Stalled=True; the three signals, the leftover-finalizer release, the fix "set `spec.owner` to `cli`"; Check against `internal/reconcile/owninstance.go`, `internal/status/conditions.go`); verify the row renders in `task docs:bundle`.
-- [ ] 2.2 In `docs/site/operating/deletion-and-pruning.md`, add to the enforcement list near "A CLI-managed ModuleInstance never gets `opmodel.dev/cleanup`" that the operator's own instance never keeps it and is never pruned by the operator; in `docs/site/start/install-the-operator.md` line 8, say the operator applies every instance whose owner is absent or `operator` except the instance that deploys the operator. Verify with `grep -n "own instance\|deploys the operator" docs/site`.
-- [ ] 2.3 `task docs:bundle:check dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(site): explain the operator's refusal of its own instance`
+- [x] 2.1 Add a `Ready`: `SelfManagementRefused` row to `docs/site/diagnostics/operator-conditions.md` after the `ManagedExternally` row, in the page's outline style (ModuleInstance; False, Stalled=True; the three signals, the leftover-finalizer release, the fix "set `spec.owner` to `cli`"; Check against `internal/reconcile/owninstance.go`, `internal/status/conditions.go`); verify the row renders in `task docs:bundle`.
+- [x] 2.2 In `docs/site/operating/deletion-and-pruning.md`, add to the enforcement list near "A CLI-managed ModuleInstance never gets `opmodel.dev/cleanup`" that the operator's own instance never keeps it and is never pruned by the operator; in `docs/site/start/install-the-operator.md` line 8, say the operator applies every instance whose owner is absent or `operator` except the instance that deploys the operator. Verify with `grep -n "own instance\|deploys the operator" docs/site`.
+- [x] 2.3 `task docs:bundle:check dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(site): explain the operator's refusal of its own instance`
 
 ## 3. Archive
 

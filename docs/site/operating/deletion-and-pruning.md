@@ -143,6 +143,7 @@ Check against: cli/internal/cmd/operator/uninstall.go, cli/internal/operator/uni
 - `spec.prune` defaults to false: CRD schema, a boolean with no default.
 - `spec.owner` is `cli` or `operator` only: CRD enum validation.
 - A CLI-managed ModuleInstance never gets `opmodel.dev/cleanup`: the operator's reconciler, which checks the owner before registering the finalizer.
+- The operator's own instance, the one that deploys the operator, never keeps `opmodel.dev/cleanup` and is never pruned by the operator, whatever its owner says: the operator's reconciler, which refuses that instance before registering the finalizer and releases a leftover finalizer without pruning.
 - The operator deletes on delete only with `spec.prune`: the operator's reconciler.
 - The operator never deletes Namespaces or CRDs, or objects whose labels disagree: the operator's prune.
 - An operator-managed delete needs a ready operator: the `opm instance delete` command. Nothing guards `kubectl delete`.

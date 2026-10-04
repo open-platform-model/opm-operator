@@ -30,6 +30,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
+	cueerrors "cuelang.org/go/cue/errors"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/mod/semver"
@@ -224,7 +225,14 @@ func render(dir, name, namespace, values string) ([]obj, error) {
 // and fails the spec on any error.
 func mustRender(dir string) []obj {
 	GinkgoHelper()
-	objs, err := render(dir, instanceName, instanceNamespace, "{}")
+	return mustRenderWith(dir, "{}")
+}
+
+// mustRenderWith renders the module with values (a CUE struct) for its fixed
+// instance and fails the spec on any error.
+func mustRenderWith(dir, values string) []obj {
+	GinkgoHelper()
+	objs, err := render(dir, instanceName, instanceNamespace, values)
 	Expect(err).NotTo(HaveOccurred())
 	return objs
 }
@@ -483,4 +491,13 @@ func list(m map[string]any, path ...string) []any {
 func dict(m map[string]any, path ...string) map[string]any {
 	d, _ := lookup(m, path...).(map[string]any)
 	return d
+}
+
+// errText is an error's message with every CUE error's path and positions,
+// the detail a frontend prints for a refused value.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error() + "\n" + cueerrors.Details(err, nil)
 }

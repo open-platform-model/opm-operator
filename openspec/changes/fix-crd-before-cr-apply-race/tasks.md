@@ -42,7 +42,7 @@ Run the binary from `test/integration/apply`.
 
 ## 2. Fix: bounded discovery retry in apply.Apply (internal/apply)
 
-- [ ] 2.1 Red first, in a new `internal/apply/apply_test.go` (package `apply`).
+- [x] 2.1 Red first, in a new `internal/apply/apply_test.go` (package `apply`).
   - Table tests for `pendingCRDKind` (design.md D2). Rows:
     - true for a `DryRunErr`-like `fmt.Errorf("...: %w", &meta.NoKindMatchError{...})` whose GroupKind a CRD in the set defines.
     - true for a `*apiutil.ErrResourceDiscoveryFailed` holding a NotFound for the CRD's group.
@@ -59,7 +59,7 @@ Run the binary from `test/integration/apply`.
     - A non-no-match error and a no-match for a kind outside the set: one attempt each.
 
   Verify: with stubs for `pendingCRDKind` that return false and an empty ledger, `go test ./internal/apply -run 'PendingCRDKind|Ledger|DiscoveryRetry'` fails on the true rows, the ledger row and the retry tests. Record the failing output.
-- [ ] 2.2 In `internal/apply/apply.go`, implement `crdKinds`, `pendingCRDKind`, the action ledger and the retry loop of design.md D3:
+- [x] 2.2 In `internal/apply/apply.go`, implement `crdKinds`, `pendingCRDKind`, the action ledger and the retry loop of design.md D3:
   - Package variables `discoveryRetryInterval = 500 * time.Millisecond` and `discoveryRetryTimeout = 10 * time.Second`.
   - A plain loop: every attempt gets the caller's `ctx`; the bound starts at the first retryable failure and limits only when a new attempt may start; the wait selects on `ctx.Done()`.
   - Return the last no-match error, wrapped `failed to apply resources: %w`, when the bound or the context ends the retry.
@@ -68,17 +68,17 @@ Run the binary from `test/integration/apply`.
   Rewrite the `Apply` doc comment. It states the stage model inline (no `docs/design/flux-ssa-staging.md`) and the discovery retry with its bound.
 
   Verify: `go test ./internal/apply` passes.
-- [ ] 2.3 In `test/integration/apply/apply_test.go`:
+- [x] 2.3 In `test/integration/apply/apply_test.go`:
   - Flip the 1.2 spec to "applies the custom resource once discovery serves its kind". Under the 1 s lag, `Apply` succeeds, `result.Created` is 2, the call took at least the lag, and the Gadget exists.
-  - Add "fails at once for a custom resource whose CRD is not in the set". The set holds a custom resource of an unserved group and kind plus an unrelated CRD (a different group and kind), so the GroupKind match is exercised, not the empty-set short-circuit. `Apply` returns a no-match error in under 2 s.
-  - Add "returns the no-match error when the context ends before discovery serves the kind". Use a lag of 1 h and a `context.WithTimeout` of 1750 ms, between retry ticks. The error wraps a NoKindMatch for the kind and `meta.IsNoMatchError` holds. The 10 s bound itself is covered by the 2.1 unit test.
+  - Add "fails at once for a custom resource whose CRD is not in the set". The set holds a custom resource of an unserved group and kind plus an unrelated CRD (a different group and kind), so the GroupKind match is exercised, not the empty-set short-circuit. The spec establishes the unrelated CRD first, so only the failure path is timed, and `Apply` returns a no-match error in under 5 s, half the retry bound (2 s left too little room for a loaded CI host).
+  - Add "returns the no-match error when the context ends before discovery serves the kind". Use its own kind (`never.example.com`, `Doohickey`), establish the CRD first so the deadline covers only the retry, then a lag of 1 h and a `context.WithTimeout` of 1750 ms, between retry ticks. The error wraps a NoKindMatch for the kind and `meta.IsNoMatchError` holds. The 10 s bound itself is covered by the 2.1 unit test.
 
   Verify: `go test ./test/integration/apply/...` passes.
-- [ ] 2.4 Runs after the fix, on envtest 1.36.2:
+- [x] 2.4 Runs after the fix, on envtest 1.36.2:
   - Run the flipped spec 30 times. Verify 30 of 30 pass.
   - Run the stress spec and the Widget spec (focus `apply the CRD before the custom resource`) 30 times serially each, and the whole suite 64 times at `xargs -P 24`. Verify 0 failures.
   - Record the counts in design.md D5 beside the before counts, and state what they show and do not show (D5, "What the evidence shows").
-- [ ] 2.5 Update design.md Risks if the run times in 2.4 show the retry adding time to the unlagged Widget spec. It should add none, because the first attempt starts at once.
+- [x] 2.5 Update design.md Risks if the run times in 2.4 show the retry adding time to the unlagged Widget spec. It should add none, because the first attempt starts at once.
 - [ ] 2.6 Run `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(apply): wait for discovery of a CRD applied in the same set`. The body says:
   - A CRD can be Established before discovery serves its kind, so a custom resource in the same set failed its dry run with "no matches for kind".
   - `apply.Apply` now retries the staged apply, starting no new attempt after 10s, only for a kind that a CRD in the set defines; each attempt keeps the caller's context.

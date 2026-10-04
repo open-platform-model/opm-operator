@@ -17,6 +17,8 @@ limitations under the License.
 package apply_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -319,17 +321,62 @@ var _ = Describe("Apply", func() {
 	})
 
 	Context("When discovery serves a new CRD's kind late", func() {
-		It("reproduces the no-match failure of a single staged apply", func() {
+		It("applies the custom resource once discovery serves its kind", func() {
+			const lag = time.Second
 			crd := newTestCRD("lag.example.com", "Gadget", "gadgets")
 			gadget := newTestCustomResource("lag.example.com", "Gadget", "lag-gadget")
 			DeferCleanup(deleteCRDsAndWait, crd)
-			lagRM := newLaggingResourceManager(schema.GroupKind{Group: "lag.example.com", Kind: "Gadget"}, time.Second)
+			lagRM := newLaggingResourceManager(schema.GroupKind{Group: "lag.example.com", Kind: "Gadget"}, lag)
 
 			By("applying the custom resource and its CRD while discovery lags the CRD")
-			_, err := apply.Apply(ctx, lagRM, []*unstructured.Unstructured{gadget, crd}, false)
+			start := time.Now()
+			result, err := apply.Apply(ctx, lagRM, []*unstructured.Unstructured{gadget, crd}, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(time.Since(start)).To(BeNumerically(">=", lag))
+			Expect(result.Created).To(Equal(2))
+
+			By("verifying the custom resource exists in the cluster")
+			fetched := newTestCustomResource("lag.example.com", "Gadget", "lag-gadget")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "lag-gadget"}, fetched)).To(Succeed())
+		})
+
+		It("fails at once for a custom resource whose CRD is not in the set", func() {
+			unrelated := newTestCRD("unrelated.example.com", "Thing", "things")
+			gizmo := newTestCustomResource("nocrd.example.com", "Gizmo", "orphan-gizmo")
+			DeferCleanup(deleteCRDsAndWait, unrelated)
+
+			By("establishing the unrelated CRD first, so only the failure path is timed")
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{unrelated}, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("applying a custom resource whose kind no CRD in the set defines")
+			start := time.Now()
+			_, err = apply.Apply(ctx, rm, []*unstructured.Unstructured{gizmo, unrelated}, false)
 			Expect(err).To(HaveOccurred())
 			Expect(meta.IsNoMatchError(err)).To(BeTrue(), "error: %v", err)
-			Expect(err.Error()).To(ContainSubstring(`no matches for kind "Gadget" in version "lag.example.com/v1"`))
+			Expect(time.Since(start)).To(BeNumerically("<", 5*time.Second))
+		})
+
+		It("returns the no-match error when the context ends before discovery serves the kind", func() {
+			gk := schema.GroupKind{Group: "never.example.com", Kind: "Doohickey"}
+			crd := newTestCRD(gk.Group, gk.Kind, "doohickeys")
+			doohickey := newTestCustomResource(gk.Group, gk.Kind, "never-doohickey")
+			DeferCleanup(deleteCRDsAndWait, crd)
+
+			By("establishing the CRD first, so the deadline only covers the retry")
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{crd}, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("applying under a deadline that falls between two retries while discovery never serves the kind")
+			lagRM := newLaggingResourceManager(gk, time.Hour)
+			applyCtx, cancelApply := context.WithTimeout(ctx, 1750*time.Millisecond)
+			defer cancelApply()
+			_, err = apply.Apply(applyCtx, lagRM, []*unstructured.Unstructured{doohickey, crd}, false)
+			Expect(err).To(HaveOccurred())
+			Expect(meta.IsNoMatchError(err)).To(BeTrue(), "error: %v", err)
+			kindErr, ok := errors.AsType[*meta.NoKindMatchError](err)
+			Expect(ok).To(BeTrue(), "error: %v", err)
+			Expect(kindErr.GroupKind).To(Equal(gk))
 		})
 	})
 

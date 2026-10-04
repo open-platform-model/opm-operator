@@ -207,7 +207,18 @@ Section 1 lands the lagging mapper with a spec that asserts today's failure, and
 
 The stress spec gave the discovery window 1,880 chances (94 applies of 20 kinds) on the CI envtest version and never lost the race. The race did not reproduce naturally on this host.
 
-**What the evidence shows.** If the stress loop never reproduces the race before the fix, then the evidence that the fix closes the real window is the code-path argument (Context, D2) plus the single CI log, and nothing more. The lag spec then proves the retry handles the error shape that log shows.
+**Runs after the fix** (same envtest, `p3-operator-flaky-runs.sh after`):
+
+| Spec | Load | Runs | Failures | Time for 30 serial runs (before → after) |
+| --- | --- | --- | --- | --- |
+| lag spec (now asserts success under a 1 s lag) | serial | 30 | 0 | 168.6 s → 206.2 s, the 1 s lag plus a retry tick per run |
+| stress spec | serial | 30 | 0 | 178.4 s → 191.4 s |
+| Widget spec | serial | 30 | 0 | 172.5 s → 177.6 s |
+| whole suite | `xargs -P 24` | 64 | 0 | |
+
+The V(1) retry line shows under `-ginkgo.v` (2 retries in a lag spec run), and 15 more verbose runs of the stress and Widget specs logged no retry at all, so the retry never fired outside the lag spec. The stress and Widget time differences are run-to-run noise in envtest start-up, not retry time.
+
+**What the evidence shows.** The stress loop never reproduced the race, before or after the fix. So the evidence that the fix closes the real window is the code-path argument (Context, D2) plus the single CI log, and nothing more. The lag spec proves the retry handles the error shape that log shows, and the after runs show the fix changes nothing when discovery keeps up.
 
 ## Risks / Trade-offs
 

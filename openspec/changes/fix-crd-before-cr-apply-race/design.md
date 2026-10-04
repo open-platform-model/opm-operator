@@ -126,7 +126,7 @@ var (
 type stagedApply func(ctx context.Context) (*fluxssa.ChangeSet, error)
 
 func applyWithDiscoveryRetry(ctx context.Context, apply stagedApply, resources []*unstructured.Unstructured) (*ApplyResult, error) {
-	ledger := newActionLedger() // first created or configured action per object
+	ledger := actionLedger{} // first created or configured action per object
 	var pending error            // the last retryable no-match
 	var deadline time.Time       // set at the first retryable failure
 	for {
@@ -146,10 +146,12 @@ func applyWithDiscoveryRetry(ctx context.Context, apply stagedApply, resources [
 			deadline = time.Now().Add(discoveryRetryTimeout)
 		}
 		logf.FromContext(ctx).V(1).Info("Waiting for the API server to serve a custom resource kind", "error", err.Error())
+		timer := time.NewTimer(discoveryRetryInterval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, fmt.Errorf("failed to apply resources: %w", pending)
-		case <-time.After(discoveryRetryInterval):
+		case <-timer.C:
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("failed to apply resources: %w", pending)

@@ -50,7 +50,7 @@ The task SHALL move exactly these pins:
   A file whose catalog is above `K` SHALL NOT be lowered.
 - **Core.** It moves core in those modules and in `test/fixtures/catalogs/provider/cue.mod/module.cue` to the version that the file's catalog after the move pins (the higher of the file's catalog and `K`; `K` for the provider fixture), and only when that is greater than the file's own core. Core SHALL never come from the newest published core directly.
 - **The opm CLI.** It writes `.opm-cli-version` last.
-- **The resource reference.** When it changed any file under `config/samples/`, it regenerates the `hack/crdref` block of `docs/site/reference/operator-resources.md` before writing `.opm-cli-version`. If `hack/crdref` fails, it SHALL warn and still produce the rest of the diff.
+- **No regenerated reference.** It SHALL NOT edit `docs/site/reference/operator-resources.md`: the docs bundle generates the resource reference from `config/samples` when it is built.
 
 `cue mod get` SHALL name only `opmodel.dev/*` and `testing.opmodel.dev/*` modules, each with an exact version, and SHALL run, followed by one `cue mod tidy`, only in a module where a pin moved. Third-party pins SHALL never be named. A third-party pin that `tidy` raises, adds or removes, a change to `go.mod`'s `go` or `toolchain` directive, and a dep a fixture module gains that its modulepackage lacks SHALL each be reported as a warning. The task SHALL never edit an import path or a `@vN` key; a new major SHALL appear only as the resolver's warning.
 
@@ -68,7 +68,7 @@ The task SHALL move exactly these pins:
 
 #### Scenario: Sample Platform moved
 - **WHEN** the task moves the catalog `version:` in the sample Platform
-- **THEN** `go run ./hack/crdref -check` passes on the resulting tree
+- **THEN** `docs/site/reference/operator-resources.md` is unchanged, and `task docs:bundle` on the resulting tree shows the moved version in the Platform entry's example
 
 #### Scenario: Tidy adds a dependency
 - **WHEN** `go mod tidy` or `cue mod tidy` adds or removes a third-party dependency, or `go get` raises the `go` or `toolchain` directive
@@ -144,31 +144,6 @@ It SHALL only read from registries and SHALL never publish or seed. When an upst
 - **WHEN** the target catalog's `language.version` is newer than `.github/workflows/test.yml`'s `CUE_VERSION`
 - **THEN** the task still moves the pin and writes a warning naming both versions
 
-### Requirement: Title and body come from the shared resolver
-`task deps:cascade:title` and `task deps:cascade:body` SHALL call the resolver's `title` and `body` subcommands with `.tasks/cascade/classes` and `.tasks/cascade/pins.sh`.
-- **`classes`** SHALL classify `.opm-cli-version` as release-tool and `config/samples/`, `test/`, any `testdata/` directory, `*_test.go` and the generated `docs/site/reference/operator-resources.md` as test. Any other path, including `go.mod` and `go.sum`, SHALL be shipped.
-- **`pins.sh <ref>`** SHALL print one row per logical pin for the working tree (`WORKTREE`) or a git ref, as `<pin-key>`, `<display>`, `<class>`, `<v-prefixed version>`, `<labels>` separated by tabs. The rows are library (shipped), the opm catalog (test, from the sample Platform), core (test, from `test/fixtures/modules/hello`) and the opm CLI (release-tool).
-
-#### Scenario: Library and catalog moved
-- **WHEN** the diff against `origin/main` moves library to `v1.0.0-beta.3` and the catalog to `v4.5.1`
-- **THEN** `task -x deps:cascade:title` prints `fix(deps): bump library to v1.0.0-beta.3 and opm catalog to v4.5.1`
-
-#### Scenario: Only fixtures moved
-- **WHEN** the diff changes only paths under `test/` and `config/samples/`
-- **THEN** the title type is `test(fixtures)`
-
-#### Scenario: Only samples and fixtures moved, reference regenerated
-- **WHEN** the diff changes only paths under `test/` and `config/samples/` and the regenerated `docs/site/reference/operator-resources.md`
-- **THEN** the title type is `test(fixtures)`
-
-#### Scenario: Only the opm CLI moved
-- **WHEN** the diff changes only `.opm-cli-version`
-- **THEN** the title type is `ci(deps)`
-
-#### Scenario: Pin report agrees between tree and HEAD
-- **WHEN** the tree is clean
-- **THEN** `pins.sh WORKTREE` and `pins.sh HEAD` print the same rows
-
 ### Requirement: deps:cascade is tested offline in required CI and online on demand
 `task deps:cascade:test` SHALL run `deps:cascade` in throwaway copies of the tree against the contract's stub resolver, and SHALL report `PASS` or `FAIL` per scenario. It SHALL exit 0 only when every scenario passes. It SHALL fail when the stub's `sha256sum` differs from the contract's checksum. With `CASCADE_TEST_SET=offline` it SHALL need no GHCR or module proxy access beyond a warm Go module cache, and it SHALL run in the `Lint` job of `.github/workflows/lint.yml`, the check workspace RELEASING.md makes required. It SHALL NOT need the real resolver or a `.github` checkout, except for the title and body check. The full set SHALL run in a separate, non-required workflow on changes to the cascade files, by hand, and weekly. That set SHALL include older pins restored to the tree's versions with the expected version-advance diff, frozen pins, and the title and body checked against the real resolver.
 
@@ -183,3 +158,28 @@ It SHALL only read from registries and SHALL never publish or seed. When an upst
 #### Scenario: Stub drift caught
 - **WHEN** `.tasks/cascade/testdata/stub-resolve.sh` differs by one byte from the contract's text
 - **THEN** `task -x deps:cascade:test` fails naming that file
+
+### Requirement: Title and body come from the shared resolver and the contract's path classes
+`task deps:cascade:title` and `task deps:cascade:body` SHALL call the resolver's `title` and `body` subcommands with `.tasks/cascade/classes` and `.tasks/cascade/pins.sh`.
+- **`classes`** SHALL classify `.opm-cli-version` as release-tool and `config/samples/`, `test/`, any `testdata/` directory and `*_test.go` as test, the contract's opm-operator block and nothing more. Any other path, including `go.mod` and `go.sum`, SHALL be shipped.
+- **`pins.sh <ref>`** SHALL print one row per logical pin for the working tree (`WORKTREE`) or a git ref, as `<pin-key>`, `<display>`, `<class>`, `<v-prefixed version>`, `<labels>` separated by tabs. The rows are library (shipped), the opm catalog (test, from the sample Platform), core (test, from `test/fixtures/modules/hello`) and the opm CLI (release-tool).
+
+#### Scenario: Library and catalog moved
+- **WHEN** the diff against `origin/main` moves library to `v1.0.0-beta.3` and the catalog to `v4.5.1`
+- **THEN** `task -x deps:cascade:title` prints `fix(deps): bump library to v1.0.0-beta.3 and opm catalog to v4.5.1`
+
+#### Scenario: Only fixtures moved
+- **WHEN** the diff changes only paths under `test/` and `config/samples/`
+- **THEN** the title type is `test(fixtures)`
+
+#### Scenario: Only the sample moved, no page regenerated
+- **WHEN** the task moves only the sample Platform's catalog `version:`, so the diff changes only paths under `config/samples/` and leaves `docs/site/` untouched
+- **THEN** the title type is `test(fixtures)`
+
+#### Scenario: Only the opm CLI moved
+- **WHEN** the diff changes only `.opm-cli-version`
+- **THEN** the title type is `ci(deps)`
+
+#### Scenario: Pin report agrees between tree and HEAD
+- **WHEN** the tree is clean
+- **THEN** `pins.sh WORKTREE` and `pins.sh HEAD` print the same rows

@@ -38,3 +38,36 @@ The task SHALL move exactly these pins:
 #### Scenario: Third-party pins untouched
 - **WHEN** the task runs `cue mod get` in a fixture module
 - **THEN** the command names no module outside `opmodel.dev/` and `testing.opmodel.dev/`
+
+## REMOVED Requirements
+
+### Requirement: Title and body come from the shared resolver
+**Reason**: `.tasks/cascade/classes` no longer lists `docs/site/reference/operator-resources.md`, since the cascade no longer regenerates it, and the scenario "Only samples and fixtures moved, reference regenerated" describes a diff the cascade cannot produce. OpenSpec refuses a MODIFIED that drops a scenario, so the requirement is replaced under a new name.
+**Migration**: "Title and body come from the shared resolver and the contract's path classes" below carries the same subcommands, `pins.sh` rows and scenarios, without the page's class line and with "Only the sample moved, no page regenerated" in place of the dropped scenario.
+
+## ADDED Requirements
+
+### Requirement: Title and body come from the shared resolver and the contract's path classes
+`task deps:cascade:title` and `task deps:cascade:body` SHALL call the resolver's `title` and `body` subcommands with `.tasks/cascade/classes` and `.tasks/cascade/pins.sh`.
+- **`classes`** SHALL classify `.opm-cli-version` as release-tool and `config/samples/`, `test/`, any `testdata/` directory and `*_test.go` as test, the contract's opm-operator block and nothing more. Any other path, including `go.mod` and `go.sum`, SHALL be shipped.
+- **`pins.sh <ref>`** SHALL print one row per logical pin for the working tree (`WORKTREE`) or a git ref, as `<pin-key>`, `<display>`, `<class>`, `<v-prefixed version>`, `<labels>` separated by tabs. The rows are library (shipped), the opm catalog (test, from the sample Platform), core (test, from `test/fixtures/modules/hello`) and the opm CLI (release-tool).
+
+#### Scenario: Library and catalog moved
+- **WHEN** the diff against `origin/main` moves library to `v1.0.0-beta.3` and the catalog to `v4.5.1`
+- **THEN** `task -x deps:cascade:title` prints `fix(deps): bump library to v1.0.0-beta.3 and opm catalog to v4.5.1`
+
+#### Scenario: Only fixtures moved
+- **WHEN** the diff changes only paths under `test/` and `config/samples/`
+- **THEN** the title type is `test(fixtures)`
+
+#### Scenario: Only the sample moved, no page regenerated
+- **WHEN** the task moves only the sample Platform's catalog `version:`, so the diff changes only paths under `config/samples/` and leaves `docs/site/` untouched
+- **THEN** the title type is `test(fixtures)`
+
+#### Scenario: Only the opm CLI moved
+- **WHEN** the diff changes only `.opm-cli-version`
+- **THEN** the title type is `ci(deps)`
+
+#### Scenario: Pin report agrees between tree and HEAD
+- **WHEN** the tree is clean
+- **THEN** `pins.sh WORKTREE` and `pins.sh HEAD` print the same rows

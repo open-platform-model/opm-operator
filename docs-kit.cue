@@ -5,11 +5,9 @@ bundles: "opm-operator": {
 	version: {from: "tag", prefix: "v"}
 	sources: [
 		// The authored pages ship in the same bundle (docs-kit DESIGN decision
-		// 20). Until the site reads this bundle, the committed page carries
-		// crdref's block, which would collide with the crd page, so it is
-		// excluded; after the site switch the block and this exclude go, and
-		// the authored intro then completes the generated page.
-		{kind: "markdown", dir: "docs/site", exclude: ["reference/operator-resources.md"]},
+		// 20). docs/site/reference/operator-resources.md holds only front matter
+		// and an intro, which complete the crd source's generated page (C15).
+		{kind: "markdown", dir: "docs/site"},
 		{
 			kind:        "crd"
 			dir:         "./config/crd/bases"
@@ -17,7 +15,7 @@ bundles: "opm-operator": {
 			page:        "reference/operator-resources.md"
 			title:       "Operator resources"
 			description: "One generated entry per operator resource kind: ModuleInstance, ModulePackage, Platform and TransformerRegistration."
-			weight:      7 // the committed page's weight, so the page keeps its place before the intro completes it
+			weight:      7 // the committed page's weight
 			order: ["ModuleInstance", "ModulePackage", "Platform", "TransformerRegistration"]
 			// The hello fixture is a test module, not an example to copy.
 			hideSamplesMatching: ["testing.opmodel.dev"]

@@ -23,7 +23,7 @@ Reconcile phase impact: none. No operator code changes. The fixtures exercise Re
 
 **Non-Goals:**
 
-- Bumping the library so that released operators accept a rendered claim (D4).
+- Bumping the library in this change's own commits (D4: opm-operator#213 does it, and lands first).
 - An e2e spec for acceptance and activation (D5).
 - Changing `hack/fixtures.sh` or what the cascade moves. Only its test's golden list grows by the two backup modules, which the cascade already advances.
 
@@ -38,6 +38,8 @@ Reconcile phase impact: none. No operator code changes. The fixtures exercise Re
 Read `.tasks/cascade/cascade.sh`: `task deps:cascade` advances the `provider` catalog's version whenever core moves. A module that pins it would then need the unpublished new build, the same gap on every cascade PR. A literal claim naming `provider` would name a build the PR's job-local registry no longer holds, and the registry-backed spec would fail.
 
 **Decision**: The backup provider is a catalog fixture of its own, `testing.opmodel.dev/catalogs/operator/backup@v0`, which the cascade does not touch. `backup_provider` authors its claim with opm's `#TransformerRegistration`, `catalog` and `version` as literals and `provides` as opm's backup trait FQN. It depends on core and the opm catalog only.
+
+This deviates from 0015:D11:R1 (no field of a rendered registration is authored). The fixture README and the spec requirement say so, so nobody copies it as a provider pattern.
 
 **Rationale**: The literal is checked twice. Acceptance re-derives `provides` from the named catalog and refuses a difference (0015:D11). The integration spec (D3) fails when the literal drifts from the catalog fixture's identity package or its transformers, so a hand bump of the catalog must re-pin the claim in the same PR, which Registry Policy rule 3 asks for anyway. The backup catalog's core and opm pins can only trail a platform's, and the build-compatibility check (0015:D8) refuses only a newer requirement, so leaving it off the cascade is safe. The cost: the fixture does not demonstrate `#PreBoundRegistration`. That helper has its own golden fixtures in the opm catalog.
 
@@ -61,7 +63,7 @@ Read `.tasks/cascade/cascade.sh`: `task deps:cascade` advances the `provider` ca
 
 The platform store helper gains `generatedPlatformStoreWith(k, registry, extra...)` for case 3.
 
-**Rationale**: Running the `TransformerRegistrationReconciler` against the real Kernel would fail today at check 1 (D4). The integration spec proves every fact the fixtures are responsible for, and the cluster run (D4) proves the rest.
+**Rationale**: Running the `TransformerRegistrationReconciler` against the real Kernel would fail at check 1 on library v1.0.0-beta.1 (D4). The first spec resolves the catalog with the claim's own `catalog` and bare `version`, the inputs acceptance passes, so it fails on that library too. The integration spec proves every fact the fixtures are responsible for, and the cluster run (D4) proves the rest.
 
 ### D4. Released operators refuse the rendered claim
 
@@ -74,7 +76,9 @@ The platform store helper gains `generatedPlatformStoreWith(k, registry, extra..
 
 opm's `#VersionType` is a bare SemVer, so every rendered claim carries one. Library v1.0.0-beta.1 passes the version to `module.NewVersion` unchanged. Library v1.0.0-beta.2 (library#170) canonicalises it first.
 
-**Decision**: Ship the fixtures as they are. The library bump is a `fix(deps)` that releases the operator and belongs to `task deps:cascade`. Once it lands, opm-operator#210 reduces to the doc comment.
+The captured YAML for both runs and for the blocked deletion is on opm-operator#212 (issuecomment-5981329966).
+
+**Decision**: Ship the fixtures as they are, after the library bump. The bump is its own `fix(deps)` pull request, opm-operator#213, so it releases the operator under its own CHANGELOG entry; it merges before this change and before release PR #208, so the release that first carries these manifests in its examples bundle accepts the claim. Until #213 merges, this branch carries its commit, which drops out on a rebase onto `main`. Once it lands, opm-operator#210 reduces to the doc comment.
 
 **Rationale**: The fixtures are correct for the contract as opm renders it. Making them pass on beta.5 would need a `v`-prefixed version, which opm's `#VersionType` refuses.
 
@@ -82,7 +86,7 @@ opm's `#VersionType` is a bare SemVer, so every rendered claim carries one. Libr
 
 **Context**: `test/e2e` can apply both manifests to a kind-backed operator built from the branch.
 
-**Decision**: Not in this change. Built from this branch, the operator still has library v1.0.0-beta.1, so the spec would fail (D4).
+**Decision**: Not in this change. Without library v1.0.0-beta.2 or later the spec would fail (D4), and the spec belongs after that bump is released.
 
 **Rationale**: After the library bump, an e2e spec that applies `backup_provider` and `backup_consumer` and waits for accepted, active and Ready is a small follow-up.
 
@@ -90,4 +94,4 @@ opm's `#VersionType` is a bare SemVer, so every rendered claim carries one. Libr
 
 - **The literal claim can drift** from the backup catalog. Mitigated by the integration spec (D3) and by acceptance (0015:D11).
 - **The backup catalog's pins trail** core and opm. Harmless under 0015:D8 until a core major moves; a hand bump then fixes it.
-- **The ClusterRole in `backup_provider/moduleinstance.yaml`** grants write on every `TransformerRegistration` to one ServiceAccount. That is the point of the fixture (0015:D3 R2), but it is a cluster-wide grant in a sample. The manifest says so.
+- **The ClusterRole in `backup_provider/moduleinstance.yaml`** grants write on every `TransformerRegistration` to one ServiceAccount. That is the point of the fixture (0015:D3:R2), but it is a cluster-wide grant in a sample. The manifest says so.

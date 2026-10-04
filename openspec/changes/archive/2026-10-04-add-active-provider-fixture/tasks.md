@@ -21,3 +21,10 @@ Registry-backed runs below seed a local registry and map only `testing.opmodel.d
 ## 3. Verify and archive
 
 - [x] 3.1 Run the repo's verify skill for the change, fix what it raises, then `openspec archive add-active-provider-fixture --yes`, confirm `openspec validate example-test-modules --type spec --strict` passes, and commit `docs(openspec): archive add-active-provider-fixture`.
+
+## 4. Review fixes
+
+- [x] 4.1 Open the library bump as its own `fix(deps)` PR (opm-operator#213) and carry its commit here until it merges; record it in design.md D4 and the proposal.
+- [x] 4.2 Resolve the backup catalog in the first spec with the claim's own `catalog` and `version`, as acceptance does.
+- [x] 4.3 Say in the fixture README, `AGENTS.md`, the spec requirement and design.md D1 that the literal claim deviates from 0015:D11:R1 on purpose.
+- [x] 4.4 Post the captured cluster YAML on opm-operator#212 and link it from design.md D4; cite 0015:D3:R2; name the cluster-wide grant in `backup_provider/moduleinstance.yaml`; say the change adds two manifests to the next release's examples bundle.

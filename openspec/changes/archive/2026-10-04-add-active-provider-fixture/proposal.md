@@ -16,12 +16,12 @@ The provider catalog fixture is unchanged. Design D1 says why the backup provide
 
 ## Classification
 
-No product code changes: no API type, controller, flag or `dist/install.yaml` content. The fixtures and the spec are test-only, so the change ships under a `test(fixtures)` title and releases nothing (`AGENTS.md`, "Commit type decides the release"). After GA this would also be no release.
+No product code changes: no API type, controller, flag or `dist/install.yaml` content. The fixtures and the spec are test-only, so the change ships under a `test(fixtures)` title and cuts no release (`AGENTS.md`, "Commit type decides the release"). It does change the next release's assets: `task examples:bundle` adds the two new `moduleinstance.yaml` files, one with a ClusterRole and ClusterRoleBinding, to that release's examples bundle. After GA this would also cut no release.
 
 ## Depends on / gates
 
 - **Gates:** `task dev:fmt dev:vet dev:lint dev:test`, `task examples:check` (`hack/fixtures.sh check`). No API type changes, so `task dev:manifests dev:generate` and `task docs:bundle:check` do not apply beyond the standard run.
-- **Released operators refuse the rendered claim.** Measured on v1.0.0-beta.5: `CatalogUnresolved`, because library v1.0.0-beta.1 does not parse the bare SemVer that opm's transformer renders in `spec.version` (opm-operator#210). Library v1.0.0-beta.2 and later accept it (library#170). The fixture set is correct today and reaches accepted and active on an operator built with library v1.0.0-beta.4 (design D4). The library bump is the cascade's to make; this change does not take it.
+- **Released operators refuse the rendered claim.** Measured on v1.0.0-beta.5: `CatalogUnresolved`, because library v1.0.0-beta.1 does not parse the bare SemVer that opm's transformer renders in `spec.version` (opm-operator#210). Library v1.0.0-beta.2 and later accept it (library#170). The fixture set is correct today and reaches accepted and active on an operator built with library v1.0.0-beta.4 (design D4). The library bump is opm-operator#213, a `fix(deps)` of its own that merges before this change, so the next release accepts the claim its examples bundle ships.
 
 ## Capabilities
 
@@ -44,5 +44,5 @@ None.
 - `test/fixtures/modules/README.md`, `AGENTS.md`.
 - `.tasks/cascade/test.sh`: the S2 golden list names the two backup modules, which advance on every cascade like the rest of the fleet.
 - Publishing: on merge, `publish-fixtures.yml` publishes the three new coordinates to GHCR. `task examples:bundle` picks up the two new `moduleinstance.yaml` files as release assets.
-- Downstream: the opm-portal capture uses the published set (`backup_provider`, then `backup_consumer`) once an operator release carries library v1.0.0-beta.2 or later.
+- Downstream: the opm-portal capture uses the published set (`backup_provider`, then `backup_consumer`) once an operator release carries library v1.0.0-beta.2 or later (opm-operator#213).
 - No enhancement decision is implemented here, so there is no `enhancement.yaml`.

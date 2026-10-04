@@ -61,13 +61,14 @@ The repo SHALL carry a catalog fixture under `test/fixtures/catalogs/backup`, de
 
 ### Requirement: The backup fixture set exercises a registration end to end
 
-`backup_provider` SHALL render exactly one `TransformerRegistration`, through opm's `transformer-registration` contract, that names the backup catalog fixture at the version its identity package declares and lists exactly the provider contracts that catalog implements, so a cluster running an operator that resolves the catalog accepts it (0015:D3, 0015:D11). Its `moduleinstance.yaml` SHALL apply it under a ServiceAccount bound to a ClusterRole that may write `transformerregistrations`, since only a platform-team identity may register a provider (0015:D3:R2). `backup_consumer` SHALL attach opm's backup trait, and its render SHALL be refused naming that contract while no provider of it is in the platform's registry (0010:D28), and SHALL succeed with the backup catalog in the registry, rendering through the backup catalog's transformer. A registry-backed integration spec SHALL check all three.
+`backup_provider` SHALL render exactly one `TransformerRegistration`, through opm's `transformer-registration` contract, that names the backup catalog fixture at the version its identity package declares and lists exactly the provider contracts that catalog implements, so a cluster running an operator that resolves the catalog accepts it (0015:D3, 0015:D11). The claim's `catalog`, `version` and `provides` are authored literals, a deliberate deviation from 0015:D11:R1: a module fixture cannot import a catalog fixture version that is new in the same pull request, so a derived claim could not land with a `backup` catalog bump. Its `moduleinstance.yaml` SHALL apply it under a ServiceAccount bound to a ClusterRole that may write `transformerregistrations`, since only a platform-team identity may register a provider (0015:D3:R2). `backup_consumer` SHALL attach opm's backup trait, and its render SHALL be refused naming that contract while no provider of it is in the platform's registry (0010:D28), and SHALL succeed with the backup catalog in the registry, rendering through the backup catalog's transformer. A registry-backed integration spec SHALL check all three.
 
 #### Scenario: The rendered claim fits the backup catalog
 
 - **WHEN** `backup_provider` is rendered as instance `backup-provider` in namespace `default`
 - **THEN** the output is one `TransformerRegistration` named `default.backup-provider`
 - **AND** its `spec.catalog` and `spec.version` equal the backup catalog fixture's `ModulePath` and `Version`
+- **AND** the catalog resolves from the registry with the claim's own `spec.catalog` and bare `spec.version`, as acceptance resolves it
 - **AND** its `spec.provides` equals the provider contracts derived from that catalog build
 - **AND** its `spec.providerRef` names `default/backup-provider`
 

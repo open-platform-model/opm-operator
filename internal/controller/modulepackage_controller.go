@@ -134,9 +134,9 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 //     mapPlatformToModulePackages, so packages blocked on PlatformNotReady recover
 //     promptly when the platform is generated. A status write that changes only a
 //     message or a report such as ContractsFulfilled re-enqueues none. The
-//     generation predicate lives on
-//     For() (not as a global filter) so it does not suppress the Platform watch,
-//     whose trigger (the reconciler's status update) does not bump generation.
+//     generation predicate lives on For() (not as a global filter) so it does
+//     not suppress the Platform watch, whose trigger (the reconciler's status
+//     update) does not bump generation.
 //
 // MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
 // controller's MaxConcurrentReconciles, so phases outside the render (apply,

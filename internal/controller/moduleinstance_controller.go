@@ -169,7 +169,7 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //   - the Ready condition's status (the only True reason is Generated, so the
 //     status alone carries the recovery edge),
 //   - the pin set: status.packageIdentity, the field that identifies the pin
-//     set an instance renders against, and status.registry beside it, so a
+//     set a workload renders against, and status.registry beside it, so a
 //     regression in how the identity is computed cannot silently stop a
 //     re-render under a new pin,
 //   - spec.skewPolicy. An edit bumps metadata.generation before the platform
@@ -186,17 +186,17 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // package and the observedGeneration write that follows renders again.
 //
 // It also passes a status.operatorVersion change. The platform store is in
-// memory, so after an operator upgrade every instance renders into
+// memory, so after an operator upgrade every workload renders into
 // PlatformNotReady before the platform is regenerated, and the status write
 // that follows the regeneration differs only in operatorVersion: that event
 // is what recovers them promptly.
 //
 // The Ready reason and message are excluded: a build failure rewrites the
 // message per error and can move between False reasons, while a refusal
-// keeps the last good package in the store, so neither changes what an
-// instance renders against. ContractsFulfilled is a report too. Create,
+// keeps the last good package in the store, so neither changes what a
+// workload renders against. ContractsFulfilled is a report too. Create,
 // delete and generic events pass, and so does an update whose objects are
-// not Platforms: failing open costs a render per instance, failing closed
+// not Platforms: failing open costs a render per workload, failing closed
 // could leave one blocked.
 func platformConsumedFieldsChanged() predicate.Predicate {
 	return predicate.Funcs{

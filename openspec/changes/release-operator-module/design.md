@@ -280,7 +280,7 @@ Rollback: revert the section's PR. Tags and published module versions stay, as f
 ## Deferred
 
 - **A docs-kit bundle for the module's `#config`.** No owner decision asks for it, and no site reads a module bundle. The module's README documents `#config`. A bundle under `modules/opm_operator/` would also ship inside the published module, because `opm module publish` zips the directory as it is on disk. A later change adds it with its own directory outside the module.
-- **A cosign signature and provenance attestation on the module.** No CUE artifact in the workspace is signed (catalog_opm and opm-modules sign nothing), the cli pins content digests, and signing would add `sha256-*.sig` and `.att` tags to the module's repository that every resolver and `cue mod` lookup would have to ignore. A later change adds it across all CUE artifacts at once if the owner wants it.
+- **A cosign signature and provenance attestation on the module.** No CUE artifact in the workspace is signed (catalog_opm and opm-modules sign nothing), and signing would add `sha256-*.sig` and `.att` tags to the module's repository that every resolver and `cue mod` lookup would have to ignore. A later change adds it across all CUE artifacts at once if the owner wants it.
 
 ## Open Questions
 

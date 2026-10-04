@@ -38,7 +38,7 @@ import (
 // docs-kit.cue follows it.
 func TestDocsKitReconciledByNamesTheControllers(t *testing.T) {
 	stated := readReconciledBy(t, filepath.Join("..", "..", "docs-kit.cue"))
-	scanned, err := scanControllerNames(".")
+	scanned, unnamed, err := scanControllerNames(".")
 	if err != nil {
 		t.Fatalf("scan internal/controller: %v", err)
 	}
@@ -65,6 +65,8 @@ func TestDocsKitReconciledByNamesTheControllers(t *testing.T) {
 		switch {
 		case !inCue:
 			t.Errorf("%s: the %q controller reconciles it, but docs-kit.cue's reconciledBy has no entry", kind, want)
+		case !inCode && unnamed[kind]:
+			t.Errorf("%s: docs-kit.cue's reconciledBy names %q, but the controller for %s has no literal Named(...)", kind, got, kind)
 		case !inCode:
 			t.Errorf("%s: docs-kit.cue's reconciledBy names %q, but no controller in internal/controller calls For(&%s{})", kind, got, kind)
 		case got != want:
@@ -106,13 +108,16 @@ func readReconciledBy(t *testing.T, path string) map[string]string {
 
 // scanControllerNames maps each kind to the name of the controller that
 // reconciles it: a function in dir whose builder chain holds exactly one
-// For(&<pkg>.<Kind>{...}) and one Named("<name>").
-func scanControllerNames(dir string) (map[string]string, error) {
+// For(&<pkg>.<Kind>{...}) and one Named("<name>"). unnamed holds the kinds
+// whose builder calls For once but Named only with a non-literal argument, so
+// the test can say why the kind has no scanned name.
+func scanControllerNames(dir string) (out map[string]string, unnamed map[string]bool, err error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := map[string]string{}
+	out = map[string]string{}
+	unnamed = map[string]bool{}
 	fset := token.NewFileSet()
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -120,23 +125,28 @@ func scanControllerNames(dir string) (map[string]string, error) {
 		}
 		file, err := parser.ParseFile(fset, f, nil, parser.SkipObjectResolution)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
-			kinds, names := builderCalls(fn.Body)
-			if len(kinds) == 1 && len(names) == 1 {
+			kinds, names, nonLiteral := builderCalls(fn.Body)
+			switch {
+			case len(kinds) == 1 && len(names) == 1 && nonLiteral == 0:
 				out[kinds[0]] = names[0]
+			case len(kinds) == 1 && len(names) == 0 && nonLiteral > 0:
+				unnamed[kinds[0]] = true
 			}
 		}
 	}
-	return out, nil
+	return out, unnamed, nil
 }
 
-func builderCalls(body *ast.BlockStmt) (kinds, names []string) {
+// builderCalls collects the For kinds and the literal Named names in body, and
+// counts the Named calls whose argument is not a string literal.
+func builderCalls(body *ast.BlockStmt) (kinds, names []string, nonLiteral int) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
@@ -156,13 +166,16 @@ func builderCalls(body *ast.BlockStmt) (kinds, names []string) {
 				}
 			}
 		case "Named":
-			if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-				if s, err := strconv.Unquote(lit.Value); err == nil {
-					names = append(names, s)
-				}
+			lit, ok := call.Args[0].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				nonLiteral++
+				break
+			}
+			if s, err := strconv.Unquote(lit.Value); err == nil {
+				names = append(names, s)
 			}
 		}
 		return true
 	})
-	return kinds, names
+	return kinds, names, nonLiteral
 }

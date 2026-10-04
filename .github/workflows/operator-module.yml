@@ -6,14 +6,17 @@ name: Operator module
 # module directory exactly as module-publish renders a published version: as
 # opm-operator in opm-operator-system, at hack/operator-module/defaults.cue
 # (the #config defaults, never debugValues), with no cluster. Then it checks
-# the order, applies the manifest server-side to an empty kind cluster and
-# waits for the operator's rollout. Nothing is published.
+# the order and the operator image (the tag and digest the module names),
+# applies the manifest server-side to an empty kind cluster and waits for the
+# operator's rollout. Nothing is published.
 
 on:
   pull_request:
     paths:
       - 'modules/opm_operator/**'
       - 'hack/operator-module/**'
+      # The cli pin decides the render.
+      - '.opm-cli-version'
       - '.github/workflows/operator-module.yml'
   workflow_dispatch:
 
@@ -55,6 +58,7 @@ jobs:
           (cd modules/opm_operator && opm module build . --name opm-operator -n opm-operator-system \
             -f ../../hack/operator-module/defaults.cue) > "${RUNNER_TEMP}/module/install.yaml"
           hack/operator-module/manifest-order.sh "${RUNNER_TEMP}/module/install.yaml"
+          hack/operator-module/manifest-image.sh "${RUNNER_TEMP}/module/install.yaml"
 
       - name: Create an empty kind cluster
         run: kind create cluster --name operator-module --wait 120s

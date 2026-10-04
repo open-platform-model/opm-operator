@@ -33,7 +33,7 @@ There are two ways to install the operator, and both apply the manifest a releas
    ```text
    INFO installing opm-operator
    ...
-   ✔ opm-operator v1.0.0-beta.5 installed (embedded, 19 resource(s) applied)
+   ✔ opm-operator v1.0.0-beta.6 installed (embedded, 19 resource(s) applied)
    ```
 
    <!-- x-release-please-end -->
@@ -42,16 +42,16 @@ There are two ways to install the operator, and both apply the manifest a releas
 
    <!-- x-release-please-start-version -->
 
-   Without the CLI, apply the `install.yaml` asset of a release. Pick a tag from the [operator releases](https://github.com/open-platform-model/opm-operator/releases); this page uses v1.0.0-beta.5:
+   Without the CLI, apply the `install.yaml` asset of a release. Pick a tag from the [operator releases](https://github.com/open-platform-model/opm-operator/releases); this page uses v1.0.0-beta.6:
 
    ```sh
-   kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/v1.0.0-beta.5/install.yaml
+   kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/v1.0.0-beta.6/install.yaml
    ```
 
-   The manifest pins the controller image by digest, `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.5@sha256:...`. To check the image's signature, run:
+   The manifest pins the controller image by digest, `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.6@sha256:...`. To check the image's signature, run:
 
    ```sh
-   cosign verify ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.5 \
+   cosign verify ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.6 \
      --certificate-identity-regexp='^https://github.com/open-platform-model/opm-operator/\.github/workflows/release\.yml@refs/heads/main$' \
      --certificate-oidc-issuer=https://token.actions.githubusercontent.com
    ```
@@ -183,7 +183,7 @@ The output should look similar to this:
 
 ```text
 NAME      TYPE         READY   REASON      OPERATOR
-cluster   kubernetes   True    Generated   v1.0.0-beta.5
+cluster   kubernetes   True    Generated   v1.0.0-beta.6
 ```
 
 <!-- x-release-please-end -->
@@ -201,7 +201,7 @@ The first lines should look similar to this; the second names the core version i
 <!-- x-release-please-start-version -->
 
 ```text
-INFO	setup	Starting opm-operator	{"version": "v1.0.0-beta.5"}
+INFO	setup	Starting opm-operator	{"version": "v1.0.0-beta.6"}
 INFO	setup	OPM core schema resolved	{"version": "..."}
 INFO	Flux source CRDs not installed; ModulePackage source watches disabled	{"controller": "modulepackage", "kinds": "OCIRepository,GitRepository,Bucket"}
 INFO	setup	Starting manager

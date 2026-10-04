@@ -1,0 +1,48 @@
+name: Deps cascade
+
+# The release cascade receiver (workspace RELEASING.md, "The cascade"; Phase 3
+# wiring contract 5, 5.1). It runs task -x deps:cascade through the shared
+# receive workflow in open-platform-model/.github, which validates the payload,
+# computes the diff, posts the G2 and G3 statuses and, only when live, pushes
+# deps/cascade and opens the PR. This file holds no step of its own.
+#
+# It is a dry run unless the repo variable CASCADE_DRY_RUN is exactly false:
+# unset, deleted or any other value pushes nothing (contract 9.1).
+
+on:
+  repository_dispatch:
+    types: [upstream-released]
+  schedule:
+    - cron: '47 5 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Compute and show the diff in the job summary; push nothing
+        type: boolean
+        default: false
+      gates_only:
+        description: Evaluate and post the release-PR gates only (sent by Cascade gates)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.ref != 'refs/heads/main' && format('deps-cascade-{0}', github.ref) || (inputs.gates_only && 'deps-cascade-gates' || 'deps-cascade') }}
+  cancel-in-progress: false
+
+jobs:
+  cascade:
+    name: Deps cascade
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    uses: open-platform-model/.github/.github/workflows/cascade-receive.yml@main
+    with:
+      dry-run: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
+      gates-only: ${{ inputs.gates_only == true }}
+      g2-mode: ${{ vars.CASCADE_G2_MODE || 'warn' }}
+      g3-mode: ${{ vars.CASCADE_G3_MODE || 'warn' }}
+      setup-go: true
+      labels-managed: false

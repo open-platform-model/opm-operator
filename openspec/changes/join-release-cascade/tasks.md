@@ -28,13 +28,13 @@ Every section runs `actionlint` (the local binary, contract §10) on the workflo
 
 ## 3. Receiver
 
-- [ ] 3.1 Add `.github/workflows/deps-cascade.yml`, exactly as design.md D2 shows. That is contract §5 with the opm-operator row of §5.1: cron `47 5 * * *`, `setup-go: true`, `labels-managed: false`, and no `setup-cue`, `cue-version` or `org-github-ref`.
-- [ ] 3.2 Check by reading the file:
+- [x] 3.1 Add `.github/workflows/deps-cascade.yml`, exactly as design.md D2 shows. That is contract §5 with the opm-operator row of §5.1: cron `47 5 * * *`, `setup-go: true`, `labels-managed: false`, and no `setup-cue`, `cue-version` or `org-github-ref`.
+- [x] 3.2 Check by reading the file:
   - top-level `permissions: {}`;
   - the single job grants only `contents: read`, `pull-requests: read` and `statuses: write`;
   - no `secrets:` key and no `steps:`;
   - the concurrency expression is contract §5's, character for character.
-- [ ] 3.3 `actionlint .github/workflows/deps-cascade.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): add the deps cascade receiver`
+- [x] 3.3 `actionlint .github/workflows/deps-cascade.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): add the deps cascade receiver`
 
 ## 4. Gates caller and docs
 

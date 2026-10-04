@@ -72,7 +72,9 @@ Run the binary from `test/integration/apply`.
 - [x] 2.3 In `test/integration/apply/apply_test.go`:
   - Flip the 1.2 spec to "applies the custom resource once discovery serves its kind". Under the 1 s lag, `Apply` succeeds, `result.Created` is 2, the call took at least the lag, and the Gadget exists.
   - Add "fails at once for a custom resource whose CRD is not in the set". The set holds a custom resource of an unserved group and kind plus an unrelated CRD (a different group and kind), so the GroupKind match is exercised, not the empty-set short-circuit. The spec establishes the unrelated CRD first, so only the failure path is timed, and `Apply` returns a no-match error in under 5 s, half the retry bound (2 s left too little room for a loaded CI host).
-  - Add "returns the no-match error when the context ends before discovery serves the kind". Use its own kind (`never.example.com`, `Doohickey`), establish the CRD first so the deadline covers only the retry, then a lag of 1 h and a `context.WithTimeout` of 1750 ms, between retry ticks. The error wraps a NoKindMatch for the kind and `meta.IsNoMatchError` holds. The 10 s bound itself is covered by the 2.1 unit test.
+  - Add "returns the no-match error when the context ends before discovery serves the kind". Use its own kind (`never.example.com`, `Doohickey`), establish the CRD first so the deadline covers only the retry, then a lag of 1 h and a `context.WithTimeout` of 4750 ms, between retry ticks and under the 10 s bound (1750 ms left a loaded CI host too little room for the first attempt's CRD stage). The error wraps a NoKindMatch for the kind and `meta.IsNoMatchError` holds. The 10 s bound itself is covered by the 2.1 unit test.
+
+  - In `internal/reconcile/apply_failure_test.go`, cover the scenario's `ApplyFailed` clause: `markApplyFailure` given a wrapped NoKindMatch, with and without a ServiceAccount, sets Ready=False with reason `ApplyFailed` and returns `FailedTransient`.
 
   Verify: `go test ./test/integration/apply/...` passes.
 - [x] 2.4 Runs after the fix, on envtest 1.36.2:

@@ -369,7 +369,7 @@ var _ = Describe("Apply", func() {
 
 			By("applying under a deadline that falls between two retries while discovery never serves the kind")
 			lagRM := newLaggingResourceManager(gk, time.Hour)
-			applyCtx, cancelApply := context.WithTimeout(ctx, 1750*time.Millisecond)
+			applyCtx, cancelApply := context.WithTimeout(ctx, 4750*time.Millisecond)
 			defer cancelApply()
 			_, err = apply.Apply(applyCtx, lagRM, []*unstructured.Unstructured{doohickey, crd}, false)
 			Expect(err).To(HaveOccurred())

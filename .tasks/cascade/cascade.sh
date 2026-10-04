@@ -201,12 +201,17 @@ cue_module_path() {
     "$1/cue.mod/module.cue"
 }
 
-# Non-OPM deps of a module.cue as "<key> <v>" lines, for the third-party check.
-cue_third_party() {
+# Every dep of a module.cue as "<key> <v>" lines, sorted for join.
+cue_deps() {
   awk '
     match($0, /^[[:space:]]*"[^"]+": \{/) { k = $0; sub(/^[[:space:]]*"/, "", k); sub(/".*/, "", k) }
     k != "" && /^[[:space:]]*v:/ { if (match($0, /"[^"]+"/)) print k, substr($0, RSTART + 1, RLENGTH - 2); k = "" }' "$1" |
-    awk '$1 !~ /^(opmodel\.dev|testing\.opmodel\.dev)\//'
+    LC_ALL=C sort
+}
+
+# Non-OPM deps of a module.cue as "<key> <v>" lines, for the third-party check.
+cue_third_party() {
+  cue_deps "$1" | awk '$1 !~ /^(opmodel\.dev|testing\.opmodel\.dev)\//'
 }
 
 # go.mod requirements as "<module> <version>" lines, for the third-party check.
@@ -215,7 +220,30 @@ go_requires() {
     /^require \(/ { f = 1; next }
     f && /^\)/ { f = 0; next }
     f && NF >= 2 { print $1, $2 }
-    /^require [^(]/ { print $2, $3 }' go.mod | sort
+    /^require [^(]/ { print $2, $3 }' go.mod | LC_ALL=C sort
+}
+
+# go.mod's go and toolchain directives on one line, for the directive check.
+go_directives() {
+  { grep -E '^(go|toolchain) ' go.mod || [ $? -eq 1 ]; } | tr '\n' ' ' | sed 's/ $//'
+}
+
+# warn_deps KEY WHERE TOOL BEFORE AFTER: warn about every dep TOOL added, removed or moved
+# between the "<key> <v>" lists BEFORE and AFTER, skipping SKIP_DEP.
+SKIP_DEP=
+warn_deps() {
+  local key=$1 where=$2 tool=$3 dep old new
+  while read -r dep old new; do
+    [ "$dep" != "$SKIP_DEP" ] || continue
+    if [ "$old" = - ]; then
+      warn "$key" "\`$tool\` added \`$dep\` \`$new\` in \`$where\`"
+    elif [ "$new" = - ]; then
+      warn "$key" "\`$tool\` removed \`$dep\` \`$old\` from \`$where\`"
+    elif [ "$old" != "$new" ]; then
+      warn "$key" "\`$tool\` moved \`$dep\` from \`$old\` to \`$new\` in \`$where\`"
+    fi
+  done < <(LC_ALL=C join -a1 -a2 -e - -o 0,1.2,2.2 <(printf '%s\n' "$4" | sed '/^$/d') \
+             <(printf '%s\n' "$5" | sed '/^$/d'))
 }
 
 # f_changed M FDIR IFILE: exit 0 when FDIR differs from M in any path other than
@@ -461,12 +489,13 @@ fi
 # 1. library (shipped).
 if [ -n "$LIB" ]; then
   before=$(go_requires)
+  dir_before=$(go_directives)
   go get "$LIBKEY@$LIB"
   go mod tidy
-  while read -r mod old new; do
-    [ "$mod" = "$LIBKEY" ] || [ "$old" = "$new" ] ||
-      warn "$LIBKEY" "\`go mod tidy\` moved \`$mod\` from \`$old\` to \`$new\`"
-  done < <(join <(printf '%s\n' "$before") <(go_requires))
+  SKIP_DEP=$LIBKEY warn_deps "$LIBKEY" go.mod "go mod tidy" "$before" "$(go_requires)"
+  dir_after=$(go_directives)
+  [ "$dir_after" = "$dir_before" ] ||
+    warn "$LIBKEY" "\`go get\` changed the \`go.mod\` directives from \`$dir_before\` to \`$dir_after\`"
 fi
 
 # 2. The catalog in the sample Platform and CatalogVersion() (test).
@@ -498,6 +527,7 @@ for d in "${MODULE_DIRS[@]}" "$PROVIDER"; do
   read -ra frozen_keys <<<"${FROZEN[$d]:-}"
   for key in "${frozen_keys[@]}"; do pinned[$key]=$(cue_dep_v "$key" <"$mf"); done
   third_before=$(cue_third_party "$mf")
+  keys_before=$(cue_deps "$mf" | awk '{ print $1 }')
   read -ra get_args <<<"${GETS[$d]}"
   (cd "$d" && cue mod get "${get_args[@]}" && cue mod tidy)
   for key in "${frozen_keys[@]}"; do
@@ -505,9 +535,16 @@ for d in "${MODULE_DIRS[@]}" "$PROVIDER"; do
       die "$mf: cue mod tidy moved the frozen $key; freeze the whole module, or hold the upstream"
   done
   unset pinned
-  while read -r key old new; do
-    [ "$old" = "$new" ] || warn - "\`cue mod tidy\` moved \`$key\` from \`$old\` to \`$new\` in \`$mf\`"
-  done < <(join <(printf '%s\n' "$third_before" | sort) <(cue_third_party "$mf" | sort))
+  warn_deps - "$mf" "cue mod tidy" "$third_before" "$(cue_third_party "$mf")"
+  # A dep the module gained must reach its modulepackage too, which the text re-pin below
+  # cannot add: hack/fixtures.sh consumers would fail in PR CI.
+  mp=test/fixtures/modulepackages/$(basename "$d")/cue.mod/module.cue
+  if [ "$d" != "$PROVIDER" ] && [ -f "$mp" ]; then
+    while IFS= read -r key; do
+      grep -qF "\"$key\": {" "$mp" ||
+        warn - "\`$mf\` gained \`$key\`, which \`$mp\` lacks; run \`cue mod tidy\` there by hand"
+    done < <(LC_ALL=C comm -13 <(printf '%s\n' "$keys_before") <(cue_deps "$mf" | awk '{ print $1 }'))
+  fi
 done
 
 # 4. Version advances, with the opm CLI's own setters.

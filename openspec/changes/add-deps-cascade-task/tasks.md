@@ -144,6 +144,8 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 - [x] 7.4 Script the "Newer CUE language warned" scenario as S11 (offline): lower only the sample Platform and `CatalogVersion()` to the `older.tsv` catalog and add a `language-of` row above `CUE_VERSION`; expect exit 0, the warning, and only those two files changed (the `hack/crdref` regeneration gives the page back unchanged). Commit `test(cascade): cover the CUE language warning offline`
 
+- [x] 7.5 Warn on third-party pins that `go mod tidy` or `cue mod tidy` adds or removes (outer `join`), on a changed `go` or `toolchain` directive after `go get`, and on a dep a fixture module gains that its modulepackage lacks. Commit `ci(cascade): warn on added and removed deps and on go directive changes`
+
 ## 8. Archive
 
 - [ ] 8.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`

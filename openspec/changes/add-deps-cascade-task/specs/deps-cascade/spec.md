@@ -47,7 +47,7 @@ The task SHALL move exactly these pins:
 - **The opm CLI.** It writes `.opm-cli-version` last.
 - **The resource reference.** When it changed any file under `config/samples/`, it regenerates the `hack/crdref` block of `docs/site/reference/operator-resources.md` before writing `.opm-cli-version`. If `hack/crdref` fails, it SHALL warn and still produce the rest of the diff.
 
-`cue mod get` SHALL name only `opmodel.dev/*` and `testing.opmodel.dev/*` modules, each with an exact version, and SHALL run, followed by one `cue mod tidy`, only in a module where a pin moved. Third-party pins SHALL never be named. A third-party pin raised by `tidy` SHALL be reported as a warning. The task SHALL never edit an import path or a `@vN` key; a new major SHALL appear only as the resolver's warning.
+`cue mod get` SHALL name only `opmodel.dev/*` and `testing.opmodel.dev/*` modules, each with an exact version, and SHALL run, followed by one `cue mod tidy`, only in a module where a pin moved. Third-party pins SHALL never be named. A third-party pin that `tidy` raises, adds or removes, a change to `go.mod`'s `go` or `toolchain` directive, and a dep a fixture module gains that its modulepackage lacks SHALL each be reported as a warning. The task SHALL never edit an import path or a `@vN` key; a new major SHALL appear only as the resolver's warning.
 
 #### Scenario: Catalog and core move as a consistent set
 - **WHEN** the newest published catalog is newer than the sample's, and that catalog pins a core newer than the fixtures'
@@ -64,6 +64,10 @@ The task SHALL move exactly these pins:
 #### Scenario: Sample Platform moved
 - **WHEN** the task moves the catalog `version:` in the sample Platform
 - **THEN** `go run ./hack/crdref -check` passes on the resulting tree
+
+#### Scenario: Tidy adds a dependency
+- **WHEN** `go mod tidy` or `cue mod tidy` adds or removes a third-party dependency, or `go get` raises the `go` or `toolchain` directive
+- **THEN** the task writes a warning naming the dependency or the directives, and a fixture module's new dep that its modulepackage lacks is warned about too
 
 #### Scenario: Third-party pins untouched
 - **WHEN** the task runs `cue mod get` in a fixture module

@@ -218,7 +218,7 @@ plan_advances                                       # which advance modules will
   "github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)"
 
 # Phase C: edit (rule 12 order)
-move_library            # go get library@$LIB; go mod tidy; warn on a raised third-party pin
+move_library            # go get library@$LIB; go mod tidy; warn on a raised, added or removed third-party pin and on a changed go/toolchain directive
 move_catalog_core       # sample (bare), catalog.go (bare), cue mod get/tidy per moved module, provider core
 advance_versions        # rule 11: f_changed, published, next-patch, opm {module,catalog} version set
 follow_consumers        # modulepackages (text), moduleinstance.yaml, sample ModuleInstance

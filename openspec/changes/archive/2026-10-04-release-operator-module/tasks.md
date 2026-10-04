@@ -143,7 +143,7 @@ This section is its own PR, and it changes only `modules/opm_operator/README.md`
 
 ## 6. Review fixes (PR #221)
 
-- [x] 6.1 Merge `origin/main` (#220, `b8b699e`) into the branch; record in design.md that release PR #222 is open and what merging either PR first triggers.
+- [x] 6.1 Merge `origin/main` (#220 `b8b699e`, then #222 `4eebece`, the `v1.0.0-beta.7` release) into the branch; record in design.md how the first module release opens now that beta.7 shipped without an image PR.
 - [x] 6.2 Move the identity advance out of the `release-please` job into `module-identity-advance`: checkout without persisted credentials, the App token minted only for the push.
 - [x] 6.3 Split `module-publish` into the publish and `module-manifest` (render, order and image checks, upload); `module-publish-release` needs `module-manifest`.
 - [x] 6.4 `module-image.yml` and `module-deps.yml` run bash with pipefail and refuse a handed-over tar member outside `modules/opm_operator/`; `module-image.yml` publishes only from `main`.

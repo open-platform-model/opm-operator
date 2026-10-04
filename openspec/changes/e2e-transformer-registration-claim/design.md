@@ -26,6 +26,8 @@ Until library#170, the first step refused the bare version opm renders. Library#
 
 The spec applies `test/fixtures/modules/backup_provider/moduleinstance.yaml` and `config/samples/opmodel.dev_v1alpha1_platform.yaml`. The Platform subscribes `opmodel.dev/catalogs/opm@v4` at `4.4.4`. The backup catalog pins that build or an older one, so the build-compatibility check passes. The claim names `testing.opmodel.dev/catalogs/operator/backup@v0` at `0.1.0`. Those coordinates are public on GHCR, so the spec resolves them through the controller's default registry with no credentials.
 
+The spec reads the catalog path and version through `fixtures.MustCatalog(GinkgoT(), "backup")`, as `backup_fixture_test.go` does, and never as literals (`AGENTS.md`). It asserts that the live claim's `spec.version` equals that coordinate's `Version` and has no `v` prefix, so the bare-spelling step checks that the spelling really is bare. The `v`-prefixed edit is `"v"+Version`.
+
 In PR CI, `task examples:pin` re-pins the provider instance to the per-commit pre-release tag that `task examples:publish` just pushed. The claim inside it still names the real `0.1.0` catalog. The spec mounts GHCR credentials when `OPERATOR_DOCKER_CONFIG` is set, and the registry override when `LOCAL_REGISTRY` is set, as the podinfo spec does. A `LOCAL_REGISTRY` run needs the backup fixtures seeded there (`task examples:seed`).
 
 The spec owns its controller deploy and teardown, so it does not depend on the order of the other top-level specs. The deploy steps duplicate the podinfo spec's. Moving them into a shared helper would edit specs this change does not need to touch, so this change leaves them duplicated.
@@ -53,15 +55,20 @@ kubectl get platform cluster -o jsonpath={.status.packageIdentity}
 
 - The provider's next reconcile re-applies the rendered claim and reverts the edit. Setting `spec.suspend: true` on `backup-provider` stops this: a suspended instance skips every phase and keeps its inventory (`suspend-resume` spec).
 - Suspension marks the instance `Ready=False/Suspended`. Activation latches (`gateActivation` returns early when the claim is already active), so the claim stays active.
-- The edit bumps the claim's generation. The claim's predicate passes generation changes, so the claim is re-judged. `claimContributionPredicate` sees the coordinate move from `@0.1.0` to `@v0.1.0`, so the Platform regenerates under a new identity.
+- The edit bumps the claim's generation. The claim's predicate passes generation changes, so the claim is re-judged.
+
+The two reconcilers do not run in the order "judge, then build". `activeClaims` and `claimContributionPredicate` read `status.accepted` and `status.active` without checking `status.observedGeneration`. The edit moves the claim's coordinate from `@0.1.0` to `@v0.1.0` while it still carries the verdict for `0.1.0`, so the Platform regenerates with `v0.1.0` at once, carried by that stale verdict, possibly before the claim reconciler has judged `v0.1.0`. If the re-judgement then refused, the Platform would regenerate again without the catalog. The Platform half of the step therefore proves the build only once the claim's own verdict for the new generation is on record.
+
+The claim's own fields need care too. `deferVerdict` sets `observedGeneration` to the new generation, writes Ready=Unknown and leaves `accepted` and `active` as the previous verdict left them. So `observedGeneration == generation && accepted && active` holds after any deferred reconcile (`PlatformNotReady` while the Platform regenerates, `ProviderInventoryPending`, a `platformRequirements` read error), even when the eventual verdict for `v0.1.0` is a refusal. Only `accept` writes Ready=True with reason `Accepted`, and its message is `Claim accepted for catalog <catalog> at <version>`.
 
 Section 1 runs this flow by hand on a throwaway cluster before the spec encodes it.
 
-**Decision**: After the bare-spelling assertions, the spec patches `backup-provider` with `spec.suspend: true` and waits for `Ready=False/Suspended`. It then merge-patches the claim's `spec.version` to `v0.1.0` and waits for three things:
+**Decision**: After the bare-spelling assertions, the spec patches `backup-provider` with `spec.suspend: true` and waits for `Ready=False/Suspended`. It then merge-patches the claim's `spec.version` to `v0.1.0` and waits, in this order:
 
-- the claim's `status.observedGeneration` to equal its new `metadata.generation`, with `accepted: true`, `active: true` and a Ready message naming `v0.1.0`;
-- the Platform's `status.registry` entry for the backup catalog to read `v0.1.0`, under a `status.packageIdentity` different from the bare-spelling one;
-- the Platform to report Ready=True/`Generated`.
+1. the claim's `status.observedGeneration` to equal its new `metadata.generation`, with `accepted: true`, `active: true` and Ready=True with reason `Accepted` and a message containing `at v0.1.0`;
+2. then the Platform's `status.registry` entry for the backup catalog to read `v0.1.0`, under a `status.packageIdentity` different from the bare-spelling one, with Ready=True/`Generated`; a second read of `packageIdentity` shows it is stable.
+
+The stale-verdict contribution is an operator gap outside this test-only change: a hand-edited claim contributes its new coordinate to the platform before it is judged, which skips the 0015:D11 checks for a short window. It goes to the supervisor as a follow-up issue.
 
 **Rationale**: This is the narrowest path that pushes a `v`-prefixed coordinate through both reconcilers on a deployed operator, and it changes no fixture. The alternatives:
 
@@ -84,6 +91,7 @@ The owner decision names acceptance and platform build. `backup_consumer` render
 | --- | --- | --- |
 | opm-operator (`8dc24b3`, library beta.4) | `test/fixtures/modulepackages/{hello,hello_web,podinfo,redis}`, acquired by `KernelPackageRenderer` | Every values key is declared in the module's `#config` with a matching type (`message`; `replicas`; `replicas`; `persistence.size`). Conforms. |
 | cli (`5180cad1`, library beta.4) | `examples/instances/podinfo` (`replicas`), `tests/e2e/testdata/operator-owned` (`image`, `replicas`), `internal/workflow/render/testdata/skip-unprovided/instance` (`values: {}`), `tests/integration/inst-tree/testdata` (no values) | Conforms. `tests/e2e/testdata/vet-errors/instance` is invalid on purpose: its test expects the refusal. |
+| cli scaffold | `opm instance init` (`internal/cmd/instance/init.go`) writes `values.cue` from the module's `initValues`/`debugValues` | Derived from the module, so it conforms by construction. |
 | catalog_opm (`daae275`) | none | Not affected. |
 | modules (`e4d3b65`) | none (`istio_ambient/testdata/values-full.cue` is passed as a values source, which was already validated before f1d9908) | Not affected. |
 | opm-modules (`f16a187`) | none | Not affected. |
@@ -94,10 +102,15 @@ Both frontends already pin library beta.4, and their CI went green on that bump.
 
 ### D5. Running the spec
 
-The e2e suite runs `make install`, `make deploy`, `make undeploy` and `make uninstall` against the current kube context. Uninstalling the CRDs deletes every ModuleInstance on the cluster. The shared `kind-opm-dev` cluster holds the cli's operator-owned state, so the spec runs on a throwaway kind cluster, `KIND_CLUSTER=opm-operator-test-e2e`, on podman, created and deleted for the run. The run still goes through `flock` on the workspace cluster lock, because it competes for the same podman host. It is focused on the new spec (`-ginkgo.focus`) with an explicit `--kubeconfig`/context. The full suite is CI's job.
+The e2e suite runs `make install`, `make deploy`, `make undeploy` and `make uninstall` against the current kube context. Uninstalling the CRDs deletes every ModuleInstance on the cluster. The shared `kind-opm-dev` cluster holds the cli's operator-owned state, so the spec runs on a throwaway kind cluster, `KIND_CLUSTER=opm-operator-test-e2e`, created and deleted for the run on the same kind provider as `kind-opm-dev`. The run still goes through `flock` on the workspace cluster lock, because it competes for the same container host.
+
+A kubectl `--kubeconfig` flag cannot be passed into the suite: every `kubectl` and `make` call in it uses the ambient context. So the throwaway cluster is created with its own kubeconfig file (`kind create cluster --kubeconfig <path>`), and the run exports `KUBECONFIG=<path>` and checks that `kubectl config current-context` reads `kind-opm-operator-test-e2e` first. Without that, `make uninstall` could run against `kind-opm-dev`. The run is focused on the new spec (`-ginkgo.focus`) and passes `-timeout 30m`, as `task dev:e2e` does: a cold run (image build, cert-manager install, deploy, two platform builds) can pass Go's 10-minute default. The full suite is CI's job.
+
+The section 1 spike uses the same environment.
 
 ## Risks / Trade-offs
 
 - **GHCR availability.** The spec pulls the opm catalog and the backup fixtures from GHCR, like the podinfo spec. A registry outage fails it, as it fails the rest of the suite.
 - **The `v`-prefixed path relies on suspension.** If suspend semantics change so that a suspended instance re-applies its output, the edit is reverted and the spec times out. The failure names the claim's version, so it reads as that cause.
+- **A `backup` catalog bump needs two pull requests.** The spec resolves the claim's literal catalog version live from GHCR. A pull request that bumps `test/fixtures/catalogs/backup` and re-pins the claim in the same change publishes only `-e2e.g<sha>` pre-releases in CI, so the new real version is not on GHCR yet; the claim is refused `CatalogUnresolved` and this spec fails on that pull request. Before this change no e2e spec depended on the literal. The bump therefore lands as two pull requests, one that publishes the catalog and one that re-pins the claim. `test/fixtures/modules/README.md` says so next to the bump instructions.
 - **Run time.** The spec adds one controller deploy, about one to three minutes on a warm cluster. That fits inside the suite's `-timeout 30m`.

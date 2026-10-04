@@ -8,8 +8,9 @@ The owner's walkthrough decision i1 (2026-10-02/03) asks for that test: "after l
 
 - **A new e2e spec, `test/e2e/registration_test.go`.** It deploys the controller built from the branch, applies the sample Platform and waits for Ready, then applies the `backup_provider` fixture's `moduleinstance.yaml`. That fixture is published and renders a real `TransformerRegistration` naming the `backup` catalog fixture at `0.1.0`.
   - **Bare spelling (`0.1.0`).** The spec waits for the claim `default.backup-provider` to report `accepted: true` and `active: true`. It then waits for the Platform to rebuild with the backup catalog in `status.registry` (`source: Registration`, version `0.1.0`), under a new `status.packageIdentity`, and to report Ready.
-  - **`v`-prefixed spelling (`v0.1.0`).** opm's `#VersionType` refuses a `v`, so no module can render this spelling. It reaches a cluster only when someone edits the claim by hand, which the CRD admits (`MinLength=1` only). The spec suspends the provider instance first, so the controller does not re-apply the rendered claim over the edit. It then sets the live claim's `spec.version` to `v0.1.0`. The claim must be re-judged and accepted at the new generation. The Platform must rebuild with `version: v0.1.0` in `status.registry`, under another new package identity, and report Ready (design D2).
-  - **Teardown** deletes the provider instance, which prunes the claim and releases its removal guard. It then removes the applier RBAC and the Platform, and undeploys, as the podinfo spec does.
+  - **`v`-prefixed spelling (`v0.1.0`).** opm's `#VersionType` refuses a `v`, so no module can render this spelling. It reaches a cluster only when someone edits the claim by hand, which the CRD admits (`MinLength=1` only). The spec suspends the provider instance first, so the controller does not re-apply the rendered claim over the edit. It then sets the live claim's `spec.version` to `v0.1.0`. The claim must be re-judged and accepted at the new generation, with Ready=True/`Accepted` naming `v0.1.0`. Only then must the Platform hold `version: v0.1.0` in `status.registry`, under another new package identity, and report Ready (design D2).
+  - **Removal** is the last ordered step: deleting the provider instance prunes the claim and releases its removal guard. Teardown then removes any leftover claim, the applier RBAC and the Platform, and undeploys, as the podinfo spec does.
+- **A note in `test/fixtures/modules/README.md`**: a `backup` catalog bump now needs two pull requests (design Risks).
 - **The N4 consumer check.** Research item N4 asks whether consumers absorbed library f1d9908 (beta.2, `feat(kernel)!`). Since that commit, `AcquireInstanceFromDir` refuses an instance package whose own values carry an undeclared key, a value of the wrong type, or a broken constraint. The check found nothing to fix in this repo (design D4). Section 1 confirms it by running the registry-backed ModulePackage specs on beta.4.
 
 Out of scope:
@@ -26,7 +27,7 @@ Test-only. Nothing changes in an API type, controller, flag, fixture or `dist/in
 ## Depends on / gates
 
 - **Satisfied:** library v1.0.0-beta.4 in `go.mod`, which contains library#170 (64799d5). The `backup` catalog, `backup_provider` and `backup_consumer` at `0.1.0` are on GHCR and readable without credentials (checked 2026-10-04).
-- **Gates:** `task dev:fmt dev:vet dev:lint dev:test`. `go vet -tags=e2e ./test/e2e/` covers the e2e package, which the default lint and vet builds leave out. The new spec runs under the workspace cluster lock (design D5).
+- **Gates:** `task dev:fmt dev:vet dev:lint dev:test`. `go vet -tags=e2e ./test/e2e/` and `golangci-lint run --build-tags=e2e ./test/e2e/...` cover the e2e package, which the default lint and vet builds leave out (`.golangci.yml` sets no build tags). The new spec runs under the workspace cluster lock (design D5).
 
 ## Capabilities
 
@@ -41,5 +42,6 @@ None.
 ## Impact
 
 - New: `test/e2e/registration_test.go`.
+- Edited: `test/fixtures/modules/README.md` (one paragraph).
 - CI: `test-e2e.yml` runs the new spec with the rest of the suite. It needs no new step, because `task examples:pin` already re-pins `backup_provider/moduleinstance.yaml` to the per-commit pre-release tag.
 - No enhancement decision is implemented here (i1 is a walkthrough decision, not an enhancement decision), so there is no `enhancement.yaml`.

@@ -13,4 +13,4 @@
 
 ## 3. Specs
 
-- [ ] 3.1 `openspec validate publish-operator-reference-section --strict` passes; `openspec archive publish-operator-reference-section --yes`; the `operator-resource-reference` Purpose names the new URL. Verify: `openspec validate --specs --strict` passes for `operator-resource-reference`, `docs-bundle` and `deps-cascade`. Commit `docs(openspec): archive publish-operator-reference-section`.
+- [x] 3.1 `openspec validate publish-operator-reference-section --strict` passes; `openspec archive publish-operator-reference-section --yes`; the `operator-resource-reference` Purpose names the new URL. Verify: `openspec validate --specs --strict` passes for `operator-resource-reference`, `docs-bundle` and `deps-cascade`. Commit `docs(openspec): archive publish-operator-reference-section`.

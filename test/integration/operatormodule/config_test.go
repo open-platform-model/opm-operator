@@ -108,6 +108,14 @@ var _ = Describe("The operator module's #config", func() {
 		Expect(envValue(c, "GOMEMLIMIT")).To(Equal("6553MiB"))
 	})
 
+	It("renders CPU given as cores and as millicores", func() {
+		c := managerContainer(mustRenderWith(moduleDir, `{resources: {requests: cpu: 0.5, limits: cpu: 4}}`))
+		Expect(lookup(c, "resources", "requests", "cpu")).To(Equal("500m"))
+		Expect(fmt.Sprint(lookup(c, "resources", "limits", "cpu"))).To(Equal("4"))
+		c = managerContainer(mustRenderWith(moduleDir, `{resources: limits: cpu: "1500m"}`))
+		Expect(lookup(c, "resources", "limits", "cpu")).To(Equal("1500m"))
+	})
+
 	DescribeTable("refuses",
 		func(values string, wants ...string) {
 			_, err := render(moduleDir, instanceName, instanceNamespace, values)
@@ -131,7 +139,13 @@ var _ = Describe("The operator module's #config", func() {
 			`"--leader-elect=false"`, "the module renders itself"),
 		Entry("the probe address in extraArgs", `{extraArgs: ["-health-probe-bind-address=:9091"]}`,
 			`"-health-probe-bind-address=:9091"`, "the module renders itself"),
-		Entry("a memory limit as a byte count", `{resources: limits: memory: 4294967296}`, "in Mi or Gi"),
+		Entry("a memory limit as a byte count", `{resources: limits: memory: 4294967296}`, "as <n>Mi or <n>Gi"),
+		Entry("a memory limit in decimal units", `{resources: limits: memory: "4G"}`, "as <n>Mi or <n>Gi"),
+		Entry("a fractional memory limit", `{resources: limits: memory: "1.5Gi"}`, "as <n>Mi or <n>Gi"),
+		Entry("a CPU limit as a whole-number string", `{resources: limits: cpu: "4"}`,
+			"resources.limits.cpu", `write 4, not "4"`),
+		Entry("a CPU request as a fractional string", `{resources: requests: cpu: "0.5"}`,
+			"resources.requests.cpu", `write 4, not "4"`),
 	)
 
 	It("refuses any instance but opm-operator in opm-operator-system, naming the expected coordinates", func() {

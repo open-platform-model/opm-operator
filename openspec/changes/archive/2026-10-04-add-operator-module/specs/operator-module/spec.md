@@ -169,8 +169,13 @@ The module's `#config` SHALL type these values and render each into the controll
 
 #### Scenario: An unsupported memory unit is refused
 
-- **WHEN** the module is rendered with a memory limit given as a plain number of bytes, such as `4294967296`
-- **THEN** the render fails with a message naming the accepted units, `Mi` and `Gi`
+- **WHEN** the module is rendered with a memory limit given as a plain number of bytes, such as `4294967296`, in decimal units, such as `"4G"`, or as a fraction, such as `"1.5Gi"`
+- **THEN** the render fails with a message naming the accepted forms, `<n>Mi` and `<n>Gi`
+
+#### Scenario: A CPU string the catalog cannot render is refused at the value
+
+- **WHEN** the module is rendered with a CPU request or limit given as a string of cores, such as `"4"` or `"0.5"`
+- **THEN** the module refuses the value, naming the field and the accepted forms (cores as a number, millicores as `"<n>m"`), instead of failing later in the catalog's Deployment transformer
 
 #### Scenario: One resources field keeps the other defaults
 

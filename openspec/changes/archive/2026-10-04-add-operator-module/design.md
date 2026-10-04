@@ -189,7 +189,11 @@ Everything a platform team tunes on the operator becomes a value of its instance
 		limits: cpu:      _ | *2
 		limits: memory:   _ | *"4Gi"
 	}
-	resources: limits: memory: string | error("resources.limits.memory: give the memory limit in Mi or Gi, ...")
+	resources: limits: memory: =~"^[0-9]+[MG]i$" | error("resources.limits.memory: give the memory limit as <n>Mi or <n>Gi, ...")
+	// A CPU string of cores ("4") passes the catalog schema but not its
+	// Deployment transformer; refused here, naming the field.
+	resources: requests: cpu: number | =~"^[0-9]+m$" | error("resources.requests.cpu: ...")
+	resources: limits: cpu:   number | =~"^[0-9]+m$" | error("resources.limits.cpu: ...")
 	replicas: int & >=1 | *1
 	extraArgs: [...#extraArg] | *[]
 }

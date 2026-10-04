@@ -71,7 +71,13 @@ metadata: {
 		limits: cpu:      _ | *2
 		limits: memory:   _ | *"4Gi"
 	}
-	resources: limits: memory: string | error("resources.limits.memory: give the memory limit in Mi or Gi, such as \"4Gi\"; a plain byte count is refused")
+	resources: limits: memory: =~"^[0-9]+[MG]i$" | error("resources.limits.memory: give the memory limit as <n>Mi or <n>Gi, such as \"4Gi\"")
+
+	// The catalog's schema accepts a CPU string such as "4" or "0.5" that its
+	// Deployment transformer cannot normalize, so the render would fail far
+	// from the value. Cores are a number, millicores a "<n>m" string.
+	resources: requests: cpu: number | =~"^[0-9]+m$" | error("resources.requests.cpu: give cores as a number, such as 4 or 0.5, or millicores as \"<n>m\", such as \"500m\"; write 4, not \"4\"")
+	resources: limits: cpu:   number | =~"^[0-9]+m$" | error("resources.limits.cpu: give cores as a number, such as 4 or 0.5, or millicores as \"<n>m\", such as \"500m\"; write 4, not \"4\"")
 
 	replicas: int & >=1 | *1
 

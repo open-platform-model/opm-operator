@@ -36,10 +36,10 @@ Every section runs `actionlint` v1.7.12 (the scratchpad binary, contract §10) o
 
 ## 5. Docs and the re-grep (§10.1 items 8 to 11)
 
-- [ ] 5.1 `AGENTS.md`: the cascade bullet describes the caller-owned notify and publish jobs, the reusable receive and gates workflows, the one-SHA pin moved only by a `ci(deps)` pin PR, the Dependabot ignore, and `task cascade:wiring:check` in the `Lint` job; add `task cascade:wiring:check` to the command list.
-- [ ] 5.2 Replace every "no secret" wording about the notify or publish job (§10.1 item 9) and any recovery text that names a missing `cascade-notify.yml` (item 10).
-- [ ] 5.3 Run the §10.1 item 11 re-grep; every hit is fixed or an allowed one (`labels-managed` on the publish step, `@main`/`ref: main` about something other than the cascade, "no secret" about `compute` or `gates`, superseded history). Record the remaining hits in the PR notes.
-- [ ] 5.4 `openspec validate join-release-cascade --strict`, `task cascade:wiring:check`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs: describe the pinned cascade wiring in AGENTS.md`
+- [x] 5.1 `AGENTS.md`: the cascade bullet describes the caller-owned notify and publish jobs, the reusable receive and gates workflows, the one-SHA pin moved only by a `ci(deps)` pin PR, the Dependabot ignore, and `task cascade:wiring:check` in the `Lint` job; add `task cascade:wiring:check` to the command list.
+- [x] 5.2 Replace every "no secret" wording about the notify or publish job (§10.1 item 9) and any recovery text that names a missing `cascade-notify.yml` (item 10).
+- [x] 5.3 Run the §10.1 item 11 re-grep; every hit is fixed or an allowed one (`labels-managed` on the publish step, `@main`/`ref: main` about something other than the cascade, "no secret" about `compute` or `gates`, superseded history). Record the remaining hits in the PR notes.
+- [x] 5.4 `openspec validate join-release-cascade --strict`, `task cascade:wiring:check`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs: describe the pinned cascade wiring in AGENTS.md`
 
 ## 6. Archive
 

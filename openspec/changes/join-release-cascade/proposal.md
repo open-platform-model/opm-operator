@@ -41,8 +41,14 @@ by SHA. This revision rebuilds the change on version 3.1.
   - It needs `[release-please, publish-release]`, the job that publishes the draft once
     `install.yaml` and the example assets are attached, and runs only when
     `releases_created == 'true'` and `CASCADE_NOTIFY` is not `off`.
-  - It grants only `contents: read`, has no checkout and no `run:` step, and `publish-docs` does
-    not gate it.
+  - It grants only `contents: read`; it has no checkout or `run:` of its own, and no `env:`,
+    `container:` or `services:`. `publish-docs` does not gate it.
+  - The key rule (wiring contract §10.1 item 9): the key is read only in the caller-owned
+    `notify-downstream` or `publish` job, which declares `environment: cascade` and passes
+    `secrets.CASCADE_APP_PRIVATE_KEY` only as the `private-key` input of the SHA-pinned cascade
+    action; that job has no checkout or `run:` of its own, and no `env:`, `container:` or
+    `services:` (the action checks out the repo but never runs it); no reusable call passes
+    `secrets:` or `secrets: inherit`.
 - **Receiver `.github/workflows/deps-cascade.yml`** (wiring contract §5, §5.1, §5.2). Two jobs:
   - `cascade` calls the reusable `cascade-receive.yml` at the pinned SHA (compute and gates; it
     holds no secret) with `setup-go: true`, the §5 `dry-run` expression, `gates-only`, `g2-mode`

@@ -185,15 +185,42 @@ func expectPanicStatus(t *testing.T, conditions []metav1.Condition) {
 	}
 }
 
+// staleAttempt is an old lastAttemptedAt, and pendingRetry a nextRetryAt
+// left by an earlier failed attempt, both seeded before a panic so the test
+// sees the panicking attempt overwrite or clear them.
+var (
+	staleAttempt = metav1.NewTime(time.Now().Add(-time.Hour).Truncate(time.Second))
+	pendingRetry = metav1.NewTime(time.Now().Add(time.Hour).Truncate(time.Second))
+)
+
+// expectPanicAttempt asserts that a recovered panic recorded the attempt and
+// cleared the retry time, which controller-runtime's rate limiter owns.
+func expectPanicAttempt(t *testing.T, action string, attemptedAt, nextRetryAt *metav1.Time) {
+	t.Helper()
+	if action != reconcileAction {
+		t.Fatalf("lastAttemptedAction = %q, want %q", action, reconcileAction)
+	}
+	if attemptedAt == nil || !attemptedAt.After(staleAttempt.Time) {
+		t.Fatalf("lastAttemptedAt = %v, want later than the seeded %v", attemptedAt, staleAttempt)
+	}
+	if nextRetryAt != nil {
+		t.Fatalf("nextRetryAt = %v, want cleared", nextRetryAt)
+	}
+}
+
 // TestPanicKeepsPhaseCounters pins that a panicking attempt moves only the
 // reconcile counter. The loops set a phase's Ran flag before the phase runs
 // and its Failed flag only on a returned error, so a panic inside the phase
 // would read as a success of that phase if the in-flight phases reached the
-// counter update. A nil ResourceManager makes the first use of it panic on a
+// counter update. It also pins that the panic records the attempt and clears
+// a pending nextRetryAt. A nil ResourceManager makes the first use of it panic on a
 // nil receiver, after the phase flag is set.
 func TestPanicKeepsPhaseCounters(t *testing.T) {
 	t.Run("ModuleInstance panics in drift detection", func(t *testing.T) {
-		c := loopTestClient(t, operatorInstance(&releasesv1alpha1.FailureCounters{Drift: 2, Apply: 3, Prune: 1}))
+		mi := operatorInstance(&releasesv1alpha1.FailureCounters{Drift: 2, Apply: 3, Prune: 1})
+		mi.Status.LastAttemptedAt = &staleAttempt
+		mi.Status.NextRetryAt = &pendingRetry
+		c := loopTestClient(t, mi)
 		params := &ModuleInstanceParams{
 			Client:        c,
 			EventRecorder: events.NewFakeRecorder(32),
@@ -207,6 +234,7 @@ func TestPanicKeepsPhaseCounters(t *testing.T) {
 			t.Fatalf("get: %v", err)
 		}
 		expectPanicStatus(t, got.Status.Conditions)
+		expectPanicAttempt(t, got.Status.LastAttemptedAction, got.Status.LastAttemptedAt, got.Status.NextRetryAt)
 		want := releasesv1alpha1.FailureCounters{Reconcile: 1, Drift: 2, Apply: 3, Prune: 1}
 		if got.Status.FailureCounters == nil || *got.Status.FailureCounters != want {
 			t.Fatalf("failureCounters = %+v, want %+v", got.Status.FailureCounters, want)
@@ -214,7 +242,10 @@ func TestPanicKeepsPhaseCounters(t *testing.T) {
 	})
 
 	t.Run("ModulePackage panics in apply", func(t *testing.T) {
-		c := loopTestClient(t, readyOCIRepository(), operatorPackage(&releasesv1alpha1.FailureCounters{Apply: 3, Prune: 1}))
+		pkg := operatorPackage(&releasesv1alpha1.FailureCounters{Apply: 3, Prune: 1})
+		pkg.Status.LastAttemptedAt = &staleAttempt
+		pkg.Status.NextRetryAt = &pendingRetry
+		c := loopTestClient(t, readyOCIRepository(), pkg)
 		params := &ModulePackageParams{
 			Client:        c,
 			EventRecorder: events.NewFakeRecorder(32),
@@ -231,6 +262,7 @@ func TestPanicKeepsPhaseCounters(t *testing.T) {
 			t.Fatalf("get: %v", err)
 		}
 		expectPanicStatus(t, got.Status.Conditions)
+		expectPanicAttempt(t, got.Status.LastAttemptedAction, got.Status.LastAttemptedAt, got.Status.NextRetryAt)
 		want := releasesv1alpha1.FailureCounters{Reconcile: 1, Apply: 3, Prune: 1}
 		if got.Status.FailureCounters == nil || *got.Status.FailureCounters != want {
 			t.Fatalf("failureCounters = %+v, want %+v", got.Status.FailureCounters, want)

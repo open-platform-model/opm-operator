@@ -1,0 +1,7 @@
+# Carries 0030:D11:R4 only. Coverage is counted per decision, and D11's other
+# requirements (R1-R3, R5) are the portal's own role and pages, so this change
+# links the entry without claiming D11; the opm-portal change that ships the
+# portal's role claims it.
+implements:
+  - enhancement: "0030"
+    resolves: []

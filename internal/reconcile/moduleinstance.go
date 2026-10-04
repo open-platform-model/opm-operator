@@ -122,7 +122,7 @@ func ReconcileModuleInstance(
 	}
 
 	// Track reconcile start time for duration calculation.
-	// Set after the CLI-owned skip (which records no metrics) and before the
+	// Set after the gates above (which record no metrics) and before the
 	// suspend/deletion checks so all operator-managed paths are measured.
 	reconcileStart := time.Now()
 

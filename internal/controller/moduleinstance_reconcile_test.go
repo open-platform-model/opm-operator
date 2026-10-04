@@ -765,6 +765,10 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 				To(ContainSubstring("module opmodel.dev/modules/opm_operator"))
 			Expect(refused.Status.Inventory).To(BeNil())
 			Expect(refused.Status.InstanceUUID).To(BeEmpty())
+			Expect(refused.Status.LastAttemptedAction).To(BeEmpty())
+			Expect(refused.Status.LastAttemptedAt).To(BeNil())
+			Expect(refused.Status.History).To(BeEmpty())
+			Expect(refused.Status.FailureCounters).To(BeNil())
 
 			var event string
 			Eventually(recorder.Events).Should(Receive(&event))
@@ -995,6 +999,34 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			controllerutil.RemoveFinalizer(&acked, opmreconcile.FinalizerName)
 			Expect(k8sClient.Update(ctx, &acked)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &acked)).To(Succeed())
+		})
+
+		It("refuses the operator's own instance when the CLI hands it to the operator", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-handoff-mi", releasesv1alpha1.OwnerCLI)
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			reconciler := newReconciler(events.NewFakeRecorder(10))
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var acked releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &acked)).To(Succeed())
+			Expect(apimeta.FindStatusCondition(acked.Status.Conditions, status.ReadyCondition).Reason).
+				To(Equal(status.ManagedExternallyReason))
+
+			acked.Spec.Owner = releasesv1alpha1.OwnerOperator
+			Expect(k8sClient.Update(ctx, &acked)).To(Succeed())
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
 		})
 
 		It("still registers the finalizer on an instance with only similar names", func() {

@@ -56,7 +56,7 @@ reconcileStart := time.Now()
 if !controllerutil.ContainsFinalizer(&mi, FinalizerName) { ... }
 ```
 
-`handleCLIOwned` is unchanged: a CLI-owned instance, own or not, is left alone exactly as today.
+`handleCLIOwned` is unchanged: a CLI-owned instance, own or not, is left alone exactly as today. As implemented, both gates sit in one helper, `handleNotReconciled`, called at this point in the same order, so that `ReconcileModuleInstance` stays under the linter's cyclomatic-complexity limit of 30.
 
 `handleOwnInstance`:
 

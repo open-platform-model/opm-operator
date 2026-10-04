@@ -20,6 +20,15 @@ The five administrator ClusterRoles render as raw objects with no binding until 
 
 Every name is a constant, the name an operator installed from an earlier manifest has; only the bindings take the catalog's names (the role's own). The Deployment's selector is fixed across module versions, and the render test fails if anything changes it.
 
+## Vetting and building it with the cli
+
+The cli names a module's synthetic instance `<name>-debug` in `default`, which this module refuses. Give it the module's coordinates (`module vet` takes `--instance-name`, `module build` takes `--name`):
+
+```bash
+opm module vet . --instance-name opm-operator -n opm-operator-system
+opm module build . --name opm-operator -n opm-operator-system
+```
+
 ## Values (`#config`)
 
 | Field | Default | Effect |
@@ -27,7 +36,7 @@ Every name is a constant, the name an operator installed from an earlier manifes
 | `image.repository` | `ghcr.io/open-platform-model/opm-operator` | The image repository, for a mirror. The tag and digest stay the module's. |
 | `registry` | unset | `--registry=<value>`: the CUE registry mapping the operator resolves modules through. |
 | `defaultServiceAccount` | unset | `--default-service-account=<value>`: the identity the operator applies as when a ModuleInstance names none. |
-| `resources` | requests `100m` CPU, `256Mi`; limits `2` CPU, `4Gi` | The manager container's resources. Each quantity defaults on its own. The memory limit is given in `Mi` or `Gi`; `GOMEMLIMIT` is derived as 80 percent of it, in MiB. |
+| `resources` | requests `100m` CPU, `256Mi`; limits `2` CPU, `4Gi` | The manager container's resources. Each quantity defaults on its own. CPU is a number of cores (`4`, `0.5`) or a millicore string (`"500m"`); a string of cores such as `"4"` is refused. The memory limit is given as `<n>Mi` or `<n>Gi`; `GOMEMLIMIT` is derived as 80 percent of it, in MiB. |
 | `replicas` | `1` | The Deployment's replicas. |
 | `extraArgs` | `[]` | Further controller arguments, after all of the above. `--registry`, `--default-service-account` and the module's own `--metrics-bind-address`, `--leader-elect` and `--health-probe-bind-address` are refused in either flag spelling. |
 

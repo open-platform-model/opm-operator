@@ -1,6 +1,6 @@
 ## Purpose
 
-Release the operator module `opmodel.dev/modules/opm_operator` from this repository as its own release unit: its version train, release PR and tags, its release gate, its publish with the install manifest, the PR that moves its operator image after each operator release, and its place in the release cascade.
+Release the operator module `opmodel.dev/modules/opm_operator` from this repository as its own release unit: its version train, release PR and tags, its release gate, its publish with the install manifest, the PR that moves its operator image after each operator release, and its own cascade PR for its core and catalog pins.
 
 ## ADDED Requirements
 
@@ -218,17 +218,3 @@ Once an operator release has been published, the release workflow SHALL open or 
 
 - **WHEN** the image PR is merged
 - **THEN** release-please proposes a module release and no operator release
-
-### Requirement: A module release notifies the cli
-
-After the final module publish job has published the module's release, the release workflow SHALL dispatch `upstream-released` to the cli through the shared notify workflow, with the source `opm-operator` and the module tag. It SHALL never dispatch for a draft. The repository variable `CASCADE_NOTIFY=off` SHALL stop it.
-
-#### Scenario: Module release published
-
-- **WHEN** `opm_operator-v0.2.0` is published
-- **THEN** the cli receives `upstream-released` with tags `["opm_operator-v0.2.0"]`
-
-#### Scenario: Operator release
-
-- **WHEN** only an operator release is published
-- **THEN** no module notify runs

@@ -23,7 +23,7 @@ Read 2026-10-04 at `origin/main` `40a2345`:
 
 ### Interface with add-operator-module
 
-That change is proposed on branch `feat/add-operator-module` and not merged. Its proposal and design (read 2026-10-04 at `008fec3`, and at `9f09ac2` for the minimum operator version) name what this change calls:
+That change merged as opm-operator PR #216 (`81a640d`) and is archived. Its proposal and design (read 2026-10-04 at `008fec3`, and at `9f09ac2` for the minimum operator version) named what this change calls; "Reconciled with the merged tree" below records what landed:
 
 | What | Name in add-operator-module |
 | --- | --- |
@@ -38,6 +38,18 @@ That change is proposed on branch `feat/add-operator-module` and not merged. Its
 | `#config` | image repository, registry mapping, default service account, resources, replicas, extra arguments; `image.tag`, `image.digest` and `image.pullPolicy` are refused, so the image moves only through `operator/operator.cue` |
 
 Task G-dep confirms each name against the merged tree and substitutes any that changed. The drift check's `--ref` mode is the one name this change depends on in a specific way: the release gate must compare with the deployed tag, not `HEAD`. The generator needs no such mode (see "The module's generated data follow `main`").
+
+### Reconciled with the merged tree
+
+Read 2026-10-04 at `origin/main` `81a640d` (add-operator-module #216, join-release-cascade #217 and the `v1.0.0-beta.6` release merged since `40a2345`). Every name in the table above holds as written, with these facts added:
+
+- **Names.** `identity/identity.cue` declares `Version: "0.1.0"` already, so the first identity advance is a no-op. `operator/operator.cue` names `Version: "1.0.0-beta.6"` and the `sha256:7871a5dd…825e` digest GHCR serves under `v1.0.0-beta.6`. The drift check also runs as `task operator-module:drift REF=<tag>`, which first runs `cue fmt --check`; the release gate calls the script directly. `.tasks/operator-module.yaml` is the include. The module declares `debugValues: {}`.
+- **Minimum operator version.** `hack/operator-module/min-operator-version` reads `v1.0.0-beta.6`, a published release; PR #211's squash commit `8d34b6b` is an ancestor of it. `config/crd/bases` and `config/rbac` are unchanged between `v1.0.0-beta.6` and `main`, and `drift-check.sh --ref v1.0.0-beta.6` passes.
+- **Render order.** The pinned cli renders the module as the four CRDs, the Namespace, the cluster-scoped roles and bindings, then the namespaced objects. The manifest check therefore only verifies the order; it never reorders.
+- **Release state.** `.release-please-manifest.json` is `{".": "1.0.0-beta.6"}`. No release PR is open, and every commit since `v1.0.0-beta.6` is hidden.
+- **The cascade is wired.** `join-release-cascade` merged. `notify-downstream` is a key-holding job whose one step is the SHA-pinned `cascade-notify` action, not a reusable `cascade-notify.yml`. `task cascade:wiring:check` (the "Verify the cascade wiring" step of `Lint`) pins that job's `if` to `releases_created`, admits exactly one job in the `cascade` Environment per workflow, and lists every `.github` reference. Rekeying `notify-downstream` therefore edits the wiring check too, and a second notify job would change the Phase 3 wiring contract's key-holder set.
+- **`deps:cascade` already leaves the module alone.** Its `MODULE_DIRS` loop reads only `test/fixtures/modules/*` (opm-operator issue #219 asks to add the module there). This change answers #219 with `deps:cascade:module` instead.
+- **The cli has moved on.** cli `v1.0.0-beta.8` is released, but `.opm-cli-version` still names `v1.0.0-beta.7`, whose `module build` takes a published path with `--version` and `-f`, and `module publish --version` only asserts a declared version.
 
 ### Evidence from the prototype experiments
 
@@ -125,7 +137,7 @@ Hidden commits open no release PR, and `add-operator-module` lands only hidden o
 
 ### Existing jobs key on the root package
 
-`image-release`, `publish-examples`, `publish-docs` and `publish-release` (and `notify-downstream` if `join-release-cascade` has merged) change `if:` to `needs.release-please.outputs.release_created == 'true'`. They keep `tag_name`, which is the root package's. The `release-please` job exports `module_release_created: ${{ steps.release.outputs['modules/opm_operator--release_created'] }}`, `module_tag_name` and `module_version`. `publish-examples` uses `git describe --tags --abbrev=0 --match 'v[0-9]*' "${TAG}^"`.
+`image-release`, `publish-examples`, `publish-docs`, `publish-release` and `notify-downstream` change `if:` to `needs.release-please.outputs.release_created == 'true'` (`notify-downstream` keeps its `&& vars.CASCADE_NOTIFY != 'off'`). `task cascade:wiring:check` pins `notify-downstream`'s `if`, so its expected value moves in the same commit. That differs from the `if` the Phase 3 wiring contract (version 3.1) §4.6 prints, which predates a second package; without it a module-only release would run the notify action with an empty tag. They keep `tag_name`, which is the root package's. The `release-please` job exports `module_release_created: ${{ steps.release.outputs['modules/opm_operator--release_created'] }}`, `module_tag_name` and `module_version`. `publish-examples` uses `git describe --tags --abbrev=0 --match 'v[0-9]*' "${TAG}^"`.
 
 ### Identity advance, the only writer of the module's version
 
@@ -194,12 +206,12 @@ add-operator-module's drift check runs on every pull request against `config/` a
 3. Set up CUE and Go, install opm from `.opm-cli-version` at the tag, log in to GHCR.
 4. Run `task operator-module:release-check VERSION=<v>`.
 5. Run `opm module publish ./modules/opm_operator --version <v>`. If it refuses only with "already holds", resolve the held digest and compare it with a dry publish into a job-local registry (U7). Equal is a reuse; anything else fails.
-6. Run `opm module build opmodel.dev/modules/opm_operator --version <v> --name opm-operator -n opm-operator-system -f hack/operator-module/defaults.cue > install.yaml`, with empty values (U6). Then run `hack/operator-module/manifest-order.sh` to put the Namespace and CRDs first, if the render does not already.
+6. Run `opm module build opmodel.dev/modules/opm_operator --version <v> --name opm-operator -n opm-operator-system -f hack/operator-module/defaults.cue > install.yaml`, with empty values (U6). Then run `hack/operator-module/manifest-order.sh install.yaml`, which fails unless the Namespace and every CRD come before every namespaced object (the pinned cli already renders them first; the script checks, never reorders).
 7. Run `release-guard.sh assert-draft "$MODULE_TAG"`, then `gh release upload "$MODULE_TAG" install.yaml --repo "$GH_REPO" --clobber`.
 
 `module-publish-release` needs `[release-please, module-publish]` and runs `release-guard.sh publish "$MODULE_TAG"`. `release-guard.sh` picks its required assets by tag shape: `install.yaml` for `opm_operator-v*`; `install.yaml` and `opm-examples.tar.gz` for `v*`, unchanged.
 
-`module-notify` needs `module-publish-release` and calls `.github` `cascade-notify.yml` with the module tag.
+A module notify job is not part of this change. Notify is now the `cascade-notify` action in a key-holding job, the wiring contract admits one such job in `release.yml`, the `.github` resolver lists operator releases from `v*` tags only, and no cli consumes the module yet. A follow-up adds `module-notify` once the contract and the cli's receiver know module tags (see "Deferred").
 
 Both units' releases now attach an asset named `install.yaml`. Anything that lists this repository's releases and reads that asset must filter by tag shape. The cli change `migrate-manifest-installed-operator` has a tool, `hack/operator-legacy`, that downloads `install.yaml` from every opm-operator release that has it; it must read only `v*` releases, or it takes module renders in as legacy operator manifests. That is reported to the cli change, not edited here. The same name is kept because `releases/latest/download/install.yaml` is the kubectl path the install page will use once module releases are the Latest release (U8).
 
@@ -222,6 +234,8 @@ served-versions(config/crd/bases at $prev) vs (at $tag): a version dropped -> br
 
 The workflow then checks `module/operator-image` out from `origin/main`. If the branch carries only commits by the App, it is rebuilt. If a human commit is on it, the workflow merges `origin/main` and adds a commit. It pushes with `--force-with-lease` and creates or edits the PR with the computed title. A `workflow_dispatch` input `tag` on a small `module-image.yml` workflow runs the same script for recovery.
 
+The work is split in two jobs, as the cascade receiver splits it. `module-image-pr` runs `image.sh` with no App token (only `GITHUB_TOKEN` with `contents: read`, for `release-guard.sh`) and uploads the changed module files and the title as an artifact. `module-image-pr-publish` mints the App token, checks out `main`, copies the files in and runs `hack/operator-module/bot-pr.sh`, which owns the rebuild-or-extend rule, the lease push and `gh pr create|edit`. So no CHANGELOG parse or registry read runs while the App token exists. `module-deps.yml` uses the same split and the same `bot-pr.sh`.
+
 The cascade receiver could have moved this pin as a shipped pin. That is not chosen: the cascade is still dry, and an operator release is this repository's own event. A dedicated job keeps the image moving whether the cascade is live or not.
 
 ### The module's core and catalog pins move in their own PR
@@ -233,13 +247,13 @@ They cannot ride the repository's cascade PR. That PR also moves the fixtures (`
 - `task deps:cascade` never touches `modules/opm_operator/`. Its PR keeps today's title rules: `test(fixtures)` when only fixtures moved.
 - `task deps:cascade:module` runs the same script with the module as its only target. It moves the module's catalog to the newest published catalog `K` and its core to the core `K` pins, under the same holds and frozen paths, keyed by the same module paths (`opmodel.dev/catalogs/opm@v4`, `opmodel.dev/core@v2`): a hold on the catalog holds the module too, and a frozen entry for `modules/opm_operator` freezes only the module. It never touches the image file, `identity.Version`, the generated files, `CHANGELOG.md` or `RELEASE`.
 - Its title and body come from the resolver, with `.tasks/cascade/module-pins.sh` and `.tasks/cascade/module-classes` (every path under the module shipped). Its report has two rows keyed by the module paths; being its own report, the keys are unique. The title is `fix(deps): bump the operator module's opm catalog to vX and core to vY`.
-- `.github/workflows/module-deps.yml` runs the task on `repository_dispatch` `upstream-released` (the same dispatch the receiver takes, so both run) and on `workflow_dispatch`. It pushes `module/deps` with the release App token and opens or updates its PR, like the image-bump PR. While `CASCADE_DRY_RUN` is not exactly `false` it writes the diff to the job summary and pushes nothing, as the receiver does.
+- `.github/workflows/module-deps.yml` runs the task on `repository_dispatch` `upstream-released` (the same dispatch the receiver takes, so both run) and on `workflow_dispatch`. It checks the resolver out from `open-platform-model/.github` at the one pinned SHA with `# .github main`, so `task cascade:wiring:check` lists it as a sixth `.github` reference. It pushes `module/deps` with the release App token and opens or updates its PR, like the image-bump PR. While `CASCADE_DRY_RUN` is not exactly `false` it writes the diff to the job summary and pushes nothing, as the receiver does.
 
 **Alternative:** a scope input on the shared `cascade-receive.yml`. Not chosen: it is another repository's workflow, and this repository already opens the image-bump PR the same way.
 
 ### Release-flow sandbox unknowns
 
-Each unknown is proven in `open-platform-model/release-flow-sandbox` with this change's config shape, as the App, before section 2. The results are recorded under "G-sandbox evidence".
+Each unknown is proven in `open-platform-model/release-flow-sandbox` with this change's config shape, as the App, before this change's PR merges (the config lands in that PR). The results are recorded on the PR; "G-sandbox evidence" holds what was proven without the sandbox.
 
 | # | Unknown | Pass condition |
 | --- | --- | --- |
@@ -252,11 +266,11 @@ Each unknown is proven in `open-platform-model/release-flow-sandbox` with this c
 | U7 | re-run of `opm module publish` on a held version: identify "same content" (digest of a dry publish to a local registry equals the held digest) | equal on a true re-run, unequal after a source change |
 | U8 | a published non-prerelease module release becomes GitHub's Latest while operator releases stay Pre-release | Latest is the module release |
 
-If any unknown fails, the change stops at section 1. design.md and the spec deltas are revised before section 2.
+If any unknown fails, the PR does not merge. design.md and the spec deltas are revised, through a follow-up change once this one is archived.
 
 ## Risks / Trade-offs
 
-- [The release-please multi-package behaviour differs from the docs] → U1 to U5 are proven in the sandbox before any config lands. A failure stops the change at section 1.
+- [The release-please multi-package behaviour differs from the docs] → U1 to U5 are proven in the sandbox before the config merges. A failure holds the PR.
 - [A module release merged before the operator it names has been published] → The gate refuses a draft operator tag on the release PR. The publish job reruns the gate before pushing. A stranded module tag rolls forward to the next version, as for every tag.
 - [A CRD or RBAC change on `main` freezes module releases until the next operator release] → Intended: a module release must render exactly the CRDs and RBAC of the operator it deploys. The gate names the files. The image-bump PR of the next operator release unblocks it. There is no other way out: the per-PR drift check keeps the module's data at `main`.
 - [Every module release re-applies every object on every cluster] → Measured in the prototype (see "Evidence"). Mutual path exclusion, one image PR per operator release and one module cascade PR keep releases to the ones that carry a change.
@@ -265,21 +279,22 @@ If any unknown fails, the change stops at section 1. design.md and the spec delt
 - [The two minimum checks can disagree on a release branch] → add-operator-module's render test orders by semver; the release check orders by git ancestry. For a tag cut off a release branch they can disagree: a higher semver tag without PR #211 passes the render test, and a tag carrying a cherry-pick of #211 fails the release check. No `release/*` branch exists during beta (Non-Goals), so both agree today. A release-branch change revisits the release check, for example by testing for #211's change itself rather than ancestry.
 - [Two release PRs confuse the owner] → `AGENTS.md` names both. The module's release PR also carries the identity-advance commit, so wait for it before merging, as in catalog_opm.
 - [GHCR package created with the wrong link or visibility on first publish] → G-owner runs after the first module release: link the package to this repository only, give Actions access only to it, and make it public. Until that is done, `opm` cannot pull it anonymously, so the cli's work waits.
+- [This repository's wiring check departs from the wiring contract's printed `if` for `notify-downstream`] → The contract's `releases_created` predates a second package; keeping it would notify the cli with an empty tag on every module release. `.github` should take the same edit into contract §4.6; until then the in-repo check is the source of truth for this repository.
 - [Module releases become GitHub's Latest] → The kubectl path `releases/latest/download/install.yaml` then serves the module's manifest. Until `stop-operator-install-manifest` lands, the install page still names the operator release's asset by tag, so nothing a user follows changes. After operator GA both units could be Latest. Open question 2.
 
 ## Migration Plan
 
-Section by section, one PR each, under Delivery mode:
+Two PRs (revised 2026-10-04 when the change was implemented; the planned one-PR-per-section delivery would have left half-wired release jobs on `main` between PRs):
 
-- Sections 1 and 2 change only CI.
-- Section 3 is the carrier. Merging it opens the module's `0.1.0` release PR. The owner merges that after G-owner. Afterwards the owner applies the GHCR package settings, and the cli's wave can start.
-- Section 4 adds the image-bump PR; section 5 the module's cascade PR and notify.
+- **This change's PR** carries sections 1, 2, 4 and 5 and the archive. Every commit is `ci`, `docs` or `chore`, so its squash commit releases neither unit, even though it adds the `modules/opm_operator/RELEASE` seed (task 2.1): a hidden type opens no release PR for either package. The reviewer runs the sandbox proof (G-sandbox) and the owner answers G-owner (a) before it merges.
+- **The carrier PR** (section 3) changes only `modules/opm_operator/README.md` and is opened only after this change's PR is on `main`: under today's single-package config its `feat` would cut an operator release. Its merge opens the module's `0.1.0` release PR. The owner merges that after G-owner. Afterwards the owner applies the GHCR package settings, and the cli's wave can start.
 
 Rollback: revert the section's PR. Tags and published module versions stay, as for every release.
 
 ## Deferred
 
 - **A docs-kit bundle for the module's `#config`.** No owner decision asks for it, and no site reads a module bundle. The module's README documents `#config`. A bundle under `modules/opm_operator/` would also ship inside the published module, because `opm module publish` zips the directory as it is on disk. A later change adds it with its own directory outside the module.
+- **A module notify job.** The cli does not consume the module until its `install-operator-from-module` change ships, the `.github` resolver lists operator releases from `v*` tags only, and notify is a key-holding job the Phase 3 wiring contract admits once per `release.yml`. A follow-up adds `module-notify` with the contract change. Until then the cli learns of a module release by its own sweep or by hand. `stop-operator-install-manifest` assumes this job exists, so it now waits for that follow-up too.
 - **A cosign signature and provenance attestation on the module.** No CUE artifact in the workspace is signed (catalog_opm and opm-modules sign nothing), and signing would add `sha256-*.sig` and `.att` tags to the module's repository that every resolver and `cue mod` lookup would have to ignore. A later change adds it across all CUE artifacts at once if the owner wants it.
 
 ## Open Questions
@@ -327,4 +342,7 @@ Rollback: revert the section's PR. Tags and published module versions stay, as f
 
 ## G-sandbox evidence
 
-(Filled by task 1.2.)
+The sandbox run is not recorded here: the writer may not run anything in `open-platform-model/release-flow-sandbox`, so U1 to U5 and U7, U8 are the reviewer's pre-merge step, with the exact steps in the PR body ("What the reviewer must do"). What was proven without the sandbox, 2026-10-04:
+
+- **U2 (static).** release-please 17.11.2, the version `release-please-action` v5.0.0 resolves (`^17.6.0`), drops a commit from a package when every file it touches under that package lies under an `exclude-paths` entry (`build/src/util/commit-exclude.js`, `shouldInclude` and `isRelevant`, paths normalized without slashes and matched as `<path>/` prefixes). The root package `"."` is assigned every commit (`CommitSplit` skips `"."`), so `exclude-paths: ["modules/opm_operator"]` is what keeps module-only commits out of it. Behaviour on GitHub is still for the sandbox.
+- **U6 (local directory half).** With the pinned cli `v1.0.0-beta.7` and `KUBECONFIG=/nonexistent`, a copy of the module with `debugValues: {replicas: 3}` rendered `replicas: 3` with no `-f`, and `replicas: 1` (the `#config` default) with `-f` naming a file holding `{}` or `values: {}`. The unchanged module rendered the same bytes with and without that file, in 2.1 s, ordered CRDs, Namespace, cluster-scoped roles and bindings, then namespaced objects. The published-path half waits for the first module release.

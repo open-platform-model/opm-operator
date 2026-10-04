@@ -2,7 +2,7 @@
 
 Worktree `opm-operator/.claude/worktrees/release-operator-module`, branch `feat/release-operator-module`. Run every command inside that worktree.
 
-Delivery is one PR per section (proposal.md). Before starting a section, rebase the branch on `origin/main`.
+Delivery is two PRs (proposal.md, revised 2026-10-04): this change's PR carries sections 1, 2, 4 and 5 and the archive; the carrier (section 3) is its own PR, opened only once the first is on `main`. The branch is never rebased once pushed: bring `origin/main` in with a merge commit.
 
 Every section's commit task runs these checks:
 
@@ -20,28 +20,28 @@ The supervisor ticks each gate after confirming it with the read-only check give
 - [ ] G-sandbox Unknowns U1 to U8 (design.md, "Release-flow sandbox unknowns") are proven in `open-platform-model/release-flow-sandbox` with this change's config and job shape, U1 to U5 and U8 run as the App. Preconditions: `gh api repos/open-platform-model/release-flow-sandbox/immutable-releases` returns `"enabled":true`, and the sandbox's `includes_parents` ruleset listing shows `tags-immutable` and `tags-create-app-only` active. Record run URLs, outputs and the acting token for each item. Blocks section 2.
 - [ ] G-owner (a) The owner approves the tag shape `opm_operator-vX.Y.Z`, the `0.1.0` start and the 0.x bump rule (design.md, open question 1). Blocks merging section 2.
 - [ ] G-owner (b) After the first module release, the owner sets the GHCR package `open-platform-model/modules/opm_operator`: linked to opm-operator only, Actions access for opm-operator only, visibility public. Check: `gh api orgs/open-platform-model/packages/container/modules%2Fopm_operator --jq '[.visibility, .repository.full_name]'` prints `["public","open-platform-model/opm-operator"]`. Blocks no section of this change; it blocks the cli's `install-operator-from-module`.
-- [ ] G-cascade `.github` `cascade-notify.yml` is on `main` and opm-operator `join-release-cascade` has merged. Check: `gh api repos/open-platform-model/.github/contents/.github/workflows/cascade-notify.yml --jq .path` succeeds, and `notify-downstream` is in `origin/main:.github/workflows/release.yml`. Blocks task 5.5 only. Without it, 5.5 is skipped, and the skip is recorded in design.md.
+- [ ] G-cascade `.github` `cascade-notify.yml` is on `main` and opm-operator `join-release-cascade` has merged. Check: `gh api repos/open-platform-model/.github/contents/.github/workflows/cascade-notify.yml --jq .path` succeeds, and `notify-downstream` is in `origin/main:.github/workflows/release.yml`. Blocks task 5.5 only. Without it, 5.5 is skipped, and the skip is recorded in design.md. (Reconciled 2026-10-04: join-release-cascade merged as #217, but notify is the `cascade-notify` action in a key-holding job, not a reusable workflow, and the wiring contract admits one such job; 5.5 is deferred, design.md "Deferred".)
 - [ ] G-enh The enhancements PR amending 0021 has merged. Check: `gh pr list --repo open-platform-model/enhancements --state merged --search "0021 in:title"` returns it, and `origin/main` of enhancements holds the amended `0021:D4` and the new decision that the install artifact is a registry module on its own train. Record the new decision's number in design.md. Blocks task 5.6 only.
 
 ## 1. Record the sandbox evidence (spike)
 
-- [ ] 1.1 Check G-dep and G-sandbox. If either is unticked, stop here and report which.
-- [ ] 1.2 Write the evidence for U1 to U8 into design.md under "G-sandbox evidence": run URL, observed output and acting token for each item. An item that contradicts the design stops the change here. Examples: U1 finds the root's last release from a module tag, U4's override is ignored, U5's hidden commits open a module release PR, or U7 cannot tell a re-run from changed content. Revise design.md and the spec deltas before section 2.
-- [ ] 1.3 `openspec validate release-operator-module --strict` passes. The tree is unchanged outside `openspec/`, so the gates confirm it. Then commit `docs(openspec): record the module release sandbox evidence`.
+- [x] 1.1 Check G-dep and G-sandbox. If either is unticked, stop here and report which. (2026-10-04: G-dep's checks pass on `origin/main` `81a640d` and are recorded in design.md "Reconciled with the merged tree"; the box stays for the supervisor. G-sandbox is moved to the reviewer by the supervisor's instruction: the writer may not run anything in the sandbox.)
+- [x] 1.2 Write the evidence for U1 to U8 into design.md under "G-sandbox evidence": run URL, observed output and acting token for each item. An item that contradicts the design stops the change here. Examples: U1 finds the root's last release from a module tag, U4's override is ignored, U5's hidden commits open a module release PR, or U7 cannot tell a re-run from changed content. Revise design.md and the spec deltas before section 2. (Done as far as possible without the sandbox: the static U2 evidence and the local U6 evidence are recorded; the sandbox steps for U1 to U8 are in the PR body, and the PR does not merge until the reviewer records them there.)
+- [x] 1.3 `openspec validate release-operator-module --strict` passes. The tree is unchanged outside `openspec/`, so the gates confirm it. Then commit `docs(openspec): record the module release sandbox evidence`. (Committed with the reconciliation as `docs(openspec): reconcile release-operator-module with the merged module`.)
 
 ## 2. The module releases on its own train
 
-Every commit in this section is a hidden type and changes paths outside the module, so landing it cuts no release of either unit. Section 3 opens the module's first release PR.
+Every commit in this section is a hidden type, so landing it cuts no release of either unit. Section 3 opens the module's first release PR.
 
 - [ ] 2.1 `release-please-config.json`:
   - add top-level `"separate-pull-requests": true`;
   - add `"exclude-paths": ["modules/opm_operator"]` to package `"."`;
   - add package `"modules/opm_operator"` exactly as design.md "Separate release PRs and excluded paths" lists it;
-  - add `modules/opm_operator/RELEASE` holding `0.0.0 # x-release-please-version` if U5 showed release-please needs a seed, otherwise as U5 recorded.
+  - add `modules/opm_operator/RELEASE` holding `0.1.0 # x-release-please-version` (catalog_opm's shape; release-please's generic updater skips a missing extra file, so without a seed the file would never exist), unless U5 records otherwise.
 
   Leave `.release-please-manifest.json` unchanged. Verify: `jq -e '.packages["modules/opm_operator"] as $m | $m["bump-minor-pre-major"] == true and $m["bump-patch-for-minor-pre-major"] == true and $m.component == "opm_operator" and $m["include-component-in-tag"] == true and .packages["."]["exclude-paths"] == ["modules/opm_operator"]' release-please-config.json`.
 - [ ] 2.2 `release.yml`:
-  - `image-release`, `publish-examples`, `publish-docs`, `publish-release`, and `notify-downstream` if present, gate on `needs.release-please.outputs.release_created == 'true'`;
+  - `image-release`, `publish-examples`, `publish-docs`, `publish-release` and `notify-downstream` gate on `needs.release-please.outputs.release_created == 'true'` (`notify-downstream` keeps `&& vars.CASCADE_NOTIFY != 'off'`), and `.tasks/cascade/wiring-check.sh` expects the new notify `if`;
   - the `release-please` job exports `module_release_created`, `module_tag_name` and `module_version` from the `modules/opm_operator--*` step outputs;
   - `publish-examples` uses `git describe --tags --abbrev=0 --match 'v[0-9]*' "${TAG}^"`.
 
@@ -98,7 +98,7 @@ Every commit in this section is a hidden type and changes paths outside the modu
 
 ## 3. The carrier opens the first module release
 
-This section is its own PR, and it changes only `modules/opm_operator/README.md`, so its squash commit releases the module and not the operator.
+This section is its own PR, and it changes only `modules/opm_operator/README.md`, so its squash commit releases the module and not the operator. Its commit is prepared on branch `feat/operator-module-release-train` off `origin/main`, outside this change's PR; the supervisor opens that PR once 3.1 holds. Opening it earlier is unsafe: under the single-package config on `main` today, its `feat` would cut an operator release.
 
 - [ ] 3.1 Check that section 2 is on `origin/main`: `git show origin/main:release-please-config.json | jq -e '.packages["modules/opm_operator"]'`. If not, stop.
 - [ ] 3.2 `modules/opm_operator/README.md`: add a section on the release train. A module version is `0.y.z` on the `@v0` path and names the one operator release it deploys in `operator/operator.cue`; each module release attaches `install.yaml`, the module rendered at its defaults; a module version's `CHANGELOG.md` entry `fix(deps): deploy operator <tag> ...` marks the operator it moved to. Follow `docs/STYLE.md`. Verify: `git diff --name-only origin/main` names only `modules/opm_operator/README.md`.
@@ -120,10 +120,9 @@ This section is its own PR, and it changes only `modules/opm_operator/README.md`
   - a dropped served version gives `fix(deps)!`;
   - a CRD that differs between the tag and `main` fails naming the file;
   - a write outside `operator/operator.cue` fails the script.
-- [ ] 4.3 Add `release.yml` job `module-image-pr`:
-  - `needs: [release-please, publish-release]`, `if: needs.release-please.outputs.release_created == 'true'`;
-  - mints the release App token, checks out `main`, runs `hack/operator-module/image.sh set "$TAG"`;
-  - rebuilds or extends `module/operator-image` per design.md;
+- [ ] 4.3 Add `release.yml` jobs `module-image-pr` and `module-image-pr-publish` (design.md "Image-bump PR", two-job split):
+  - `module-image-pr`: `needs: [release-please, publish-release]`, `if: needs.release-please.outputs.release_created == 'true'`, no App token; checks out `main`, runs `hack/operator-module/image.sh set "$TAG"`, uploads the changed module files and the title;
+  - `module-image-pr-publish`: mints the release App token, checks out `main`, copies the files in and runs `hack/operator-module/bot-pr.sh`, which rebuilds or extends `module/operator-image` per design.md;
   - pushes with `--force-with-lease`;
   - creates or edits the PR with `gh pr create|edit --repo "$GH_REPO"` and the computed title;
   - does nothing when the tree is unchanged.
@@ -134,9 +133,9 @@ This section is its own PR, and it changes only `modules/opm_operator/README.md`
 
 - [ ] 5.1 `.tasks/cascade/cascade.sh`: never list or edit a file under `modules/opm_operator/`. Add an offline case to `.tasks/cascade/test.sh`, "The operator module is left to its own task": with the module's catalog behind, `task -x deps:cascade` leaves `modules/opm_operator/` byte-unchanged.
 - [ ] 5.2 Add `task deps:cascade:module` per the `deps-cascade` delta: the same script with the module as its only target, the same holds and frozen keys, the same exit codes. It never touches `operator/operator.cue`, `identity/`, the generated files, `CHANGELOG.md`, `RELEASE` or any path outside the module. Add `.tasks/cascade/module-pins.sh` (two rows, keyed `opmodel.dev/catalogs/opm@v4` and `opmodel.dev/core@v2`, displayed as the operator module's opm catalog and core) and `.tasks/cascade/module-classes` (`modules/opm_operator/` shipped), and the tasks `deps:cascade:module:title` and `deps:cascade:module:body`, which call the resolver with those two files as `deps:cascade:title` and `deps:cascade:body` do. Add offline cases to `.tasks/cascade/test.sh`: "Module pins move, image and version stay", "Catalog hold holds the module", "Nothing to move". Run `CASCADE_TEST_SET=offline task -x deps:cascade:test`, and check the title with the real resolver: `task -x deps:cascade:module:title` on a tree where the catalog moved prints `fix(deps): bump the operator module's opm catalog to ...`.
-- [ ] 5.3 Add `.github/workflows/module-deps.yml` per the `deps-cascade` delta: `repository_dispatch` `upstream-released` and `workflow_dispatch`, `permissions: {}` at the top, the release App token, branch `module/deps` rebuilt or extended as `module-image-pr` does, push with `--force-with-lease`, `gh pr create|edit --repo "$GH_REPO"` with the resolver's title and body, and a dry run while `vars.CASCADE_DRY_RUN != 'false'` that writes the diff to the job summary and pushes nothing.
+- [ ] 5.3 Add `.github/workflows/module-deps.yml` per the `deps-cascade` delta: `repository_dispatch` `upstream-released` and `workflow_dispatch`, `permissions: {}` at the top, the resolver checked out at the pinned `.github` SHA (and `.tasks/cascade/wiring-check.sh` listing it), a compute job with no token and a publish job with the release App token, branch `module/deps` rebuilt or extended by `bot-pr.sh` as for the image PR, push with `--force-with-lease`, `gh pr create|edit --repo "$GH_REPO"` with the resolver's title and body, and a dry run while `vars.CASCADE_DRY_RUN != 'false'` that writes the diff to the job summary and pushes nothing.
 - [ ] 5.4 `AGENTS.md`: the bullet from 2.10 gains one sentence: the module's core and catalog move only through `module/deps` PRs.
-- [ ] 5.5 If G-cascade holds: add `release.yml` job `module-notify` (`needs: [release-please, module-publish-release]`, `if: needs.release-please.outputs.module_release_created == 'true' && vars.CASCADE_NOTIFY != 'off'`, `permissions: contents: read`, calling `cascade-notify.yml` with the module tag). Otherwise record in design.md that the job waits for G-cascade, and leave this box unticked with that note.
+- [ ] 5.5 (Deferred 2026-10-04, design.md "Deferred"; the requirement is out of this change's spec delta.) If G-cascade holds: add `release.yml` job `module-notify` (`needs: [release-please, module-publish-release]`, `if: needs.release-please.outputs.module_release_created == 'true' && vars.CASCADE_NOTIFY != 'off'`, `permissions: contents: read`, calling `cascade-notify.yml` with the module tag). Otherwise record in design.md that the job waits for G-cascade, and leave this box unticked with that note.
 - [ ] 5.6 If G-enh holds: add `enhancement.yaml` to this change declaring enhancement `0021` with the decisions this change completes, read from the merged amendment: the new decision that the install artifact is a registry module on its own train, for its release half, and `D4` only if its amended text is fully met by the module release publishing its render (the operator release's own asset is removed by `stop-operator-install-manifest`). Check each claim against proposal.md "Not in this change"; when in doubt, leave the decision out. Otherwise stop and report that the archive waits for G-enh.
 - [ ] 5.7 `openspec validate release-operator-module --strict` passes. Then run actionlint, shellcheck and `task dev:fmt dev:vet dev:lint dev:test`, all green, and commit `ci(cascade): give the operator module its own cascade PR and notify`.
 - [ ] 5.8 Verify the change with the repo-local `openspec-verify-change` skill. Then archive it with `openspec-archive-change`: the archive commit `docs(openspec): archive release-operator-module` rides this section's PR. From the workspace root, log the delivery with `task enhancements:delivery:log` in explicit mode (`ID=0021 REPO=opm-operator CHANGE=release-operator-module`), and confirm it printed `logged`.

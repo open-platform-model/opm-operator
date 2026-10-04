@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.8](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.7...v1.0.0-beta.8) (2026-10-04)
+
+
+### Features
+
+* **rbac:** ship unbound viewer roles for platforms, packages and registrations ([#223](https://github.com/open-platform-model/opm-operator/issues/223)) ([6a14adb](https://github.com/open-platform-model/opm-operator/commit/6a14adb91a12e56fa7e4f5e2ac9deeea45567299))
+
 ## [1.0.0-beta.7](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-10-04)
 
 

@@ -1,0 +1,32 @@
+# This rule is not used by the project opm-operator itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to ModulePackages and their status. The kind is
+# namespaced; a RoleBinding grants it in one namespace, a ClusterRoleBinding in all.
+#
+# This role ships unbound and carries no aggregate-to-view label: binding it is
+# the cluster administrator's decision, and whether OPM viewer roles aggregate
+# into the built-in view role is still open.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: opm-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: modulepackage-viewer-role
+rules:
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - modulepackages
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - modulepackages/status
+  verbs:
+  - get

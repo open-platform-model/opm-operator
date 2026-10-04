@@ -14,9 +14,9 @@ This repository does not publish it yet. Until the module's release change lands
 | The four `opmodel.dev` CRDs | `resources/v1beta1 #CRDs`, each generated `spec` embedded whole |
 | Deployment and ServiceAccount `opm-operator-controller-manager`, Service `opm-operator-controller-manager-metrics-service` | `blueprints/v1beta1 #StatelessWorkload` with `#ServiceAccount`, `#Volumes` and traits |
 | ClusterRoles `opm-operator-manager-role`, `opm-operator-metrics-auth-role`, Role `opm-operator-leader-election-role`, and a binding for each | `resources/v1beta1 #Role` |
-| ClusterRoles `opm-operator-metrics-reader`, `opm-operator-moduleinstance-{admin,editor,viewer}-role`, `opm-operator-transformerregistration-admin-role`, unbound | `resources/v1alpha1 #Objects` (raw objects) |
+| ClusterRoles `opm-operator-metrics-reader`, `opm-operator-moduleinstance-{admin,editor,viewer}-role`, `opm-operator-{platform,modulepackage,transformerregistration}-viewer-role`, `opm-operator-transformerregistration-admin-role`, unbound | `resources/v1alpha1 #Objects` (raw objects) |
 
-The five administrator ClusterRoles render as raw objects with no binding until a catalog release can render a role with no subjects (catalog_opm `add-subjectless-roles`); their rules still come from the generated RBAC data. Nothing else uses raw objects.
+The eight administrator ClusterRoles render as raw objects with no binding until a catalog release can render a role with no subjects (catalog_opm `add-subjectless-roles`); their rules still come from the generated RBAC data. Nothing else uses raw objects.
 
 Every name is a constant, the name an operator installed from an earlier manifest has; only the bindings take the catalog's names (the role's own). The Deployment's selector is fixed across module versions, and the render test fails if anything changes it.
 

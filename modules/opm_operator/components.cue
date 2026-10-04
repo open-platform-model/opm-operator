@@ -22,6 +22,9 @@ let adminRoles = [
 	"moduleinstance-admin-role",
 	"moduleinstance-editor-role",
 	"moduleinstance-viewer-role",
+	"platform-viewer-role",
+	"modulepackage-viewer-role",
+	"transformerregistration-viewer-role",
 	"transformerregistration-admin-role",
 ]
 
@@ -173,7 +176,7 @@ let adminRoles = [
 		}
 	}
 
-	// The five administrator ClusterRoles, unbound. The released catalog's
+	// The administrator ClusterRoles, unbound. The released catalog's
 	// #Role requires a subject and always renders a binding, so these go
 	// through the raw-objects resource until a catalog release renders a role
 	// with no subjects (catalog_opm add-subjectless-roles); their rules still

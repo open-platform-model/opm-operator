@@ -4,7 +4,7 @@
 # PASS <scenario> or FAIL <scenario>: <reason>; exits 0 when every scenario passes, 1
 # otherwise. Nothing touches the real checkout.
 #
-# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 to S9, S12 and S13 (no GHCR or
+# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 to S9 and S11 to S13 (no GHCR or
 # proxy access beyond a warm Go module cache). CASCADE_TEST_SET=all (the default) adds S2,
 # S4 and S10, and S5 when CASCADE_RESOLVER_REAL names the real resolver.
 set -euo pipefail
@@ -300,6 +300,26 @@ elif [ "$(cd "$D" && git status --porcelain)" != " M test/fixtures/modulepackage
   fail S9 "more than the redis modulepackage changed" "$TMP/s9.log"
 else
   pass S9
+fi
+
+# --- S11: a catalog declaring a newer CUE language still moves, with a warning ---------------------
+
+D=$(sandbox s11)
+sed -i "s/version: \"${CAT_T#v}\"/version: \"${o_cat#v}\"/" "$D/$SAMPLE_PLATFORM"
+sed -i "s/return \"${CAT_T#v}\"/return \"${o_cat#v}\"/" "$D/$CATALOG_GO"
+setup=$(commit_setup "$D")
+{ cat "$OLDER_TABLE"; printf 'language-of\t%s\t%s\tv0.99.0\n' "$CATKEY" "$CAT_T"; } >"$TMP/s11.tsv"
+rc=$(run_task "$D" "$setup" "$TMP/s11.tsv" "$TMP/s11.log")
+s11_status=$(cd "$D" && git status --porcelain | LC_ALL=C sort)
+if [ "$rc" != 0 ]; then
+  fail S11 "exit $rc, want 0 (the pin still moves)" "$TMP/s11.log"
+elif ! grep -qF "declares CUE language \`v0.99.0\`, newer than the local \`CUE_VERSION\`" "$D/.git/cascade/warnings"; then
+  fail S11 "no warning names the catalog's language and the local CUE_VERSION" "$D/.git/cascade/warnings"
+elif [ "$s11_status" != "$(printf ' M %s\n M %s\n' "$SAMPLE_PLATFORM" "$CATALOG_GO" | LC_ALL=C sort)" ]; then
+  printf '%s\n' "$s11_status" >"$TMP/s11.status"
+  fail S11 "more than the sample Platform and catalog.go changed (the crdref block must come back identical)" "$TMP/s11.status"
+else
+  pass S11
 fi
 
 # --- S12: a frozen catalog keeps core at what that catalog pins -------------------------------------

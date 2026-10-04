@@ -142,6 +142,8 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 - [x] 7.3 Warn with key `-` when the example output in `docs/site/start/install-the-operator.md` names a catalog other than the sample Platform's or a core other than `test/fixtures/modules/hello`'s, without editing the page, and script it as S13 (offline). Commit `ci(cascade): warn when the install page's example output drifts`
 
+- [x] 7.4 Script the "Newer CUE language warned" scenario as S11 (offline): lower only the sample Platform and `CatalogVersion()` to the `older.tsv` catalog and add a `language-of` row above `CUE_VERSION`; expect exit 0, the warning, and only those two files changed (the `hack/crdref` regeneration gives the page back unchanged). Commit `test(cascade): cover the CUE language warning offline`
+
 ## 8. Archive
 
 - [ ] 8.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`

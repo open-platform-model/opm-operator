@@ -514,13 +514,17 @@ hold found a real defect (a consumer lowered to its held module; fixed in sectio
   following up.
 - **S10** (network): `hello` lowered and frozen for core only. The catalog move makes MVS raise
   core, so the task exits 1 and names the file and the key.
+- **S11** (offline): the sample Platform and `CatalogVersion()` lowered to the `older.tsv`
+  catalog, and a `language-of` row giving the tree's catalog language `v0.99.0`. Exit 0, the
+  language warning naming both versions, and only those two files changed: the `hack/crdref`
+  regeneration runs and gives back the reference page byte for byte.
 - **S12** (offline): `hello` lowered to the `older.tsv` catalog and core and frozen for the
   catalog only. Core comes from the file's current catalog (contract §5.2 rule 7), so the file
   is byte-unchanged and the task exits 3. Before the implementation review's fix, the catalog
   freeze was checked after core was chosen, and core moved to what the newest catalog pins.
 - **S13** (offline): the sandbox's install page names a catalog and a core the tree does not
   pin. Exit 3, a clean tree, and exactly two warnings.
-**Rationale**: Each runs in seconds, and S7 to S9, S12 and S13 need no network, so they join the
+**Rationale**: Each runs in seconds, and S7 to S9 and S11 to S13 need no network, so they join the
 required offline set.
 
 ### Test placement (contract §8, §9.12)

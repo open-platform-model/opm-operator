@@ -233,15 +233,16 @@ result                  # rule 13: exit 0 changed, 3 not
   `pin-of`, `hold`, `is-frozen`, `published`, `language-of`, `next-patch`, `check-files`) is
   written `if out=$("$R" …); then …; else rc=$?; case $rc in 3) …;; *) exit "$rc";; esac; fi`,
   never with `set +e`.
-- **An `EXIT` trap is the backstop.** It rewrites an exit status of 3 to 1 unless `result()` set
-  `CASCADE_RESULT_SET=1` first, and names the line that failed. Only `result()` can report
+- **An `EXIT` trap is the backstop.** It rewrites an exit status of 3 to 1 unless the result step set
+  `RESULT_SET=1` first, and names the line that failed. Only the result step can report
   "nothing to do".
 - **Phase B decides from the plan, not from "a pin moves".** A fixture can already differ from
   the merge-base before the run (a human commit on the `deps/cascade` branch), while no pin
   moves. If `B` is published, the target is `next-patch(B)`, so the setter must exist. Phase A
-  therefore evaluates `f_changed` for each advance module against the unmodified tree, and phase B
-  installs the binary when any pin moves or any advance module already changed. The setter is
-  only called when the target differs from the file.
+  therefore evaluates `f_changed` for each advance module against the unmodified tree and decides
+  every target, and phase B installs the binary only when a version setter will run: when some
+  advance target differs from its file's current version. A moved pin with no advance to set
+  installs nothing.
 
 ### Consistent set across the operator's files (contract §5.2 rule 7)
 
@@ -303,8 +304,8 @@ There are five advance modules `F`, each with identity file `I` and setter `S`:
   - `B` when `F` did not change;
   - `next-patch(B)` when `published cue <module> v<B>` answers 0;
   - `B` otherwise, because B is pending and so is not bumped again.
-- The setter is the binary installed in phase B, `$STATE/bin/opm`. It runs only when the target
-  differs from the file.
+- The setter is the binary installed in phase B, `$STATE/bin/opm-<version>/opm`, one directory
+  per `.opm-cli-version` value. It runs only when the target differs from the file.
 - **Agreement with the existing gate.** This matches `hack/fixtures.sh check`
   (`hack/fixtures.sh:157-162,271-273`), which also measures from the merge-base, so PR CI's
   "changed implies bumped" step (`.github/workflows/test.yml:66-69`) agrees with the task.
@@ -626,3 +627,12 @@ Rejected: 13 (a tasks.md item that opens the PR). The repo's `openspec/config.ya
 delivery operation in tasks.md besides the section commit, and PRs are opened by the supervisor.
 The PR title, `ci(cascade): add the deps:cascade tasks` (contract §10), is recorded in the
 proposal instead.
+
+## Implementation review
+
+The implementation review of 2026-10-04 raised five findings, all applied: 1 (a frozen catalog
+kept its old version while core moved to the newest catalog's; scenario S12), 2 (the language
+warning scripted offline as S11), 3 (added and removed deps, `go`/`toolchain` directive changes,
+and a dep a modulepackage lacks are warnings), 4 and 5 (tasks.md and design.md matched to the
+code). The supervisor's triage of the same day added the repo-root `.cascade-frozen` and the
+install-page warning (S13).

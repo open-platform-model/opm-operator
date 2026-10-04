@@ -24,7 +24,7 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 ## 2. Pin report, class map, title and body tasks
 
-- [x] 2.1 Add `.tasks/cascade/classes` with Phase 2 cascade contract §5.3's opm-operator block, verbatim.
+- [x] 2.1 Add `.tasks/cascade/classes` with Phase 2 cascade contract §5.3's opm-operator block plus the generated reference page, `test docs/site/reference/operator-resources.md` (a deviation, see design.md).
 - [x] 2.2 Add `.tasks/cascade/pins.sh <WORKTREE|ref>` (executable, `set -euo pipefail`), printing the four TSV rows in design.md ("Pin report and class map"):
   - library from the `go.mod` require line;
   - the catalog from the sample Platform's `version:` after the `opmodel.dev/catalogs/opm@v4:` key, with a `v` added;
@@ -56,7 +56,7 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
   - `f_changed` for each advance module against the unmodified tree, to decide whether phase B is needed.
 
   Every resolver call, in every phase, sits inside an `if` or a `case` (0 move, 3 stay or "no", other: exit with that code); a 3 from `pin-of`, which means the catalog pins no core, is an error. An `EXIT` trap rewrites a status of 3 to 1 unless `result()` set the result. There is no `|| true`, no `2>/dev/null ||` and no `set +e`.
-- [x] 3.3 Phase B: when any pin will move or any advance module already changed (`f_changed`), run `GOBIN=$STATE/bin go install github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)` from the unmodified tree.
+- [x] 3.3 Phase B: only when a version setter will run (some advance target, decided with `f_changed` in phase A, differs from its file), run `GOBIN=$STATE/bin/opm-<version> go install github.com/open-platform-model/cli/cmd/opm@$(cat .opm-cli-version)` from the unmodified tree.
 - [x] 3.4 Phase C, edits in Phase 2 cascade contract §5.2 rule 12 order:
   - library: `go get library@<v>`, then `go mod tidy`, warning on a raised third-party pin;
   - the catalog, as text: the sample Platform (bare, quoted) and `test/fixtures/catalog.go` (bare; `gofmt -l` must be clean);
@@ -145,6 +145,8 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 - [x] 7.4 Script the "Newer CUE language warned" scenario as S11 (offline): lower only the sample Platform and `CatalogVersion()` to the `older.tsv` catalog and add a `language-of` row above `CUE_VERSION`; expect exit 0, the warning, and only those two files changed (the `hack/crdref` regeneration gives the page back unchanged). Commit `test(cascade): cover the CUE language warning offline`
 
 - [x] 7.5 Warn on third-party pins that `go mod tidy` or `cue mod tidy` adds or removes (outer `join`), on a changed `go` or `toolchain` directive after `go get`, and on a dep a fixture module gains that its modulepackage lacks. Commit `ci(cascade): warn on added and removed deps and on go directive changes`
+
+- [x] 7.6 Correct tasks.md 2.1 and 3.3 and design.md's phase B and setter path to match the code. Commit `docs(openspec): match add-deps-cascade-task's documents to the code`
 
 ## 8. Archive
 

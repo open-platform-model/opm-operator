@@ -20,4 +20,4 @@ Registry-backed runs below seed a local registry and map only `testing.opmodel.d
 
 ## 3. Verify and archive
 
-- [ ] 3.1 Run the repo's verify skill for the change, fix what it raises, then `openspec archive add-active-provider-fixture --yes`, confirm `openspec validate example-test-modules --type spec --strict` passes, and commit `docs(openspec): archive add-active-provider-fixture`.
+- [x] 3.1 Run the repo's verify skill for the change, fix what it raises, then `openspec archive add-active-provider-fixture --yes`, confirm `openspec validate example-test-modules --type spec --strict` passes, and commit `docs(openspec): archive add-active-provider-fixture`.

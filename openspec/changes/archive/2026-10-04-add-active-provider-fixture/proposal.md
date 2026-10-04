@@ -42,6 +42,7 @@ None.
 - New: `test/fixtures/catalogs/backup/`, `test/fixtures/modules/backup_provider/`, `test/fixtures/modules/backup_consumer/`, `test/integration/reconcile/backup_fixture_test.go`.
 - `test/integration/reconcile/registry_helpers_test.go`: the platform store helper accepts further registry entries.
 - `test/fixtures/modules/README.md`, `AGENTS.md`.
+- `.tasks/cascade/test.sh`: the S2 golden list names the two backup modules, which advance on every cascade like the rest of the fleet.
 - Publishing: on merge, `publish-fixtures.yml` publishes the three new coordinates to GHCR. `task examples:bundle` picks up the two new `moduleinstance.yaml` files as release assets.
 - Downstream: the opm-portal capture uses the published set (`backup_provider`, then `backup_consumer`) once an operator release carries library v1.0.0-beta.2 or later.
 - No enhancement decision is implemented here, so there is no `enhancement.yaml`.

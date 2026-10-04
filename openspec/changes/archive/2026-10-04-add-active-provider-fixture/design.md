@@ -25,7 +25,7 @@ Reconcile phase impact: none. No operator code changes. The fixtures exercise Re
 
 - Bumping the library so that released operators accept a rendered claim (D4).
 - An e2e spec for acceptance and activation (D5).
-- Changing `hack/fixtures.sh` or the cascade.
+- Changing `hack/fixtures.sh` or what the cascade moves. Only its test's golden list grows by the two backup modules, which the cascade already advances.
 
 ## Research & Decisions
 

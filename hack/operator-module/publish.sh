@@ -28,6 +28,8 @@ OPM=${OPM:-opm}
 CRANE=${CRANE:-crane}
 : "${OPM_REGISTRY:?OPM_REGISTRY must map opmodel.dev to the release registry}"
 
+# Registry Policy: only CI publishes.
+[ "${GITHUB_ACTIONS:-}" = true ] || { echo "$0: publishes only in release.yml's module-publish job" >&2; exit 2; }
 [ -d "$M" ] || { echo "$0: no $M here; run from the repository root" >&2; exit 2; }
 
 if held=$("$CRANE" digest "$GHCR_REPO:v$v" 2>/dev/null); then

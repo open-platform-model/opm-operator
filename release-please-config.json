@@ -5,6 +5,7 @@
   "include-component-in-tag": false,
   "include-v-in-tag": true,
   "separate-pull-requests": true,
+  "bootstrap-sha": "81a640dbbbb8a1d6d5adc8eae6afbabf31116498",
   "packages": {
     ".": {
       "release-type": "go",

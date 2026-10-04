@@ -311,6 +311,12 @@ plan_cue_module() {
     vcmp "$K" "$cat"
     [ "$CMP" != 1 ] || t=$K
   fi
+  # Rule 8, checked before core is chosen: a frozen catalog stays, so core follows the
+  # file's current catalog (rule 7), never the catalog it would have moved to.
+  if [ -n "$cat" ] && [ "$t" != "$cat" ] && is_frozen "$mf" "$CATKEY"; then
+    frz+=" $CATKEY"
+    t=$cat
+  fi
   C=${t:-$K}
   core_for "$C"
   CMP=0
@@ -332,10 +338,8 @@ plan_cue_module() {
     -1) [ -n "$capped" ] || warn "$COREKEY" "core \`$core\` is ahead of the core \`$CORE_OF\` that catalog \`$C\` pins (\`$mf\`)" ;;
   esac
   if [ "$t" != "$cat" ] || [ "$ct" != "$core" ]; then
-    # Rule 8: a frozen key is left out of the get and byte-checked after tidy.
-    if [ -n "$cat" ]; then
-      if is_frozen "$mf" "$CATKEY"; then frz+=" $CATKEY"; t=$cat; fi
-    fi
+    # Rule 8: a frozen key is left out of the get and byte-checked after tidy (the
+    # catalog was checked above).
     if is_frozen "$mf" "$COREKEY"; then frz+=" $COREKEY"; ct=$core; fi
     # cue mod get names the module path without its @vN, at the exact version.
     [ "$t" = "$cat" ] || { gets+=" ${CATKEY%@*}@$t"; CAT_MOVES=1; }

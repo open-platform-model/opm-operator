@@ -76,6 +76,10 @@ Before editing a version literal in a file, or naming a key in `cue mod get` for
 - **WHEN** `.cascade-frozen` freezes `test/fixtures/modules/hello/cue.mod/module.cue` for the catalog and core, and both are behind
 - **THEN** that file is byte-unchanged, the other pins still move, and the task exits 0
 
+#### Scenario: Frozen catalog keeps its core
+- **WHEN** `.cascade-frozen` freezes a fixture module file for the catalog only, its catalog is behind the newest, and its core is what its own catalog pins
+- **THEN** core is chosen from the file's current catalog, so that file is byte-unchanged
+
 #### Scenario: MVS raises a frozen key
 - **WHEN** `cue mod get` of an unfrozen key raises a frozen key in the same module
 - **THEN** the task exits 1 and names the module file and the frozen key

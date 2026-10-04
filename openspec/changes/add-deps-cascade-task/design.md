@@ -512,8 +512,12 @@ hold found a real defect (a consumer lowered to its held module; fixed in sectio
   following up.
 - **S10** (network): `hello` lowered and frozen for core only. The catalog move makes MVS raise
   core, so the task exits 1 and names the file and the key.
-**Rationale**: Each runs in seconds, and S7 to S9 need no network, so they join the required
-offline set.
+- **S12** (offline): `hello` lowered to the `older.tsv` catalog and core and frozen for the
+  catalog only. Core comes from the file's current catalog (contract §5.2 rule 7), so the file
+  is byte-unchanged and the task exits 3. Before the implementation review's fix, the catalog
+  freeze was checked after core was chosen, and core moved to what the newest catalog pins.
+**Rationale**: Each runs in seconds, and S7 to S9 and S12 need no network, so they join the
+required offline set.
 
 ### Test placement (contract §8, §9.12)
 **Context**: Contract §8 places the offline step in `test.yml` job `Run on Ubuntu`, calling it

@@ -134,6 +134,10 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 - [x] 6.2 Script the spec scenarios the contract's S1 to S6 leave to hand checks (design.md, "Scenarios beyond the contract"): S7 core hold, S8 pending fixture, S9 core ahead (offline), S10 MVS raising a frozen key (network). Confirm S7 fails against the mover before 6.1.
 - [x] 6.3 `shellcheck .tasks/cascade/*.sh`, `task dev:fmt dev:vet dev:lint dev:test` and `task -x deps:cascade:test` green, then commit `test(cascade): cover core holds, pending fixtures, core ahead and frozen MVS raises`
 
-## 7. Archive
+## 7. Implementation review follow-ups
 
-- [ ] 7.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`
+- [x] 7.1 Check a module's catalog freeze before choosing its core, so a frozen catalog keeps the core it pins (contract §5.2 rule 7), and script it as S12 (offline). Confirm S12 fails against the mover before the fix. Commit `fix(cascade): choose core from a frozen catalog, not the newest`
+
+## 8. Archive
+
+- [ ] 8.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`

@@ -4,7 +4,7 @@
 # PASS <scenario> or FAIL <scenario>: <reason>; exits 0 when every scenario passes, 1
 # otherwise. Nothing touches the real checkout.
 #
-# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6, S7, S8, S9 (no GHCR or
+# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 to S9 and S12 (no GHCR or
 # proxy access beyond a warm Go module cache). CASCADE_TEST_SET=all (the default) adds S2,
 # S4 and S10, and S5 when CASCADE_RESOLVER_REAL names the real resolver.
 set -euo pipefail
@@ -107,6 +107,17 @@ set_dep_v() {
     index($0, k) { f = 1 }
     f && /^[[:space:]]*v:/ { sub(/"[^"]+"/, "\"" v "\""); f = 0 }
     { print }' "$1" >"$1.tmp" && mv "$1.tmp" "$1"
+}
+
+# add_frozen DIR PATH REASON KEY...: append one entry to DIR/.cascade-frozen, creating it
+# when missing (entries indented two spaces, as the repo's own file).
+add_frozen() {
+  local d=$1 path=$2 reason=$3 pins
+  shift 3
+  pins=$(printf '"%s", ' "$@")
+  [ -f "$d/.cascade-frozen" ] || printf 'frozen:\n' >"$d/.cascade-frozen"
+  printf '  - path: %s\n    pins: [%s]\n    reason: "%s"\n' "$path" "${pins%, }" "$reason" \
+    >>"$d/.cascade-frozen"
 }
 
 # --- Pre-checks ------------------------------------------------------------------------------
@@ -291,6 +302,26 @@ else
   pass S9
 fi
 
+# --- S12: a frozen catalog keeps core at what that catalog pins -------------------------------------
+
+D=$(sandbox s12)
+set_dep_v "$D/$S4_FILE" "$CATKEY" "$o_cat"
+set_dep_v "$D/$S4_FILE" "$COREKEY" "$o_core"
+add_frozen "$D" "$S4_FILE" S12 "$CATKEY"
+setup=$(commit_setup "$D")
+before=$(sha256sum "$D/$S4_FILE")
+# The newest catalog pins the tree's core; the frozen file's own catalog pins the older one.
+rc=$(run_task "$D" "$setup" "$OLDER_TABLE" "$TMP/s12.log")
+if [ "$rc" != 3 ]; then
+  fail S12 "exit $rc, want 3 (catalog frozen, core stays with it)" "$TMP/s12.log"
+elif [ "$(sha256sum "$D/$S4_FILE")" != "$before" ]; then
+  fail S12 "$S4_FILE changed: core followed the catalog it did not move to" "$TMP/s12.log"
+elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
+  fail S12 "the tree changed" "$TMP/s12.log"
+else
+  pass S12
+fi
+
 if [ "$SET" = offline ]; then
   exit "$FAILED"
 fi
@@ -390,12 +421,7 @@ D=$(sandbox s4)
 if ! lower_pins "$D"; then
   fail S4 "the setup did not lower every pin location"
 else
-  {
-    [ ! -f "$D/.cascade-frozen" ] || cat "$D/.cascade-frozen"
-    [ -f "$D/.cascade-frozen" ] || printf 'frozen:\n'
-    printf -- '- path: %s\n  pins: [%s, %s]\n  reason: S4\n' "$S4_FILE" "$CATKEY" "$COREKEY"
-  } >"$TMP/s4.frozen"
-  mv "$TMP/s4.frozen" "$D/.cascade-frozen"
+  add_frozen "$D" "$S4_FILE" S4 "$CATKEY" "$COREKEY"
   setup=$(commit_setup "$D")
   before=$(sha256sum "$D/$S4_FILE")
   rc=$(run_task "$D" "$setup" "$OLDER_TABLE" "$TMP/s4.log")
@@ -415,12 +441,7 @@ fi
 D=$(sandbox s10)
 set_dep_v "$D/$S4_FILE" "$CATKEY" "$(older_v "$CATKEY")"
 set_dep_v "$D/$S4_FILE" "$COREKEY" "$(older_v "$COREKEY")"
-{
-  [ ! -f "$D/.cascade-frozen" ] || cat "$D/.cascade-frozen"
-  [ -f "$D/.cascade-frozen" ] || printf 'frozen:\n'
-  printf -- '- path: %s\n  pins: [%s]\n  reason: S10\n' "$S4_FILE" "$COREKEY"
-} >"$TMP/s10.frozen"
-mv "$TMP/s10.frozen" "$D/.cascade-frozen"
+add_frozen "$D" "$S4_FILE" S10 "$COREKEY"
 setup=$(commit_setup "$D")
 rc=$(run_task "$D" "$setup" "$OLDER_TABLE" "$TMP/s10.log")
 if [ "$rc" != 1 ]; then

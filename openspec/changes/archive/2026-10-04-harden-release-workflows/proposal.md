@@ -71,8 +71,10 @@ Dependabot `github-actions` entry already exists with the `.github` ignore; revi
 
 ### Modified Capabilities
 
-- `container-image-publish`: the PR image workflow skips `deps/cascade` and
-  `release-please--*` heads and builds without the Actions cache.
+- `container-image-publish`: the PR image workflow skips `deps/cascade`, `release-please--*`
+  and `dependabot/*` heads and builds without the Actions cache. Review also corrected two
+  statements that predate this change: the workflow has no `paths` filter, and the PR image is
+  built for `linux/amd64` and `linux/arm64`, not `linux/amd64` only.
 
 ## Impact
 

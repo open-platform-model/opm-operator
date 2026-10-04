@@ -18,7 +18,7 @@ The CI pipeline SHALL publish the controller manager container image to `ghcr.io
 
 ### Requirement: Pull-request image build trigger and tags
 
-The PR image workflow SHALL run on `pull_request` events (types: `opened`, `synchronize`, `reopened`) that touch any path affecting the produced image, except for a head named `deps/cascade` or starting with `release-please--`, where the job SHALL be skipped so that unreviewed bot-head code never builds under a `packages: write` and `id-token: write` token. On every run it SHALL build and push exactly two tags: `:sha-<short>` where `<short>` is the 7-character short commit SHA of the PR head, and `:pr-<PR_ID>` where `<PR_ID>` is the GitHub pull request number. The `:pr-<PR_ID>` tag MAY be overwritten by subsequent pushes to the same PR; `:sha-<short>` is effectively immutable because the SHA changes when the commit changes. The build SHALL NOT use the GitHub Actions cache.
+The PR image workflow SHALL run on `pull_request` events (types: `opened`, `synchronize`, `reopened`) whatever paths they touch (the workflow has no `paths` filter), except for a head named `deps/cascade` or starting with `release-please--` or `dependabot/`, where the job SHALL be skipped so that unreviewed bot-head code never builds under a `packages: write` and `id-token: write` token. On every run it SHALL build and push exactly two tags: `:sha-<short>` where `<short>` is the 7-character short commit SHA of the PR head, and `:pr-<PR_ID>` where `<PR_ID>` is the GitHub pull request number. The `:pr-<PR_ID>` tag MAY be overwritten by subsequent pushes to the same PR; `:sha-<short>` is effectively immutable because the SHA changes when the commit changes. The build SHALL NOT use the GitHub Actions cache.
 
 #### Scenario: New PR opened
 - **WHEN** a contributor opens a pull request whose head commit is `abcd123...`
@@ -33,7 +33,7 @@ The PR image workflow SHALL run on `pull_request` events (types: `opened`, `sync
 - **THEN** the workflow SHALL NOT run an image build
 
 #### Scenario: Bot head skipped
-- **WHEN** a pull request from `deps/cascade` or a `release-please--*` head opens or updates
+- **WHEN** a pull request from `deps/cascade`, a `release-please--*` head or a `dependabot/*` head opens or updates
 - **THEN** the image job SHALL be skipped and SHALL push nothing
 
 ### Requirement: Release image build trigger gated on release-please
@@ -78,11 +78,11 @@ On a gated release run, the image-release job SHALL push, for a release version 
 
 ### Requirement: Multi-architecture support
 
-PR image builds SHALL produce a single-architecture image for `linux/amd64` only. Release image builds SHALL produce a multi-architecture manifest list covering `linux/amd64` and `linux/arm64`.
+PR image builds SHALL produce a multi-architecture manifest list covering `linux/amd64` and `linux/arm64`, the same set as a release. Release image builds SHALL produce a multi-architecture manifest list covering `linux/amd64` and `linux/arm64`.
 
 #### Scenario: PR build architecture set
 - **WHEN** the PR image workflow runs
-- **THEN** the resulting pushed image SHALL expose exactly one platform descriptor: `linux/amd64`
+- **THEN** the resulting pushed manifest list SHALL expose exactly two platform descriptors: `linux/amd64` and `linux/arm64`
 
 #### Scenario: Release build architecture set
 - **WHEN** the release image-release job runs successfully

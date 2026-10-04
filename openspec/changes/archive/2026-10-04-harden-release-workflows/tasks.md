@@ -43,3 +43,4 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 - [x] 7.3 Pin `go-task/setup-task` to `3.54.0` in every workflow and drop `repo-token` from `publish-fixtures.yml` (design D7). Commit `ci: install Task at an exact version`
 - [x] 7.4 `test-e2e.yml` `test-e2e` job: setup-go `cache: false`, so the whole workflow can go on the wiring check's `publish-workflows` list with `image-pr.yml` (design D3). Commit `ci: drop the Go cache from the e2e suite job`
 - [x] 7.5 `.github/CODEOWNERS`: add `/.opm-cli-version`, `/.opm-docs-version` and `/docs-kit.cue` (design D6). Commit `ci: code-own the opm and docs-kit pins`
+- [x] 7.6 `container-image-publish`: drop the `paths` claim, name the `dependabot/*` skip, and say the PR image is amd64 and arm64. Commit `docs(openspec): match the PR image spec to image-pr.yml`

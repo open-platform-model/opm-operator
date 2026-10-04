@@ -246,15 +246,19 @@ The wiring check comes after the files it checks, so each earlier section is gre
 
 ## Research & Decisions
 
-### Sandbox results this change relies on (from A's archived `design.md`)
+### Pre-merge test results this change relies on
 
-| Test | Result | Run |
-| --- | --- | --- |
-| E1 (first) | **fail**: a reusable notify job in the caller's `cascade` Environment read the variable but not the secret | [up 37205835905](https://github.com/open-platform-model/cascade-sandbox-up/actions/runs/37205835905) |
-| E1 probe | without `secrets:` the secret is empty; with `secrets: inherit` it is visible | [up 37205963663](https://github.com/open-platform-model/cascade-sandbox-up/actions/runs/37205963663) |
-| E1 (fallback) | **pass**: the caller-owned job minted and dispatched (HTTP 204) | [up 37206437700](https://github.com/open-platform-model/cascade-sandbox-up/actions/runs/37206437700), [down 37206458777](https://github.com/open-platform-model/cascade-sandbox-down/actions/runs/37206458777) |
-| E1b | **pass**: "Branch "probe-env" is not allowed to deploy to cascade", zero steps ran | [up 37206627490](https://github.com/open-platform-model/cascade-sandbox-up/actions/runs/37206627490) |
-| E6 | reusable workflow at `@main`, at a SHA or at a branch: not refused; composite action at a SHA: ran; at a branch: **refused** ("must be pinned to a full-length commit SHA"); the real receiver at a SHA succeeded with publish | [down 37208176173](https://github.com/open-platform-model/cascade-sandbox-down/actions/runs/37208176173) and the probes in A's design |
+A's archived `design.md` (`.github`
+`openspec/changes/archive/2026-10-04-add-release-cascade-workflows/design.md`) and contract
+§11.4 record the tests and their runs. Their conclusions:
+
+- **E1:** a reusable-workflow job in the caller's `cascade` Environment reads the Environment
+  variable but not its secret; a caller-owned job that passes the key to a composite action
+  mints the token and dispatches.
+- **E1b:** the `main`-only `cascade` Environment refuses a run from another branch before any
+  step runs.
+- **E6:** `sha_pinning_required` refuses a composite action named by branch and runs one named by
+  a full SHA; a reusable workflow is not refused either way.
 
 **Decision**: E1's failure is why D1 and D2 have caller-owned key jobs; E6 plus owner decision 24
 is why every reference is pinned by SHA. Nothing is left open for opm-operator's
@@ -285,6 +289,12 @@ script into a scratch directory, applies one edit, runs the script and compares 
   [ubuntu-latest]` and `runs-on: ubuntu-24.04` on `publish`.
 - **Refused, extra (4):** `notify-downstream` deleted, the gates call at `@main`, the receive
   call at a tag, a second call into `.github` added to `cascade-gates.yml`.
+- **After the implementation review (6 more, all refused):** notify `needs: release-please`
+  (dropping `publish-release`), notify `if: always()`, notify `tag: v9.9.9`, notify
+  `timeout-minutes: 600`, publish `timeout-minutes: 600`, publish `needs: []`. The check now
+  compares the notify job's `needs`, `if`, `tag` and `timeout-minutes` and the publish job's
+  `needs` and `timeout-minutes` with contract §4.6 and §5.2; a head comment on the notify job
+  still passes.
 
 ### Linting the workflows
 
@@ -307,8 +317,8 @@ scope.
 - **R2. The `pull_request_target` trigger.** It runs with a write-capable token in the base
   context, also for fork PRs. The caller grants only `statuses: write` and `actions: write`, and
   the called job checks nothing out (contract §8.3), so no PR code runs.
-- **R3. Dependabot PRs (E7).** E7 passed in the sandbox (a Dependabot `pull_request_target` run's
-  token had `statuses: write`), a proxy for this public repo (contract §15 item 3). Not a
+- **R3. Dependabot PRs (E7).** E7 passed before A merged (a Dependabot `pull_request_target` run's
+  token had `statuses: write`, contract §8.3), a proxy for this public repo (contract §15 item 3). Not a
   blocker.
 - **R4. CUE version drift fails the receiver hard.** The receiver installs `cue-version`'s
   default, `v0.17.1`. A job that calls a reusable workflow cannot read `env` in `with:`, so

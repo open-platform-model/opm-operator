@@ -25,7 +25,7 @@ script, validation and push lives in `.github`. The contract's §10.1 is this ch
 checklist.
 
 This change was first written to contract version 2 (a reusable notify workflow and a
-reusable publish job at `@main`). The sandbox cycle refuted that shape (E1: a reusable-workflow
+reusable publish job at `@main`). A's pre-merge tests refuted that shape (E1: a reusable-workflow
 job does not see the caller's Environment secret), and owner decision 24 pins the cascade code
 by SHA. This revision rebuilds the change on version 3.1.
 
@@ -96,7 +96,7 @@ change cuts no operator release. No API type, CRD, controller or reconcile phase
 - **`.github` `add-release-cascade-workflows` is merged** (`.github` PR #9, squash
   `2376ffae4bfc665f327d51581350dea694c01504`); `gh api
   repos/open-platform-model/.github/compare/2376ffae4bfc665f327d51581350dea694c01504...main --jq .status`
-  prints `identical` (2026-10-04). The sandbox results this change relies on are recorded in A's
+  prints `identical` (2026-10-04). The pre-merge test results this change relies on are recorded in A's
   archived `design.md`: E1 failed for a reusable notify or publish job, so both are composite
   actions run by caller-owned jobs (wiring contract §13.1, applied); E1b showed the `main`-only
   Environment refuses a branch run; E6 showed `sha_pinning_required` refuses an action named by

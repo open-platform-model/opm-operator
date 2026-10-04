@@ -2,7 +2,8 @@
 # Checks the release-cascade caller shapes on every PR (Phase 3 wiring contract
 # version 3.1, sections 5.2 and 10.1, with the supervisor's addendum: an
 # allow-list for release.yml's workflow env and runs-on for the key-holding
-# jobs). Run from the repo root by `task cascade:wiring:check`, a step of the
+# jobs; and this repo's needs, if, tag and timeout-minutes of those jobs). Run
+# from the repo root by `task cascade:wiring:check`, a step of the
 # required Lint job; needs mikefarah yq v4. Prints every mismatch, then exits 1
 # if there was one. It guards against mistakes; review and the main ruleset
 # guard against a deliberate edit, which could change this file too.
@@ -51,6 +52,14 @@ key_job() {
 }
 
 key_job release.yml notify-downstream cascade-notify '{"contents":"read"}' '["client-id","private-key","tag"]'
+# The notify job's values (contract 4.6, opm-operator): it waits for
+# publish-release, because the cli's release resolver needs the published
+# release with install.yaml.
+r=$W/release.yml
+eq "release.yml:notify-downstream needs" '["release-please","publish-release"]' "$(yq -o=json -I=0 '.jobs.notify-downstream.needs' "$r")"
+eq "release.yml:notify-downstream if" "needs.release-please.outputs.releases_created == 'true' && vars.CASCADE_NOTIFY != 'off'" "$(yq -r '.jobs.notify-downstream.if' "$r")"
+eq "release.yml:notify-downstream tag" '${{ needs.release-please.outputs.tag_name }}' "$(yq -r '.jobs.notify-downstream.steps[0].with.tag' "$r")"
+eq "release.yml:notify-downstream timeout-minutes" 20 "$(yq -r '.jobs.notify-downstream["timeout-minutes"]' "$r")"
 # Workflow-level env reaches the notify action's steps, so it is a map whose
 # keys are all in ENV_ALLOW: nothing there can make a shell or node run code
 # at startup.
@@ -67,6 +76,8 @@ if [ "$RECEIVER" = true ]; then
   eq "deps-cascade.yml top-level keys" '["concurrency","jobs","name","on","permissions"]' "$(yq -o=json -I=0 'keys | sort' "$d")"
   eq "deps-cascade.yml concurrency.group" "$GROUP" "$(yq -r '.concurrency.group' "$d")"
   eq "deps-cascade.yml publish if" "$PUBLISH_IF" "$(yq -r '.jobs.publish.if' "$d")"
+  eq "deps-cascade.yml publish needs" cascade "$(yq -r '.jobs.publish.needs' "$d")"
+  eq "deps-cascade.yml publish timeout-minutes" 15 "$(yq -r '.jobs.publish["timeout-minutes"]' "$d")"
   eq "deps-cascade.yml cascade dry-run" "$DRY" "$(yq -r '.jobs.cascade.with["dry-run"]' "$d")"
   eq "deps-cascade.yml publish dry-run" "$DRY" "$(yq -r '.jobs.publish.steps[0].with["dry-run"]' "$d")"
   re "deps-cascade.yml cascade uses" '^open-platform-model/\.github/\.github/workflows/cascade-receive\.yml@[0-9a-f]{40}$' "$(yq -r '.jobs.cascade.uses' "$d")"

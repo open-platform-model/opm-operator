@@ -11,13 +11,10 @@ name: Cascade gates
 on:
   pull_request_target:
     types: [opened, reopened, synchronize]
-
 permissions: {}
-
 concurrency:
   group: cascade-gates-${{ github.event.pull_request.number }}
   cancel-in-progress: true
-
 jobs:
   gates:
     name: Cascade gates

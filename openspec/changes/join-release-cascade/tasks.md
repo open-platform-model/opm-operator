@@ -8,7 +8,7 @@ Every section runs `actionlint` v1.7.12 (the scratchpad binary, contract §10) o
 
 - [x] 1.1 `gh api repos/open-platform-model/.github/compare/<SHA>...main --jq .status` prints `identical`.
 - [x] 1.2 At `<SHA>`: `cascade-notify` (inputs `tag`, `client-id`, `private-key`), `cascade-publish` (`dry-run`, `labels-managed`, `client-id`, `private-key`), `cascade-receive.yml` (`dry-run`, `gates-only`, `g2-mode`, `g3-mode`, `setup-go`, `setup-cue`, `cue-version`), `cascade-gates.yml` (`g2-mode`, `g3-mode`) and the resolver exist; `cascade-notify.yml` does not. Every nested third-party `uses:` is `owner/repo@<40-hex>`, so `sha_pinning_required` refuses nothing. Recorded in design.md ("What `.github` `main` carries at the pin").
-- [x] 1.3 Record E1, E1b and E6 from A's archived `design.md`, with run URLs, in design.md ("Sandbox results").
+- [x] 1.3 Record the conclusions of E1, E1b and E6 from A's archived `design.md` in design.md ("Pre-merge test results this change relies on").
 - [x] 1.4 Rewrite proposal.md, design.md, the spec deltas and this file to contract 3.1 (§10.1 item 8), applying the earlier implementation review's open findings (design.md: `hack/crdref` gone, `publish-docs` needs, the E6 evidence, the CUE drift question).
 - [x] 1.5 `openspec validate join-release-cascade --strict`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): rebuild join-release-cascade on wiring contract 3.1`
 

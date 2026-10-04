@@ -1,0 +1,20 @@
+# Tasks: e2e-transformer-registration-claim
+
+Every cluster step below runs under `flock /var/home/emil/.cache/claude-tmp/claude-1000/-var-home-emil-dev-open-platform-model/4ab1d413-efb2-48f8-aeb8-bd28123f6046/scratchpad/kind-opm-dev.lock`, on a throwaway podman kind cluster `opm-operator-test-e2e` with an explicit kubeconfig/context, never on `kind-opm-dev` (design.md D5). Delete the throwaway cluster when the step ends.
+
+## 1. Spike: the v-prefixed edit path and the N4 check
+
+- [ ] 1.1 On the throwaway cluster, build and load the branch image, `make install deploy`, apply the sample Platform and `test/fixtures/modules/backup_provider/moduleinstance.yaml`, and record that the claim `default.backup-provider` is accepted and active and that `Platform.status.registry` lists the backup catalog at `0.1.0` with `source: Registration`.
+- [ ] 1.2 Suspend `backup-provider`, merge-patch the claim's `spec.version` to `v0.1.0`, and record: whether the edit holds (no re-apply); the claim's `observedGeneration`, `accepted`, `active` and Ready message; and the Platform's `status.registry` version, `status.packageIdentity` and Ready reason. If the edit is reverted or the claim is not re-judged, stop and report to the supervisor (design.md D2).
+- [ ] 1.3 Delete `backup-provider` and record that the claim is pruned and its finalizer released; then tear down and delete the cluster.
+- [ ] 1.4 N4: run the registry-backed ModulePackage specs against GHCR (`CUE_REGISTRY` set to the GHCR mapping, `go test ./test/integration/reconcile -ginkgo.focus="KernelPackageRenderer Integration"` with envtest assets) and record that the four modulepackage fixtures acquire on library v1.0.0-beta.4. If one fails on its own values, fix that fixture's `values.cue` here (design.md D4).
+- [ ] 1.5 Write the findings of 1.1 to 1.4 into design.md D2 and D4, run `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): record the claim spelling spike for e2e-transformer-registration-claim`.
+
+## 2. The e2e spec (test/e2e)
+
+- [ ] 2.1 Add `test/e2e/registration_test.go` (build tag `e2e`): an `Ordered` Describe that owns its controller deploy and teardown (namespace, `make install`, `make deploy`, the `LOCAL_REGISTRY` and `OPERATOR_DOCKER_CONFIG` overrides, wait Available), applies the sample Platform, waits Ready, and records the Platform's `status.packageIdentity` (design.md D1).
+- [ ] 2.2 Spec "accepts a bare-version claim and builds it into the platform": apply `backup_provider/moduleinstance.yaml`, then use `Eventually` to wait for the claim's `accepted` and `active` to read `true`, the Platform's `status.registry` backup entry to read `0.1.0` with `source: Registration`, `status.packageIdentity` to change, and Ready=True with reason `Generated`. Read the expected version from the fixture's claim rather than a second literal.
+- [ ] 2.3 Spec "accepts a v-prefixed claim and builds it into the platform": suspend `backup-provider`, wait for `Ready=False/Suspended`, merge-patch the claim's `spec.version` to `v` plus the bare version, then use `Eventually` to wait for the claim's `observedGeneration` to equal its `metadata.generation` with `accepted`/`active` true, the Platform's backup entry to read the `v`-prefixed version under a package identity different from 2.2's, and Ready=True/`Generated`.
+- [ ] 2.4 AfterEach on failure: dump the claim, the Platform, `backup-provider` and the controller log tail. AfterAll: delete `backup-provider` (bounded wait, finalizer strip as the podinfo spec does), check the claim is gone, delete the applier RBAC and the Platform, `make undeploy`, `make uninstall`.
+- [ ] 2.5 `go vet -tags=e2e ./test/e2e/` clean; run the new spec focused (`go test -tags=e2e ./test/e2e/ -run TestE2E -ginkgo.focus="TransformerRegistration claim" -v -ginkgo.v`, `KIND_CLUSTER=opm-operator-test-e2e`) on the throwaway cluster under the lock, both specs pass; delete the cluster.
+- [ ] 2.6 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(e2e): drive a registration claim through acceptance and platform build in both version spellings`.

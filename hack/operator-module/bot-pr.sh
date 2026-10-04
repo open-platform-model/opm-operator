@@ -92,8 +92,10 @@ git add -A -- "$M"
 # Plain files only: no mode change, no executable bit, no gitlink.
 while read -r om nm _; do
   om=${om#:}
-  [ "$nm" = 100644 ] && { [ "$om" = 000000 ] || [ "$om" = 100644 ]; } ||
-    die "refusing a mode change $om -> $nm under $M/; the bot only writes plain files"
+  case "$om $nm" in
+  "000000 100644" | "100644 100644") ;;
+  *) die "refusing a mode change $om -> $nm under $M/; the bot only writes plain files" ;;
+  esac
 done < <(git diff --cached --raw --no-renames)
 if git diff --cached --quiet; then
   echo "bot-pr: $branch already carries this change"

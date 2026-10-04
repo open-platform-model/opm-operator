@@ -23,7 +23,7 @@ Read 2026-10-04 at `origin/main` `40a2345`:
 
 ### Interface with add-operator-module
 
-That change is proposed on branch `feat/add-operator-module` and not merged. Its proposal and design (read 2026-10-04 at `008fec3`) name what this change calls:
+That change is proposed on branch `feat/add-operator-module` and not merged. Its proposal and design (read 2026-10-04 at `008fec3`, and at `9f09ac2` for the minimum operator version) name what this change calls:
 
 | What | Name in add-operator-module |
 | --- | --- |
@@ -33,6 +33,7 @@ That change is proposed on branch `feat/add-operator-module` and not merged. Its
 | Generated data | `zz_generated_crds.cue` (`#crdSource`) and `zz_generated_rbac.cue` (`#rbacSource`), from `config/crd/bases` and eight `config/rbac` role files |
 | Generator | `hack/operator-module/generate.sh`, task `operator-module:generate` |
 | Drift check | `hack/operator-module/drift-check.sh`, task `operator-module:drift`; on every pull request it compares the module's data with `config/` at `HEAD`; `--ref <tag>` compares with `config/` extracted from that tag with `git archive` |
+| Minimum operator version | `hack/operator-module/min-operator-version`: one line, the tag of the first operator release containing `refuse-own-instance` (opm-operator PR #211); the module never names an older operator, and its render test enforces that |
 | Instance coordinates | the module renders only for instance `opm-operator` in `opm-operator-system` and refuses any other |
 | `#config` | image repository, registry mapping, default service account, resources, replicas, extra arguments; `image.tag`, `image.digest` and `image.pullPolicy` are refused, so the image moves only through `operator/operator.cue` |
 
@@ -159,12 +160,16 @@ grep -nE 'v: *"[^"]*-0\.dev\.' $M/cue.mod/module.cue && bad "development pin"
 [ -e $M/cue.mod/local-module.cue ]         && bad "local-module.cue present"
 [ "$(ex ./identity -e Version)" = "$proposed" ] || bad "identity.Version"
 # v0 rules: major 0 on the @v0 path; 1.0.0 or higher refused while $tag carries a prerelease suffix
+min=$(cat hack/operator-module/min-operator-version)
+git merge-base --is-ancestor "$min" "$tag" || bad "$tag is older than the minimum operator version $min (refuse-own-instance)"
 hack/operator-module/drift-check.sh --ref "$tag" || bad "CRDs or RBAC differ from $tag"
 ```
 
-Every `bad` records the failure and the script exits non-zero after the last check, so one run names every failure. `RELEASE_GUARD` and `IMAGE_TAG_GUARD` default to `.github/scripts/release-guard.sh` and `image-tag-guard.sh`. The offline test `hack/operator-module/test-release-check.sh` sets them to stubs and runs the script over fixture trees under `hack/testdata/operator-module-release-check/`, so the dev pin, `local-module.cue`, version and major mismatch, the `1.0.0` rule and the reporting of several failures at once are tested in `Lint` on every pull request, without network.
+Every `bad` records the failure and the script exits non-zero after the last check, so one run names every failure. `RELEASE_GUARD` and `IMAGE_TAG_GUARD` default to `.github/scripts/release-guard.sh` and `image-tag-guard.sh`. The offline test `hack/operator-module/test-release-check.sh` sets them to stubs and runs the script over fixture trees under `hack/testdata/operator-module-release-check/`, so the dev pin, `local-module.cue`, version and major mismatch, the `1.0.0` rule, the minimum operator version (against a scratch git repository the test builds with two tags) and the reporting of several failures at once are tested in `Lint` on every pull request, without network.
 
-What the `Lint` job needs for the check: `fetch-depth: 0`, so the drift check's `git archive` finds the operator tag; `cue-lang/setup-cue` at the `CUE_VERSION` `test.yml` names; `GH_TOKEN: ${{ github.token }}` and `GH_REPO: ${{ github.repository }}` on the step, for `release-guard.sh`. `docker buildx imagetools` is on the hosted runner already. These additions change nothing for the job's other steps.
+The minimum check compares by ancestry, not by parsing versions: operator tags are cut from `main` in order, so a tag at or above the minimum is one that contains it. The same file is what add-operator-module's render test compares with `golang.org/x/mod/semver`; the release check repeats it because a release is where a hand-edited downgrade would ship.
+
+What the `Lint` job needs for the check: `fetch-depth: 0`, so the drift check's `git archive` and the minimum check's `git merge-base` find the operator tags; `cue-lang/setup-cue` at the `CUE_VERSION` `test.yml` names; `GH_TOKEN: ${{ github.token }}` and `GH_REPO: ${{ github.repository }}` on the step, for `release-guard.sh`. `docker buildx imagetools` is on the hosted runner already. These additions change nothing for the job's other steps.
 
 ### The module's generated data follow `main`
 

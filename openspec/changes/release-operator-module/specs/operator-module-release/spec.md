@@ -79,9 +79,10 @@ On the module's release PR, the required `Lint` job SHALL run a module release c
 - the module's operator image reference is not `ghcr.io/open-platform-model/opm-operator:<tag>@<digest>`, where `<tag>` is a published, non-draft operator release and `<digest>` is the manifest-list digest GHCR serves under that tag;
 - `identity.Version` differs from the version the release PR proposes, or its major disagrees with the module path's major;
 - the proposed version breaks the v0 rules of "The module version follows the 0.x bump rule on the v0 path";
+- `<tag>` is older than the repository's minimum operator version, the first operator release that refuses to reconcile the operator's own instance;
 - the module's generated CRDs or controller RBAC differ from what the operator source at `<tag>` generates.
 
-The last check exists because a module release must render exactly the CRDs the controller it deploys serves and exactly the cluster permissions that controller declares, and `main` can move ahead of the deployed operator release. Because the module's generated data follow `main`'s `config/` on every pull request, module releases are frozen while `main`'s `config/` differs from the deployed tag's, until the image-bump PR of an operator release carrying that change merges. The check SHALL also run in the module publish job before anything is pushed, so a release merged past a red check still publishes nothing. The checks that need no network (development pin, `local-module.cue`, version and major, the `1.0.0` rule, reporting every failure) SHALL be covered by an offline test that the `Lint` job runs on every pull request.
+The last check exists because a module release must render exactly the CRDs the controller it deploys serves and exactly the cluster permissions that controller declares, and `main` can move ahead of the deployed operator release. Because the module's generated data follow `main`'s `config/` on every pull request, module releases are frozen while `main`'s `config/` differs from the deployed tag's, until the image-bump PR of an operator release carrying that change merges. The check SHALL also run in the module publish job before anything is pushed, so a release merged past a red check still publishes nothing. The checks that need no network (development pin, `local-module.cue`, version and major, the `1.0.0` rule, the minimum operator version, reporting every failure) SHALL be covered by an offline test that the `Lint` job runs on every pull request.
 
 #### Scenario: Image digest does not match GHCR
 
@@ -97,6 +98,11 @@ The last check exists because a module release must render exactly the CRDs the 
 
 - **WHEN** `main` changed a CRD after `v1.0.0-beta.6` and the module still names `v1.0.0-beta.6` but carries the new CRD
 - **THEN** the check fails naming the CRD, and the module waits for the image-bump PR of the next operator release
+
+#### Scenario: Operator below the minimum
+
+- **WHEN** the module names `opm-operator:v1.0.0-beta.5` and the minimum operator version is `v1.0.0-beta.6`
+- **THEN** the check fails naming both tags
 
 #### Scenario: Development pin
 

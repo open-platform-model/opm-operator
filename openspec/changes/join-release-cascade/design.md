@@ -212,6 +212,37 @@ treated like a tag. Section 1 reads E6's result from `.github`
 **Rationale**: the cost of guessing wrong is a stopped release pipeline, and the test already
 exists in A's cycle.
 
+### Spike results (section 1, 2026-10-04)
+
+**E1, E1b, E6: not run yet.** `.github` `add-release-cascade-workflows` (`04bc25d`) stopped at
+its task 5.1 because three supervisor preconditions are missing: `cascade-sandbox-up` is still
+private (contract §11.1), neither sandbox has the `main` ruleset (§11.5), and the branch is not
+on `origin`. Its "Sandbox cycle" table shows every row "not run", with no run URL. So:
+
+| Test | Result | Run |
+| --- | --- | --- |
+| E1 | not run | none |
+| E1b | not run | none |
+| E6 | not run | none |
+
+Tasks 1.1 and 1.2 stay open until those rows are filled; neither has failed, so sections 2 to 4
+are written (tasks.md, "Depends on"), and the PR does not merge until they pass.
+
+**Task 1.3, checked against the branch, not `main`.** `.github` `origin/main` (`6a18e7d`) has
+none of the three files yet. On the branch at `04bc25d`:
+
+- `cascade-notify.yml` takes `tag` (required) and `org-github-ref`, as contract §4.1.
+- `cascade-receive.yml` takes `dry-run` (required), `gates-only`, `g2-mode`, `g3-mode`,
+  `setup-go`, `setup-cue`, `cue-version` (default `v0.17.1`), `labels-managed` and
+  `org-github-ref`, as contract §6.1.
+- `cascade-gates.yml` takes `g2-mode`, `g3-mode` and `org-github-ref`, as contract §8.3.
+- Every step `uses:` is `owner/repo@<40-hex>`: notify 2 (checkout, create-github-app-token),
+  receive 13 (checkout, setup-go, setup-cue, setup-task, upload-artifact, download-artifact,
+  create-github-app-token), gates 0.
+
+No difference from the contract. Task 1.3 is re-run on `main` once A merges, before this PR
+merges.
+
 ### Does a called workflow's `environment: cascade` reach this repo's secret?
 
 **Context**: the App key is an Environment secret here. Notify and publish declare

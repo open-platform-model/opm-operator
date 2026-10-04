@@ -11,7 +11,7 @@ Every section runs `actionlint` (the local binary, contract §10) on the workflo
 - [ ] 1.2 If E1 failed (contract §13.1), or E6 refused `@main` (contract §15 item 2), stop here. Report the result to the supervisor and do not start section 2. The callers' shape is then a contract change or an owner decision. Contract §13.1 at `@main` cannot work in this repo without an owner decision either: its composite actions are action references, which `sha_pinning_required` refuses unless they are SHA-pinned (design.md, "Is `@main` allowed under `sha_pinning_required: true`?").
 - [ ] 1.3 Confirm on `.github` `main` that `cascade-notify.yml`, `cascade-receive.yml` and `cascade-gates.yml` exist, and that their `workflow_call` inputs match contract §4.1, §6.1 and §8.3 (`tag`; `dry-run`, `gates-only`, `g2-mode`, `g3-mode`, `setup-go`, `labels-managed`; `g2-mode`, `g3-mode`). Record any difference in design.md and report it.
   - Check statically that every step `uses:` in those three files is `owner/repo@<40-hex>`: opm-operator's `sha_pinning_required` applies to every action step that runs in its runs, called workflows included. Stop and report on any miss.
-- [ ] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): record the sandbox results join-release-cascade relies on`
+- [x] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): record the sandbox results join-release-cascade relies on`
 
 ## 2. Notify the cli after a release is published
 

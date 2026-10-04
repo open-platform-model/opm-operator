@@ -108,8 +108,8 @@ eq "secrets.CASCADE_APP_PRIVATE_KEY readers" "$want_key" "$(printf '%s' "$got_ke
 eq "cascade Environment jobs" "$want_env" "$(printf '%s' "$got_env" | sed '/^$/d' | sort)"
 eq "calls into .github that pass secrets" "" "$(printf '%s' "$got_sec" | sed '/^$/d')"
 
-# Every .github reference (the uses: lines and the cascade-task.yml resolver
-# ref) carries one full SHA and the pin comment.
+# Every .github reference (the uses: lines and the resolver checkouts' refs in
+# cascade-task.yml and module-deps.yml) carries one full SHA and the pin comment.
 refs=""
 for f in "$W"/*.yml "$W"/*.yaml; do
   [ -e "$f" ] || continue
@@ -129,6 +129,7 @@ if [ "$RECEIVER" = true ]; then
     "cascade-task.yml resolver" \
     "deps-cascade.yml open-platform-model/.github/.github/actions/cascade-publish" \
     "deps-cascade.yml open-platform-model/.github/.github/workflows/cascade-receive.yml" \
+    "module-deps.yml resolver" \
     "release.yml open-platform-model/.github/.github/actions/cascade-notify" | sort)
 fi
 eq ".github references" "$want_refs" "$(printf '%s\n' "$refs" | sed -E 's/@[^ ]* .*$//' | sort)"

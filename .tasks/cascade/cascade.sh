@@ -10,6 +10,13 @@
 #
 # Three phases: A resolves every target (resolver calls only, no edit), B installs the opm
 # CLI from the unmodified tree when a fixture version may be set, C edits.
+#
+# Two scopes. CASCADE_SCOPE=repo (the default, task deps:cascade) moves everything above
+# and never touches the operator module, modules/opm_operator. CASCADE_SCOPE=module (task
+# deps:cascade:module) moves only that module's opm catalog and core, with the same rules,
+# holds and frozen paths a fixture module gets, and nothing else: not its image, its
+# identity.Version, its generated files or its release files. Its PR changes nothing
+# outside the module, so it releases the module and not the operator.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source-path=SCRIPTDIR source=lib.sh
@@ -45,6 +52,9 @@ SAMPLE_MI=config/samples/opmodel.dev_v1alpha1_moduleinstance.yaml
 CATALOG_GO=test/fixtures/catalog.go
 PROVIDER=test/fixtures/catalogs/provider
 CUE_VERSION_FILE=.github/workflows/test.yml
+OPMOD=modules/opm_operator
+SCOPE=${CASCADE_SCOPE:-repo}
+case $SCOPE in repo | module) ;; *) die "CASCADE_SCOPE must be repo or module, not '$SCOPE'" ;; esac
 
 # --- Rule 1: clean start, or a snapshot under CASCADE_ALLOW_DIRTY=1 -----------------------
 
@@ -268,16 +278,22 @@ if rcall o check-files --repo-root .; then :; else die "check-files answered 3";
 # ===========================================================================================
 # Phase A: resolve. No file is edited until every target is known.
 
-LIB_NOW=$(go_require_v "$LIBKEY" <go.mod)
-valid_v "$LIB_NOW" || die "go.mod: no version for $LIBKEY"
-cat_bare=$(yaml_version_after "$CATKEY:" <"$SAMPLE_PLATFORM")
-CAT_NOW="v$cat_bare"
-valid_v "$CAT_NOW" || die "$SAMPLE_PLATFORM: no catalog version after $CATKEY"
-CLI_NOW=$(tr -d '[:space:]' <.opm-cli-version)
-valid_v "$CLI_NOW" || die ".opm-cli-version: '$CLI_NOW' is not a version"
+if [ "$SCOPE" = repo ]; then
+  LIB_NOW=$(go_require_v "$LIBKEY" <go.mod)
+  valid_v "$LIB_NOW" || die "go.mod: no version for $LIBKEY"
+  cat_bare=$(yaml_version_after "$CATKEY:" <"$SAMPLE_PLATFORM")
+  CAT_NOW="v$cat_bare"
+  valid_v "$CAT_NOW" || die "$SAMPLE_PLATFORM: no catalog version after $CATKEY"
+  CLI_NOW=$(tr -d '[:space:]' <.opm-cli-version)
+  valid_v "$CLI_NOW" || die ".opm-cli-version: '$CLI_NOW' is not a version"
+else
+  [ -f "$OPMOD/cue.mod/module.cue" ] || die "no $OPMOD/cue.mod/module.cue"
+  CAT_NOW=$(cue_dep_v "$CATKEY" <"$OPMOD/cue.mod/module.cue")
+  valid_v "$CAT_NOW" || die "$OPMOD/cue.mod/module.cue: no version for $CATKEY"
+fi
 
 LIB='' CAT='' CLI=''
-resolve LIB go "$LIBKEY" "$LIB_NOW" "$LIBKEY"
+[ "$SCOPE" = module ] || resolve LIB go "$LIBKEY" "$LIB_NOW" "$LIBKEY"
 resolve CAT cue "$CATKEY" "$CAT_NOW" "$CATKEY"
 K=${CAT:-$CAT_NOW}
 
@@ -299,9 +315,11 @@ if [ "$CMP" = 1 ]; then
   core_for "$K"
 fi
 
-resolve CLI opm-cli "" "$CLI_NOW" "$CLIKEY"
-
-M=$(git merge-base "${CASCADE_BASE:-origin/main}" HEAD)
+M=
+if [ "$SCOPE" = repo ]; then
+  resolve CLI opm-cli "" "$CLI_NOW" "$CLIKEY"
+  M=$(git merge-base "${CASCADE_BASE:-origin/main}" HEAD)
+fi
 
 # The plan. Each array maps a file or directory to what phase C writes there.
 declare -A GETS=()       # cue module dir -> "path@v path@v" for cue mod get
@@ -315,17 +333,19 @@ CORE_TARGETS=()          # core versions some file moves to (rule 10)
 CAT_MOVES=              # set when any file moves its catalog (rule 10)
 
 # Text pins of the catalog: the sample Platform and CatalogVersion(), both bare.
-vcmp "$K" "$CAT_NOW"
-if [ "$CMP" = 1 ] && ! is_frozen "$SAMPLE_PLATFORM" "$CATKEY"; then
-  TEXT_EDITS+=("yamlver${T}$SAMPLE_PLATFORM${T}$CATKEY:${T}${K#v}")
-  CAT_MOVES=1
-fi
-go_bare=$(awk '/^func CatalogVersion\(\)/ { f = 1 } f && /return "/ { if (match($0, /"[^"]+"/)) print substr($0, RSTART + 1, RLENGTH - 2); exit }' "$CATALOG_GO")
-valid_v "v$go_bare" || die "$CATALOG_GO: no version literal in CatalogVersion()"
-vcmp "$K" "v$go_bare"
-if [ "$CMP" = 1 ] && ! is_frozen "$CATALOG_GO" "$CATKEY"; then
-  TEXT_EDITS+=("catalogo${T}$CATALOG_GO${T}-${T}${K#v}${T}$go_bare")
-  CAT_MOVES=1
+if [ "$SCOPE" = repo ]; then
+  vcmp "$K" "$CAT_NOW"
+  if [ "$CMP" = 1 ] && ! is_frozen "$SAMPLE_PLATFORM" "$CATKEY"; then
+    TEXT_EDITS+=("yamlver${T}$SAMPLE_PLATFORM${T}$CATKEY:${T}${K#v}")
+    CAT_MOVES=1
+  fi
+  go_bare=$(awk '/^func CatalogVersion\(\)/ { f = 1 } f && /return "/ { if (match($0, /"[^"]+"/)) print substr($0, RSTART + 1, RLENGTH - 2); exit }' "$CATALOG_GO")
+  valid_v "v$go_bare" || die "$CATALOG_GO: no version literal in CatalogVersion()"
+  vcmp "$K" "v$go_bare"
+  if [ "$CMP" = 1 ] && ! is_frozen "$CATALOG_GO" "$CATKEY"; then
+    TEXT_EDITS+=("catalogo${T}$CATALOG_GO${T}-${T}${K#v}${T}$go_bare")
+    CAT_MOVES=1
+  fi
 fi
 
 # plan_cue_module DIR: catalog to K where below it, core to what the file's catalog pins.
@@ -379,14 +399,24 @@ plan_cue_module() {
   FINAL_CORE[$d]=$ct
 }
 
-MODULE_DIRS=()
-for d in test/fixtures/modules/*/; do
-  d=${d%/}
-  if [ ! -f "$d/identity/identity.cue" ] || [ ! -f "$d/cue.mod/module.cue" ]; then continue; fi
-  MODULE_DIRS+=("$d")
-done
-[ "${#MODULE_DIRS[@]}" -gt 0 ] || die "no fixture modules under test/fixtures/modules"
-for d in "${MODULE_DIRS[@]}" "$PROVIDER"; do
+# MODULE_DIRS: the fixture modules (consumers follow them). PLAN_DIRS: every cue module
+# whose catalog and core move. ADV_DIRS: every cue module whose version advances. The
+# module scope plans the operator module alone and advances nothing: its version moves
+# only through its release PR.
+MODULE_DIRS=() PLAN_DIRS=() ADV_DIRS=()
+if [ "$SCOPE" = repo ]; then
+  for d in test/fixtures/modules/*/; do
+    d=${d%/}
+    if [ ! -f "$d/identity/identity.cue" ] || [ ! -f "$d/cue.mod/module.cue" ]; then continue; fi
+    MODULE_DIRS+=("$d")
+  done
+  [ "${#MODULE_DIRS[@]}" -gt 0 ] || die "no fixture modules under test/fixtures/modules"
+  PLAN_DIRS=("${MODULE_DIRS[@]}" "$PROVIDER")
+  ADV_DIRS=("${MODULE_DIRS[@]}" "$PROVIDER")
+else
+  PLAN_DIRS=("$OPMOD")
+fi
+for d in "${PLAN_DIRS[@]}"; do
   plan_cue_module "$d"
 done
 
@@ -413,7 +443,7 @@ fi
 
 # Rule 11: version advance once per PR, decided now against the merge-base.
 SETTER_NEEDED=
-for d in "${MODULE_DIRS[@]}" "$PROVIDER"; do
+for d in "${ADV_DIRS[@]}"; do
   i=$d/identity/identity.cue
   cur=$(identity_version <"$i")
   [ -n "$cur" ] || die "$i: no Version"
@@ -515,8 +545,9 @@ for e in "${TEXT_EDITS[@]}"; do
   fi
 done
 
-# 3. Fixture modules and the provider catalog: cue mod get with exact versions, then tidy.
-for d in "${MODULE_DIRS[@]}" "$PROVIDER"; do
+# 3. Fixture modules and the provider catalog (or, in the module scope, the operator
+# module): cue mod get with exact versions, then tidy.
+for d in "${PLAN_DIRS[@]}"; do
   [ -n "${GETS[$d]:-}" ] || continue
   mf=$d/cue.mod/module.cue
   declare -A pinned=()
@@ -544,7 +575,7 @@ for d in "${MODULE_DIRS[@]}" "$PROVIDER"; do
 done
 
 # 4. Version advances, with the opm CLI's own setters.
-for d in "${MODULE_DIRS[@]}" "$PROVIDER"; do
+for d in "${ADV_DIRS[@]}"; do
   cur=$(identity_version <"$d/identity/identity.cue")
   [ "${ADV[$d]}" != "$cur" ] || continue
   [ -n "$OPM" ] || die "internal: $d needs a version set but the opm CLI was not installed"

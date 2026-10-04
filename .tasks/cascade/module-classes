@@ -1,0 +1,3 @@
+# Path classes for the operator module's own cascade PR (task deps:cascade:module). Every
+# path under the module ships to whoever installs it; the task changes nothing else.
+shipped modules/opm_operator/

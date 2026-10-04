@@ -4,9 +4,10 @@
 # PASS <scenario> or FAIL <scenario>: <reason>; exits 0 when every scenario passes, 1
 # otherwise. Nothing touches the real checkout.
 #
-# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 to S9, S11 and S12 (no GHCR or
-# proxy access beyond a warm Go module cache). CASCADE_TEST_SET=all (the default) adds S2,
-# S4 and S10, and S5 when CASCADE_RESOLVER_REAL names the real resolver.
+# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 to S9, S11 and S12, and the
+# operator module cases M1 to M4 (no GHCR or proxy access beyond a warm Go module cache).
+# CASCADE_TEST_SET=all (the default) adds S2, S4, S10 and M5, and S5 and M5's title check when
+# CASCADE_RESOLVER_REAL names the real resolver.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
@@ -102,7 +103,20 @@ run_task() {
   printf '%s\n' "$rc"
 }
 
+# run_module_task DIR BASE TABLE LOG: task -x deps:cascade:module, as run_task.
+run_module_task() {
+  local rc=0
+  (cd "$1" && CASCADE_RESOLVER="$STUB" CASCADE_BASE="$2" CASCADE_STUB_TABLE="$3" \
+    CASCADE_STUB_LOG="$4.calls" task -x deps:cascade:module) >"$4" 2>&1 || rc=$?
+  printf '%s\n' "$rc"
+}
+
 stub_cmp() { CASCADE_STUB_TABLE=/dev/null "$STUB" semver-cmp "$1" "$2"; }
+
+# cue_pin FILE KEY: the v: of "KEY": { ... } in a cue.mod/module.cue.
+cue_pin() {
+  awk -v k="\"$2\": {" 'index($0, k) { f = 1; next } f && /^[[:space:]]*v:/ { if (match($0, /"[^"]+"/)) print substr($0, RSTART + 1, RLENGTH - 2); exit }' "$1"
+}
 
 # set_dep_v FILE KEY V: set the v: of "KEY": { ... } in a cue.mod/module.cue, if present.
 set_dep_v() {
@@ -346,8 +360,120 @@ else
   pass S12
 fi
 
+# --- The operator module (modules/opm_operator): its own task, its own pins ---------------------
+
+OPMOD=modules/opm_operator
+OPMOD_MF=$OPMOD/cue.mod/module.cue
+(cd "$PRE" && .tasks/cascade/module-pins.sh WORKTREE) >"$TMP/module-pins"
+MOD_CAT=$(awk -F'\t' -v k="$CATKEY" '$1 == k { print $4 }' "$TMP/module-pins")
+MOD_CORE=$(awk -F'\t' -v k="$COREKEY" '$1 == k { print $4 }' "$TMP/module-pins")
+# The newest catalog is the module's own, which pins the module's own core.
+MOD_TABLE="$TMP/module-table.tsv"
+{
+  printf 'newest\tcue\t%s\t%s\n' "$CATKEY" "$MOD_CAT"
+  printf 'pin-of\t%s\t%s\t%s\t%s\n' "$CATKEY" "$MOD_CAT" "$COREKEY" "$MOD_CORE"
+  awk -F'\t' '$1 == "pin-of"' "$OLDER"
+} >"$MOD_TABLE"
+# lower_module DIR: the module's catalog and core to older.tsv's.
+lower_module() {
+  set_dep_v "$1/$OPMOD_MF" "$CATKEY" "$(older_v "$CATKEY")"
+  set_dep_v "$1/$OPMOD_MF" "$COREKEY" "$(older_v "$COREKEY")"
+}
+
+# M1: the repository's cascade leaves the module to its own task.
+D=$(sandbox m1)
+lower_module "$D"
+setup=$(commit_setup "$D")
+before=$(cd "$D" && find "$OPMOD" -type f -print0 | sort -z | xargs -0 sha256sum)
+rc=$(run_task "$D" "$setup" "$CURRENT" "$TMP/m1.log")
+if [ "$rc" != 3 ]; then
+  fail M1 "exit $rc, want 3 (only the module is behind, and the repository's cascade leaves it)" "$TMP/m1.log"
+elif [ "$(cd "$D" && find "$OPMOD" -type f -print0 | sort -z | xargs -0 sha256sum)" != "$before" ]; then
+  fail M1 "a file under $OPMOD changed" "$TMP/m1.log"
+else
+  pass "M1 the operator module is left to its own task"
+fi
+
+# M2: nothing to move.
+D=$(sandbox m2)
+base=$(cd "$D" && git rev-parse HEAD)
+rc=$(run_module_task "$D" "$base" "$MOD_TABLE" "$TMP/m2.log")
+if [ "$rc" != 3 ]; then
+  fail M2 "exit $rc, want 3" "$TMP/m2.log"
+elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
+  fail M2 "the tree changed" "$TMP/m2.log"
+elif grep -qvE "^(check-files|newest cue $CATKEY|hold $COREKEY|pin-of $CATKEY|semver-cmp|is-frozen) " "$TMP/m2.log.calls"; then
+  fail M2 "the module task asked the resolver about another pin" "$TMP/m2.log.calls"
+else
+  pass "M2 nothing to move"
+fi
+
+# M3: a core hold below the core the newest catalog pins holds the module's catalog too.
+D=$(sandbox m3)
+lower_module "$D"
+printf 'holds:\n  - pin: "%s"\n    max: "%s"\n    reason: "M3"\n    expires: "2099-12-31"\n' \
+  "$COREKEY" "$(older_v "$COREKEY")" >"$D/.cascade-hold"
+setup=$(commit_setup "$D")
+rc=$(run_module_task "$D" "$setup" "$MOD_TABLE" "$TMP/m3.log")
+if [ "$rc" != 3 ]; then
+  fail M3 "exit $rc, want 3 (catalog and core held)" "$TMP/m3.log"
+elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
+  fail M3 "the module moved under the hold" "$TMP/m3.log"
+elif ! grep -q 'catalog held too' "$D/.git/cascade/warnings"; then
+  fail M3 "no 'catalog held too' warning" "$D/.git/cascade/warnings"
+else
+  pass "M3 a hold holds the module"
+fi
+
+# M4: a frozen entry for the module freezes it.
+D=$(sandbox m4)
+lower_module "$D"
+add_frozen "$D" "$OPMOD" M4 "$CATKEY" "$COREKEY"
+setup=$(commit_setup "$D")
+rc=$(run_module_task "$D" "$setup" "$MOD_TABLE" "$TMP/m4.log")
+if [ "$rc" != 3 ]; then
+  fail M4 "exit $rc, want 3 (the module is frozen)" "$TMP/m4.log"
+elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
+  fail M4 "the frozen module changed" "$TMP/m4.log"
+else
+  pass "M4 a frozen module stays"
+fi
+
 if [ "$SET" = offline ]; then
   exit "$FAILED"
+fi
+
+# M5: module pins move; its image, version, generated and release files stay, and nothing
+# outside the module changes. Resolves the older catalog and core from GHCR.
+D=$(sandbox m5)
+lower_module "$D"
+setup=$(commit_setup "$D")
+keep=$(cd "$D" && sha256sum "$OPMOD/operator/operator.cue" "$OPMOD/identity/identity.cue" \
+  "$OPMOD"/zz_generated_*.cue "$OPMOD/RELEASE")
+rc=$(run_module_task "$D" "$setup" "$MOD_TABLE" "$TMP/m5.log")
+m5_changed=$(cd "$D" && { git diff --name-only; git ls-files --others --exclude-standard; } | LC_ALL=C sort -u)
+if [ "$rc" != 0 ]; then
+  fail M5 "exit $rc, want 0" "$TMP/m5.log"
+elif [ "$m5_changed" != "$OPMOD_MF" ]; then
+  printf '%s\n' "$m5_changed" >"$TMP/m5.changed"
+  fail M5 "changed more than $OPMOD_MF" "$TMP/m5.changed"
+elif [ "$(cue_pin "$D/$OPMOD_MF" "$CATKEY")" != "$MOD_CAT" ] || [ "$(cue_pin "$D/$OPMOD_MF" "$COREKEY")" != "$MOD_CORE" ]; then
+  fail M5 "the module does not pin $MOD_CAT and $MOD_CORE" "$TMP/m5.log"
+elif [ "$(cd "$D" && sha256sum "$OPMOD/operator/operator.cue" "$OPMOD/identity/identity.cue" "$OPMOD"/zz_generated_*.cue "$OPMOD/RELEASE")" != "$keep" ]; then
+  fail M5 "the image, version, generated or release files changed" "$TMP/m5.log"
+else
+  if [ -n "${CASCADE_RESOLVER_REAL:-}" ]; then
+    m5_title=$( (cd "$D" && CASCADE_RESOLVER="$CASCADE_RESOLVER_REAL" CASCADE_BASE="$setup" \
+      task -x deps:cascade:module:title) 2>"$TMP/m5.title.err") || m5_title="(exit $?)"
+    want="fix(deps): bump the operator module's opm catalog to $MOD_CAT and core to $MOD_CORE"
+    if [ "$m5_title" != "$want" ]; then
+      fail M5 "title '$m5_title', want '$want'" "$TMP/m5.title.err"
+    else
+      pass "M5 module pins move, image and version stay (title checked)"
+    fi
+  else
+    pass "M5 module pins move, image and version stay"
+  fi
 fi
 
 # --- S2 setup: every pin location the task moves, lowered to older.tsv --------------------------

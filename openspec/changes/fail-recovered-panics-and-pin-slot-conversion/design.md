@@ -53,12 +53,12 @@ Reconcile phase impact: Status only (the deferred commit gains a panic branch). 
 
 **Decision**: The deferred func starts with `if r := recover(); r != nil { commitPanic...(r); panic(r) }`. `skipCommit` and the NoOp branch are unchanged and run only when there is no panic.
 
-**Rationale**: One branch per loop. It carries the value for the status message and touches no return path. The zero `Outcome` stays `NoOp`, which keeps `MetricLabel`, `String` and the counter switch as they are. Wave 2's other operator changes (op-j5, op-g3, op-d1, op-render-timeout, op-f5) rebase onto a defer block that changes at one point only.
+**Rationale**: One branch per loop. It carries the value for the status message and touches no return path. The zero `Outcome` stays `NoOp`, which keeps `MetricLabel`, `String` and the counter switch as they are. Wave 2's other operator changes (op-j5, op-g3, op-d1, op-render-timeout, op-f5) rebase onto a defer block that gains one recover branch. To keep `ReconcileModuleInstance` under the gocyclo bound, the inventory revision and digest block both deferred commits duplicated moved into a shared `nextInventory` helper, and the repeated action literal became the `reconcileAction` constant; those lines inside the deferred commits change too, and the later changes rebase onto them.
 
 ```go
 defer func() {
 	if r := recover(); r != nil {
-		commitPanicStatus(ctx, patcher, &mi, r, digests, phases, reconcileStart)
+		commitPanicStatus(ctx, patcher, &mi, r, digests, reconcileStart)
 		panic(r)
 	}
 	if skipCommit {
@@ -76,11 +76,11 @@ defer func() {
 
 **Decision**: `commitPanicStatus` (ModuleInstance) and its ModulePackage twin:
 
-1. log the panic value at error level with the object's name and namespace (controller-runtime's panic handler logs the stack; the original frames are still on the goroutine stack when the deferred func re-panics);
+1. log the panic value at error level through the controller-runtime context logger, which already carries the object's name and namespace, so the code adds no explicit keys (controller-runtime's panic handler logs the stack; the original frames are still on the goroutine stack when the deferred func re-panics);
 2. `status.MarkReconcilePanic(obj, "reconcile panicked: %v", r)`: `conditions.MarkReconciling(obj, ReconcilePanicReason, msg)` (sets Reconciling=True and removes Stalled), then `Ready=False` with the same reason and message;
 3. set `observedGeneration` and `lastAttempted*` (action `reconcile`, time, duration, and whichever digests were computed), as the failed branch does today;
 4. record a failure history entry with the same message, using the kind's existing recorder;
-5. update the failure counters with outcome `FailedTransient` and a zero `phaseOutcomes{}`, so only the reconcile counter moves. The drift, apply and prune counters are left as they were: a phase that was in flight did not succeed, and its `*Failed` flag was never set;
+5. update the failure counters with outcome `FailedTransient` and a zero `phaseOutcomes{}`, so only the reconcile counter moves. The drift, apply and prune counters are left as they were: a phase that was in flight did not succeed, and its `*Failed` flag was never set. A phase that had already failed with a returned error before the panic (for example drift detection, after which the loop continues) is not counted either; that missed increment is accepted to keep the panic path free of phase bookkeeping;
 6. clear `nextRetryAt`. The retry is controller-runtime's rate limiter, not the operator's backoff, so the operator schedules no time it does not own;
 7. ModuleInstance only: `recordReconcileMetrics(..., FailedTransient, ...)` and `RecordDuration`, as the failed branch does (the ModulePackage commit records no metrics today);
 8. patch status with the same owned conditions as the normal commit, and log a patch error without failing.

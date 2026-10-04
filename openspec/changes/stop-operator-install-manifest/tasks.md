@@ -1,5 +1,7 @@
 # Tasks: stop-operator-install-manifest
 
+> **BLOCKED: revise before implementing.** This plan predates `0021:D11:R12` and assumes a `module-notify` job that `release-operator-module` deferred. Its kubectl path through `releases/latest/download/install.yaml` (design.md, task 1.4) is ruled out, since a module release never takes the latest mark, and its reliance on `module-notify` (design.md) has nothing to rely on. It also fails `openspec validate --strict`: its `operator-module` MODIFIED drops the scenario "An object added to the kustomize tree only fails the test". Revise all three with `openspec-update` before any task here runs.
+
 Worktree `opm-operator/.claude/worktrees/stop-operator-install-manifest`, branch `feat/stop-operator-install-manifest`, created from `origin/main` when the gates hold. Run every command inside that worktree.
 
 The local kind cluster `opm-dev` and the host's containers have no internet egress. Cluster e2e is proven only in CI, and the PR body says so.

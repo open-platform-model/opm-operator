@@ -121,3 +121,48 @@ The release workflow SHALL contain a job `notify-downstream`, owned by this repo
 #### Scenario: Module-only release does not notify
 - **WHEN** a push to `main` creates only `opm_operator-v0.2.0`
 - **THEN** `notify-downstream` is skipped, and no dispatch carries an empty tag
+
+### Requirement: Release PR passes the release-pin gate
+On every Release PR, the release-pin gate (G1, workspace RELEASING.md, section "Gates") SHALL run as a step inside an existing CI job that runs on every pull request, never as a job of its own, so a skipped job can never report a pass. A PR is a Release PR when `${{ github.head_ref || github.ref_name }}` starts with `release-please--`, except the operator module's release PR (`release-please--branches--main--components--opm_operator`): it ships none of the files this gate checks, and the module release gate (`operator-module-release`) checks its pins. The gate SHALL fail the job when any of the following holds on the PR head:
+- `go.mod` carries a `replace` directive;
+- a required module under `github.com/open-platform-model/` is pinned to a Go pseudo-version, or to a version that is not an existing tag of that module's repository;
+- a published fixture's `cue.mod/module.cue` (`test/fixtures/modules/*`, `test/fixtures/modulepackages/*`) pins a dependency version containing `-0.dev.`;
+- any `cue.mod/local-module.cue` is tracked by git.
+
+Each failure SHALL name the offending file and pin. On pull requests that are not Release PRs the gate step SHALL be skipped. The same check SHALL be runnable locally as one task. The job carrying the gate SHALL report a check name no other workflow job in the repo uses (`Lint`), so a ruleset can require exactly that check.
+
+#### Scenario: Replace directive blocks the release
+- **WHEN** a Release PR head has `replace github.com/open-platform-model/library => ../library` in `go.mod`
+- **THEN** the gate step fails and its output names the replace directive
+
+#### Scenario: Pseudo-version blocks the release
+- **WHEN** a Release PR head pins `github.com/open-platform-model/library v1.0.0-beta.2.0.20261001120000-abcdef123456`
+- **THEN** the gate step fails and names the module and version
+
+#### Scenario: Untagged version blocks the release
+- **WHEN** a Release PR head pins `github.com/open-platform-model/library v1.0.0-beta.9` and the library repository has no tag `v1.0.0-beta.9`
+- **THEN** the gate step fails and names the module and version
+
+#### Scenario: Dev CUE pin in a published fixture blocks the release
+- **WHEN** a Release PR head has `test/fixtures/modules/hello/cue.mod/module.cue` pinning `v: "v2.0.0-0.dev.20261001"`
+- **THEN** the gate step fails and names the file
+
+#### Scenario: Tracked local-module.cue blocks the release
+- **WHEN** a Release PR head tracks `test/fixtures/modules/hello/cue.mod/local-module.cue`
+- **THEN** the gate step fails and names the file
+
+#### Scenario: Clean release PR passes
+- **WHEN** a Release PR head has no replace directive, pins `github.com/open-platform-model/library` to an existing tag, and no published fixture carries a dev pin or a tracked `local-module.cue`
+- **THEN** the gate step passes
+
+#### Scenario: The gate's check name is unique
+- **WHEN** the `name:` of every job under `.github/workflows/` is listed
+- **THEN** the job carrying the release-pin gate reports `Lint`, and no other job reports that name
+
+#### Scenario: Ordinary PRs skip the gate
+- **WHEN** a pull request's head branch does not start with `release-please--`
+- **THEN** the gate step is skipped and the job's result depends only on its other steps
+
+#### Scenario: The module's release PR skips the gate
+- **WHEN** the head branch is `release-please--branches--main--components--opm_operator`
+- **THEN** the release-pin gate step is skipped and the module release gate step runs

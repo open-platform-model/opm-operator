@@ -173,7 +173,7 @@ The release-please workflow SHALL run on every push to the `main` branch. It SHA
 - **THEN** release-please opens a Release PR listing them under Code Refactoring
 
 ### Requirement: Release PR passes the release-pin gate
-On every Release PR, the release-pin gate (G1, workspace RELEASING.md, section "Gates") SHALL run as a step inside an existing CI job that runs on every pull request, never as a job of its own, so a skipped job can never report a pass. A PR is a Release PR when `${{ github.head_ref || github.ref_name }}` starts with `release-please--`. The gate SHALL fail the job when any of the following holds on the PR head:
+On every Release PR, the release-pin gate (G1, workspace RELEASING.md, section "Gates") SHALL run as a step inside an existing CI job that runs on every pull request, never as a job of its own, so a skipped job can never report a pass. A PR is a Release PR when `${{ github.head_ref || github.ref_name }}` starts with `release-please--`, except the operator module's release PR (`release-please--branches--main--components--opm_operator`): it ships none of the files this gate checks, and the module release gate (`operator-module-release`) checks its pins. The gate SHALL fail the job when any of the following holds on the PR head:
 - `go.mod` carries a `replace` directive;
 - a required module under `github.com/open-platform-model/` is pinned to a Go pseudo-version, or to a version that is not an existing tag of that module's repository;
 - a published fixture's `cue.mod/module.cue` (`test/fixtures/modules/*`, `test/fixtures/modulepackages/*`) pins a dependency version containing `-0.dev.`;
@@ -212,6 +212,10 @@ Each failure SHALL name the offending file and pin. On pull requests that are no
 #### Scenario: Ordinary PRs skip the gate
 - **WHEN** a pull request's head branch does not start with `release-please--`
 - **THEN** the gate step is skipped and the job's result depends only on its other steps
+
+#### Scenario: The module's release PR skips the gate
+- **WHEN** the head branch is `release-please--branches--main--components--opm_operator`
+- **THEN** the release-pin gate step is skipped and the module release gate step runs
 
 ### Requirement: Dependabot leaves OPM Go modules to the release cascade
 The `gomod` entry of `.github/dependabot.yml` SHALL ignore every dependency matching `github.com/open-platform-model/*`. Those pins move only through the release cascade, which titles a shipped bump `fix(deps)` so it releases (workspace RELEASING.md, section "Pin classes"). The `github-actions` entry SHALL ignore `open-platform-model/.github*`: the cascade references move together, one `.github` SHA for the repo, only through a `ci(deps): pin the cascade to .github <sha7>` pull request (Phase 3 wiring contract (version 3.1) §2.4, §10.1 item 7). Third-party Go modules and other GitHub Actions SHALL keep their Dependabot updates.

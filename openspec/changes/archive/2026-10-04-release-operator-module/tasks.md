@@ -140,3 +140,16 @@ This section is its own PR, and it changes only `modules/opm_operator/README.md`
 - [x] 5.6 If G-enh holds: add `enhancement.yaml` to this change declaring enhancement `0021` with the decisions this change completes, read from the merged amendment: the new decision that the install artifact is a registry module on its own train, for its release half, and `D4` only if its amended text is fully met by the module release publishing its render (the operator release's own asset is removed by `stop-operator-install-manifest`). Check each claim against proposal.md "Not in this change"; when in doubt, leave the decision out. Otherwise stop and report that the archive waits for G-enh.
 - [x] 5.7 `openspec validate release-operator-module --strict` passes. Then run actionlint, shellcheck and `task dev:fmt dev:vet dev:lint dev:test`, all green, and commit `ci(cascade): give the operator module its own cascade PR and notify`.
 - [x] 5.8 (Verified and archived 2026-10-04; the delivery log is left to the supervisor, since it writes the enhancements repository outside this worktree.) Verify the change with the repo-local `openspec-verify-change` skill. Then archive it with `openspec-archive-change`: the archive commit `docs(openspec): archive release-operator-module` rides this section's PR. From the workspace root, log the delivery with `task enhancements:delivery:log` in explicit mode (`ID=0021 REPO=opm-operator CHANGE=release-operator-module`), and confirm it printed `logged`.
+
+## 6. Review fixes (PR #221)
+
+- [x] 6.1 Merge `origin/main` (#220, `b8b699e`) into the branch; record in design.md that release PR #222 is open and what merging either PR first triggers.
+- [x] 6.2 Move the identity advance out of the `release-please` job into `module-identity-advance`: checkout without persisted credentials, the App token minted only for the push.
+- [x] 6.3 Split `module-publish` into the publish and `module-manifest` (render, order and image checks, upload); `module-publish-release` needs `module-manifest`.
+- [x] 6.4 `module-image.yml` and `module-deps.yml` run bash with pipefail and refuse a handed-over tar member outside `modules/opm_operator/`; `module-image.yml` publishes only from `main`.
+- [x] 6.5 `image.sh` refuses an operator tag that does not descend from the deployed one; `test-image.sh` case `older-tag`.
+- [x] 6.6 `hack/operator-module/manifest-image.sh` checks the manifest's operator image; `operator-module.yml` runs it and also runs on `.opm-cli-version`.
+- [x] 6.7 G1 (`task deps:release-check`) skips the module's release branch; `release-automation` spec and `AGENTS.md` say so.
+- [x] 6.8 `publish.sh` refuses to run outside GitHub Actions.
+- [x] 6.9 `AGENTS.md`: the CRD/RBAC exception, `hack/operator-module/**` as `ci` or `build`, six cascade pin references; ADR-018 addendum for `make_latest=false`.
+- [x] 6.10 Mark `stop-operator-install-manifest` blocked until it is revised for `0021:D11:R12` and the deferred module notify.

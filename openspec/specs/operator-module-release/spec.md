@@ -60,7 +60,7 @@ A module release is breaking when its `#config` change is breaking, when the ope
 
 ### Requirement: The module's identity version has one writer
 
-The module's `identity.Version` SHALL be written only by the release workflow's identity-advance step, so the module the publish job pushes is exactly its tagged source with nothing added at publish time. That step runs `opm module version set <version>` on the module's open release PR branch, commits `chore: advance opm_operator identity.Version to <version>`, and pushes to that branch. No `x-release-please-version` annotation or other release-please updater SHALL write the module's identity package, and `opm module publish --version` SHALL only assert the version. The step SHALL be idempotent: when the branch already declares the version it SHALL change nothing.
+The module's `identity.Version` SHALL be written only by the release workflow's identity-advance step, so the module the publish job pushes is exactly its tagged source with nothing added at publish time. That step runs `opm module version set <version>` on the module's open release PR branch, commits `chore: advance opm_operator identity.Version to <version>`, and pushes to that branch. No `x-release-please-version` annotation or other release-please updater SHALL write the module's identity package, and `opm module publish --version` SHALL only assert the version. The step SHALL be idempotent: when the branch already declares the version it SHALL change nothing. It SHALL run in a job of its own after the release-please job, so its failure never fails the job whose outputs start the release jobs, and it SHALL hold the release App token only for its push.
 
 #### Scenario: Release PR gains the identity commit
 
@@ -71,6 +71,11 @@ The module's `identity.Version` SHALL be written only by the release workflow's 
 
 - **WHEN** the step runs again for a branch whose `identity.Version` already reads `0.2.0`
 - **THEN** it pushes nothing
+
+#### Scenario: A failed identity advance strands no release
+
+- **WHEN** the identity advance fails in a run where release-please created an operator release
+- **THEN** the operator's release jobs still run, and "Re-run failed jobs" re-runs only the identity advance
 
 ### Requirement: Module release gate
 
@@ -131,8 +136,8 @@ When release-please creates a module release, the module publish job SHALL check
 
 #### Scenario: Re-run after a later step failed
 
-- **WHEN** the job is re-run with "Re-run failed jobs" after the publish succeeded and the install-manifest upload failed
-- **THEN** the publish step reports the version as already present with the same content, pushes nothing, and the later steps run against the recorded digest
+- **WHEN** the publish job is re-run after its publish succeeded and a later step of that job failed
+- **THEN** the publish step reports the version as already present with the same content and pushes nothing
 
 #### Scenario: Version held by other content
 
@@ -141,7 +146,7 @@ When release-please creates a module release, the module publish job SHALL check
 
 ### Requirement: Every module release publishes the install manifest rendered from it
 
-The module publish job SHALL render the published module version from the registry at its default values, as the instance `opm-operator` in the namespace `opm-operator-system`, against the platform generated from the module's own pins and with no cluster. It SHALL write the result to `install.yaml`, with the Namespace and the CRDs before every namespaced object, and attach it to the module's draft release. The manifest SHALL name the operator image by the tag and digest the module names. Applying it with `kubectl apply --server-side` on a cluster with no operator SHALL yield a running operator. A pull request that changes `modules/opm_operator/` or the scripts that render the manifest SHALL prove this on a kind cluster.
+The module publish job SHALL render the published module version from the registry at its default values, as the instance `opm-operator` in the namespace `opm-operator-system`, against the platform generated from the module's own pins and with no cluster. It SHALL write the result to `install.yaml`, with the Namespace and the CRDs before every namespaced object, and attach it to the module's draft release. The render and the upload SHALL run in a job apart from the publish, so re-running them never re-enters the publish. The manifest SHALL name the operator image by the tag and digest the module names, and the job SHALL check that before the upload. Applying it with `kubectl apply --server-side` on a cluster with no operator SHALL yield a running operator. A pull request that changes `modules/opm_operator/` or the scripts that render the manifest SHALL prove this on a kind cluster.
 
 #### Scenario: Manifest equals the module's render
 
@@ -157,6 +162,16 @@ The module publish job SHALL render the published module version from the regist
 
 - **WHEN** `install.yaml` is read top to bottom
 - **THEN** the Namespace `opm-operator-system` and the four CRDs come before every namespaced object
+
+#### Scenario: Upload fails after the publish
+
+- **WHEN** the install-manifest upload fails after the module version was published
+- **THEN** "Re-run failed jobs" re-runs the render and the upload, never the publish
+
+#### Scenario: Manifest names another image
+
+- **WHEN** the rendered manifest runs an operator image other than the module's tag and digest
+- **THEN** the job fails before the upload and the release stays a draft
 
 #### Scenario: Fresh cluster
 
@@ -198,7 +213,7 @@ No workflow, task or script in this repository other than the module publish job
 
 ### Requirement: An operator release opens the PR that moves the module's image
 
-Once an operator release has been published, the release workflow SHALL open or update one pull request on the branch `module/operator-image`. The PR SHALL set the operator release the module deploys to that release's tag and the manifest-list digest GHCR serves under it, and SHALL change nothing else: no file outside `modules/opm_operator/`, and not the module's generated CRD and RBAC files, which follow `main`'s `config/`. When the CRDs or RBAC roles under `config/` at that tag differ from `main`'s, the run SHALL fail naming the files and open no PR, because the module release gate would refuse that module. The PR's title SHALL be `fix(deps): deploy operator <tag> from the operator module`. The title SHALL be `fix(deps)!: ...` instead when the operator CHANGELOG sections between the module's previous operator tag and `<tag>` carry a breaking-change entry, or when a CRD under `config/crd/bases` at `<tag>` stops serving a version it served at the module's previous operator tag. The PR SHALL be created with the release App's token so its CI runs. A `workflow_dispatch` with a `tag` input SHALL do the same for a published operator release, for recovery. While the branch carries only bot commits, a later run SHALL rebuild it from `main`. Once a human commit is on it, the run SHALL add its own commit on top and never rewrite the branch.
+Once an operator release has been published, the release workflow SHALL open or update one pull request on the branch `module/operator-image`. The PR SHALL set the operator release the module deploys to that release's tag and the manifest-list digest GHCR serves under it, and SHALL change nothing else: no file outside `modules/opm_operator/`, and not the module's generated CRD and RBAC files, which follow `main`'s `config/`. When the CRDs or RBAC roles under `config/` at that tag differ from `main`'s, the run SHALL fail naming the files and open no PR, because the module release gate would refuse that module. The run SHALL also fail and open no PR when `<tag>` does not descend from the operator tag the module deploys, so a re-run or a dispatch never moves the module back. The PR's title SHALL be `fix(deps): deploy operator <tag> from the operator module`. The title SHALL be `fix(deps)!: ...` instead when the operator CHANGELOG sections between the module's previous operator tag and `<tag>` carry a breaking-change entry, or when a CRD under `config/crd/bases` at `<tag>` stops serving a version it served at the module's previous operator tag. The PR SHALL be created with the release App's token so its CI runs. A `workflow_dispatch` with a `tag` input SHALL do the same for a published operator release, for recovery. While the branch carries only bot commits, a later run SHALL rebuild it from `main`. Once a human commit is on it, the run SHALL add its own commit on top and never rewrite the branch.
 
 #### Scenario: Operator release published
 
@@ -219,6 +234,11 @@ Once an operator release has been published, the release workflow SHALL open or 
 
 - **WHEN** the dispatch names `v1.0.0-beta.6` and `main` changed a CRD after that tag
 - **THEN** the run fails naming the CRD file and opens no PR
+
+#### Scenario: Older operator tag
+
+- **WHEN** the module deploys `v1.0.0-beta.7` and a re-run or dispatch names `v1.0.0-beta.6`
+- **THEN** the run fails and opens no PR
 
 #### Scenario: Image PR never releases the operator
 

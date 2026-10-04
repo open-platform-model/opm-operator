@@ -118,6 +118,25 @@ func TestMarkNotReady(t *testing.T) {
 	assert.Equal(t, "render failed: invalid values", conditions.GetMessage(obj, ReadyCondition))
 }
 
+func TestMarkReconcilePanic(t *testing.T) {
+	obj := newModuleInstance()
+	// Ready=True and Stalled=True together: the worst state a panic can
+	// start from, both of which the helper must replace.
+	MarkReady(obj, "Reconciliation succeeded")
+	conditions.MarkStalled(obj, RenderFailedReason, "a stall left behind")
+	assert.True(t, conditions.IsTrue(obj, ReadyCondition))
+	assert.True(t, conditions.Has(obj, StalledCondition))
+
+	MarkReconcilePanic(obj, "reconcile panicked: %v", "boom")
+
+	assert.True(t, conditions.IsFalse(obj, ReadyCondition))
+	assert.Equal(t, ReconcilePanicReason, conditions.GetReason(obj, ReadyCondition))
+	assert.Equal(t, "reconcile panicked: boom", conditions.GetMessage(obj, ReadyCondition))
+	assert.True(t, conditions.IsTrue(obj, ReconcilingCondition))
+	assert.Equal(t, ReconcilePanicReason, conditions.GetReason(obj, ReconcilingCondition))
+	assert.False(t, conditions.Has(obj, StalledCondition), "a panic is not stalled")
+}
+
 func TestMarkModuleResolved(t *testing.T) {
 	obj := newModuleInstance()
 	MarkModuleResolved(obj, "opmodel.dev/modules/hello@v0@v0.1.0")

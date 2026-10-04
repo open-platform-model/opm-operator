@@ -66,6 +66,10 @@ const (
 	// it, so that re-running install can always repair the operator without
 	// the running operator's help. The fix is setting spec.owner to cli.
 	SelfManagementRefusedReason = "SelfManagementRefused"
+	// ReconcilePanicReason: Ready=False, Reconciling=True, the reconcile of a
+	// ModuleInstance or ModulePackage panicked and the attempt was recorded as
+	// a failure before the panic propagated to the controller runtime.
+	ReconcilePanicReason = "ReconcilePanic"
 
 	// Platform-specific reasons (0019:D6: the reconciler generates
 	// and builds the platform module).
@@ -296,6 +300,15 @@ func MarkSelfManagementRefused(obj conditions.Setter, message string) {
 // MarkNotReady sets Ready=False with the given reason and message.
 func MarkNotReady(obj conditions.Setter, reason, messageFormat string, messageArgs ...any) {
 	conditions.MarkFalse(obj, ReadyCondition, reason, messageFormat, messageArgs...)
+}
+
+// MarkReconcilePanic records a reconcile that panicked: Reconciling=True,
+// Stalled removed and Ready=False, all with reason ReconcilePanic. Not
+// stalled, because the controller runtime retries a recovered panic on its
+// rate limiter, and the next attempt may succeed (after an operator upgrade).
+func MarkReconcilePanic(obj conditions.Setter, messageFormat string, messageArgs ...any) {
+	conditions.MarkReconciling(obj, ReconcilePanicReason, messageFormat, messageArgs...)
+	conditions.MarkFalse(obj, ReadyCondition, ReconcilePanicReason, messageFormat, messageArgs...)
 }
 
 // MarkDrifted sets Drifted=True with a message indicating the number of drifted resources.

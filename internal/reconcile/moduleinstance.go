@@ -32,6 +32,10 @@ import (
 )
 
 const (
+	// reconcileAction names a reconcile attempt in lastAttemptedAction and
+	// in history entries.
+	reconcileAction = "reconcile"
+
 	// FinalizerName is the finalizer registered on ModuleInstance resources
 	// to ensure owned resources are cleaned up before deletion completes.
 	FinalizerName = "opmodel.dev/cleanup"
@@ -97,6 +101,62 @@ func commitNoOpStatus(
 	}
 	recordReconcileMetrics(mi.Name, mi.Namespace, NoOp, time.Since(reconcileStart), false, 0)
 	opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
+}
+
+// commitPanicStatus is the deferred status commit of a reconcile that
+// panicked. It records the attempt as a transient failure: Ready=False with
+// reason ReconcilePanic, a failure history entry and one more reconcile
+// failure. The phase counters are left alone: a phase that was in flight when
+// the panic hit set its Ran flag but never its Failed flag, so handing over
+// the in-flight phases would reset its counter as if it had succeeded.
+// nextRetryAt is cleared because the controller runtime's rate limiter, not
+// the operator's backoff, schedules the retry. lastApplied* and the inventory
+// keep the last success. The caller re-panics afterwards, and the controller
+// runtime logs the stack.
+func commitPanicStatus(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	mi *releasesv1alpha1.ModuleInstance,
+	recovered any,
+	digests status.DigestSet,
+	reconcileStart time.Time,
+) {
+	msg := fmt.Sprintf("reconcile panicked: %v", recovered)
+	// The controller runtime's logger already carries the object's name and
+	// namespace, and its panic handler logs the stack after the re-panic.
+	logf.FromContext(ctx).Error(errors.New(msg), "Recording the panicking reconcile as failed")
+
+	status.MarkReconcilePanic(mi, "%s", msg)
+	now := metav1.Now()
+	mi.Status.ObservedGeneration = mi.Generation
+	mi.Status.LastAttemptedAction = reconcileAction
+	mi.Status.LastAttemptedAt = &now
+	duration := metav1.Duration{Duration: time.Since(reconcileStart)}
+	mi.Status.LastAttemptedDuration = &duration
+	mi.Status.LastAttemptedSourceDigest = digests.Source
+	mi.Status.LastAttemptedConfigDigest = digests.Config
+	mi.Status.LastAttemptedRenderDigest = digests.Render
+	status.RecordHistory(&mi.Status, status.NewFailureEntry(reconcileAction, msg, digests))
+	updateFailureCounters(&mi.Status, FailedTransient, phaseOutcomes{})
+	mi.Status.NextRetryAt = nil
+
+	recordReconcileMetrics(mi.Name, mi.Namespace, FailedTransient, time.Since(reconcileStart), false, 0)
+	opmmetrics.RecordDuration(mi.Name, mi.Namespace, time.Since(reconcileStart))
+
+	if patchErr := patcher.Patch(ctx, mi,
+		patch.WithOwnedConditions{
+			Conditions: []string{
+				status.ReadyCondition,
+				status.ReconcilingCondition,
+				status.StalledCondition,
+				status.ModuleResolvedCondition,
+				status.DriftedCondition,
+			},
+		},
+		patch.WithStatusObservedGeneration{},
+	); patchErr != nil {
+		logf.FromContext(ctx).Error(patchErr, "Failed to patch ModuleInstance status after a panic")
+	}
 }
 
 // ReconcileModuleInstance orchestrates all phases of the reconcile loop.
@@ -173,7 +233,8 @@ func ReconcileModuleInstance(
 
 		// skipCommit is set only when the wait for a render slot is cut
 		// short: nothing was attempted, so there is nothing to record, and
-		// the zero outcome (NoOp) would otherwise report a success.
+		// the zero outcome (NoOp) would otherwise report a success. A panic
+		// is caught before this flag and the NoOp branch are read.
 		skipCommit bool
 	)
 
@@ -183,7 +244,17 @@ func ReconcileModuleInstance(
 	// inventory are not touched (they describe meaningful outcomes).
 	// Storm-safe: GenerationChangedPredicate on the controller's event filter
 	// prevents status-only patches from triggering watch-driven reconciles.
+	//
+	// A panic is recovered first: the outcome is still its zero value, NoOp,
+	// so without this branch the commit would mark a panicking reconcile
+	// Ready. The attempt is recorded as failed and the panic re-raised with
+	// its original value, so the controller runtime still logs it, counts it
+	// and requeues the object on its rate limiter.
 	defer func() {
+		if r := recover(); r != nil {
+			commitPanicStatus(ctx, patcher, &mi, r, digests, reconcileStart)
+			panic(r)
+		}
 		if skipCommit {
 			return
 		}
@@ -194,7 +265,7 @@ func ReconcileModuleInstance(
 
 		now := metav1.Now()
 		mi.Status.ObservedGeneration = mi.Generation
-		mi.Status.LastAttemptedAction = "reconcile"
+		mi.Status.LastAttemptedAction = reconcileAction
 		mi.Status.LastAttemptedAt = &now
 		duration := metav1.Duration{Duration: time.Since(reconcileStart)}
 		mi.Status.LastAttemptedDuration = &duration
@@ -208,23 +279,13 @@ func ReconcileModuleInstance(
 			mi.Status.LastAppliedConfigDigest = digests.Config
 			mi.Status.LastAppliedRenderDigest = digests.Render
 
-			invDigest := inventory.ComputeDigest(newEntries)
-			rev := int64(1)
-			if mi.Status.Inventory != nil {
-				rev = mi.Status.Inventory.Revision + 1
-			}
-			mi.Status.Inventory = &releasesv1alpha1.Inventory{
-				Revision: rev,
-				Digest:   invDigest,
-				Count:    int64(len(newEntries)),
-				Entries:  newEntries,
-			}
-			digests.Inventory = invDigest
+			mi.Status.Inventory = nextInventory(mi.Status.Inventory, newEntries)
+			digests.Inventory = mi.Status.Inventory.Digest
 
-			entry := status.NewSuccessEntry("reconcile", "complete", digests, int64(len(newEntries)))
+			entry := status.NewSuccessEntry(reconcileAction, "complete", digests, int64(len(newEntries)))
 			status.RecordHistory(&mi.Status, entry)
 		} else if errMsg != "" {
-			entry := status.NewFailureEntry("reconcile", errMsg, digests)
+			entry := status.NewFailureEntry(reconcileAction, errMsg, digests)
 			status.RecordHistory(&mi.Status, entry)
 		}
 		// NoOp does not record history (per design doc).
@@ -621,6 +682,22 @@ func reconcileFailureCount(counters *releasesv1alpha1.FailureCounters) int64 {
 		return 0
 	}
 	return counters.Reconcile
+}
+
+// nextInventory is the inventory recorded after a successful apply of
+// entries: the revision after prev's (1 when there is none) and the digest of
+// entries.
+func nextInventory(prev *releasesv1alpha1.Inventory, entries []releasesv1alpha1.InventoryEntry) *releasesv1alpha1.Inventory {
+	rev := int64(1)
+	if prev != nil {
+		rev = prev.Revision + 1
+	}
+	return &releasesv1alpha1.Inventory{
+		Revision: rev,
+		Digest:   inventory.ComputeDigest(entries),
+		Count:    int64(len(entries)),
+		Entries:  entries,
+	}
 }
 
 // inventoryDigest returns the digest from the inventory, or empty string if nil.

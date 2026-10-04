@@ -2,8 +2,60 @@ version: '3'
 
 # Dependency pins and the release cascade (workspace RELEASING.md).
 
+# The cascade resolver (open-platform-model/.github, Phase 2 cascade contract §3): the
+# absolute path in CASCADE_RESOLVER, else the .github checkout beside the main checkout.
+# A task-level var, never a global one, so no other task runs git rev-parse.
+x-cascade-resolver: &cascade_resolver
+  CASCADE_RESOLVER_PATH:
+    sh: |
+      if [ -n "${CASCADE_RESOLVER:-}" ]; then
+        case "$CASCADE_RESOLVER" in /*) ;; *) echo "CASCADE_RESOLVER must be absolute" >&2; exit 1 ;; esac
+        printf '%s\n' "$CASCADE_RESOLVER"; exit 0
+      fi
+      common=$(git rev-parse --path-format=absolute --git-common-dir) || exit 1
+      printf '%s\n' "$(dirname "$common")/../.github/.github/scripts/cascade/cascade-resolve.sh"
+
+x-cascade-resolver-found: &cascade_resolver_found
+  - sh: test -x '{{.CASCADE_RESOLVER_PATH}}'
+    msg: 'cascade resolver not found: check out open-platform-model/.github beside this repo, or set CASCADE_RESOLVER'
+
 tasks:
   release-check:
     desc: 'Release-pin gate G1 (workspace RELEASING.md, section "Gates"): fail on a go.mod replace, a pseudo-version or untagged OPM Go pin, a -0.dev. pin in a published fixture cue.mod, or a tracked cue.mod/local-module.cue'
     cmds:
       - hack/release-pin-check.sh
+
+  cascade:
+    desc: 'Move upstream pins (library, the opm catalog and core with fixtures and consumers, .opm-cli-version) to the newest published versions in the working tree. Exit 0 changed, 3 nothing to do, other on error; run with task -x.'
+    vars: *cascade_resolver
+    env:
+      CASCADE_RESOLVER: '{{.CASCADE_RESOLVER_PATH}}'
+    preconditions: *cascade_resolver_found
+    cmds:
+      - .tasks/cascade/cascade.sh
+
+  cascade:title:
+    desc: 'Print the cascade PR title for the working tree against CASCADE_BASE (default origin/main); exit 3 when nothing changed. Run with task -x.'
+    vars: *cascade_resolver
+    env:
+      CASCADE_RESOLVER: '{{.CASCADE_RESOLVER_PATH}}'
+    preconditions: *cascade_resolver_found
+    cmds:
+      - '"$CASCADE_RESOLVER" title --classes .tasks/cascade/classes --pins .tasks/cascade/pins.sh'
+
+  cascade:body:
+    desc: 'Print the cascade PR body for the working tree against CASCADE_BASE (default origin/main). Run with task -x.'
+    vars: *cascade_resolver
+    env:
+      CASCADE_RESOLVER: '{{.CASCADE_RESOLVER_PATH}}'
+    preconditions: *cascade_resolver_found
+    cmds:
+      - '"$CASCADE_RESOLVER" body --classes .tasks/cascade/classes --pins .tasks/cascade/pins.sh'
+
+  # No resolver var or precondition: test.sh exports the stub itself and reads the real
+  # resolver only from CASCADE_RESOLVER_REAL, so the offline set runs in CI with no .github
+  # checkout (a deviation from Phase 2 cascade contract §3, reported to the supervisor).
+  cascade:test:
+    desc: 'Test task deps:cascade against the stub resolver in throwaway copies of the tree. CASCADE_TEST_SET=offline runs the offline scenarios; all (default) adds the network ones, and the title and body check when CASCADE_RESOLVER_REAL is set. Run with task -x.'
+    cmds:
+      - .tasks/cascade/test.sh

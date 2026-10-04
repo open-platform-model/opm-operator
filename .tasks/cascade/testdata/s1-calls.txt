@@ -1,0 +1,6 @@
+check-files --repo-root .
+hold opmodel.dev/core@v2 --repo-root .
+newest cue opmodel.dev/catalogs/opm@v4 --current V --repo-root .
+newest go github.com/open-platform-model/library --current V --repo-root .
+newest opm-cli --current V --repo-root .
+pin-of opmodel.dev/catalogs/opm@v4 V opmodel.dev/core@v2

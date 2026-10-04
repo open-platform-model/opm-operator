@@ -1,0 +1,11 @@
+# Test files that keep an OPM-owned version literal on purpose. Read by the
+# release-cascade tooling (workspace RELEASING.md, section "Cascade files"):
+# the bot never rewrites a version literal at a listed path. The current
+# catalog build is never a literal here; tests read fixtures.CatalogVersion().
+frozen:
+  - path: test/integration/reconcile/skew_test.go
+    pins: ["opmodel.dev/catalogs/opm@v4"]
+    reason: "skewedCatalogVersion() resolves catalog 4.0.0 from the registry as a published build older than the fixture's, so the platform is skewed below the module."
+  - path: internal/controller/platform_controller_test.go
+    pins: ["opmodel.dev/catalogs/opm@v4"]
+    reason: "The generation-defect spec resolves catalog 4.0.0 from the registry as a published build older than the fixture's, so the value is the point."

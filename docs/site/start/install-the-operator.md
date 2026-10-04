@@ -5,7 +5,7 @@ type: how-to
 weight: 16
 ---
 
-The OPM operator is a controller that runs in the namespace `opm-operator-system`. It renders and applies every ModuleInstance whose `spec.owner` is absent or `operator`, such as the ones you create with kubectl or through GitOps, and every ModulePackage. The one exception is the instance that deploys the operator itself: the operator never reconciles it, whatever its owner, so re-running the install can always repair the operator. Install it when the cluster should keep instances as declared without anyone running `opm`. A cluster where only the CLI deploys needs only the operator's resource definitions, which `opm operator install --crds-only` installs.
+The OPM operator is a controller that runs in the namespace `opm-operator-system`. It renders and applies every ModuleInstance whose `spec.owner` is absent or `operator`, such as the ones you create with kubectl or through GitOps, and every ModulePackage. The one exception is the instance that deploys the operator itself, once the install deploys the operator as a ModuleInstance: the operator never reconciles that instance, whatever its owner, so re-running the install can always repair the operator. Install it when the cluster should keep instances as declared without anyone running `opm`. A cluster where only the CLI deploys needs only the operator's resource definitions, which `opm operator install --crds-only` installs.
 
 There are two ways to install the operator, and both apply the manifest a release publishes, `install.yaml`. `opm operator install` applies the copy built into the CLI, and `kubectl apply` reads it from the GitHub release.
 

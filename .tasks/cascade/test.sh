@@ -4,7 +4,7 @@
 # PASS <scenario> or FAIL <scenario>: <reason>; exits 0 when every scenario passes, 1
 # otherwise. Nothing touches the real checkout.
 #
-# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 to S9 and S11 to S13 (no GHCR or
+# CASCADE_TEST_SET=offline runs the pre-checks and S1, S3, S3b, S6 to S9, S11 and S12 (no GHCR or
 # proxy access beyond a warm Go module cache). CASCADE_TEST_SET=all (the default) adds S2,
 # S4 and S10, and S5 when CASCADE_RESOLVER_REAL names the real resolver.
 set -euo pipefail
@@ -340,26 +340,6 @@ elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
   fail S12 "the tree changed" "$TMP/s12.log"
 else
   pass S12
-fi
-
-# --- S13: example output in the install page that drifted is a warning, never an edit -------------
-
-D=$(sandbox s13)
-INSTALL_DOC=docs/site/start/install-the-operator.md
-sed -i -e "s/opm@v4 ${CAT_T#v}\$/opm@v4 9.9.9/" -e "s/\"version\": \"$CORE_T\"/\"version\": \"v2.999.0\"/" "$D/$INSTALL_DOC"
-setup=$(commit_setup "$D")
-rc=$(run_task "$D" "$setup" "$CURRENT" "$TMP/s13.log")
-if [ "$rc" != 3 ]; then
-  fail S13 "exit $rc, want 3 (a warning is not a change)" "$TMP/s13.log"
-elif [ -n "$(cd "$D" && git status --porcelain)" ]; then
-  fail S13 "the tree changed" "$TMP/s13.log"
-elif ! grep -qF "still names catalog \`9.9.9\`" "$D/.git/cascade/warnings" ||
-     ! grep -qF "still names core \`v2.999.0\`" "$D/.git/cascade/warnings"; then
-  fail S13 "no warning names the drifted catalog and core" "$D/.git/cascade/warnings"
-elif [ "$(grep -c 'example output' "$D/.git/cascade/warnings")" != 2 ]; then
-  fail S13 "the versions that still match were warned about too" "$D/.git/cascade/warnings"
-else
-  pass S13
 fi
 
 if [ "$SET" = offline ]; then

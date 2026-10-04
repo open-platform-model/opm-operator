@@ -6,7 +6,8 @@
 # publish job of release.yml (module-image-pr-publish), module-image.yml and
 # module-deps.yml, with the release App's token. The change must lie under
 # modules/opm_operator/ only, or the squash commit would release the operator
-# too; anything else is refused before git is touched.
+# too; anything else is refused before git is touched. Only plain files are
+# written: a symlink, a hard link or a mode change is refused.
 #
 #   - no remote branch: create it from main with one commit;
 #   - the branch holds only commits by BOT_EMAIL: rebuild it from main with
@@ -42,7 +43,11 @@ mapfile -t paths < <(git status --porcelain --untracked-files=all | cut -c4-)
 [ "${#paths[@]}" -gt 0 ] || { echo "bot-pr: nothing changed; no pull request"; exit 0; }
 for p in "${paths[@]}"; do
   [[ $p == "$M/"* ]] || die "refusing a change outside $M/: $p"
+  # A symlink or a hard link would carry another file's content (the
+  # checkout's .git/config holds the push token) into the commit.
+  [ ! -L "$p" ] || die "refusing a symlink: $p"
   [ -f "$p" ] || die "refusing to delete $p; the bot only writes files"
+  [ "$(stat -c %h -- "$p")" = 1 ] || die "refusing a hard link: $p"
 done
 
 stash=$(mktemp -d)
@@ -84,6 +89,12 @@ else
 fi
 restore
 git add -A -- "$M"
+# Plain files only: no mode change, no executable bit, no gitlink.
+while read -r om nm _; do
+  om=${om#:}
+  [ "$nm" = 100644 ] && { [ "$om" = 000000 ] || [ "$om" = 100644 ]; } ||
+    die "refusing a mode change $om -> $nm under $M/; the bot only writes plain files"
+done < <(git diff --cached --raw --no-renames)
 if git diff --cached --quiet; then
   echo "bot-pr: $branch already carries this change"
 else

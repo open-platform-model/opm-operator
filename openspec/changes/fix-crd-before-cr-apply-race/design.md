@@ -220,6 +220,8 @@ The stress spec gave the discovery window 1,880 chances (94 applies of 20 kinds)
 | Widget spec | serial | 30 | 0 | 172.5 s → 177.6 s |
 | whole suite | `xargs -P 24` | 64 | 0 | |
 
+After the review fixes (the conflict-on-context-end change and the 4750 ms deadline), the same loops ran again (`p3-operator-flaky-runs.sh after2`): lag focus 30 of 30 in 480.1 s (the focus covers the whole lag context, whose context-end spec now waits 4.75 s per run, and the first runs overlapped a `task dev:test` gate run), stress 30 of 30 in 179.0 s, Widget 30 of 30 in 161.8 s, whole suite 64 of 64 at `xargs -P 24`. 0 failures.
+
 The V(1) retry line shows under `-ginkgo.v` (2 retries in a lag spec run), and 15 more verbose runs of the stress and Widget specs logged no retry at all, so the retry never fired outside the lag spec. The stress and Widget time differences are run-to-run noise in envtest start-up, not retry time.
 
 **What the evidence shows.** The stress loop never reproduced the race, before or after the fix. So the evidence that the fix closes the real window is the code-path argument (Context, D2) plus the single CI log, and nothing more. The lag spec proves the retry handles the error shape that log shows, and the after runs show the fix changes nothing when discovery keeps up.

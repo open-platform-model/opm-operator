@@ -38,7 +38,7 @@ Run the binary from `test/integration/apply`.
   - Run the 1.3 stress spec 30 times serially and the whole suite 64 times at `xargs -P 24`, to try for a natural reproduction.
   - Run the unchanged Widget spec (focus `apply the CRD before the custom resource`) 30 times serially.
   - Record every count in design.md D5, next to the 264-run baseline. If the stress spec reproduces the race, it cannot be committed green in this section: move it to section 2 and record that.
-- [ ] 1.5 Run `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(apply): reproduce the CRD discovery race with a lagging RESTMapper`.
+- [x] 1.5 Run `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(apply): reproduce the CRD discovery race with a lagging RESTMapper`.
 
 ## 2. Fix: bounded discovery retry in apply.Apply (internal/apply)
 
@@ -79,7 +79,7 @@ Run the binary from `test/integration/apply`.
   - Run the stress spec and the Widget spec (focus `apply the CRD before the custom resource`) 30 times serially each, and the whole suite 64 times at `xargs -P 24`. Verify 0 failures.
   - Record the counts in design.md D5 beside the before counts, and state what they show and do not show (D5, "What the evidence shows").
 - [x] 2.5 Update design.md Risks if the run times in 2.4 show the retry adding time to the unlagged Widget spec. It should add none, because the first attempt starts at once.
-- [ ] 2.6 Run `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(apply): wait for discovery of a CRD applied in the same set`. The body says:
+- [x] 2.6 Run `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(apply): wait for discovery of a CRD applied in the same set`. The body says:
   - A CRD can be Established before discovery serves its kind, so a custom resource in the same set failed its dry run with "no matches for kind".
   - `apply.Apply` now retries the staged apply, starting no new attempt after 10s, only for a kind that a CRD in the set defines; each attempt keeps the caller's context.
   - Counts keep the first attempt's created or configured action.

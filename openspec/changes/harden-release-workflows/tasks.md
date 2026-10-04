@@ -7,10 +7,10 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 
 ## 2. Release key Environment and explicit permissions
 
-- [ ] 2.1 `release.yml`: workflow-level `permissions: {}`; `release-please` gets `environment: release` and `permissions: {}` (design D1, D2).
-- [ ] 2.2 `lint.yml`, `test.yml`: top-level `permissions: contents: read`.
-- [ ] 2.3 Every file under `.github/workflows/` has a top-level `permissions:` of `{}` or `contents: read`. Only `release-please` declares `release`, and only it reads `RELEASE_APP_PRIVATE_KEY`.
-- [ ] 2.4 Gates green, then commit `ci: declare least-privilege permissions and the release environment`
+- [x] 2.1 `release.yml`: workflow-level `permissions: {}`; `release-please` gets `environment: release` and `permissions: {}` (design D1, D2).
+- [x] 2.2 `lint.yml`, `test.yml`, `test-e2e.yml`: top-level `permissions: contents: read` (the e2e job keeps its own grant until section 4).
+- [x] 2.3 Every file under `.github/workflows/` has a top-level `permissions:` of `{}` or `contents: read`. Only `release-please` declares `release`, and only it reads `RELEASE_APP_PRIVATE_KEY`.
+- [x] 2.4 Gates green, then commit `ci: declare least-privilege permissions and the release environment`
 
 ## 3. No Actions cache in publishing jobs
 

@@ -5,9 +5,8 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  pull-requests: write
+# Every job declares its own grant (workflow-hardening spec).
+permissions: {}
 
 # One release run at a time. Draft releases defeat release-please's duplicate
 # guard (GitHub accepts several drafts for one tag), and two image jobs could
@@ -27,9 +26,14 @@ env:
   CUE_VERSION: 'v0.17.1'
 
 jobs:
+  # The only reader of the release App key: it runs in the main-only
+  # Environment release. Both steps act as the App, so the job token gets no
+  # grant.
   release-please:
     name: Release Please
     runs-on: ubuntu-latest
+    environment: release
+    permissions: {}
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}

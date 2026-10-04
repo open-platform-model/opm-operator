@@ -86,4 +86,4 @@ Run the binary from `test/integration/apply`.
   - A CRD can be Established before discovery serves its kind, so a custom resource in the same set failed its dry run with "no matches for kind".
   - `apply.Apply` now retries the staged apply, starting no new attempt after 10s, only for a kind that a CRD in the set defines; each attempt keeps the caller's context.
   - Counts keep the first attempt's created or configured action.
-- [ ] 2.7 Run `openspec verify` for the change (the repo's verify skill), then `openspec archive fix-crd-before-cr-apply-race --yes`, confirm `openspec validate ssa-apply --type spec --strict` passes, and commit the archive inside the same PR.
+- [x] 2.7 Run `openspec verify` for the change (the repo's verify skill), then `openspec archive fix-crd-before-cr-apply-race --yes`, confirm `openspec validate ssa-apply --type spec --strict` passes, and commit the archive inside the same PR.

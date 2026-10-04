@@ -162,14 +162,21 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // platformConsumedFieldsChanged passes a Platform update only when a field a
-// ModuleInstance render consumes differs between the old and the new object:
+// ModuleInstance or ModulePackage render consumes differs between the old and
+// the new object. Both renderers read the same platform store record (the
+// generated package, its pin set and its skew policy), and both controllers'
+// Platform watches use this predicate. The fields are:
 //   - the Ready condition's status (the only True reason is Generated, so the
 //     status alone carries the recovery edge),
 //   - the pin set: status.packageIdentity, the field that identifies the pin
 //     set an instance renders against, and status.registry beside it, so a
 //     regression in how the identity is computed cannot silently stop a
 //     re-render under a new pin,
-//   - spec.skewPolicy,
+//   - spec.skewPolicy. An edit bumps metadata.generation before the platform
+//     is regenerated, and the store records the policy only when it is, so
+//     this edge can render once under the old policy and the observedGeneration
+//     write that follows renders under the new one. The extra render on a
+//     rare edit is accepted.
 //   - status.observedGeneration: the platform reconciler writes it with the
 //     package it generated for that generation, so the event finds the new
 //     package already in the store.

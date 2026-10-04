@@ -31,7 +31,7 @@ The repository SHALL declare one docs-kit project, `opm-operator`, in `docs-kit.
 
 ### Requirement: Every operator release publishes its docs bundle
 
-`release.yml` SHALL run a `publish-docs` job that calls docs-kit's `publish.yml` with `project: opm-operator`, `mode: release` and the release's tag, in the workflow run of the push that merged the release PR, only when release-please created a release and only after `image-release` succeeded. `publish-release` SHALL NOT wait for it.
+`release.yml` SHALL run a `publish-docs` job that calls docs-kit's `publish.yml` with `project: opm-operator`, `mode: release` and the operator release's tag, in the workflow run of the push that merged the operator's release PR, only when the operator package `"."` created a release and only after `image-release` succeeded. A release created only by the operator module's package SHALL NOT run it. `publish-release` SHALL NOT wait for it.
 
 #### Scenario: A release publishes its bundle
 
@@ -42,6 +42,11 @@ The repository SHALL declare one docs-kit project, `opm-operator`, in `docs-kit.
 
 - **WHEN** `image-release` fails
 - **THEN** `publish-docs` is skipped, and `docs.yml` dispatched with `mode: release` and the tag recovers the bundle once the release is fixed
+
+#### Scenario: A module release publishes no operator bundle
+
+- **WHEN** only `opm_operator-v0.2.0` is created
+- **THEN** `publish-docs` is skipped
 
 ### Requirement: Pull requests check the bundle and main publishes edge
 

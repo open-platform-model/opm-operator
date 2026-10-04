@@ -10,13 +10,22 @@
 #   image-tag-guard.sh verify REF DIGEST
 #     Fails unless REF resolves to DIGEST.
 #
+#   image-tag-guard.sh digest REF
+#     Read-only: prints the manifest (list) digest REF resolves to, or fails.
+#     The operator module's release check and image PR name the image by it.
+#
 # The output is GITHUB_OUTPUT-shaped (key=value lines on stdout).
 set -euo pipefail
 
-usage() { echo "usage: $0 probe REF REV | verify REF DIGEST" >&2; exit 2; }
+usage() { echo "usage: $0 probe REF REV | verify REF DIGEST | digest REF" >&2; exit 2; }
 
-[ $# -eq 3 ] || usage
-mode=$1 ref=$2 want=$3
+[ $# -ge 1 ] || usage
+case $1 in
+digest) [ $# -eq 2 ] || usage ;;
+probe | verify) [ $# -eq 3 ] || usage ;;
+*) usage ;;
+esac
+mode=$1 ref=$2 want=${3:-}
 
 # manifest_digest REF: prints the manifest (list) digest of REF; on failure
 # prints the tool's output and returns non-zero.
@@ -57,6 +66,13 @@ verify)
     exit 1
   fi
   echo "${ref} resolves to ${want}"
+  ;;
+digest)
+  if ! got=$(manifest_digest "$ref"); then
+    echo "::error::cannot read the digest of ${ref}: ${got}" >&2
+    exit 1
+  fi
+  printf '%s\n' "$got"
   ;;
 *) usage ;;
 esac

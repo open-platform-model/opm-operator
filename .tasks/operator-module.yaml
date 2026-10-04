@@ -40,6 +40,28 @@ tasks:
           exit 1
         fi
 
+  release-check:
+    desc: 'The operator module''s release gate for VERSION=<X.Y.Z> (the module''s release PR and its publish job): no dev pin or local-module.cue, identity.Version = VERSION on the path''s major, a published operator image at the digest GHCR serves, at or above min-operator-version, CRDs and RBAC equal to config/ at that tag. Needs gh (GH_REPO), docker buildx and the operator tags.'
+    requires:
+      vars: [VERSION]
+    cmds:
+      - hack/operator-module/release-check.sh "{{.VERSION}}"
+
+  release-check:test:
+    desc: Offline test of the operator module's release gate over fixture trees (hack/testdata/operator-module-release-check)
+    cmds:
+      - hack/operator-module/test-release-check.sh
+
+  image:test:
+    desc: Offline test of the operator module's image PR script (hack/operator-module/image.sh) over fixture CHANGELOGs and CRDs (hack/testdata/operator-module-image)
+    cmds:
+      - hack/operator-module/test-image.sh
+
+  bot-pr:test:
+    desc: Offline test of the operator module's bot PR script (hack/operator-module/bot-pr.sh) against a scratch origin and a stub gh
+    cmds:
+      - hack/operator-module/test-bot-pr.sh
+
   fmt:check:
     desc: Fail when a CUE file of the operator module is not cue fmt clean
     dir: modules/opm_operator

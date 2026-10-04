@@ -36,6 +36,16 @@ An operator accepts the claim only when its library accepts a bare SemVer in
 `spec.version` (library v1.0.0-beta.2 or later); earlier ones refuse it
 `CatalogUnresolved`.
 
+`backup_provider` is not a pattern for a real provider. Its claim authors
+`catalog`, `version` and `provides` as literals, which 0015:D11:R1 rules out:
+a real provider builds its claim with opm's `#PreBoundRegistration`, which
+derives all three from the catalog the module imports. The fixture deviates on
+purpose: `hack/fixtures.sh check` dry-runs every fixture against GHCR before
+the tree is seeded, so a module fixture cannot import a catalog fixture
+version that is new in the same pull request, and a `backup` catalog bump
+could not land with its re-pin (design D1 of the archived change
+`2026-10-04-add-active-provider-fixture`).
+
 Each module declares its own path and semver in its `identity/identity.cue`
 package — the single source of both (core `#IdentityPackage`; enhancements 0010
 D38 / 0011:D12) — and `module.cue`'s `metadata` block derives from it. Edit the

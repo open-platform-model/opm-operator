@@ -2,6 +2,8 @@
 # The claim this module renders is cluster-scoped, so the applier needs a
 # ClusterRole: only a platform-team identity may register a provider
 # (0015:D3). A tenant Role cannot grant it, which is the gate.
+# This is a cluster-wide grant: the ServiceAccount may write every
+# TransformerRegistration on the cluster, not only this module's claim.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

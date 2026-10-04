@@ -51,14 +51,14 @@ The `status.operatorVersion` edge matters for packages for the same reason it ma
 
 ### The skewPolicy edge stays, and its comment states its cost
 
-`spec.skewPolicy` lives in the spec. An edit bumps `metadata.generation` in the same update event, before the platform is regenerated. The store records the policy at `SetGenerated` time (`platform_controller.go:291-296`), so a render on the `spec.skewPolicy` edge runs under the old policy. The `status.observedGeneration` write that follows re-enqueues again, and that render uses the new policy. The edge therefore costs one early render per workload, and it never renders a wrong result: the second render corrects the first.
+`spec.skewPolicy` lives in the spec. An edit bumps `metadata.generation` in the same update event, before the platform is regenerated. The store records the policy at `SetGenerated` time (`platform_controller.go:291-296`), so a render on the `spec.skewPolicy` edge can run under the old policy (if the Platform reconciler calls `SetGenerated` before a queued workload reads the store, that render already uses the new policy and the second is merely redundant). The `status.observedGeneration` write that follows re-enqueues again, and that render uses the new policy. The edge therefore costs one early render per workload, and it never renders a wrong result: the second render corrects the first.
 
 **Decision:** keep the edge (supervisor's call in the wave-2 plan). The owner's decision lists the skew data among the consumed fields, and the cost is bounded to a rare spec edit. The doc comment gains this sentence:
 
 ```go
 //   - spec.skewPolicy. An edit bumps metadata.generation before the platform
 //     is regenerated, and the store records the policy only when it is, so
-//     this edge renders once under the old policy and the observedGeneration
+//     this edge can render once under the old policy and the observedGeneration
 //     write that follows renders under the new one. The extra render on a
 //     rare edit is accepted.
 ```
@@ -71,7 +71,8 @@ Replacement text for `platform_watch_filter_test.go:284-286`:
 // (c) Wait one BackoffBaseDelay past the backoff floor, then for quiet,
 // so the success path (which does not requeue) is settled. This is not
 // the last instant a backoff requeue scheduled while blocked could fire:
-// a second NotReady render requeues at +10s. The spec is stable because
+// a second or third NotReady render requeues at +10s or +20s. The spec is
+// stable because
 // controller-runtime's priority queue (the default) merges the Platform
 // watch's immediate add into the pending delayed item for the same key,
 // so the recovering render consumed that requeue.
@@ -85,11 +86,11 @@ The code is not changed. The comment is the defect.
 
 **Context**: The predicate's unit table (`moduleinstance_platform_watch_test.go`) already proves each field edge. What is new is that the ModulePackage controller registers the predicate on its Platform watch. A unit test cannot inspect a builder's watches.
 
-**Explored**: (a) a manager-driven spec that renders a real ModulePackage. It needs a Flux source with an artifact and a fetcher, and no integration spec in `test/integration/reconcile` drives a `ModulePackageReconciler` today. (b) a manager-driven spec with no ModulePackage at all, where the reconciler's `Client` counts `List` calls for `ModulePackageList`. The mapper is the only caller of that `List` when no package exists, so each count is one Platform event that passed the predicate.
+**Explored**: (a) a manager-driven spec that renders a real ModulePackage. It needs a Flux source with an artifact and a fetcher, and no integration spec in `test/integration/reconcile` drives a `ModulePackageReconciler` today. (b) a manager-driven spec with no ModulePackage at all, where the reconciler's `Client` counts `List` calls for `ModulePackageList`. The Platform mapper is the only caller of that `List` with no package and no Flux source (the source mapper `mapSourceToModulePackages` lists too, but the spec creates no source and the source watches are wired only when the Flux CRDs are installed), so each count is one Platform event that passed the predicate.
 
-**Decision**: (b). The spec runs only the `ModulePackageReconciler` in a manager, with a counting client that embeds `mgr.GetClient()`. It creates the `cluster` Platform, waits for the count to stop moving, writes a status that changes only the `Ready` message and `ContractsFulfilled`, and checks with `Consistently` that the count does not move. Then it writes a new `status.packageIdentity` and checks with `Eventually` that the count grows. It deletes the Platform with `DeferCleanup`.
+**Decision**: (b). The spec runs only the `ModulePackageReconciler` in a manager, with a counting client that embeds `mgr.GetClient()`. It creates the `cluster` Platform with `Ready=False`, waits for the count to stop moving, writes `Ready=True` and checks with `Eventually` that the count grows (the recovery edge). It then writes a status that changes only the `Ready` message and `ContractsFulfilled`, and checks with `Consistently` that the count does not move. Then it writes a new `status.packageIdentity` and checks with `Eventually` that the count grows, and finally writes a status whose only change is `status.operatorVersion` and checks that the count grows again (the operator-upgrade edge). It deletes the Platform with `DeferCleanup`.
 
-**Rationale**: It proves the registration against a real API server and informer with no registry, source or render, which is what the change adds. The PlatformNotReady recovery itself is unchanged: the reconcile path is untouched, and the Ready-status edge the recovery rides is in the shared unit table. A mutation check (remove the `builder.WithPredicates` line) must turn the spec red.
+**Rationale**: It proves the registration against a real API server and informer with no registry, source or render, which is what the change adds. The PlatformNotReady recovery itself is unchanged: the reconcile path is untouched, and the Ready-status and operatorVersion edges the recovery rides are exercised on this watch by the spec and in the shared unit table. A mutation check (remove the `builder.WithPredicates` line) must turn the spec red.
 
 ## Risks / Trade-offs
 

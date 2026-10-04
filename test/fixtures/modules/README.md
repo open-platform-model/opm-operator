@@ -20,6 +20,32 @@ outright.
 | `hello_web` | `StatelessWorkload`     | one Deployment                                                 | minimal container workload                    |
 | `podinfo`   | `StatelessWorkload`     | Deployment + Service, HTTP `livenessProbe` / `readinessProbe` | stateless web app with health probes          |
 | `redis`     | `StatefulWorkload`      | StatefulSet + headless Service + PVC, exec readiness probe    | stateful app with persistence + an exec probe |
+| `backup_provider` | none              | one cluster-scoped `TransformerRegistration`                  | a provider registering the `backup` catalog fixture (0015:D3) |
+| `backup_consumer` | volume + opm `backup` trait | one ConfigMap, rendered by the `backup` catalog          | a consumer of a provider-fulfilled contract   |
+
+`backup_provider` and `backup_consumer` are one set with the catalog fixture
+`test/fixtures/catalogs/backup` (`testing.opmodel.dev/catalogs/operator/backup@v0`),
+which implements opm's provider-fulfilled backup trait. Apply
+`backup_provider` first: its claim is accepted, turns active once the
+instance is Ready, and adds the `backup` catalog to the generated platform.
+Until then `backup_consumer`'s render is refused, naming the trait. The claim
+names the catalog build literally, so a bump of the `backup` catalog re-pins
+`version` in `backup_provider/components.cue`; the registry-backed spec
+`test/integration/reconcile/backup_fixture_test.go` fails when they drift.
+An operator accepts the claim only when its library accepts a bare SemVer in
+`spec.version` (library v1.0.0-beta.2 or later); earlier ones refuse it
+`CatalogUnresolved`.
+
+`backup_provider` is not a pattern for a real provider. Its claim authors
+`catalog`, `version` and `provides` as literals, which 0015:D11:R1 rules out:
+a real provider builds its claim with opm's `#PreBoundRegistration`, which
+derives all three from the catalog the module imports. The fixture deviates on
+purpose: `hack/fixtures.sh check` dry-runs every fixture against GHCR before
+the tree is seeded, so a module fixture that imports a catalog fixture
+version new in the same pull request would need two pull requests: one that
+publishes the catalog, then one that pins it (design D1 of the archived change
+`2026-10-04-add-active-provider-fixture`). Moving `backup_provider` to
+`#PreBoundRegistration` is a follow-up once `backup` 0.1.0 is on GHCR.
 
 Each module declares its own path and semver in its `identity/identity.cue`
 package — the single source of both (core `#IdentityPackage`; enhancements 0010

@@ -42,6 +42,18 @@ var _ = Describe("The operator module on changed controller output", func() {
 		Expect(err.Error()).To(ContainSubstring("conversion"))
 	})
 
+	It("refuses CRD metadata the catalog cannot carry, naming it", func() {
+		dir := scratchModule()
+		// The same as a CRD manifest that gained metadata.labels.
+		Expect(os.WriteFile(filepath.Join(dir, "zz_scratch_labels.cue"), []byte(
+			"package opm_operator\n\n#crdSource: \"platforms.opmodel.dev\": metadata: labels: team: \"opm\"\n",
+		), 0o644)).To(Succeed())
+
+		_, err := render(dir, instanceName, instanceNamespace, "{}")
+		Expect(err).To(HaveOccurred(), "the render must refuse, not drop the labels")
+		Expect(errText(err)).To(ContainSubstring("platforms.opmodel.dev carries metadata.labels"))
+	})
+
 	It("carries a verb added to a controller RBAC marker into the manager ClusterRole, and nothing else", func() {
 		requireTool("cue")
 		before := mustRender(moduleDir)

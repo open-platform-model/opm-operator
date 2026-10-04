@@ -34,7 +34,9 @@ let adminRoles = [
 
 	// The CRDs, each imported spec embedded whole: #CRDSchema is closed, so a
 	// field the catalog cannot carry (spec.conversion) refuses the render
-	// instead of being dropped.
+	// instead of being dropped. Of the CRD's metadata the catalog carries the
+	// annotations (the name is the key); any other metadata field, such as
+	// labels, refuses the render too.
 	crds: {
 		res.#CRDs
 		spec: crds: {
@@ -43,6 +45,9 @@ let adminRoles = [
 					raw.spec
 					if raw.metadata.annotations != _|_ {
 						annotations: raw.metadata.annotations
+					}
+					for k, _ in raw.metadata if k != "name" && k != "annotations" {
+						(k): error("crds: \(crdName) carries metadata.\(k), which the catalog's CRD resource cannot render; refused instead of dropped")
 					}
 				}
 			}

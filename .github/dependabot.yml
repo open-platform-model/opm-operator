@@ -9,6 +9,10 @@ updates:
     ignore:
       # docs-kit's publish.yml moves only with .opm-docs-version, after the site bumps (docs-kit C5, C12).
       - dependency-name: "open-platform-model/docs-kit*"
+      # The cascade workflows, actions and resolver move together, one .github SHA per repo,
+      # only through a ci(deps) pin PR (Phase 3 wiring contract 2.4; .github README
+      # "Pinning and bumps"); a Dependabot bump would move one reference alone.
+      - dependency-name: "open-platform-model/.github*"
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:

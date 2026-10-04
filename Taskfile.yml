@@ -171,6 +171,11 @@ tasks:
     cmds:
       - bash .tasks/opm-docs.sh pin-check
 
+  cascade:wiring:check:
+    desc: Check the release-cascade caller workflows (Phase 3 wiring contract 10.1)
+    cmds:
+      - bash .tasks/cascade/wiring-check.sh
+
   docs:bundle:check:
     desc: Check the docs-kit pins agree, then build and lint the opm-operator docs bundle into a temporary directory
     deps: [tools:opm-docs]

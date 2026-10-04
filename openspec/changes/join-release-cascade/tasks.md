@@ -28,11 +28,11 @@ Every section runs `actionlint` v1.7.12 (the scratchpad binary, contract §10) o
 
 ## 4. Wiring check in the Lint job, and Dependabot (§10.1 items 6, 7; the addendum)
 
-- [ ] 4.1 Add `.tasks/cascade/wiring-check.sh`: the §10.1 item 6 script with `RECEIVER=true` and `PIN_COMMENT='.github main'`, the `release.yml` `env` deny-list replaced by the allow-list `REGISTRY IMAGE_NAME CUE_VERSION` (and a map check), and `runs-on: ubuntu-latest` asserted on both key-holding jobs. shellcheck clean.
-- [ ] 4.2 Add `cascade:wiring:check` to `Taskfile.yml` next to `docs:pins:check`, and the step "Verify the cascade wiring" (`task cascade:wiring:check`) to `lint.yml`'s `Lint` job directly after "Install Task". No aggregate `check` task or Make target (opm-operator has none).
-- [ ] 4.3 `.github/dependabot.yml`: add the `open-platform-model/.github*` ignore after the docs-kit entry in the `github-actions` entry, with the §10.1 item 7 comment.
-- [ ] 4.4 Test the check: the real tree passes; each mutation of a copy is refused; the allowed edits pass. Record the result in design.md ("Wiring check, tested").
-- [ ] 4.5 `actionlint .github/workflows/lint.yml`, `task cascade:wiring:check`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): check the cascade wiring in the Lint job`
+- [x] 4.1 Add `.tasks/cascade/wiring-check.sh`: the §10.1 item 6 script with `RECEIVER=true` and `PIN_COMMENT='.github main'`, the `release.yml` `env` deny-list replaced by the allow-list `REGISTRY IMAGE_NAME CUE_VERSION` (and a map check), and `runs-on: ubuntu-latest` asserted on both key-holding jobs. shellcheck clean.
+- [x] 4.2 Add `cascade:wiring:check` to `Taskfile.yml` next to `docs:pins:check`, and the step "Verify the cascade wiring" (`task cascade:wiring:check`) to `lint.yml`'s `Lint` job directly after "Install Task". No aggregate `check` task or Make target (opm-operator has none).
+- [x] 4.3 `.github/dependabot.yml`: add the `open-platform-model/.github*` ignore after the docs-kit entry in the `github-actions` entry, with the §10.1 item 7 comment.
+- [x] 4.4 Test the check: the real tree passes; each mutation of a copy is refused; the allowed edits pass. Record the result in design.md ("Wiring check, tested").
+- [x] 4.5 `actionlint .github/workflows/lint.yml`, `task cascade:wiring:check`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): check the cascade wiring in the Lint job`
 
 ## 5. Docs and the re-grep (§10.1 items 8 to 11)
 

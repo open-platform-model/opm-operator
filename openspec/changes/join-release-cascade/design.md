@@ -262,15 +262,29 @@ is why every reference is pinned by SHA. Nothing is left open for opm-operator's
 
 ### Wiring check, tested (task 4.4, 2026-10-04)
 
-- The real tree at the section 4 head: `cascade wiring: ok, .github
-  2376ffae4bfc665f327d51581350dea694c01504 (.github main)`.
-- Mutations of a copy of `.github/workflows/`, each refused with a named mismatch (exit 1): the
-  contract's thirteen and its eleven 3.1.1 additions, plus the addendum's: a `release.yml`
-  workflow `env` key outside the allow-list (`FOO`), `BASH_ENV` there, a non-map `env`,
-  `runs-on: self-hosted` on `notify-downstream`, `runs-on: [ubuntu-latest]` on `publish`.
-  Allowed edits still pass: a header comment in `deps-cascade.yml`, dropping `CUE_VERSION` from
-  `release.yml`'s `env`. The exact list and outputs are in task 4.4.
-- shellcheck v0.11.0: clean.
+Mikefarah yq v4.53.3, shellcheck v0.11.0 (clean). Each case copies `.github/workflows/` and the
+script into a scratch directory, applies one edit, runs the script and compares its exit code;
+37 of 37 behaved as expected.
+
+- **Pass (exit 0):** the real tree (`cascade wiring: ok, .github
+  2376ffae4bfc665f327d51581350dea694c01504 (.github main)`); a header comment added to
+  `deps-cascade.yml`; `CUE_VERSION` removed from `release.yml`'s `env` (the allow-list does not
+  require a key).
+- **Refused (exit 1), the contract's 13:** a changed `publish` `if:`, an extra `publish` step,
+  notify `contents: write`, `secrets: inherit` on the receive call, the key read by the `lint`
+  job, a second SHA on the gates call, `cascade-notify@main`, `ref: main` on the resolver, a
+  branch comment, `environment` dropped from `publish`, `environment: cascade` on the `lint` job,
+  a literal `dry-run: false`, a changed concurrency group.
+- **Refused, the contract's 3.1.1 additions (11):** `env: {BASH_ENV: …}` on `publish`, a
+  workflow-level `env` and a `defaults` in `deps-cascade.yml`, `container` on
+  `notify-downstream`, `services` on `publish`, a step `env` on the notify step, an `if` on the
+  publish step, an extra `with` key on the publish step, and `BASH_ENV`, `ENV` and
+  `NODE_OPTIONS` in `release.yml`'s workflow `env`.
+- **Refused, the addendum (6):** `FOO` and `bash_env` in `release.yml`'s `env`, an `env` given as
+  an expression string, `runs-on: self-hosted` on `notify-downstream`, `runs-on:
+  [ubuntu-latest]` and `runs-on: ubuntu-24.04` on `publish`.
+- **Refused, extra (4):** `notify-downstream` deleted, the gates call at `@main`, the receive
+  call at a tag, a second call into `.github` added to `cascade-gates.yml`.
 
 ### Linting the workflows
 

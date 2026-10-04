@@ -21,9 +21,9 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 
 ## 4. Bot heads hold no write token
 
-- [ ] 4.1 `image-pr.yml`: skip `deps/cascade` and `release-please--*` heads (design D5).
-- [ ] 4.2 `test-e2e.yml`: split into `publish-fixtures` (`packages: write`, trusted events only, setup-go `cache: false`) and `test-e2e` (`contents: read`, `packages: read`, pins and credentials only after a successful publish) (design D4).
-- [ ] 4.3 Gates green, then commit `ci: keep write tokens away from cascade and release heads`
+- [x] 4.1 `image-pr.yml`: skip `deps/cascade` and `release-please--*` heads (design D5).
+- [x] 4.2 `test-e2e.yml`: split into `publish-fixtures` (`packages: write`, trusted events only, setup-go `cache: false`) and `test-e2e` (`contents: read`, `packages: read`, pins and credentials only after a successful publish) (design D4).
+- [x] 4.3 Gates green, then commit `ci: keep write tokens away from cascade and release heads`
 
 ## 5. Code owners and docs
 

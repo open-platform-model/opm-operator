@@ -21,12 +21,88 @@ env:
   OPM_E2E_FLUX: '1'
 
 jobs:
-  test-e2e:
-    name: Run on Ubuntu
+  # The only job here that holds packages: write. It publishes the fixtures
+  # under a per-commit pre-release tag and runs nothing else, and it runs only
+  # on a push to main or a same-repo PR whose head is not deps/cascade or
+  # release-please--*: code on those heads has had no human review yet, and
+  # fork PRs get a read-only token. The test job below never holds a write
+  # grant, so the kind suite, the go mod tidy and the cluster it starts never
+  # see one.
+  publish-fixtures:
+    name: Publish e2e fixtures
+    if: >-
+      github.event_name == 'push'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && github.head_ref != 'deps/cascade'
+          && !startsWith(github.head_ref, 'release-please--'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # cue mod publish of pre-release example modules to GHCR
+      packages: write # opm module publish of the pre-release fixtures to GHCR
+    outputs:
+      prerelease: ${{ steps.publish.outputs.prerelease }}
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # A publishing job never restores the Actions cache.
+          cache: false
+
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0
+        with:
+          version: ${{ env.CUE_VERSION }}
+
+      - name: Install Task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.x
+
+      - name: Install opm
+        run: |
+          v=$(tr -d '[:space:]' < .opm-cli-version)
+          [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
+          go install "github.com/open-platform-model/cli/cmd/opm@${v}"
+
+      - name: Prepare GHCR credentials
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          # An explicit docker config.json (inline auth, no cred helper), read by
+          # opm module publish.
+          mkdir -p "$RUNNER_TEMP/ghcr"
+          auth=$(printf '%s' "${ACTOR}:${TOKEN}" | base64 -w0)
+          printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$auth" > "$RUNNER_TEMP/ghcr/config.json"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/ghcr" >> "$GITHUB_ENV"
+
+      - name: Publish example modules to GHCR (pre-release tags)
+        id: publish
+        run: |
+          # Per-commit SemVer pre-release segment: e2e.g<short-sha>. The leading
+          # `g` keeps the identifier alphanumeric so an all-digit short SHA can
+          # never form an invalid (leading-zero) numeric pre-release identifier.
+          # The tag (e.g. v0.1.0-e2e.gabc1234) sorts below the real v0.1.0 cut
+          # on release and never collides with it. Publishing is idempotent.
+          PRERELEASE="e2e.g${GITHUB_SHA::7}"
+          task examples:publish PRERELEASE="$PRERELEASE"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+  test-e2e:
+    name: Run on Ubuntu
+    needs: publish-fixtures
+    # Runs when publish-fixtures succeeded or was skipped (a fork, or a
+    # cascade or release head); a failed publish fails the run there.
+    if: ${{ !cancelled() && needs.publish-fixtures.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # the read-only GHCR credential the controller mounts
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,7 +124,7 @@ jobs:
 
       - name: Install the latest version of kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -70,29 +146,23 @@ jobs:
           echo "flux2 distribution pin: v$FLUX_VERSION"
           echo "flux CLI: $(flux version --client)"
 
-      # Same-repo PRs (and pushes) can write packages with GITHUB_TOKEN; fork PRs
-      # get a read-only token and cannot publish. Gate the publish/credential
-      # steps accordingly — when skipped, the podinfo example spec self-skips
-      # (no resolvable module), keeping fork CI green.
-      - name: Determine publish capability
-        id: cap
-        run: |
-          if [ "${{ github.event_name }}" = "push" ] || \
-             [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            echo "can_publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "can_publish=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Fork PR: skipping GHCR module publish; the podinfo example e2e spec will be skipped."
-          fi
+      # Without the published pre-release, the podinfo example spec self-skips
+      # (no resolvable module), keeping fork, cascade and release PRs green.
+      - name: Note the skipped publish
+        if: needs.publish-fixtures.result != 'success'
+        run: echo "::notice::No e2e fixture publish for this head (fork, deps/cascade or release-please--*); the podinfo example e2e spec will be skipped."
 
-      - name: Prepare GHCR credentials
-        if: steps.cap.outputs.can_publish == 'true'
+      - name: Prepare read-only GHCR credentials
+        if: needs.publish-fixtures.result == 'success'
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
         run: |
-          # Write an explicit docker config.json (inline auth, no cred helper) so
-          # both `cue mod publish` and the in-cluster controller authenticate to
-          # ghcr.io. The controller mounts this exact file (OPERATOR_DOCKER_CONFIG).
+          # An explicit docker config.json (inline auth, no cred helper) holding
+          # this job's packages: read token. The controller mounts this exact
+          # file (OPERATOR_DOCKER_CONFIG).
           mkdir -p "$RUNNER_TEMP/ghcr"
-          auth=$(printf '%s' "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" | base64 -w0)
+          auth=$(printf '%s' "${ACTOR}:${TOKEN}" | base64 -w0)
           printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$auth" > "$RUNNER_TEMP/ghcr/config.json"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/ghcr" >> "$GITHUB_ENV"
           echo "OPERATOR_DOCKER_CONFIG=$RUNNER_TEMP/ghcr/config.json" >> "$GITHUB_ENV"
@@ -104,20 +174,10 @@ jobs:
             || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
           go install "github.com/open-platform-model/cli/cmd/opm@${v}"
 
-      - name: Publish example modules to GHCR (pre-release tags)
-        if: steps.cap.outputs.can_publish == 'true'
-        run: |
-          # Per-commit SemVer pre-release segment: e2e.g<short-sha>. The leading
-          # `g` keeps the identifier alphanumeric so an all-digit short SHA can
-          # never form an invalid (leading-zero) numeric pre-release identifier.
-          # The tag (e.g. v0.1.0-e2e.gabc1234) sorts below the real v0.1.0 cut
-          # on release and never collides with it. Publishing is idempotent.
-          PRERELEASE="e2e.g${GITHUB_SHA::7}"
-          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
-          task examples:publish PRERELEASE="$PRERELEASE"
-
       - name: Pin example fixtures to the published pre-release
-        if: steps.cap.outputs.can_publish == 'true'
+        if: needs.publish-fixtures.result == 'success'
+        env:
+          PRERELEASE: ${{ needs.publish-fixtures.outputs.prerelease }}
         run: task examples:pin PRERELEASE="$PRERELEASE"
 
       - name: Running Test e2e

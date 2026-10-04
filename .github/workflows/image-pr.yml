@@ -14,6 +14,9 @@ env:
 jobs:
   image-pr:
     name: Build and push PR image
+    # Code on the cascade and release-please heads has had no human review
+    # yet, so it never builds under packages: write and id-token: write.
+    if: github.head_ref != 'deps/cascade' && !startsWith(github.head_ref, 'release-please--')
     runs-on: ubuntu-latest
     permissions:
       contents: read

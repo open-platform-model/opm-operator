@@ -1,7 +1,7 @@
 ## 1. docs-kit v0.7.0
 
-- [ ] 1.1 `.opm-docs-version` and every `open-platform-model/docs-kit/.github/workflows/publish.yml@` ref under `.github/workflows/` name `v0.7.0` (design.md D4). Verify: `task docs:pins:check` passes.
-- [ ] 1.2 Remove `.bin/opm-docs`, then `task docs:bundle:check` green on the unchanged page layout, then commit `ci(docs): move docs-kit to v0.7.0`.
+- [x] 1.1 `.opm-docs-version` and every `open-platform-model/docs-kit/.github/workflows/publish.yml@` ref under `.github/workflows/` name `v0.7.0` (design.md D4). Verify: `task docs:pins:check` passes.
+- [x] 1.2 Remove `.bin/opm-docs`, then `task docs:bundle:check` green on the unchanged page layout, then commit `ci(docs): move docs-kit to v0.7.0`.
 
 ## 2. The reference becomes a section
 

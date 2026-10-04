@@ -3,13 +3,13 @@ version: '3'
 tasks:
   binary:
     desc: Build the manager binary
-    deps: [":dev:manifests", ":dev:generate", ":dev:fmt", ":dev:vet"]
+    deps: [":dev:manifests:config", ":dev:generate", ":dev:fmt", ":dev:vet"]
     cmds:
       - go build -o bin/manager cmd/main.go
 
   run:
     desc: Run the controller locally
-    deps: [":dev:manifests", ":dev:generate", ":dev:fmt", ":dev:vet"]
+    deps: [":dev:manifests:config", ":dev:generate", ":dev:fmt", ":dev:vet"]
     env:
       CUE_REGISTRY: '{{.CUE_REGISTRY}}'
     cmds:
@@ -17,7 +17,7 @@ tasks:
 
   installer:
     desc: Build consolidated install manifest
-    deps: [":dev:manifests", ":dev:generate", ":tool:kustomize"]
+    deps: [":dev:manifests:config", ":dev:generate", ":tool:kustomize"]
     cmds:
       - mkdir -p dist
       - 'hack/render-config.sh "{{.KUSTOMIZE}}" "{{.IMG}}" config/default > dist/install.yaml'
@@ -26,7 +26,7 @@ tasks:
 
   crds:
     desc: Install CRDs
-    deps: [":dev:manifests", ":tool:kustomize"]
+    deps: [":dev:manifests:config", ":tool:kustomize"]
     cmds:
       - |
         out="$("{{.KUSTOMIZE}}" build config/crd 2>/dev/null || true)"
@@ -34,7 +34,7 @@ tasks:
 
   crds:remove:
     desc: Uninstall CRDs
-    deps: [":dev:manifests", ":tool:kustomize"]
+    deps: [":dev:manifests:config", ":tool:kustomize"]
     cmds:
       - |
         out="$("{{.KUSTOMIZE}}" build config/crd 2>/dev/null || true)"
@@ -42,7 +42,7 @@ tasks:
 
   controller:install:
     desc: Deploy the controller manager
-    deps: [":dev:manifests", ":tool:kustomize", ":kind:load", "crds"]
+    deps: [":dev:manifests:config", ":tool:kustomize", ":kind:load", "crds"]
     cmds:
       - 'hack/render-config.sh "{{.KUSTOMIZE}}" "{{.IMG}}" config/default | "{{.KUBECTL}}" apply -f -'
       - |

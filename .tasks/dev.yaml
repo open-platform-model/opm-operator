@@ -30,7 +30,16 @@ tasks:
       - '"{{.GOLANGCI_LINT}}" config verify'
 
   manifests:
-    desc: Generate CRDs and RBAC manifests
+    desc: Generate the CRD, RBAC and webhook manifests in config/, then the operator module's data from them
+    cmds:
+      - task: manifests:config
+      - task: :operator-module:generate
+
+  # config/ alone, with no cue CLI needed: what builds, tests and deploys
+  # depend on, and what operator-module:drift compares config/ against (it must
+  # not regenerate the module it then checks).
+  manifests:config:
+    internal: true
     deps: [":tool:controller-gen"]
     cmds:
       - '"{{.CONTROLLER_GEN}}" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases'
@@ -43,7 +52,7 @@ tasks:
 
   test:
     desc: 'Run unit and integration tests. Fixtures and catalogs resolve from GHCR unless TEST_CUE_REGISTRY overrides the mapping (PR CI passes the MIXED mapping after seeding a job-local registry from the tree). OPM_TEST_REGISTRY_FORCE=1 turns a skipped registry-backed spec into a failure.'
-    deps: [manifests, generate, fmt, vet, ":tool:setup-envtest", ":tool:kustomize"]
+    deps: [manifests:config, generate, fmt, vet, ":tool:setup-envtest", ":tool:kustomize"]
     env:
       CUE_REGISTRY: '{{.TEST_CUE_REGISTRY | default .GHCR_CUE_REGISTRY}}'
       # The operator module's parity spec builds config/default with it
@@ -75,7 +84,7 @@ tasks:
 
   test:local:
     desc: Run unit and integration tests against local opm-registry (workspace modules must be published to localhost:5000)
-    deps: [manifests, generate, fmt, vet, ":tool:setup-envtest", ":tool:kustomize"]
+    deps: [manifests:config, generate, fmt, vet, ":tool:setup-envtest", ":tool:kustomize"]
     env:
       CUE_REGISTRY: '{{.CUE_REGISTRY}}'
       # The operator module's parity spec builds config/default with it
@@ -88,7 +97,7 @@ tasks:
 
   e2e:
     desc: Run e2e tests against a Kind cluster (controller pulls catalog from ghcr default)
-    deps: [":kind:setup", manifests, generate, fmt, vet]
+    deps: [":kind:setup", manifests:config, generate, fmt, vet]
     env:
       KIND: '{{.KIND}}'
       KIND_CLUSTER: '{{.KIND_CLUSTER}}'
@@ -102,7 +111,7 @@ tasks:
 
   e2e:local:
     desc: Run e2e against local Kind w/ opm-registry override (workspace modules must already be published to localhost:5000 — see modules/ task publish)
-    deps: [":kind:setup", ":registry:start", ":registry:connect", manifests, generate, fmt, vet]
+    deps: [":kind:setup", ":registry:start", ":registry:connect", manifests:config, generate, fmt, vet]
     env:
       KIND: '{{.KIND}}'
       KIND_CLUSTER: '{{.KIND_CLUSTER}}'

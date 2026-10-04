@@ -46,10 +46,10 @@ The image tag, digest and pull policy are not values. `operator/operator.cue` na
 
 ## Regenerating
 
-`zz_generated_crds.cue` and `zz_generated_rbac.cue` are generated from `config/` with `cue import`. Do not edit them. After an API type or RBAC marker change:
+`zz_generated_crds.cue` and `zz_generated_rbac.cue` are generated from `config/` with `cue import`. Do not edit them. `task dev:manifests` regenerates them together with `config/`, so after an API type or RBAC marker change run:
 
 ```bash
-task dev:manifests operator-module:generate
+task dev:manifests
 ```
 
 `task operator-module:drift` (run in CI) fails when `config/` is stale against `task dev:manifests`, then when these files are stale against `config/`; `task operator-module:drift REF=<tag>` checks them against a release tag's `config/` instead. A Role or ClusterRole added to `config/rbac/kustomization.yaml` lands in the generated data, and the render test fails until `components.cue` renders it.

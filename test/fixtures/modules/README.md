@@ -41,10 +41,11 @@ An operator accepts the claim only when its library accepts a bare SemVer in
 a real provider builds its claim with opm's `#PreBoundRegistration`, which
 derives all three from the catalog the module imports. The fixture deviates on
 purpose: `hack/fixtures.sh check` dry-runs every fixture against GHCR before
-the tree is seeded, so a module fixture cannot import a catalog fixture
-version that is new in the same pull request, and a `backup` catalog bump
-could not land with its re-pin (design D1 of the archived change
-`2026-10-04-add-active-provider-fixture`).
+the tree is seeded, so a module fixture that imports a catalog fixture
+version new in the same pull request would need two pull requests: one that
+publishes the catalog, then one that pins it (design D1 of the archived change
+`2026-10-04-add-active-provider-fixture`). Moving `backup_provider` to
+`#PreBoundRegistration` is a follow-up once `backup` 0.1.0 is on GHCR.
 
 Each module declares its own path and semver in its `identity/identity.cue`
 package — the single source of both (core `#IdentityPackage`; enhancements 0010

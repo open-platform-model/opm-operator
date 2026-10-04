@@ -33,13 +33,13 @@ Reconcile phase impact: none. No operator code changes. The fixtures exercise Re
 
 **Context**: The brief suggested extending the existing `provider` catalog fixture with the backup transformer, and building the claim with opm's `#PreBoundRegistration`, which derives `catalog`, `version` and `provides` from the provider catalog's own package.
 
-**Explored**: Built that first. It renders the right claim. Then ran `hack/fixtures.sh check` with an empty CUE cache, as CI does: the provider module's dry run is refused because it imports `testing.opmodel.dev/catalogs/operator/provider` at 0.2.0, which GHCR does not hold yet. `check` dry-runs every fixture against GHCR before the tree is seeded (`test.yml`), so a module fixture cannot depend on a catalog fixture version that is new in the same PR. A warm local cache hides this: the first local run passed.
+**Explored**: Built that first. It renders the right claim. Then ran `hack/fixtures.sh check` with an empty CUE cache, as CI does: the provider module's dry run is refused because it imports `testing.opmodel.dev/catalogs/operator/provider` at 0.2.0, which GHCR does not hold yet. `check` dry-runs every fixture against GHCR before the tree is seeded (`test.yml`), so a module fixture that depends on a catalog fixture version new in the same PR would need two pull requests: one that publishes the catalog, then one that pins it. A warm local cache hides this: the first local run passed.
 
 Read `.tasks/cascade/cascade.sh`: `task deps:cascade` advances the `provider` catalog's version whenever core moves. A module that pins it would then need the unpublished new build, the same gap on every cascade PR. A literal claim naming `provider` would name a build the PR's job-local registry no longer holds, and the registry-backed spec would fail.
 
 **Decision**: The backup provider is a catalog fixture of its own, `testing.opmodel.dev/catalogs/operator/backup@v0`, which the cascade does not touch. `backup_provider` authors its claim with opm's `#TransformerRegistration`, `catalog` and `version` as literals and `provides` as opm's backup trait FQN. It depends on core and the opm catalog only.
 
-This deviates from 0015:D11:R1 (no field of a rendered registration is authored). The fixture README and the spec requirement say so, so nobody copies it as a provider pattern.
+This deviates from 0015:D11:R1 (no field of a rendered registration is authored). The fixture README and the spec requirement say so, so nobody copies it as a provider pattern. Moving `backup_provider` to `#PreBoundRegistration` (0015:D11:R1) is a follow-up once `backup` 0.1.0 is on GHCR, since the catalog then no longer changes in the same PR.
 
 **Rationale**: The literal is checked twice. Acceptance re-derives `provides` from the named catalog and refuses a difference (0015:D11). The integration spec (D3) fails when the literal drifts from the catalog fixture's identity package or its transformers, so a hand bump of the catalog must re-pin the claim in the same PR, which Registry Policy rule 3 asks for anyway. The backup catalog's core and opm pins can only trail a platform's, and the build-compatibility check (0015:D8) refuses only a newer requirement, so leaving it off the cascade is safe. The cost: the fixture does not demonstrate `#PreBoundRegistration`. That helper has its own golden fixtures in the opm catalog.
 
@@ -78,7 +78,7 @@ opm's `#VersionType` is a bare SemVer, so every rendered claim carries one. Libr
 
 The captured YAML for both runs and for the blocked deletion is on opm-operator#212 (issuecomment-5981329966).
 
-**Decision**: Ship the fixtures as they are, after the library bump. The bump is its own `fix(deps)` pull request, opm-operator#213, so it releases the operator under its own CHANGELOG entry; it merges before this change and before release PR #208, so the release that first carries these manifests in its examples bundle accepts the claim. Until #213 merges, this branch carries its commit, which drops out on a rebase onto `main`. Once it lands, opm-operator#210 reduces to the doc comment.
+**Decision**: Ship the fixtures as they are, after the library bump. The bump is its own `fix(deps)` pull request, opm-operator#213, so it releases the operator under its own CHANGELOG entry; it merges before this change and before release PR #208, so the release that first carries these manifests in its examples bundle accepts the claim. #213 merged first (363267a), so this change carries no bump of its own. Once it lands, opm-operator#210 reduces to the doc comment.
 
 **Rationale**: The fixtures are correct for the contract as opm renders it. Making them pass on beta.5 would need a `v`-prefixed version, which opm's `#VersionType` refuses.
 

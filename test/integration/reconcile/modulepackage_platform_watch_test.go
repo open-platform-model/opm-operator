@@ -65,8 +65,8 @@ func (c *platformListCountingClient) List(
 func (c *platformListCountingClient) count() int64 { return c.lists.Load() }
 
 // The manager-driven proof that the ModulePackage controller's Platform watch
-// carries the shared consumed-fields predicate: the Ready edge, a pin-set
-// change and an operatorVersion-only write reach the mapper, and a status
+// carries the shared consumed-fields predicate: a Ready-only edge, a pin-set
+// change and an operatorVersion-only write each reach the mapper, and a status
 // write that changes only a message or a report does not. No ModulePackage
 // and no Platform reconciler run, so the spec needs no registry, source or
 // render; the field-by-field table lives in the predicate's unit test.
@@ -145,18 +145,19 @@ var _ = Describe("ModulePackage Platform watch (manager-driven)", func() {
 		}
 
 		// The Platform's create event passes; wait until the mapper has run
-		// for it, then write a not-yet-generated status.
+		// for it, then write a not-yet-generated status. Every other consumed
+		// field the later steps hold still is set here, so the next write
+		// moves the Ready status alone.
 		grows(0, "the Platform create event reaches the mapper")
 		writePlatformStatus(func(p *releasesv1alpha1.Platform) {
+			p.Status.ObservedGeneration = p.Generation
+			p.Status.OperatorVersion = "v1.0.0-beta.1"
 			setReady(p, metav1.ConditionFalse, status.BuildFailedReason, "building platform module: not yet")
 		})
 		blocked := quiesce(300 * time.Millisecond)
 
-		// The recovery edge: Ready moves False -> True.
+		// The recovery edge: only the Ready status moves, False -> True.
 		writePlatformStatus(func(p *releasesv1alpha1.Platform) {
-			p.Status.ObservedGeneration = p.Generation
-			p.Status.PackageIdentity = "g1"
-			p.Status.OperatorVersion = "v1.0.0-beta.1"
 			setReady(p, metav1.ConditionTrue, status.GeneratedReason, "Platform module generated and built for generation 1")
 		})
 		grows(blocked, "the Ready=True write re-enqueues packages blocked on PlatformNotReady")
@@ -177,7 +178,7 @@ var _ = Describe("ModulePackage Platform watch (manager-driven)", func() {
 
 		// A new pin set re-enqueues packages.
 		writePlatformStatus(func(p *releasesv1alpha1.Platform) {
-			p.Status.PackageIdentity = "g1+claims"
+			p.Status.PackageIdentity = "g1"
 		})
 		grows(settled, "a pin-set change re-enqueues packages")
 		afterPin := quiesce(300 * time.Millisecond)

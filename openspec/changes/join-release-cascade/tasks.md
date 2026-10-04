@@ -14,9 +14,9 @@ Every section runs `actionlint` v1.7.12 (the scratchpad binary, contract §10) o
 
 ## 2. Notify through the pinned action (§10.1 items 1, 2)
 
-- [ ] 2.1 Replace `release.yml`'s `notify-downstream` with contract §4.6's opm-operator block, byte for byte with `<SHA>`, as the last job. The comment above it says only that the job is caller-owned, declares `environment: cascade` and passes the key to the pinned `cascade-notify` action as an input.
-- [ ] 2.2 `git diff origin/main -- .github/workflows/release.yml` touches only the appended job; the "Workflows carry no tag mutation" search (release-automation spec) still finds no match.
-- [ ] 2.3 `actionlint .github/workflows/release.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): run the pinned cascade-notify action in a caller-owned job`
+- [x] 2.1 Replace `release.yml`'s `notify-downstream` with contract §4.6's opm-operator block, byte for byte with `<SHA>`, as the last job. The comment above it says only that the job is caller-owned, declares `environment: cascade` and passes the key to the pinned `cascade-notify` action as an input.
+- [x] 2.2 `git diff origin/main -- .github/workflows/release.yml` touches only the appended job; the "Workflows carry no tag mutation" search (release-automation spec) still finds no match.
+- [x] 2.3 `actionlint .github/workflows/release.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): run the pinned cascade-notify action in a caller-owned job`
 
 ## 3. Receiver, gates caller and resolver pin (§10.1 items 2 to 5)
 

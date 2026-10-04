@@ -160,12 +160,16 @@ grep -nE 'v: *"[^"]*-0\.dev\.' $M/cue.mod/module.cue && bad "development pin"
 [ -e $M/cue.mod/local-module.cue ]         && bad "local-module.cue present"
 [ "$(ex ./identity -e Version)" = "$proposed" ] || bad "identity.Version"
 # v0 rules: major 0 on the @v0 path; 1.0.0 or higher refused while $tag carries a prerelease suffix
-min=$(cat hack/operator-module/min-operator-version)
-git merge-base --is-ancestor "$min" "$tag" || bad "$tag is older than the minimum operator version $min (refuse-own-instance)"
-hack/operator-module/drift-check.sh --ref "$tag" || bad "CRDs or RBAC differ from $tag"
+min=$(cat "$MIN_OPERATOR_VERSION_FILE")
+if ! git rev-parse --verify --quiet "$min^{commit}" "$tag^{commit}" >/dev/null; then
+  bad "cannot resolve $min or $tag (shallow checkout or missing tag?)"
+elif ! git merge-base --is-ancestor "$min" "$tag"; then
+  bad "$tag is older than the minimum operator version $min (refuse-own-instance)"
+fi
+"$DRIFT_CHECK" --ref "$tag" || bad "CRDs or RBAC differ from $tag"
 ```
 
-Every `bad` records the failure and the script exits non-zero after the last check, so one run names every failure. `RELEASE_GUARD` and `IMAGE_TAG_GUARD` default to `.github/scripts/release-guard.sh` and `image-tag-guard.sh`. The offline test `hack/operator-module/test-release-check.sh` sets them to stubs and runs the script over fixture trees under `hack/testdata/operator-module-release-check/`, so the dev pin, `local-module.cue`, version and major mismatch, the `1.0.0` rule, the minimum operator version (against a scratch git repository the test builds with two tags) and the reporting of several failures at once are tested in `Lint` on every pull request, without network.
+Every `bad` records the failure and the script exits non-zero after the last check, so one run names every failure. `RELEASE_GUARD` and `IMAGE_TAG_GUARD` default to `.github/scripts/release-guard.sh` and `image-tag-guard.sh`, `DRIFT_CHECK` to `hack/operator-module/drift-check.sh`, and `MIN_OPERATOR_VERSION_FILE` to `hack/operator-module/min-operator-version`. Git calls use the working directory's repository. The offline test `hack/operator-module/test-release-check.sh` sets the two guards and `DRIFT_CHECK` to passing stubs and runs the script once per case inside a scratch git repository it builds: the case's fixture tree from `hack/testdata/operator-module-release-check/` copied to `modules/opm_operator/`, a min file naming the first of two tags made in order, and the fixture's operator tag on the second unless the case is the minimum case. Every case therefore has the file and both tags, so the dev pin, `local-module.cue`, version and major mismatch, the `1.0.0` rule, the minimum operator version, an unresolvable tag and the reporting of several failures at once each fail for their own reason, and a clean tree passes. All of this runs in `Lint` on every pull request, without network.
 
 The minimum check compares by ancestry, not by parsing versions: operator tags are cut from `main` in order, so a tag at or above the minimum is one that contains it. The same file is what add-operator-module's render test compares with `golang.org/x/mod/semver`; the release check repeats it because a release is where a hand-edited downgrade would ship.
 
@@ -258,6 +262,7 @@ If any unknown fails, the change stops at section 1. design.md and the spec delt
 - [Every module release re-applies every object on every cluster] → Measured in the prototype (see "Evidence"). Mutual path exclusion, one image PR per operator release and one module cascade PR keep releases to the ones that carry a change.
 - [A hand-made PR touches the module and other paths] → It releases both units. `AGENTS.md` says to keep module changes in PRs of their own; automated PRs are confined by their scripts.
 - [The App token's PR on `module/operator-image` or `module/deps` rewrites a branch] → It rewrites only while every commit on the branch is the App's, and once a human commits it only adds commits. The lease refuses if the branch moved since it was fetched.
+- [The two minimum checks can disagree on a release branch] → add-operator-module's render test orders by semver; the release check orders by git ancestry. For a tag cut off a release branch they can disagree: a higher semver tag without PR #211 passes the render test, and a tag carrying a cherry-pick of #211 fails the release check. No `release/*` branch exists during beta (Non-Goals), so both agree today. A release-branch change revisits the release check, for example by testing for #211's change itself rather than ancestry.
 - [Two release PRs confuse the owner] → `AGENTS.md` names both. The module's release PR also carries the identity-advance commit, so wait for it before merging, as in catalog_opm.
 - [GHCR package created with the wrong link or visibility on first publish] → G-owner runs after the first module release: link the package to this repository only, give Actions access only to it, and make it public. Until that is done, `opm` cannot pull it anonymously, so the cli's work waits.
 - [Module releases become GitHub's Latest] → The kubectl path `releases/latest/download/install.yaml` then serves the module's manifest. Until `stop-operator-install-manifest` lands, the install page still names the operator release's asset by tag, so nothing a user follows changes. After operator GA both units could be Latest. Open question 2.

@@ -52,19 +52,20 @@ Every commit in this section is a hidden type and changes paths outside the modu
   - `assert-published v9.9.9` fails naming the count;
   - `digest ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.5` prints the digest the cli's embedded manifest names;
   - `probe` and `verify` with two arguments still print the usage.
-- [ ] 2.5 Add `hack/operator-module/release-check.sh` per design.md "Module release gate inside `Lint`", running its `cue export` calls from the module directory and taking `RELEASE_GUARD` and `IMAGE_TAG_GUARD` from the environment, and the task `operator-module:release-check` (it takes `VERSION`) in `.tasks/operator-module.yaml`, the include add-operator-module creates. In `lint.yml`:
+- [ ] 2.5 Add `hack/operator-module/release-check.sh` per design.md "Module release gate inside `Lint`", running its `cue export` calls from the module directory and taking `RELEASE_GUARD`, `IMAGE_TAG_GUARD`, `DRIFT_CHECK` and `MIN_OPERATOR_VERSION_FILE` from the environment with the defaults design.md names, and resolving both tags with `git rev-parse --verify` before the ancestry check, and the task `operator-module:release-check` (it takes `VERSION`) in `.tasks/operator-module.yaml`, the include add-operator-module creates. In `lint.yml`:
   - the checkout step gains `fetch-depth: 0`;
   - add a `cue-lang/setup-cue` step, pinned by full SHA, at the `CUE_VERSION` `.github/workflows/test.yml` names;
   - add a step after the release-pin check, `if: (github.head_ref || github.ref_name) == 'release-please--branches--main--components--opm_operator'`, with `GH_TOKEN: ${{ github.token }}` and `GH_REPO: ${{ github.repository }}`, that reads the proposed version from the branch's `.release-please-manifest.json` and runs the task.
 
   Verify locally on the merged module with its committed image: the check passes when `VERSION` equals `identity.Version`, and fails naming the digest when the module names a wrong digest.
-- [ ] 2.6 Add `hack/operator-module/test-release-check.sh`, an offline test of the checks that need no network, over fixture module trees under `hack/testdata/operator-module-release-check/`, with `RELEASE_GUARD` and `IMAGE_TAG_GUARD` set to stubs that pass. Cases, each asserting the failure is named:
+- [ ] 2.6 Add `hack/operator-module/test-release-check.sh`, an offline test of the checks that need no network, over fixture module trees under `hack/testdata/operator-module-release-check/`, with `RELEASE_GUARD`, `IMAGE_TAG_GUARD` and `DRIFT_CHECK` set to stubs that pass. Each case runs inside a scratch git repository the test builds, per design.md: the fixture tree at `modules/opm_operator/`, a min file naming the first of two tags made in order, and the fixture's operator tag on the second unless the case says otherwise. Cases, each asserting the failure is named:
   - a `-0.dev.` pin;
   - a `cue.mod/local-module.cue`;
   - an `identity.Version` that differs from `VERSION`;
   - a `VERSION` whose major is not 0;
   - `1.0.0` while the module names a `-beta.N` operator tag;
-  - an operator tag older than `hack/operator-module/min-operator-version`, in a scratch git repository the test builds with the two tags in order;
+  - an operator tag older than the min file (the fixture names the first tag, the min file the second);
+  - a min file naming a tag the repository lacks, failing as unresolvable, not as older;
   - two failures at once, both named before it exits;
   - a clean tree passes.
 

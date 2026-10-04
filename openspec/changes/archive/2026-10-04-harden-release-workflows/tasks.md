@@ -35,3 +35,7 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 
 - [x] 6.1 Run openspec verify for `harden-release-workflows` and resolve its findings.
 - [x] 6.2 Archive on this branch; check `openspec/specs/workflow-hardening/spec.md` has a real Purpose and `openspec validate workflow-hardening --strict` passes. Commit `chore(openspec): archive harden-release-workflows`
+
+## 7. Review fixes
+
+- [x] 7.1 Skip `dependabot/*` heads in `image-pr.yml` and the e2e `publish-fixtures` job, and add a 7-day `cooldown` to the `github-actions` Dependabot ecosystem (design D5). Commit `ci: keep write tokens away from Dependabot heads`

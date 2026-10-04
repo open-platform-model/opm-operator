@@ -38,7 +38,7 @@ A job that publishes, signs or attests anything (a container image, a CUE module
 - **THEN** `actions/setup-go` runs with `cache: false`
 
 ### Requirement: Bot-head code never holds a write token or OIDC
-A job triggered by `pull_request` that holds any write scope or `id-token: write` SHALL NOT run for a head named `deps/cascade` or starting with `release-please--`. The code on those heads comes from the release cascade or release-please, and no human has reviewed it yet. A job that runs such code SHALL hold only read scopes.
+A job triggered by `pull_request` that holds any write scope or `id-token: write` SHALL NOT run for a head named `deps/cascade` or starting with `release-please--` or `dependabot/`. The code on those heads comes from the release cascade, release-please or Dependabot, and no human has reviewed it yet; a Dependabot `github-actions` bump runs a new upstream action release in the job itself. A job that runs such code SHALL hold only read scopes.
 
 #### Scenario: Cascade PR image build skipped
 - **WHEN** a pull request from `deps/cascade` opens or updates
@@ -47,6 +47,10 @@ A job triggered by `pull_request` that holds any write scope or `id-token: write
 #### Scenario: Cascade PR e2e runs read-only
 - **WHEN** a pull request from `deps/cascade` or `release-please--*` opens or updates
 - **THEN** `test-e2e.yml`'s `publish-fixtures` job is skipped, and the `test-e2e` job runs the suite with `contents: read` and `packages: read`, without the pre-release pins or a GHCR credential, so the podinfo spec skips
+
+#### Scenario: Dependabot PR holds no write token
+- **WHEN** a pull request from a `dependabot/*` head opens or updates
+- **THEN** `image-pr.yml`'s job and `test-e2e.yml`'s `publish-fixtures` job are skipped
 
 #### Scenario: Human PR e2e publishes in its own job
 - **WHEN** a same-repo pull request from any other head opens or updates

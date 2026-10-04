@@ -12,7 +12,7 @@ grants explicit and removes the over-grants.
 
 Threats this change addresses:
 
-- (b) code from a bot head (`deps/cascade`, `release-please--*`) that no human has reviewed;
+- (b) code from a bot head (`deps/cascade`, `release-please--*`, `dependabot/*`) that no human has reviewed;
 - (c) code that the cascade's compute job runs in a `main`-ref run, which holds main's Actions
   cache scope;
 - (d) a branch push whose workflow reads an org secret.
@@ -67,7 +67,7 @@ passwordless sudo, so any code in the job can reach the job token. Permissions a
 job and do not take expressions. So the write grant has to leave the job that runs the suite.
 
 - `publish-fixtures` (`packages: write`, `contents: read`) runs only on a push or on a
-  same-repo PR whose head is neither `deps/cascade` nor `release-please--*`. It checks out,
+  same-repo PR whose head is none of `deps/cascade`, `release-please--*` and `dependabot/*`. It checks out,
   installs opm from `.opm-cli-version`, and runs `task examples:publish PRERELEASE=e2e.g<sha7>`.
   Its output is `prerelease`. Its run still includes a human's own PR code, which is acceptable:
   a human wrote it.
@@ -96,9 +96,15 @@ and only on trusted events.
 ### D5. `image-pr.yml` skips bot heads
 
 The job's `if:` excludes `github.head_ref == 'deps/cascade'` and
-`startsWith(github.head_ref, 'release-please--')`. The job must hold `packages: write` and
+`startsWith(github.head_ref, 'release-please--')` and `startsWith(github.head_ref, 'dependabot/')`. The job must hold `packages: write` and
 `id-token: write` to push and sign, so the only way to keep them from a bot head is not to run
-there. Nothing consumes a cascade or release PR's `pr-<N>` image.
+there. Nothing consumes a cascade, release or Dependabot PR's `pr-<N>` image.
+
+`dependabot/*` heads were added in review. A Dependabot branch is a same-repo head, and a
+Dependabot run honors the permissions a job declares, so a `github-actions` bump ran a new
+upstream action release under `packages: write` and `id-token: write` before anyone looked
+(run 37219447843 on PR 218). `dependabot.yml` also sets a 7-day `cooldown` on the
+`github-actions` ecosystem, so a release that is pulled within a week never reaches a PR.
 
 ### D6. CODEOWNERS
 

@@ -38,11 +38,13 @@ than they need to code that no human has reviewed yet:
 - `lint.yml`, `test.yml`: `permissions: contents: read`.
 - `test-e2e.yml` is split. A short `publish-fixtures` job holds `packages: write` and only
   publishes the per-commit pre-release fixtures. It runs on a push to `main` and on a
-  same-repo pull request whose head is neither `deps/cascade` nor `release-please--*`. The
+  same-repo pull request whose head is none of `deps/cascade`, `release-please--*` and
+  `dependabot/*`. The
   `test-e2e` job runs the kind suite on every event with `contents: read` and `packages: read`.
   It pins the fixtures and passes the controller a read-only GHCR credential only when
   `publish-fixtures` succeeded, so on a bot head, as on a fork, the podinfo spec skips.
-- `image-pr.yml` skips the `deps/cascade` and `release-please--*` heads.
+- `image-pr.yml` skips the `deps/cascade`, `release-please--*` and `dependabot/*` heads.
+- `.github/dependabot.yml`: a 7-day `cooldown` on the `github-actions` ecosystem.
 - No Actions cache in a publishing job. Drop `type=gha` from the release and PR image builds,
   and set `cache: false` on setup-go in `release.yml`'s `publish-examples`,
   `publish-fixtures.yml` and the e2e `publish-fixtures` job.
@@ -53,7 +55,7 @@ than they need to code that no human has reviewed yet:
 
 Not changed: the cascade key-holding jobs (`notify-downstream`, `publish`), the `.github` pin,
 `.tasks/cascade/wiring-check.sh` and `deps-cascade.yml`. A later change moves those. The
-Dependabot `github-actions` entry already exists with the `.github` ignore.
+Dependabot `github-actions` entry already exists with the `.github` ignore; review added its cooldown.
 
 ## Capabilities
 
@@ -71,7 +73,7 @@ Dependabot `github-actions` entry already exists with the `.github` ignore.
 ## Impact
 
 - Workflows: `release.yml`, `lint.yml`, `test.yml`, `test-e2e.yml`, `image-pr.yml`,
-  `publish-fixtures.yml`. New file `.github/CODEOWNERS`. `AGENTS.md`.
+  `publish-fixtures.yml`, `.github/dependabot.yml`. New file `.github/CODEOWNERS`. `AGENTS.md`.
 - No Go, API, CRD or reconcile change, and no release: every commit is `ci` or `docs` typed.
 - Cascade and release PRs lose the PR image and the podinfo e2e spec. The rest of the e2e
   suite still runs on them. Release image builds get slower without the layer cache.

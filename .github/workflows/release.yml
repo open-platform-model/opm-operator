@@ -24,8 +24,14 @@ permissions:
 # both find the version tag absent. A queued run is never cancelled mid-flight;
 # GitHub replaces an older pending run, which is safe because release-please
 # derives its state from the branch head and the release PR labels.
+#
+# The recovery dispatch has a group of its own per tag: in the push group it
+# would replace a pending push run (whose release-please would then wait for
+# the next push), or be replaced by one. It touches only that tag's draft.
 concurrency:
-  group: release-${{ github.ref }}
+  group: >-
+    release-${{ github.event_name == 'workflow_dispatch'
+    && format('recover-{0}', inputs.module_tag) || github.ref }}
   cancel-in-progress: false
 
 env:
@@ -506,9 +512,14 @@ jobs:
   module-target:
     name: Resolve the operator module release
     needs: release-please
+    # The push branch keeps the old gate: release-please succeeded and cut a
+    # module release. On the dispatch release-please is skipped, so only
+    # !cancelled() lets this job run at all.
     if: >-
       !cancelled() && (github.event_name == 'workflow_dispatch'
-      || needs.release-please.outputs.module_release_created == 'true')
+      || (github.event_name == 'push'
+      && needs.release-please.result == 'success'
+      && needs.release-please.outputs.module_release_created == 'true'))
     runs-on: ubuntu-latest
     permissions:
       contents: write # read draft releases (release-guard.sh assert-draft)
@@ -553,6 +564,11 @@ jobs:
             || { echo "::error::'${INPUT_TAG}' is not an operator module release tag"; exit 1; }
           gh api "repos/${GH_REPO}/git/ref/tags/${INPUT_TAG}" --silent \
             || { echo "::error::no tag ${INPUT_TAG}"; exit 1; }
+          status=$(gh api "repos/${GH_REPO}/compare/main...${INPUT_TAG}" --jq .status)
+          case "${status}" in
+            behind|identical) ;;
+            *) echo "::error::${INPUT_TAG} is not on main (compare: ${status})"; exit 1 ;;
+          esac
           .github/scripts/release-guard.sh assert-draft "${INPUT_TAG}"
           {
             echo "tag=${INPUT_TAG}"
@@ -571,6 +587,10 @@ jobs:
   module-publish:
     name: Publish the operator module
     needs: module-target
+    # An explicit status check: the implicit success() also looks at the
+    # skipped release-please upstream on the dispatch and would skip this job
+    # (actions/runner#2205). Same for the two jobs after it.
+    if: ${{ !cancelled() && needs.module-target.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -621,7 +641,11 @@ jobs:
             echo "TOOLS=${GITHUB_WORKSPACE}" >> "${GITHUB_ENV}"
             exit 0
           fi
-          git fetch --no-tags --depth=1 origin "${SCRIPTS_REF}"
+          # Fetch main's commit only when the checkout lacks it: a shallow
+          # fetch into module-publish's full clone would make it shallow and
+          # break the release check's ancestry test.
+          git cat-file -e "${SCRIPTS_REF}^{commit}" 2>/dev/null \
+            || git fetch --no-tags --depth=1 origin "${SCRIPTS_REF}"
           mkdir -p "${RUNNER_TEMP}/tools"
           git archive "${SCRIPTS_REF}" hack/operator-module .github/scripts | tar -x -C "${RUNNER_TEMP}/tools"
           echo "TOOLS=${RUNNER_TEMP}/tools" >> "${GITHUB_ENV}"
@@ -673,6 +697,7 @@ jobs:
   module-manifest:
     name: Attach the operator module's install manifest
     needs: [module-target, module-publish]
+    if: ${{ !cancelled() && needs.module-publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -699,7 +724,11 @@ jobs:
             echo "TOOLS=${GITHUB_WORKSPACE}" >> "${GITHUB_ENV}"
             exit 0
           fi
-          git fetch --no-tags --depth=1 origin "${SCRIPTS_REF}"
+          # Fetch main's commit only when the checkout lacks it: a shallow
+          # fetch into module-publish's full clone would make it shallow and
+          # break the release check's ancestry test.
+          git cat-file -e "${SCRIPTS_REF}^{commit}" 2>/dev/null \
+            || git fetch --no-tags --depth=1 origin "${SCRIPTS_REF}"
           mkdir -p "${RUNNER_TEMP}/tools"
           git archive "${SCRIPTS_REF}" hack/operator-module .github/scripts | tar -x -C "${RUNNER_TEMP}/tools"
           echo "TOOLS=${RUNNER_TEMP}/tools" >> "${GITHUB_ENV}"
@@ -753,6 +782,7 @@ jobs:
     # attached. Recover a failed run with "Re-run failed jobs" when the failed
     # step's script is sound, else with the recovery dispatch.
     needs: [module-target, module-manifest]
+    if: ${{ !cancelled() && needs.module-manifest.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # publish the draft release

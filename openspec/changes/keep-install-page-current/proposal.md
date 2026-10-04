@@ -22,6 +22,6 @@ None.
 ## Impact
 
 - **Files.** `docs/site/start/install-the-operator.md`, `release-please-config.json`, `internal/version/version_test.go`, `AGENTS.md` (the rule for version mentions in `docs/site/`).
-- **Site.** Only page text; no URL changes. v1.0 shows the fix after the next operator release, or after a docs revision of `1.0.0-beta.5` that applies this change's Markdown-only commit (the config and test land in a second commit, so the page commit stays revisable, docs-kit C3 "Docs revisions").
+- **Site.** Only page text; no URL changes. v1.0 shows the fix after the next operator release, or after a docs revision of `1.0.0-beta.5` that applies this change's Markdown-only commit. The page edit merges alone as PR A; the config, test, `AGENTS.md` and archive follow in PR B, so the squash of PR A stays revisable (docs-kit C3 "Docs revisions").
 - **Other repositories.** None. The cli's install pages may carry the same kind of literal; that is the cli's to check (named in design.md as a follow-up).
 - **Not docs-kit.** A docs-kit substitution (a version shortcode or a placeholder the build fills) was considered and rejected in design.md D1.

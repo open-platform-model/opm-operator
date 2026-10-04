@@ -2,7 +2,7 @@
 
 ### Requirement: The Release PR rewrites the install page's operator version
 
-`release-please-config.json` SHALL list `docs/site/start/install-the-operator.md` under the root package's `extra-files`, and every passage of that page that names the operator's version SHALL sit inside an `x-release-please-start-version` ... `x-release-please-end` block of HTML comment markers placed outside code fences. A block SHALL name no version other than the operator's. A test in `internal/version` SHALL fail when the page has no block, when a block is not closed, or when a version inside a block differs from the `Version` constant.
+`release-please-config.json` SHALL list `docs/site/start/install-the-operator.md` under the root package's `extra-files`, and every passage of that page that names the operator's version SHALL sit inside an `x-release-please-start-version` ... `x-release-please-end` block of HTML comment markers, each on its own line outside code fences and at the content indentation of its enclosing block (three spaces inside an ordered-list item), so the page renders as it would without them. A block SHALL name no version other than the operator's. A test in `internal/version` SHALL fail when the page has no block, when a block is not closed, or when a version inside a block differs from the `Version` constant.
 
 #### Scenario: A Release PR moves the page with the constant
 

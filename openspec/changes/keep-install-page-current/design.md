@@ -21,7 +21,7 @@ release-please already rewrites `internal/version/version.go` through `extra-fil
 ### D1. release-please blocks, not a docs-kit substitution
 
 ```markdown
-<!-- x-release-please-start-version -->
+   <!-- x-release-please-start-version -->
 
    Without the CLI, apply the `install.yaml` asset of a release. ...; this page uses v1.0.0-beta.5:
 
@@ -29,10 +29,11 @@ release-please already rewrites `internal/version/version.go` through `extra-fil
    kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/v1.0.0-beta.5/install.yaml
    ```
    ...
-<!-- x-release-please-end -->
+
+   <!-- x-release-please-end -->
 ```
 
-The markers are HTML comments on their own lines, outside code fences (inside a fence they would print). docs-kit's markup check lets an authored page keep comments (C11), and the cli already publishes pages with comments. Four blocks: the install sample output, the kubectl/image/cosign passage, the `kubectl get platform` output, the controller log.
+The markers are HTML comments on their own lines, outside code fences (inside a fence they would print), each at the content indentation of the block that encloses it: three spaces inside step 1 of the ordered list, column 0 only for a block outside the list. A column-0 comment inside step 1 would end the list, push the rest of step 1 out of it and restart the numbering at step 2 (`<ol start="2">`), in an immutable release bundle. release-please matches the marker text anywhere in a line, so indentation does not affect it. docs-kit's markup check lets an authored page keep comments (C11), and the cli already publishes pages with comments. Four blocks: the install sample output, the kubectl/image/cosign passage, the `kubectl get platform` output, the controller log.
 
 Inside a block release-please replaces every version, so a block holds only the operator's: the "Every v1.0.0 operator release is marked Pre-release" and "retired v0.7.5 manifest" sentence stays outside, and the core and catalog versions leave the blocks (D2).
 
@@ -53,9 +54,9 @@ Inside a block release-please replaces every version, so a block holds only the 
 
 `internal/version/version_test.go` gains `TestInstallPageNamesThisRelease`: it reads `../../docs/site/start/install-the-operator.md`, finds the marker blocks, and fails when there is none, when a start has no end, or when a version inside a block (`v?\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?`) is not `Version`. On `main` the page and the constant name the last release; in a Release PR release-please rewrites both, so the test passes in both. It runs in `task dev:test`.
 
-### D4. Two commits, so the page stays revisable
+### D4. Two PRs, so the page stays revisable
 
-The page edit is Markdown-only and lands as its own commit (section 1); the config, test and `AGENTS.md` rule land after it (section 2). A docs revision of `1.0.0-beta.5` (dispatched by hand, opm-operator#188) can then apply the page commit, so v1.0 shows the fix before the next release if the owner wants it.
+The repositories squash-merge, so a commit reaches `main` alone only as its own PR. Section 1 (the page edit, Markdown-only) is PR A and merges first; sections 2 and the archive (config, test, `AGENTS.md`) are PR B. A docs revision of `1.0.0-beta.5` (dispatched by hand, opm-operator#188) can then apply PR A's squash commit, recorded here at 1.3 as the `fix=` to pass, so v1.0 shows the fix before the next release if the owner wants it. beta.5's tree carries its own `docs-kit.cue` with the operator-resources exclude, so this revision has no ordering constraint with `publish-crd-bundle`'s reduction commit, which only `1.0.0-beta.4` revisions need.
 
 ## Risks / Trade-offs
 

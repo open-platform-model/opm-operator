@@ -16,4 +16,4 @@
 
 ## 3. Archive
 
-- [ ] 3.1 When syncing or archiving, amend the Purpose of `openspec/specs/module-instance-ownership/spec.md` (a delta cannot): replace "Flipping the marker to `operator` cleanly hands the instance over to a normal reconcile" with a sentence saying a flip to `operator` hands the instance over to a normal reconcile, except on the operator's own instance, which the operator never reconciles. Verify with `openspec validate --specs --strict`.
+- [x] 3.1 When syncing or archiving, amend the Purpose of `openspec/specs/module-instance-ownership/spec.md` (a delta cannot): replace "Flipping the marker to `operator` cleanly hands the instance over to a normal reconcile" with a sentence saying a flip to `operator` hands the instance over to a normal reconcile, except on the operator's own instance, which the operator never reconciles. Verify with `openspec validate --specs --strict`.

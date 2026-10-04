@@ -46,6 +46,9 @@ var adminRoleNames = []string{
 	"opm-operator-moduleinstance-admin-role",
 	"opm-operator-moduleinstance-editor-role",
 	"opm-operator-moduleinstance-viewer-role",
+	"opm-operator-platform-viewer-role",
+	"opm-operator-modulepackage-viewer-role",
+	"opm-operator-transformerregistration-viewer-role",
 	"opm-operator-transformerregistration-admin-role",
 }
 
@@ -92,7 +95,7 @@ var _ = Describe("The operator module", func() {
 			objs = mustRender(moduleDir)
 		})
 
-		It("renders the 19 objects of the install with their fixed names", func() {
+		It("renders the 22 objects of the install with their fixed names", func() {
 			type key struct{ kind, namespace, name string }
 			got := make([]key, 0, len(objs))
 			for _, o := range objs {
@@ -118,6 +121,9 @@ var _ = Describe("The operator module", func() {
 				key{"ClusterRole", "", "opm-operator-moduleinstance-admin-role"},
 				key{"ClusterRole", "", "opm-operator-moduleinstance-editor-role"},
 				key{"ClusterRole", "", "opm-operator-moduleinstance-viewer-role"},
+				key{"ClusterRole", "", "opm-operator-platform-viewer-role"},
+				key{"ClusterRole", "", "opm-operator-modulepackage-viewer-role"},
+				key{"ClusterRole", "", "opm-operator-transformerregistration-viewer-role"},
 				key{"ClusterRole", "", "opm-operator-transformerregistration-admin-role"},
 			))
 		})
@@ -145,7 +151,7 @@ var _ = Describe("The operator module", func() {
 			}
 		})
 
-		It("renders raw objects only for the five administrator ClusterRoles, in one component", func() {
+		It("renders raw objects only for the eight administrator ClusterRoles, in one component", func() {
 			var rawComponents []string
 			var rawObjects []string
 			for _, o := range objs {

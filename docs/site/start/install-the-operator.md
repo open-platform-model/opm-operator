@@ -171,6 +171,25 @@ There are two ways to install the operator, and both apply the manifest a releas
 
    For people who use the `opm` CLI, `opm operator install --rbac --user <name>` (or `--group <name>`) also creates the ClusterRole `opm-cli-user` and binds it cluster-wide. It grants every verb on ModuleInstances, get, patch and update on their status, and get and list on Platforms. `--user` and `--group` need `--rbac`, and only one of them can be given.
 
+7. Grant read-only access to the platform.
+
+   People who only look, in a terminal or a dashboard, may also need to read the Platform, the ModulePackages and the TransformerRegistrations. The manifest ships one viewer ClusterRole for each, granting get, list and watch on the kind and get on its status:
+
+   - `opm-operator-platform-viewer-role`: Platforms. The kind is cluster-scoped, so bind it with a ClusterRoleBinding.
+   - `opm-operator-modulepackage-viewer-role`: ModulePackages. Bind it with a RoleBinding to grant one namespace, or a ClusterRoleBinding to grant all of them.
+   - `opm-operator-transformerregistration-viewer-role`: TransformerRegistrations. Cluster-scoped, so bind it with a ClusterRoleBinding.
+
+   A RoleBinding to a role for a cluster-scoped kind is accepted but grants nothing. For example, to let the group `platform-readers` read the Platform and the registrations:
+
+   ```sh
+   kubectl create clusterrolebinding platform-readers-platform \
+     --clusterrole=opm-operator-platform-viewer-role --group=platform-readers
+   kubectl create clusterrolebinding platform-readers-registrations \
+     --clusterrole=opm-operator-transformerregistration-viewer-role --group=platform-readers
+   ```
+
+   None of these roles is bound when the operator is installed, and none of them is added to the built-in `view` role: binding `view` grants no read of OPM kinds.
+
 ## Check that it worked
 
 ```sh

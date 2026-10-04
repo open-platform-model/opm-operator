@@ -26,9 +26,10 @@ env:
   CUE_VERSION: 'v0.17.1'
 
 jobs:
-  # The only reader of the release App key: it runs in the main-only
-  # Environment release. Both steps act as the App, so the job token gets no
-  # grant.
+  # Reads the release App key, so it runs in the main-only Environment
+  # release (as do module-identity-advance here and the publish jobs of
+  # module-image.yml and module-deps.yml). Both steps act as the App, so the
+  # job token gets no grant.
   release-please:
     name: Release Please
     runs-on: ubuntu-latest
@@ -82,6 +83,8 @@ jobs:
     name: Advance the operator module's identity version
     needs: release-please
     runs-on: ubuntu-latest
+    # It reads the release App key.
+    environment: release
     permissions:
       contents: read
     env:
@@ -112,6 +115,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # This job later holds the release App key: never restore the
+          # Actions cache, which a main-ref run of untrusted code could write.
+          cache: false
 
       - name: Install opm
         if: steps.module-branch.outputs.exists == 'true'
@@ -547,11 +553,13 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A publishing job never restores the Actions cache.
+          cache: false
 
       - name: Install Task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          version: 3.x
+          version: 3.54.0 # exact, never a floating 3.x
 
       - name: Install opm and crane
         run: |
@@ -604,6 +612,8 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A publishing job never restores the Actions cache.
+          cache: false
 
       - name: Install opm
         run: |
@@ -680,5 +690,5 @@ jobs:
     uses: ./.github/workflows/module-image.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
-    secrets:
-      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    # No secrets: module-image.yml's publish job declares environment:
+    # release and reads the release App key from that Environment itself.

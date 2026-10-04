@@ -15,7 +15,7 @@ Every section runs `actionlint` (the local binary, contract §10) on the workflo
 
 ## 2. Notify the cli after a release is published
 
-- [ ] 2.1 Append the job `notify-downstream` to `.github/workflows/release.yml` after `publish-release`, exactly as design.md D1 shows:
+- [x] 2.1 Append the job `notify-downstream` to `.github/workflows/release.yml` after `publish-release`, exactly as design.md D1 shows:
   - `needs: [release-please, publish-release]`;
   - `if: needs.release-please.outputs.releases_created == 'true' && vars.CASCADE_NOTIFY != 'off'`;
   - `permissions: {contents: read}`;
@@ -23,8 +23,8 @@ Every section runs `actionlint` (the local binary, contract §10) on the workflo
   - no `secrets:`.
 
   Add a comment that says why it waits for `publish-release`.
-- [ ] 2.2 Check that no other job changed (`git diff` touches only the appended lines), and that the "Workflows carry no tag mutation" search (release-automation spec) still finds no match.
-- [ ] 2.3 `actionlint .github/workflows/release.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): notify the cli after an operator release is published`
+- [x] 2.2 Check that no other job changed (`git diff` touches only the appended lines), and that the "Workflows carry no tag mutation" search (release-automation spec) still finds no match.
+- [x] 2.3 `actionlint .github/workflows/release.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): notify the cli after an operator release is published`
 
 ## 3. Receiver
 

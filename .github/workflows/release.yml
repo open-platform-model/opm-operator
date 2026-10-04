@@ -358,3 +358,19 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           .github/scripts/release-guard.sh publish "${TAG}"
+
+  notify-downstream:
+    name: Notify downstream
+    # The cli resolves the operator with the release kind, which needs the
+    # published release and its install.yaml asset, so notify waits for the
+    # publish point; a draft is never announced. publish-docs never gates it.
+    # The called job holds the cascade Environment and mints the App token,
+    # scoped to the cli (Phase 3 wiring contract 4.3, 4.5). CASCADE_NOTIFY=off
+    # stops it; the cli's daily sweep then picks the release up.
+    needs: [release-please, publish-release]
+    if: needs.release-please.outputs.releases_created == 'true' && vars.CASCADE_NOTIFY != 'off'
+    permissions:
+      contents: read
+    uses: open-platform-model/.github/.github/workflows/cascade-notify.yml@main
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}

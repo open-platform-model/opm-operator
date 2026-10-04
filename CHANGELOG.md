@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.6](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-10-04)
+
+
+### Features
+
+* **controller:** refuse to reconcile the operator's own instance ([#211](https://github.com/open-platform-model/opm-operator/issues/211)) ([8d34b6b](https://github.com/open-platform-model/opm-operator/commit/8d34b6be5273ef6f96c4447576cd2bce91cc7e8d))
+
+
+### Bug Fixes
+
+* **apply:** wait for discovery of a CRD applied in the same set ([#207](https://github.com/open-platform-model/opm-operator/issues/207)) ([40a2345](https://github.com/open-platform-model/opm-operator/commit/40a23450a4e15b66f1b45f00218edb4a6a75a3ab))
+* **deps:** bump library to v1.0.0-beta.4 ([#213](https://github.com/open-platform-model/opm-operator/issues/213)) ([363267a](https://github.com/open-platform-model/opm-operator/commit/363267acaf134ee4eec098be29b7c5e3fb805905))
+
 ## [1.0.0-beta.5](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-10-03)
 
 

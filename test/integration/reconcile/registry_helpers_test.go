@@ -137,9 +137,36 @@ func generatedPlatformStoreAt(
 	skew kernel.SkewPolicy,
 ) *platformstore.Store {
 	GinkgoHelper()
+	entries := []platformmodule.Entry{{Path: testCatalogPath(), Version: catalogVersion, Enable: true}}
+	return generatedPlatformStoreFor(k, registry, entries, skew)
+}
+
+// generatedPlatformStoreWith is generatedPlatformStore with further catalogs
+// subscribed beside the test catalog, for the specs that need a provider
+// catalog in the registry.
+func generatedPlatformStoreWith(
+	k *kernel.Kernel,
+	registry string,
+	extra ...platformmodule.Entry,
+) *platformstore.Store {
+	GinkgoHelper()
+	entries := append([]platformmodule.Entry{
+		{Path: testCatalogPath(), Version: testCatalogVersion(), Enable: true},
+	}, extra...)
+	return generatedPlatformStoreFor(k, registry, entries, kernel.SkewWarn)
+}
+
+// generatedPlatformStoreFor generates, builds and stores the platform module
+// for exactly these registry entries.
+func generatedPlatformStoreFor(
+	k *kernel.Kernel,
+	registry string,
+	entries []platformmodule.Entry,
+	skew kernel.SkewPolicy,
+) *platformstore.Store {
+	GinkgoHelper()
 	src, err := newTestModFileSource(registry)
 	Expect(err).NotTo(HaveOccurred())
-	entries := []platformmodule.Entry{{Path: testCatalogPath(), Version: catalogVersion, Enable: true}}
 	deps, err := platformmodule.Closure(ctx, src, platformmodule.Roots(entries))
 	if err != nil {
 		registrySkip("core and catalog not resolvable from CUE_REGISTRY: " + err.Error())

@@ -1,0 +1,79 @@
+name: Deps cascade
+
+# The release cascade receiver (workspace RELEASING.md, "The receiver" and
+# "Two-job split"; Phase 3 wiring contract (version 3.1) 5, 5.2). The cascade
+# job calls the reusable cascade-receive.yml, which validates the payload, runs
+# task -x deps:cascade, plans the push and posts the G2 and G3 statuses; it
+# holds no secret. The publish job is this repo's own: it declares
+# environment: cascade and passes the App key to the SHA-pinned
+# cascade-publish action as an input; it has no checkout or run: of its own,
+# and the action checks the repo out but never runs it.
+#
+# It is a dry run unless the repo variable CASCADE_DRY_RUN is exactly false:
+# unset, deleted or any other value pushes nothing (contract 9.1). Every
+# .github reference here, in release.yml, cascade-gates.yml and
+# cascade-task.yml carries one SHA, moved only by a ci(deps) pin PR;
+# task cascade:wiring:check enforces both in the Lint job.
+
+on:
+  repository_dispatch:
+    types: [upstream-released]
+  schedule:
+    - cron: '47 5 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Compute and show the diff in the job summary; push nothing
+        type: boolean
+        default: false
+      gates_only:
+        description: Evaluate and post the release-PR gates only (sent by Cascade gates)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.ref != 'refs/heads/main' && format('deps-cascade-{0}', github.ref) || (inputs.gates_only && 'deps-cascade-gates' || 'deps-cascade') }}
+  cancel-in-progress: false
+
+jobs:
+  cascade:
+    name: Deps cascade
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    uses: open-platform-model/.github/.github/workflows/cascade-receive.yml@2376ffae4bfc665f327d51581350dea694c01504 # .github main
+    with:
+      dry-run: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
+      gates-only: ${{ inputs.gates_only == true }}
+      g2-mode: ${{ vars.CASCADE_G2_MODE || 'warn' }}
+      g3-mode: ${{ vars.CASCADE_G3_MODE || 'warn' }}
+      setup-go: true
+
+  publish:
+    name: Publish
+    needs: cascade
+    if: >-
+      !cancelled()
+      && needs.cascade.outputs.compute-ok == 'true'
+      && needs.cascade.outputs.dry-run == 'false'
+      && inputs.dry_run != true
+      && vars.CASCADE_DRY_RUN == 'false'
+      && github.ref == 'refs/heads/main'
+      && contains(fromJSON('["push","recreate","close","conflict","too_long"]'), needs.cascade.outputs.action)
+    runs-on: ubuntu-latest
+    environment: cascade
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Publish
+        uses: open-platform-model/.github/.github/actions/cascade-publish@2376ffae4bfc665f327d51581350dea694c01504 # .github main
+        with:
+          dry-run: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
+          labels-managed: false
+          client-id: ${{ vars.CASCADE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CASCADE_APP_PRIVATE_KEY }}

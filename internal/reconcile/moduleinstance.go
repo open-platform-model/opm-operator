@@ -115,18 +115,14 @@ func ReconcileModuleInstance(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Owner-skip gate: CLI-owned instances are managed externally. The operator
-	// stays entirely hands-off — no render, apply, prune, deletion cleanup, and
-	// crucially no finalizer. The check sits before finalizer registration so a
-	// CLI-owned CR never carries opmodel.dev/cleanup (whose deletion path would
-	// prune resources the CLI owns). Only an explicit owner == cli skips; absent,
-	// empty, and operator all fall through to the normal operator-managed path.
-	if mi.Spec.Owner == releasesv1alpha1.OwnerCLI {
-		return ctrl.Result{}, handleCLIOwned(ctx, params, &mi)
+	// Instances the operator does not reconcile: CLI-owned ones and the
+	// operator's own. Both are decided before finalizer registration.
+	if handled, err := handleNotReconciled(ctx, params, &mi); handled {
+		return ctrl.Result{}, err
 	}
 
 	// Track reconcile start time for duration calculation.
-	// Set after the CLI-owned skip (which records no metrics) and before the
+	// Set after the gates above (which record no metrics) and before the
 	// suspend/deletion checks so all operator-managed paths are measured.
 	reconcileStart := time.Now()
 
@@ -635,6 +631,32 @@ func inventoryDigest(inv *releasesv1alpha1.Inventory) string {
 	return inv.Digest
 }
 
+// handleNotReconciled runs the two gates that keep the operator away from an
+// instance, in order, and reports whether one of them handled it.
+func handleNotReconciled(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	mi *releasesv1alpha1.ModuleInstance,
+) (bool, error) {
+	// Owner-skip gate: CLI-owned instances are managed externally. The operator
+	// stays entirely hands-off — no render, apply, prune, deletion cleanup, and
+	// crucially no finalizer. The check sits before finalizer registration so a
+	// CLI-owned CR never carries opmodel.dev/cleanup (whose deletion path would
+	// prune resources the CLI owns). Only an explicit owner == cli skips; absent,
+	// empty, and operator all fall through to the normal operator-managed path,
+	// except on the operator's own instance, which is refused below.
+	if mi.Spec.Owner == releasesv1alpha1.OwnerCLI {
+		return true, handleCLIOwned(ctx, params, mi)
+	}
+
+	// The operator never reconciles the instance that deploys it, whatever its
+	// owner says: install must be able to repair the operator without it.
+	if signal, own := isOwnInstance(mi); own {
+		return true, handleOwnInstance(ctx, params, mi, signal)
+	}
+	return false, nil
+}
+
 // handleCLIOwned implements the owner-skip gate for CLI-owned instances. The
 // operator is hands-off: no render, apply, prune, deletion cleanup, or
 // finalizer. For a deleting instance it returns immediately — no finalizer was
@@ -670,6 +692,67 @@ func handleCLIOwned(
 				status.DriftedCondition,
 			},
 		},
+	)
+}
+
+// handleOwnInstance refuses the operator's own instance when its owner is
+// absent or operator. It never renders, applies or prunes, and it releases a
+// cleanup finalizer an earlier operator release may have added, without
+// pruning, so neither uninstall nor a reinstall of the operator waits on a
+// finalizer only a running operator could clear. On a live instance it
+// records Ready=False and Stalled=True (SelfManagementRefused) with the
+// observed generation, so a client waiting on that generation reads a final
+// verdict; it leaves inventory, digests, instanceUUID and history alone. No
+// requeue: the refusal is re-evaluated when the instance changes.
+func handleOwnInstance(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	mi *releasesv1alpha1.ModuleInstance,
+	signal string,
+) error {
+	log := logf.FromContext(ctx)
+
+	if controllerutil.ContainsFinalizer(mi, FinalizerName) {
+		log.Info("Releasing the cleanup finalizer from the operator's own instance without pruning")
+		if err := removeFinalizer(ctx, params.Client, mi); err != nil {
+			if apierrors.IsNotFound(err) {
+				params.Warnings.Forget(keyOf(mi))
+				return nil
+			}
+			return fmt.Errorf("removing finalizer: %w", err)
+		}
+	}
+
+	if !mi.DeletionTimestamp.IsZero() {
+		params.Warnings.Forget(keyOf(mi))
+		return nil
+	}
+
+	msg := fmt.Sprintf("this ModuleInstance deploys the operator (%s); "+
+		"the operator never applies or prunes its own instance. Set spec.owner to cli", signal)
+	ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+	already := ready != nil && ready.Reason == status.SelfManagementRefusedReason &&
+		mi.Status.ObservedGeneration == mi.Generation
+
+	log.Info("Refusing to reconcile the operator's own instance", "signal", signal)
+	patcher := patch.NewSerialPatcher(mi, params.Client)
+	status.MarkSelfManagementRefused(mi, msg)
+	mi.Status.ObservedGeneration = mi.Generation
+	if !already {
+		params.EventRecorder.Eventf(mi, nil, corev1.EventTypeWarning,
+			status.SelfManagementRefusedReason, "Reconcile", "%s", msg)
+	}
+	return patcher.Patch(ctx, mi,
+		patch.WithOwnedConditions{
+			Conditions: []string{
+				status.ReadyCondition,
+				status.ReconcilingCondition,
+				status.StalledCondition,
+				status.ModuleResolvedCondition,
+				status.DriftedCondition,
+			},
+		},
+		patch.WithStatusObservedGeneration{},
 	)
 }
 

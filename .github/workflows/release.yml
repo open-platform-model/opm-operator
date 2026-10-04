@@ -358,3 +358,22 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           .github/scripts/release-guard.sh publish "${TAG}"
+
+  # Caller-owned: this job declares environment: cascade and passes the App key
+  # to the SHA-pinned cascade-notify action as an input.
+  notify-downstream:
+    name: Notify downstream
+    needs: [release-please, publish-release]
+    if: needs.release-please.outputs.releases_created == 'true' && vars.CASCADE_NOTIFY != 'off'
+    runs-on: ubuntu-latest
+    environment: cascade
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Notify downstream
+        uses: open-platform-model/.github/.github/actions/cascade-notify@2376ffae4bfc665f327d51581350dea694c01504 # .github main
+        with:
+          tag: ${{ needs.release-please.outputs.tag_name }}
+          client-id: ${{ vars.CASCADE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CASCADE_APP_PRIVATE_KEY }}

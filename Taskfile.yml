@@ -116,6 +116,9 @@ includes:
   deps:
     taskfile: ./.tasks/deps.yaml
 
+  operator-module:
+    taskfile: ./.tasks/operator-module.yaml
+
   examples:
     taskfile: ./.tasks/examples.yaml
     vars:

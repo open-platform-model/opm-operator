@@ -14,10 +14,10 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 
 ## 3. No Actions cache in publishing jobs
 
-- [ ] 3.1 `release.yml` `image-release`: drop `cache-from`/`cache-to`; `publish-examples`: setup-go `cache: false` (design D3).
-- [ ] 3.2 `publish-fixtures.yml`: setup-go `cache: false`; `image-pr.yml`: drop `cache-from`/`cache-to`.
-- [ ] 3.3 `grep -rn 'type=gha\|actions/cache' .github/workflows` finds nothing.
-- [ ] 3.4 Gates green, then commit `ci: build and publish without the Actions cache`
+- [x] 3.1 `release.yml` `image-release`: drop `cache-from`/`cache-to`; `publish-examples`: setup-go `cache: false` (design D3).
+- [x] 3.2 `publish-fixtures.yml`: setup-go `cache: false`; `image-pr.yml`: drop `cache-from`/`cache-to`.
+- [x] 3.3 `grep -rn 'type=gha\|actions/cache' .github/workflows` finds nothing.
+- [x] 3.4 Gates green, then commit `ci: build and publish without the Actions cache`
 
 ## 4. Bot heads hold no write token
 

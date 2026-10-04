@@ -122,6 +122,8 @@ jobs:
             type=raw,value=${{ needs.release-please.outputs.tag_name }}
             type=raw,value=latest
 
+      # No Actions cache: a main-ref run of untrusted code could have written
+      # it, and this image is signed and attested.
       - name: Build and push image
         id: build
         if: steps.probe.outputs.state == 'absent'
@@ -132,8 +134,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Resolve the release image digest
         id: digest
@@ -271,6 +271,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A publishing job never restores the Actions cache, which a
+          # main-ref run of untrusted code could have written.
+          cache: false
 
       - name: Install opm
         # Fixtures publish through the cli's gated pipeline, so a fixture that

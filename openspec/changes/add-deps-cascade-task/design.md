@@ -56,9 +56,8 @@ not pins):
   `pinned` in `internal/controller/platform_controller_test.go:614` (`4.0.0`). Both must stay
   older than `CatalogVersion()`. Workspace RELEASING.md, section "Cascade files", calls such a pin
   frozen ("An old pin without an entry is stale"). The task edits no Go test file, so it never
-  moves them, but the operator has no `.cascade-frozen` entry for them and the RELEASING.md "Pin
-  classes" table has no operator frozen row. Whether to add one is for the supervisor (see "Open
-  Questions").
+  moves them. The supervisor's triage of 2026-10-04 settled the question: the repo-root
+  `.cascade-frozen` lists both files for `opmodel.dev/catalogs/opm@v4`, so G2 ignores them too.
 - Version prose in `docs/site/start/install-the-operator.md` (see "Open questions"). The
   generated block of `docs/site/reference/operator-resources.md` is not prose: the task
   regenerates it (see "Regenerating the resource reference").
@@ -413,13 +412,13 @@ warns with key `-` and continues.
 fixtures. `test-e2e.yml` is not required.
 
 ### The S4 frozen choice (contract §8)
-**Decision**: S4 appends this entry to `.cascade-frozen`, creating the file because the operator
-has none:
+**Decision**: S4 appends this entry to the sandbox's copy of `.cascade-frozen` (which lists the
+two Go test files), creating the file if it is missing:
 
 ```yaml
-- path: test/fixtures/modules/hello/cue.mod/module.cue
-  pins: [opmodel.dev/catalogs/opm@v4, opmodel.dev/core@v2]
-  reason: S4
+  - path: test/fixtures/modules/hello/cue.mod/module.cue
+    pins: ["opmodel.dev/catalogs/opm@v4", "opmodel.dev/core@v2"]
+    reason: "S4"
 ```
 
 **Rationale**:
@@ -597,10 +596,9 @@ These are recorded as contract §9 states them. The owner may override any of th
   of the task. Should a `-` warning be added? This is for the supervisor.
   (`docs/site/reference/operator-resources.md:329` is generated, not prose; the task regenerates
   it.)
-- **A `.cascade-frozen` for the operator?** The two `4.0.0` catalog literals in "Never touched"
-  are frozen pins in RELEASING.md's sense but have no entry. Should opm-operator ship a
-  `.cascade-frozen` listing them (and RELEASING.md "Pin classes" gain an operator frozen row)?
-  This change does not create one. For the supervisor.
+- **A `.cascade-frozen` for the operator?** Settled by the supervisor's triage (2026-10-04): the
+  change ships one listing the two `4.0.0` catalog literals. Whether workspace RELEASING.md "Pin
+  classes" gains an opm-operator frozen row is a workspace follow-up, outside this change.
 - **The provider identity comment.** It says the catalog version is "Hand-managed"
   (`test/fixtures/catalogs/provider/identity/identity.cue:12-15`). After this change the cascade
   advances it too, through the same `opm catalog version set`. Editing that comment changes the

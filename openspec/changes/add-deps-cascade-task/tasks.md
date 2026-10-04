@@ -138,6 +138,8 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 - [x] 7.1 Check a module's catalog freeze before choosing its core, so a frozen catalog keeps the core it pins (contract §5.2 rule 7), and script it as S12 (offline). Confirm S12 fails against the mover before the fix. Commit `fix(cascade): choose core from a frozen catalog, not the newest`
 
+- [x] 7.2 Add a repo-root `.cascade-frozen` that freezes `opmodel.dev/catalogs/opm@v4` at `test/integration/reconcile/skew_test.go` and `internal/controller/platform_controller_test.go` (both resolve catalog `4.0.0` on purpose). Commit `test(cascade): freeze the two deliberately old catalog literals`
+
 ## 8. Archive
 
 - [ ] 8.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`

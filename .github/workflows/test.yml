@@ -56,6 +56,11 @@ jobs:
         with:
           version: 3.x
 
+      - name: Operator module data follow config/
+        # config/ must match `task dev:manifests`, then modules/opm_operator's
+        # generated CRD and RBAC data must match config/ (hack/operator-module).
+        run: task operator-module:drift
+
       - name: Install opm
         run: |
           v=$(tr -d '[:space:]' < .opm-cli-version)

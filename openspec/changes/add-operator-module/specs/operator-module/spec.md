@@ -1,3 +1,7 @@
+## Purpose
+
+Define the operator's own OPM module, `opmodel.dev/modules/opm_operator`: what it renders, the names and selector every version keeps, how its CRDs and RBAC stay equal to what the controller declares, the Pod Security posture of its pods, and the typed values a platform team tunes the operator with.
+
 ## ADDED Requirements
 
 ### Requirement: The module names the one operator release it deploys
@@ -93,6 +97,11 @@ The rules of every Role and ClusterRole the module renders SHALL equal the rules
 - **WHEN** a controller RBAC marker gains a verb, `task dev:manifests` regenerates `config/rbac/role.yaml`, and the module is regenerated
 - **THEN** the rendered manager ClusterRole carries the new verb and nothing else changed
 
+#### Scenario: A new role in the kustomization reaches the module
+
+- **WHEN** a Role or ClusterRole file is added to the `resources` of `config/rbac/kustomization.yaml` and the module's data are not regenerated
+- **THEN** the drift check fails naming the role, with no list of role files to update by hand
+
 ### Requirement: Drift between the module and the controller fails the check
 
 A check SHALL regenerate the module's CRD and RBAC data from `config/` and fail with a readable difference when the committed module data differ, and SHALL first fail when `config/` itself differs from what `task dev:manifests` generates. The check SHALL run on every pull request, and SHALL be runnable against the `config/` tree of a given operator release tag, so a module release can refuse to publish a module whose CRDs or RBAC differ from the operator release it deploys.
@@ -114,7 +123,7 @@ A check SHALL regenerate the module's CRD and RBAC data from `config/` and fail 
 
 ### Requirement: The operator's pods satisfy Pod Security restricted
 
-The pod template the module renders SHALL satisfy the Kubernetes Pod Security `restricted` profile with default values and with any `#config` value: `runAsNonRoot: true` and `seccompProfile: RuntimeDefault` at pod level, and on the container `allowPrivilegeEscalation: false`, all capabilities dropped and `seccompProfile: RuntimeDefault`.
+The pod template the module renders SHALL satisfy the Kubernetes Pod Security `restricted` profile with default values and with any `#config` value: `runAsNonRoot: true` and `seccompProfile: RuntimeDefault` at pod level, and on the container `allowPrivilegeEscalation: false`, all capabilities dropped. The pod-level seccomp profile covers the container, as in the earlier manifest's pod template; the container does not repeat it.
 
 #### Scenario: Admitted under restricted enforcement
 
@@ -126,9 +135,18 @@ The pod template the module renders SHALL satisfy the Kubernetes Pod Security `r
 - **WHEN** the module is rendered with every `#config` field set to a non-default value and a Pod is built from its pod template
 - **THEN** the Pod is admitted under `restricted` as well
 
+### Requirement: The controller's pod and Service stay those of the kustomize tree
+
+While `config/manager` and `config/default` still produce the operator's install manifest, the controller Deployment's pod spec and the metrics Service the module renders SHALL equal those of a kustomize build of `config/default`, apart from the image, labels, the selector, the fields the catalog sets to Kubernetes API defaults, and the bindings' names. A test SHALL compare them on every pull request, so the two sources of the install shape cannot drift apart before the module becomes the only one.
+
+#### Scenario: A manifest-only edit fails the test
+
+- **WHEN** a pull request changes the manager container's arguments, probes, environment, volumes or security context in `config/manager` and not in the module
+- **THEN** the module's render test fails naming the differing field
+
 ### Requirement: The operator's tuning is typed instance values
 
-The module's `#config` SHALL type these values and render each into the controller Deployment: the operator image's repository, the registry mapping the operator resolves modules through (rendered as `--registry`), the default service account the operator applies as (rendered as `--default-service-account`), the controller container's resources, the replica count, and additional controller arguments appended after every typed argument. Each unset optional value SHALL leave its argument out. Defaults SHALL reproduce the earlier manifest's Deployment: one replica, requests `100m` CPU and `256Mi` memory, limits `2` CPU and `4Gi` memory. The container's `GOMEMLIMIT` SHALL be derived from the memory limit, not set as a value.
+The module's `#config` SHALL type these values and render each into the controller Deployment: the operator image's repository, the registry mapping the operator resolves modules through (rendered as `--registry`), the default service account the operator applies as (rendered as `--default-service-account`), the controller container's resources, the replica count, and additional controller arguments appended after every typed argument. Each unset optional value SHALL leave its argument out. Defaults SHALL reproduce the earlier manifest's Deployment: one replica, requests `100m` CPU and `256Mi` memory, limits `2` CPU and `4Gi` memory. Each of those four resource quantities SHALL default on its own, so a value that sets one of them keeps the defaults of the others. The memory limit SHALL always resolve to a value, default or given, so the container's `GOMEMLIMIT` is always defined; it SHALL be derived from that memory limit, not set as a value.
 
 #### Scenario: Every value reaches the Deployment
 
@@ -142,17 +160,27 @@ The module's `#config` SHALL type these values and render each into the controll
 
 #### Scenario: An unsupported memory unit is refused
 
-- **WHEN** the module is rendered with a memory limit in a unit other than `Mi` or `Gi`
-- **THEN** the render fails with a message naming the accepted units
+- **WHEN** the module is rendered with a memory limit given as a plain number of bytes, such as `4294967296`
+- **THEN** the render fails with a message naming the accepted units, `Mi` and `Gi`
+
+#### Scenario: One resources field keeps the other defaults
+
+- **WHEN** the module is rendered with only the memory limit set, to `8Gi`
+- **THEN** the container keeps the default CPU limit `2` and the default requests `100m` CPU and `256Mi` memory, and its `GOMEMLIMIT` is `6553MiB`
 
 ### Requirement: The configured registry mapping has one place
 
-The registry mapping and the default service account SHALL be settable only through their typed values. The module SHALL refuse extra arguments that set `--registry` or `--default-service-account`, or that override the arguments the module renders itself (`--metrics-bind-address`, `--leader-elect`, `--health-probe-bind-address`), so the mapping recorded in the instance's values is the one the operator runs with.
+The registry mapping and the default service account SHALL be settable only through their typed values. The module SHALL refuse extra arguments that set `--registry` or `--default-service-account`, or that override the arguments the module renders itself (`--metrics-bind-address`, `--leader-elect`, `--health-probe-bind-address`), in either flag spelling the operator's flag parser accepts (one dash or two), so the mapping recorded in the instance's values is the one the operator runs with.
 
 #### Scenario: The mapping through extra arguments is refused
 
 - **WHEN** the module is rendered with an extra argument `--registry=example.com`
 - **THEN** the render fails, naming the argument and the typed value to use instead
+
+#### Scenario: The single-dash spelling is refused too
+
+- **WHEN** the module is rendered with an extra argument `-registry=example.com`
+- **THEN** the render fails the same way
 
 ### Requirement: A mirror needs only the repository value
 

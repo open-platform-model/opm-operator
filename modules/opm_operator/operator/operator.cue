@@ -11,11 +11,11 @@
 package operator
 
 // The operator release this module version deploys, bare SemVer.
-Version: "1.0.0-beta.6"
+Version: "1.0.0-beta.8"
 
 Image: {
 	repository: "ghcr.io/open-platform-model/opm-operator"
 	tag:        "v\(Version)"
 	// The content digest of `tag` on GHCR, read when Version is bumped.
-	digest: "sha256:7871a5dd6c2251196b4ac7ce50136a9491f4004e33036c64fa63a20ffaa9825e"
+	digest: "sha256:6ce599e344558c960b3f9e0fe5531d9ef30b118830dc8b611563172bf1949f68"
 }

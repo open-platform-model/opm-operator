@@ -1,0 +1,72 @@
+name: Operator module
+
+# The operator module's install manifest on a fresh cluster
+# (operator-module-release, "Every module release publishes the install
+# manifest rendered from it", scenario "Fresh cluster"). It renders the PR's
+# module directory exactly as module-publish renders a published version: as
+# opm-operator in opm-operator-system, at hack/operator-module/defaults.cue
+# (the #config defaults, never debugValues), with no cluster. Then it checks
+# the order, applies the manifest server-side to an empty kind cluster and
+# waits for the operator's rollout. Nothing is published.
+
+on:
+  pull_request:
+    paths:
+      - 'modules/opm_operator/**'
+      - 'hack/operator-module/**'
+      - '.github/workflows/operator-module.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # opmodel.dev (core and the catalogs) resolves to GHCR; opm reads only
+  # OPM_REGISTRY.
+  OPM_REGISTRY: 'opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+
+jobs:
+  install-manifest:
+    name: Install manifest on a fresh cluster
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install opm and kind
+        run: |
+          v=$(tr -d '[:space:]' < .opm-cli-version)
+          [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
+          go install "github.com/open-platform-model/cli/cmd/opm@${v}"
+          go install sigs.k8s.io/kind@v0.33.0
+
+      - name: Render the module at its defaults
+        env:
+          KUBECONFIG: /nonexistent
+        run: |
+          mkdir -p "${RUNNER_TEMP}/module"
+          (cd modules/opm_operator && opm module build . --name opm-operator -n opm-operator-system \
+            -f ../../hack/operator-module/defaults.cue) > "${RUNNER_TEMP}/module/install.yaml"
+          hack/operator-module/manifest-order.sh "${RUNNER_TEMP}/module/install.yaml"
+
+      - name: Create an empty kind cluster
+        run: kind create cluster --name operator-module --wait 120s
+
+      - name: Apply the manifest and wait for the operator
+        run: |
+          kubectl apply --server-side -f "${RUNNER_TEMP}/module/install.yaml"
+          kubectl -n opm-operator-system rollout status deployment/opm-operator-controller-manager --timeout=300s
+
+      - name: Show the operator on failure
+        if: failure()
+        run: |
+          kubectl -n opm-operator-system get all -o wide || true
+          kubectl -n opm-operator-system describe deployment/opm-operator-controller-manager || true
+          kubectl -n opm-operator-system logs deployment/opm-operator-controller-manager --all-containers --tail=200 || true

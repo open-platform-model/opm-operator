@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # The operator module's release check runs cue; kept equal to test.yml's.
+  CUE_VERSION: 'v0.17.1'
+
 jobs:
   lint:
     # Must stay unique across this repo's jobs: the main ruleset is to require
@@ -15,6 +19,10 @@ jobs:
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The operator module's release check reads the operator tags
+          # (minimum operator version, config/ at the deployed tag).
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -26,6 +34,11 @@ jobs:
         with:
           version: 3.x
 
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0
+        with:
+          version: ${{ env.CUE_VERSION }}
+
       # The key-holding cascade jobs keep their contract shape, and every
       # .github reference carries one pinned SHA (Phase 3 wiring contract
       # (version 3.1) 10.1). Uses the runner's mikefarah yq.
@@ -35,6 +48,24 @@ jobs:
       - name: Release-pin gate (G1, release PRs only)
         if: startsWith(github.head_ref || github.ref_name, 'release-please--')
         run: task deps:release-check
+
+      # The operator module's release gate (operator-module-release, "Module
+      # release gate"), on its own release PR only. A step, not a job: a
+      # skipped job reports as passing, a failing step fails Lint.
+      - name: Operator module release gate (module release PR only)
+        if: (github.head_ref || github.ref_name) == 'release-please--branches--main--components--opm_operator'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          v=$(jq -r '.["modules/opm_operator"] // empty' .release-please-manifest.json)
+          [[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "::error file=.release-please-manifest.json::no proposed operator module version: '$v'"; exit 1; }
+          task operator-module:release-check VERSION="$v"
+
+      # The release gate's checks that need no network, over fixture trees.
+      - name: Operator module release gate (offline test)
+        run: task operator-module:release-check:test
 
       # task deps:cascade against the stub resolver, offline scenarios only
       # (.tasks/cascade/test.sh). The network scenarios run in cascade-task.yml.

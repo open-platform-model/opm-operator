@@ -33,32 +33,32 @@ The supervisor ticks each gate after confirming it with the read-only check give
 
 Every commit in this section is a hidden type, so landing it cuts no release of either unit. Section 3 opens the module's first release PR.
 
-- [ ] 2.1 `release-please-config.json`:
+- [x] 2.1 `release-please-config.json`:
   - add top-level `"separate-pull-requests": true`;
   - add `"exclude-paths": ["modules/opm_operator"]` to package `"."`;
   - add package `"modules/opm_operator"` exactly as design.md "Separate release PRs and excluded paths" lists it;
   - add `modules/opm_operator/RELEASE` holding `0.1.0 # x-release-please-version` (catalog_opm's shape; release-please's generic updater skips a missing extra file, so without a seed the file would never exist), unless U5 records otherwise.
 
   Leave `.release-please-manifest.json` unchanged. Verify: `jq -e '.packages["modules/opm_operator"] as $m | $m["bump-minor-pre-major"] == true and $m["bump-patch-for-minor-pre-major"] == true and $m.component == "opm_operator" and $m["include-component-in-tag"] == true and .packages["."]["exclude-paths"] == ["modules/opm_operator"]' release-please-config.json`.
-- [ ] 2.2 `release.yml`:
+- [x] 2.2 `release.yml`:
   - `image-release`, `publish-examples`, `publish-docs`, `publish-release` and `notify-downstream` gate on `needs.release-please.outputs.release_created == 'true'` (`notify-downstream` keeps `&& vars.CASCADE_NOTIFY != 'off'`), and `.tasks/cascade/wiring-check.sh` expects the new notify `if`;
   - the `release-please` job exports `module_release_created`, `module_tag_name` and `module_version` from the `modules/opm_operator--*` step outputs;
   - `publish-examples` uses `git describe --tags --abbrev=0 --match 'v[0-9]*' "${TAG}^"`.
 
   Verify: `grep -n "releases_created" .github/workflows/release.yml` finds nothing.
-- [ ] 2.3 `release.yml` `release-please` job: check out with the App token, then add the step "Advance the module's identity.Version on its release PR" from design.md "Identity advance". It installs opm from `.opm-cli-version`, uses branch `release-please--branches--main--components--opm_operator`, reads the version from that branch's `.release-please-manifest.json`, and commits `chore: advance opm_operator identity.Version to ${VERSION}`. Verify in a scratch clone, never against GitHub: running the step's script twice on a branch already at the version leaves no commit.
-- [ ] 2.4 `.github/scripts/image-tag-guard.sh` gains a read-only `digest REF` mode that prints the manifest-list digest, factored from `manifest_digest`. Its argument check `[ $# -eq 3 ] || usage` becomes per mode: two arguments for `digest`, three for `probe` and `verify`, and `usage` names all three modes. `.github/scripts/release-guard.sh` gains a read-only `assert-published TAG` mode. Its `publish` mode picks the required assets by tag shape: `install.yaml` for `opm_operator-v*`, and `install.yaml` plus `opm-examples.tar.gz` for `v*`, unchanged. Verify against real releases, from outside any checkout, with `GH_REPO=open-platform-model/opm-operator`:
+- [x] 2.3 `release.yml` `release-please` job: check out with the App token, then add the step "Advance the module's identity.Version on its release PR" from design.md "Identity advance". It installs opm from `.opm-cli-version`, uses branch `release-please--branches--main--components--opm_operator`, reads the version from that branch's `.release-please-manifest.json`, and commits `chore: advance opm_operator identity.Version to ${VERSION}`. Verify in a scratch clone, never against GitHub: running the step's script twice on a branch already at the version leaves no commit.
+- [x] 2.4 `.github/scripts/image-tag-guard.sh` gains a read-only `digest REF` mode that prints the manifest-list digest, factored from `manifest_digest`. Its argument check `[ $# -eq 3 ] || usage` becomes per mode: two arguments for `digest`, three for `probe` and `verify`, and `usage` names all three modes. `.github/scripts/release-guard.sh` gains a read-only `assert-published TAG` mode. Its `publish` mode picks the required assets by tag shape: `install.yaml` for `opm_operator-v*`, and `install.yaml` plus `opm-examples.tar.gz` for `v*`, unchanged. Verify against real releases, from outside any checkout, with `GH_REPO=open-platform-model/opm-operator`:
   - `assert-published v1.0.0-beta.5` passes;
   - `assert-published v9.9.9` fails naming the count;
   - `digest ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.5` prints the digest the cli's embedded manifest names;
   - `probe` and `verify` with two arguments still print the usage.
-- [ ] 2.5 Add `hack/operator-module/release-check.sh` per design.md "Module release gate inside `Lint`", running its `cue export` calls from the module directory and taking `RELEASE_GUARD`, `IMAGE_TAG_GUARD`, `DRIFT_CHECK` and `MIN_OPERATOR_VERSION_FILE` from the environment with the defaults design.md names, and resolving both tags with `git rev-parse --verify` before the ancestry check, and the task `operator-module:release-check` (it takes `VERSION`) in `.tasks/operator-module.yaml`, the include add-operator-module creates. In `lint.yml`:
+- [x] 2.5 Add `hack/operator-module/release-check.sh` per design.md "Module release gate inside `Lint`", running its `cue export` calls from the module directory and taking `RELEASE_GUARD`, `IMAGE_TAG_GUARD`, `DRIFT_CHECK` and `MIN_OPERATOR_VERSION_FILE` from the environment with the defaults design.md names, and resolving both tags with `git rev-parse --verify` before the ancestry check, and the task `operator-module:release-check` (it takes `VERSION`) in `.tasks/operator-module.yaml`, the include add-operator-module creates. In `lint.yml`:
   - the checkout step gains `fetch-depth: 0`;
   - add a `cue-lang/setup-cue` step, pinned by full SHA, at the `CUE_VERSION` `.github/workflows/test.yml` names;
   - add a step after the release-pin check, `if: (github.head_ref || github.ref_name) == 'release-please--branches--main--components--opm_operator'`, with `GH_TOKEN: ${{ github.token }}` and `GH_REPO: ${{ github.repository }}`, that reads the proposed version from the branch's `.release-please-manifest.json` and runs the task.
 
   Verify locally on the merged module with its committed image: the check passes when `VERSION` equals `identity.Version`, and fails naming the digest when the module names a wrong digest.
-- [ ] 2.6 Add `hack/operator-module/test-release-check.sh`, an offline test of the checks that need no network, over fixture module trees under `hack/testdata/operator-module-release-check/`, with `RELEASE_GUARD`, `IMAGE_TAG_GUARD` and `DRIFT_CHECK` set to stubs that pass. Each case runs inside a scratch git repository the test builds, per design.md: the fixture tree at `modules/opm_operator/`, a min file naming the first of two tags made in order, and the fixture's operator tag on the second unless the case says otherwise. Cases, each asserting the failure is named:
+- [x] 2.6 Add `hack/operator-module/test-release-check.sh`, an offline test of the checks that need no network, over fixture module trees under `hack/testdata/operator-module-release-check/`, with `RELEASE_GUARD`, `IMAGE_TAG_GUARD` and `DRIFT_CHECK` set to stubs that pass. Each case runs inside a scratch git repository the test builds, per design.md: the fixture tree at `modules/opm_operator/`, a min file naming the first of two tags made in order, and the fixture's operator tag on the second unless the case says otherwise. Cases, each asserting the failure is named:
   - a `-0.dev.` pin;
   - a `cue.mod/local-module.cue`;
   - an `identity.Version` that differs from `VERSION`;
@@ -70,15 +70,15 @@ Every commit in this section is a hidden type, so landing it cuts no release of 
   - a clean tree passes.
 
   Add a `Lint` step that runs it on every pull request.
-- [ ] 2.7 `release.yml` job `module-publish`, per design.md "Publish job" steps 1 to 7:
+- [x] 2.7 `release.yml` job `module-publish`, per design.md "Publish job" steps 1 to 7:
   - `needs: release-please`, `if: needs.release-please.outputs.module_release_created == 'true'`;
   - permissions `contents: write` and `packages: write` only;
   - every third-party action pinned by full SHA;
   - `CUE_REGISTRY` and `OPM_REGISTRY` mapping `opmodel.dev` to `ghcr.io/open-platform-model`;
   - the reuse branch keyed on the U7 result;
   - `hack/operator-module/defaults.cue` holding the empty values file U6 proved.
-- [ ] 2.8 `release.yml` job `module-publish-release`: `needs: [release-please, module-publish]`, the same `if`, `permissions: contents: write` only, sparse checkout of `.github/scripts` at the module tag, and one step `release-guard.sh publish "$MODULE_TAG"`.
-- [ ] 2.9 Prove the install manifest on a fresh cluster with a job in `test-e2e.yml`, or a `module.yml` workflow, on pull requests that change `modules/opm_operator/` or `hack/operator-module/`. The job does the following:
+- [x] 2.8 `release.yml` job `module-publish-release`: `needs: [release-please, module-publish]`, the same `if`, `permissions: contents: write` only, sparse checkout of `.github/scripts` at the module tag, and one step `release-guard.sh publish "$MODULE_TAG"`.
+- [x] 2.9 Prove the install manifest on a fresh cluster with a job in `test-e2e.yml`, or a `module.yml` workflow, on pull requests that change `modules/opm_operator/` or `hack/operator-module/`. The job does the following:
   - installs opm from `.opm-cli-version`;
   - renders the PR's module directory at `hack/operator-module/defaults.cue` as `opm-operator` in `opm-operator-system`;
   - checks that the Namespace and the CRDs come before every namespaced object;
@@ -86,8 +86,8 @@ Every commit in this section is a hidden type, so landing it cuts no release of 
   - waits for `deployment/opm-operator-controller-manager` to roll out in `opm-operator-system`.
 
   It runs in CI only (no egress locally). Name it in the PR body.
-- [ ] 2.10 `AGENTS.md`, under Registry, after the release-tags bullet: one bullet saying that the repository releases two units. The operator uses `vX.Y.Z` with root `CHANGELOG.md`. The module uses `opm_operator-vX.Y.Z` with `modules/opm_operator/CHANGELOG.md`. Each has its own release PR. The module's release PR gains an identity-advance commit; wait for it before merging. A PR that changes the module must change nothing else, or it releases both units. Module releases wait while `main`'s `config/` differs from the operator release the module deploys. Only `module-publish` publishes `opmodel.dev/modules/opm_operator`. Scan the bullet for a bare at-sign and for em dashes.
-- [ ] 2.11 Before committing, run these verifications:
+- [x] 2.10 `AGENTS.md`, under Registry, after the release-tags bullet: one bullet saying that the repository releases two units. The operator uses `vX.Y.Z` with root `CHANGELOG.md`. The module uses `opm_operator-vX.Y.Z` with `modules/opm_operator/CHANGELOG.md`. Each has its own release PR. The module's release PR gains an identity-advance commit; wait for it before merging. A PR that changes the module must change nothing else, or it releases both units. Module releases wait while `main`'s `config/` differs from the operator release the module deploys. Only `module-publish` publishes `opmodel.dev/modules/opm_operator`. Scan the bullet for a bare at-sign and for em dashes.
+- [x] 2.11 Before committing, run these verifications:
   - The publisher search finds only `module-publish` and the task it calls: `grep -rnE 'module publish|modules/opm_operator' .github/workflows .github/scripts .tasks Taskfile.yml hack`, each hit reviewed.
   - The tag-mutation search from the `release-automation` spec finds nothing.
   - Every `gh` call names the repository.

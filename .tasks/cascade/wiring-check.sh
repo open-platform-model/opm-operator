@@ -54,10 +54,14 @@ key_job() {
 key_job release.yml notify-downstream cascade-notify '{"contents":"read"}' '["client-id","private-key","tag"]'
 # The notify job's values (contract 4.6, opm-operator): it waits for
 # publish-release, because the cli's release resolver needs the published
-# release with install.yaml.
+# release with install.yaml. Its if reads the operator package's own
+# release_created, not the contract's releases_created: with the operator
+# module as a second release-please package, releases_created is also true
+# for a module-only release, whose root tag_name is empty
+# (release-operator-module).
 r=$W/release.yml
 eq "release.yml:notify-downstream needs" '["release-please","publish-release"]' "$(yq -o=json -I=0 '.jobs.notify-downstream.needs' "$r")"
-eq "release.yml:notify-downstream if" "needs.release-please.outputs.releases_created == 'true' && vars.CASCADE_NOTIFY != 'off'" "$(yq -r '.jobs.notify-downstream.if' "$r")"
+eq "release.yml:notify-downstream if" "needs.release-please.outputs.release_created == 'true' && vars.CASCADE_NOTIFY != 'off'" "$(yq -r '.jobs.notify-downstream.if' "$r")"
 eq "release.yml:notify-downstream tag" '${{ needs.release-please.outputs.tag_name }}' "$(yq -r '.jobs.notify-downstream.steps[0].with.tag' "$r")"
 eq "release.yml:notify-downstream timeout-minutes" 20 "$(yq -r '.jobs.notify-downstream["timeout-minutes"]' "$r")"
 # Workflow-level env reaches the notify action's steps, so it is a map whose

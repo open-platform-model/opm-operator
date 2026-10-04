@@ -13,7 +13,8 @@
 #                        version it served at the previous tag
 #   title=<PR title>     fix(deps): deploy operator <tag> from the operator module
 #                        (fix(deps)!: when breaking=1)
-# It refuses an operator tag whose release is not published, and a tag whose
+# It refuses an operator tag whose release is not published, a tag that is
+# not a descendant of the module's current operator tag, and a tag whose
 # config/ (CRDs, RBAC) differs from MAIN_REF's: the module's generated data
 # follow main's config/ on every PR, so the module release gate would refuse
 # such a module. Network calls go through RELEASE_GUARD, IMAGE_TAG_GUARD and
@@ -59,6 +60,13 @@ if [ "$prev" = "$tag" ] && [ "$prev_digest" = "$digest" ]; then
   echo "image.sh: the module already deploys $IMAGE_REPO:$tag@$digest" >&2
   printf 'changed=false\nbreaking=0\ntitle=\n'
   exit 0
+fi
+
+# Never back: a re-run of an older release's run, or a dispatch with an old
+# tag, must not move the module to an operator older than the one it deploys.
+if [ "$prev" != "$tag" ] && git rev-parse --verify --quiet "$prev^{commit}" >/dev/null &&
+  ! git merge-base --is-ancestor "$prev" "$tag"; then
+  die "$tag is not newer than the deployed $prev; the module never moves back"
 fi
 
 # A clean tree before, exactly one changed file after: nothing else rides the PR.

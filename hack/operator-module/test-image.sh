@@ -140,4 +140,20 @@ if run already-deployed "$d" 0; then
   fi
 fi
 
+# The module already deploys beta.2; beta.1 is older and must be refused.
+d=$(scratch older-tag crd.yaml changelog-plain.md)
+sed -i -E -e 's/^Version: .*/Version: "1.0.0-beta.2"/' \
+  -e "s/(digest: *)\"[^\"]+\"/\\1\"$DIGEST\"/" "$d/modules/opm_operator/operator/operator.cue"
+(cd "$d" && gitq commit -q -am deployed)
+rc=0
+(cd "$d" && "$IMAGE" set v1.0.0-beta.1) >"$TMP/older-tag.out" 2>"$TMP/older-tag.log" || rc=$?
+if [ "$rc" != 1 ]; then
+  fail older-tag "exit $rc, want 1"
+elif ! grep -qF "not newer than the deployed v1.0.0-beta.2" "$TMP/older-tag.log" ||
+  [ -n "$(cd "$d" && git status --porcelain)" ] || [ -s "$TMP/older-tag.out" ]; then
+  fail older-tag "not refused for the older tag, or the tree or outputs changed"
+else
+  printf 'PASS older-tag\n'
+fi
+
 exit "$FAILED"

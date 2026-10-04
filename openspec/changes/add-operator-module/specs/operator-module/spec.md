@@ -18,19 +18,28 @@ The repository SHALL carry the operator's OPM module at the path `opmodel.dev/mo
 - **WHEN** the module is rendered with default values
 - **THEN** the controller container's image is `ghcr.io/open-platform-model/opm-operator:v<operator version>@sha256:<digest>` with the version and digest the module names
 
+### Requirement: The module deploys only an operator that refuses its own instance
+
+The operator release the module names SHALL be at or above the repository's recorded minimum operator version, the first operator release that refuses to reconcile the instance deploying the operator. The module's tests SHALL fail, naming both versions, when the module names an older operator release, so no module version can deploy an operator that would adopt, prune or block on its own CLI-owned instance.
+
+#### Scenario: An older operator is refused
+
+- **WHEN** the module's operator version is set below the recorded minimum operator version
+- **THEN** the module's tests fail naming the module's operator version and the minimum
+
 ### Requirement: Every object renders through a catalog resource
 
-The module SHALL render the operator's CRDs, its Namespace, the controller Deployment, its ServiceAccount, the metrics Service, and every Role, ClusterRole, RoleBinding and ClusterRoleBinding through the first-party catalog resource made for that kind. The administrator ClusterRoles the operator ships for users to bind SHALL render as catalog roles with no subjects and no binding. No component SHALL use the catalog's raw-objects resource. The module SHALL render the operator's Namespace itself, so an install records it as an object of the instance.
+The module SHALL render the operator's CRDs, its Namespace, the controller Deployment, its ServiceAccount, the metrics Service, and every Role, ClusterRole, RoleBinding and ClusterRoleBinding through the first-party catalog resource made for that kind, apart from the exception below. The administrator ClusterRoles the operator ships for users to bind SHALL render with no binding. Until a catalog release the module pins can render a role with no subjects, those administrator ClusterRoles SHALL render through the catalog's raw-objects resource, in one component that holds them and nothing else, with their rules taken from the generated RBAC data; no other object SHALL use the raw-objects resource. The module SHALL render the operator's Namespace itself, so an install records it as an object of the instance.
 
 #### Scenario: The render contains the whole install shape
 
 - **WHEN** the module is rendered with default values for the instance `opm-operator` in `opm-operator-system`
 - **THEN** the result holds 19 objects: 4 CRDs, 1 Namespace, 1 ServiceAccount, 1 Role, 7 ClusterRoles, 1 RoleBinding, 2 ClusterRoleBindings, 1 Service and 1 Deployment
 
-#### Scenario: No raw-object component
+#### Scenario: Raw objects only for the administrator roles
 
 - **WHEN** the module's components are listed
-- **THEN** none of them carries the catalog's raw-objects resource
+- **THEN** exactly one of them carries the catalog's raw-objects resource, and it renders exactly `opm-operator-metrics-reader`, the three `opm-operator-moduleinstance-*-role` ClusterRoles and `opm-operator-transformerregistration-admin-role`
 
 #### Scenario: Administrator roles render unbound
 

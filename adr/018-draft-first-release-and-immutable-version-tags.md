@@ -107,3 +107,9 @@ version tag if `IMG` names one; they run in no workflow and are left to an owner
 **Deferred:** Release branches (`release/vX.Y`, the cut action, release runs on `release/**`) are
 Phase 2 of 0021 D10, delivered before GA by a separate change. Until then a fix for a released
 version goes forward on `main`.
+
+**Addendum (2026-10-04):** the operator module (`modules/opm_operator`) releases on its own train
+with tags `opm_operator-vX.Y.Z`, through the same draft-first flow (`module-publish`,
+`module-manifest`, `module-publish-release`). For those tags only, `release-guard.sh publish`
+requires `install.yaml` alone and sends `make_latest=false`, so a module release never takes the
+repository's Latest mark (0021:D11:R12). Operator tags still send neither flag.

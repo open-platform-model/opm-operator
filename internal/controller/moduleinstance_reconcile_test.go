@@ -827,6 +827,45 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
 		})
 
+		It("refuses an instance whose recorded inventory holds an operator CRD", func() {
+			ctx := context.Background()
+			mi := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "renamed-fork-mi", Namespace: namespace},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerOperator,
+					Module: releasesv1alpha1.ModuleReference{Path: "example.com/forks/operator@v0", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			var current releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			current.Status.Inventory = &releasesv1alpha1.Inventory{
+				Revision: 1,
+				Count:    1,
+				Entries: []releasesv1alpha1.InventoryEntry{{
+					Group:   "apiextensions.k8s.io",
+					Kind:    "CustomResourceDefinition",
+					Name:    "moduleinstances.opmodel.dev",
+					Version: "v1",
+				}},
+			}
+			Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+
+			_, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.ReadyCondition).Message).
+				To(ContainSubstring("inventory records CustomResourceDefinition moduleinstances.opmodel.dev"))
+			Expect(refused.Status.Inventory.Revision).To(Equal(int64(1)))
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
 		It("removes conditions left by an earlier adoption and leaves CLI-written status alone", func() {
 			ctx := context.Background()
 			mi := newOwnInstance("own-adopted-mi", releasesv1alpha1.OwnerOperator)

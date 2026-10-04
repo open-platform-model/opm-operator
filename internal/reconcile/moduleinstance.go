@@ -716,6 +716,7 @@ func handleOwnInstance(
 		log.Info("Releasing the cleanup finalizer from the operator's own instance without pruning")
 		if err := removeFinalizer(ctx, params.Client, mi); err != nil {
 			if apierrors.IsNotFound(err) {
+				params.Warnings.Forget(keyOf(mi))
 				return nil
 			}
 			return fmt.Errorf("removing finalizer: %w", err)

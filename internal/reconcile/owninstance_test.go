@@ -108,9 +108,16 @@ func TestIsOwnInstance(t *testing.T) {
 			wantOwn: false,
 		},
 		{
-			name:      "operator name in another namespace",
+			name:      "another name in the operator's namespace",
 			objName:   "something",
 			namespace: "opm-operator-system",
+			path:      "example.com/modules/app@v0",
+			wantOwn:   false,
+		},
+		{
+			name:      "operator name in another namespace",
+			objName:   "opm-operator",
+			namespace: "default",
 			path:      "example.com/modules/app@v0",
 			wantOwn:   false,
 		},

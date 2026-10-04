@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.7](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-10-04)
+
+
+### Bug Fixes
+
+* **reference:** link the operator guides from the Operator Reference ([#220](https://github.com/open-platform-model/opm-operator/issues/220)) ([b8b699e](https://github.com/open-platform-model/opm-operator/commit/b8b699eea70d87376d144383949e238b86cc3ca4))
+
 ## [1.0.0-beta.6](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-10-04)
 
 

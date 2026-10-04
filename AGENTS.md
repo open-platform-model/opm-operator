@@ -167,7 +167,7 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 ### Core Commands
 
 - `task` (default): list available tasks.
-- `task dev:manifests`: regen CRDs, RBAC, webhook manifests w/ `controller-gen`, then the operator module's data from them (`task operator-module:generate`; needs a `cue` CLI). Build, test and deploy tasks depend on the `config/` half only.
+- `task dev:manifests`: regen CRDs, RBAC, webhook manifests w/ `controller-gen`, then the operator module's data from them (`task operator-module:generate`; needs the `cue` CLI at `CUE_VERSION` in `.github/workflows/test.yml`, today `v0.17.1`, and warns on another version). Build, test and deploy tasks depend on the `config/` half only.
 - `task dev:generate`: regen DeepCopy methods.
 - `task docs:bundle`: build the `opm-operator` docs bundle of the work tree into `out/opm-operator/` (installs the pinned `opm-docs` into `.bin/` via `task tools:opm-docs`).
 - `task docs:bundle:check`: `task docs:pins:check`, then build and lint the bundle into a temporary directory.

@@ -581,3 +581,19 @@ jobs:
           MODULE_TAG: ${{ needs.release-please.outputs.module_tag_name }}
         run: |
           .github/scripts/release-guard.sh publish "${MODULE_TAG}"
+
+  # After every published operator release, the PR that moves the operator
+  # module to it (module-image.yml; operator-module-release, "An operator
+  # release opens the PR that moves the module's image"). It produces no
+  # release artifact. Recover a failed run with module-image.yml's dispatch.
+  module-image-pr:
+    name: Open the operator module image PR
+    needs: [release-please, publish-release]
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/module-image.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets:
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}

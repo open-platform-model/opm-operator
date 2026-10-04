@@ -52,6 +52,16 @@ tasks:
     cmds:
       - hack/operator-module/test-release-check.sh
 
+  image:test:
+    desc: Offline test of the operator module's image PR script (hack/operator-module/image.sh) over fixture CHANGELOGs and CRDs (hack/testdata/operator-module-image)
+    cmds:
+      - hack/operator-module/test-image.sh
+
+  bot-pr:test:
+    desc: Offline test of the operator module's bot PR script (hack/operator-module/bot-pr.sh) against a scratch origin and a stub gh
+    cmds:
+      - hack/operator-module/test-bot-pr.sh
+
   fmt:check:
     desc: Fail when a CUE file of the operator module is not cue fmt clean
     dir: modules/opm_operator

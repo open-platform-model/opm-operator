@@ -67,6 +67,13 @@ jobs:
       - name: Operator module release gate (offline test)
         run: task operator-module:release-check:test
 
+      # The image PR's title, breaking and refusal rules, and the bot branch's
+      # create, rebuild and extend rules (offline).
+      - name: Operator module image PR scripts (offline tests)
+        run: |
+          task operator-module:image:test
+          task operator-module:bot-pr:test
+
       # task deps:cascade against the stub resolver, offline scenarios only
       # (.tasks/cascade/test.sh). The network scenarios run in cascade-task.yml.
       - name: Cascade task (offline)

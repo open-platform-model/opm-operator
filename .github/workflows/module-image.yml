@@ -1,0 +1,147 @@
+name: Operator module image PR
+
+# Opens or updates the PR on module/operator-image that moves the operator
+# module to a published operator release (operator-module-release, "An
+# operator release opens the PR that moves the module's image"). release.yml's
+# module-image-pr job calls it after every operator release; dispatch it by
+# hand with the release tag to recover a missed or failed run:
+#
+#   gh workflow run module-image.yml --repo open-platform-model/opm-operator -f tag=v1.0.0-beta.7
+#
+# Two jobs, as the cascade receiver splits its work: compute runs
+# hack/operator-module/image.sh with no App token and hands the changed module
+# file on as an artifact; publish mints the release App token and only runs
+# hack/operator-module/bot-pr.sh, which pushes the branch and opens the PR. A
+# PR opened with the App's token runs its CI on its own.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: A published operator release tag, such as v1.0.0-beta.7
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      RELEASE_APP_PRIVATE_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  compute:
+    name: Point the module at the operator release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.image.outputs.changed }}
+      title: ${{ steps.image.outputs.title }}
+    steps:
+      - name: Refuse anything but an operator release tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ ${TAG} =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error::'${TAG}' is not an operator release tag"; exit 1; }
+
+      - name: Clone main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          # image.sh reads config/ and CHANGELOG.md at the operator tags.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The drift check regenerates the module's data with cue.
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0
+        with:
+          version: v0.17.1
+
+      - name: Write the operator release into the module
+        id: image
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MAIN_REF: origin/main
+        run: |
+          hack/operator-module/image.sh set "${TAG}" | tee -a "${GITHUB_OUTPUT}"
+
+      - name: Package the module change
+        if: steps.image.outputs.changed == 'true'
+        env:
+          TAG: ${{ inputs.tag }}
+          BREAKING: ${{ steps.image.outputs.breaking }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/change"
+          git diff --name-only | tar -cf "${RUNNER_TEMP}/change/module.tar" -T -
+          {
+            echo "Moves the operator module to the operator release [${TAG}](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}), by tag and the digest GHCR serves under it. Only \`modules/opm_operator/operator/operator.cue\` changes, so merging this proposes a module release and no operator release."
+            echo
+            if [ "${BREAKING}" = 1 ]; then
+              echo "Breaking: the operator CHANGELOG since the module's previous operator lists a breaking change, or a CRD stops serving a version. The module's next release raises its minor."
+            else
+              echo "Not breaking: the module's next release raises its patch."
+            fi
+            echo
+            echo "Opened by \`module-image.yml\` (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+          } > "${RUNNER_TEMP}/change/body.md"
+
+      - name: Hand the change to the publish job
+        if: steps.image.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: module-image-change
+          path: ${{ runner.temp }}/change/
+          retention-days: 3
+
+  publish:
+    name: Open or update the module image PR
+    needs: compute
+    if: needs.compute.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    concurrency:
+      group: module-operator-image-pr
+      cancel-in-progress: false
+    steps:
+      - name: Mint the release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Clone main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Fetch the module change
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: module-image-change
+          path: ${{ runner.temp }}/change
+
+      - name: Push module/operator-image and open or update its PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          TITLE: ${{ needs.compute.outputs.title }}
+        run: |
+          tar -xf "${RUNNER_TEMP}/change/module.tar" --no-same-owner
+          id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
+          BOT_NAME="${APP_SLUG}[bot]" BOT_EMAIL="${id}+${APP_SLUG}[bot]@users.noreply.github.com" \
+            hack/operator-module/bot-pr.sh module/operator-image "${TITLE}" "${RUNNER_TEMP}/change/body.md"

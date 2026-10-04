@@ -106,7 +106,7 @@ This section is its own PR, and it changes only `modules/opm_operator/README.md`
 
 ## 4. An operator release opens the module's image PR
 
-- [ ] 4.1 Add `hack/operator-module/image.sh set <operator-tag>` per design.md "Image-bump PR". It does the following:
+- [x] 4.1 Add `hack/operator-module/image.sh set <operator-tag>` per design.md "Image-bump PR". It does the following:
   - refuses an unpublished tag (`release-guard.sh assert-published`);
   - refuses, naming the files, when `config/crd/bases` or the RBAC role files at the tag differ from `origin/main`;
   - resolves the digest with `image-tag-guard.sh digest`;
@@ -114,20 +114,21 @@ This section is its own PR, and it changes only `modules/opm_operator/README.md`
   - prints `breaking=0|1` and `title=<title>` in `GITHUB_OUTPUT` shape. Breaking means the operator CHANGELOG sections after the module's previous operator tag hold a "BREAKING CHANGES" heading, or a CRD under `config/crd/bases` at the tag dropped a version served at the previous tag.
 
   The script changes no file other than `operator/operator.cue`.
-- [ ] 4.2 Add `hack/operator-module/test-image.sh`, an offline test of the title, breaking and refusal rules against fixture CHANGELOG excerpts and CRD pairs under `hack/testdata/operator-module-image/`. Run it from the `Lint` job. Cases:
+- [x] 4.2 Add `hack/operator-module/test-image.sh`, an offline test of the title, breaking and refusal rules against fixture CHANGELOG excerpts and CRD pairs under `hack/testdata/operator-module-image/`. Run it from the `Lint` job. Cases:
   - plain release gives `fix(deps)`;
   - a breaking CHANGELOG entry gives `fix(deps)!`;
   - a dropped served version gives `fix(deps)!`;
   - a CRD that differs between the tag and `main` fails naming the file;
   - a write outside `operator/operator.cue` fails the script.
-- [ ] 4.3 Add `release.yml` jobs `module-image-pr` and `module-image-pr-publish` (design.md "Image-bump PR", two-job split):
-  - `module-image-pr`: `needs: [release-please, publish-release]`, `if: needs.release-please.outputs.release_created == 'true'`, no App token; checks out `main`, runs `hack/operator-module/image.sh set "$TAG"`, uploads the changed module files and the title;
-  - `module-image-pr-publish`: mints the release App token, checks out `main`, copies the files in and runs `hack/operator-module/bot-pr.sh`, which rebuilds or extends `module/operator-image` per design.md;
+- [x] 4.3 Add `release.yml` job `module-image-pr`, calling `module-image.yml` (design.md "Image-bump PR", two-job split):
+  - `needs: [release-please, publish-release]`, `if: needs.release-please.outputs.release_created == 'true'`;
+  - `compute`, no App token: checks out `main`, runs `hack/operator-module/image.sh set "$TAG"`, uploads the changed module file and the body;
+  - `publish`: mints the release App token, checks out `main`, unpacks the change and runs `hack/operator-module/bot-pr.sh`, which rebuilds or extends `module/operator-image` per design.md (offline test `hack/operator-module/test-bot-pr.sh`, a `Lint` step);
   - pushes with `--force-with-lease`;
   - creates or edits the PR with `gh pr create|edit --repo "$GH_REPO"` and the computed title;
   - does nothing when the tree is unchanged.
-- [ ] 4.4 Add `.github/workflows/module-image.yml`: `workflow_dispatch` with input `tag`, `permissions: {}` at the top, and one job running the same steps as 4.3 for the given tag.
-- [ ] 4.5 Check by search that no step pushes to `main`: `grep -n 'push' .github/workflows/release.yml .github/workflows/module-image.yml`, each hit reviewed. Then run actionlint, shellcheck, `hack/operator-module/test-image.sh` and `task dev:fmt dev:vet dev:lint dev:test`, all green, and commit `ci(release): open the module image PR after each operator release`.
+- [x] 4.4 Add `.github/workflows/module-image.yml`: `workflow_dispatch` with input `tag` (and `workflow_call`, so 4.3 runs the same jobs), `permissions: {}` at the top.
+- [x] 4.5 Check by search that no step pushes to `main`: `grep -n 'push' .github/workflows/release.yml .github/workflows/module-image.yml`, each hit reviewed. Then run actionlint, shellcheck, `hack/operator-module/test-image.sh` and `task dev:fmt dev:vet dev:lint dev:test`, all green, and commit `ci(release): open the module image PR after each operator release`.
 
 ## 5. The module's own cascade PR and notify
 

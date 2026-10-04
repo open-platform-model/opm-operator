@@ -51,7 +51,7 @@ Out of scope: transferring ownership of the operator's own instance (another cha
 ## Impact
 
 - `release-please-config.json`, `.release-please-manifest.json` (written by release-please only).
-- `.github/workflows/release.yml`: the existing jobs' `if`, the new identity-advance step, `module-publish`, `module-publish-release`, `module-image-pr` and `module-image-pr-publish`; also `lint.yml` and new `module-image.yml` and `module-deps.yml`; `.tasks/cascade/wiring-check.sh` for the rekeyed notify `if` and the sixth `.github` reference.
+- `.github/workflows/release.yml`: the existing jobs' `if`, the new identity-advance step, `module-publish`, `module-publish-release`, `module-image-pr` (calling the new `module-image.yml`); also `lint.yml`, new `operator-module.yml` and `module-deps.yml`; `.tasks/cascade/wiring-check.sh` for the rekeyed notify `if` and the sixth `.github` reference.
 - `.github/scripts/release-guard.sh` and `image-tag-guard.sh`: read-only modes and required assets per tag shape. New `hack/operator-module/release-check.sh` and `hack/operator-module/image.sh` with their offline tests, plus their `.tasks` entries.
 - `.tasks/cascade/` (`cascade.sh`, a module pins script and classes file, `test.sh`).
 - `modules/opm_operator/README.md` (the carrier commit).

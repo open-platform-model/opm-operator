@@ -1,0 +1,43 @@
+---
+# The claim this module renders is cluster-scoped, so the applier needs a
+# ClusterRole: only a platform-team identity may register a provider
+# (0015:D3). A tenant Role cannot grant it, which is the gate.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-provider-applier
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-provider-applier
+rules:
+  - apiGroups: ["opmodel.dev"]
+    resources: ["transformerregistrations"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-provider-applier
+subjects:
+  - kind: ServiceAccount
+    name: backup-provider-applier
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backup-provider-applier
+---
+apiVersion: opmodel.dev/v1alpha1
+kind: ModuleInstance
+metadata:
+  name: backup-provider
+  namespace: default
+spec:
+  module:
+    path: testing.opmodel.dev/modules/operator/backup_provider@v0
+    version: v0.1.0
+  serviceAccountName: backup-provider-applier
+  prune: true

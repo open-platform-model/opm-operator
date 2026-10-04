@@ -2,8 +2,9 @@
 # publish.sh <version>: publish the operator module's tagged tree to GHCR, once.
 #
 # Run only by release.yml's module-publish job, against the checked-out module
-# release tag, after the release check. The registry mapping comes from the
-# job's OPM_REGISTRY (opmodel.dev -> ghcr.io/open-platform-model).
+# release tag, after the release check: the tag's copy on a release, main's on
+# the recovery dispatch (workflow_dispatch module_tag). The registry mapping
+# comes from the job's OPM_REGISTRY (opmodel.dev -> ghcr.io/open-platform-model).
 #
 # Repositories are never spelled out here: `cue mod resolve` maps the module
 # path (from cue.mod/module.cue) through the same registry configuration opm
@@ -13,8 +14,9 @@
 #
 # First run: GHCR holds no v<version>, so `opm module publish --version`
 # pushes the tree (the flag only asserts identity.Version).
-# Re-run ("Re-run failed jobs" after a later step failed): GHCR already holds
-# v<version>. The cli would refuse with "already holds", so instead the tree
+# Re-run ("Re-run failed jobs" after a later step failed, or the recovery
+# dispatch): GHCR already holds v<version>. The cli would refuse with
+# "already holds", so instead the tree
 # is published to the job-local registry (LOCAL_REGISTRY, a services:
 # container) and the two manifest digests are compared: equal is a reuse and
 # succeeds without pushing; anything else fails, and the fix is the next

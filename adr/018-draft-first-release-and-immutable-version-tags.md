@@ -112,4 +112,7 @@ version goes forward on `main`.
 with tags `opm_operator-vX.Y.Z`, through the same draft-first flow (`module-publish`,
 `module-manifest`, `module-publish-release`). For those tags only, `release-guard.sh publish`
 requires `install.yaml` alone and sends `make_latest=false`, so a module release never takes the
-repository's Latest mark (0021:D11:R12). Operator tags still send neither flag.
+repository's Latest mark (0021:D11:R12). Operator tags still send neither flag. A module draft
+stranded by a broken script at its tag is recovered by `release.yml`'s `workflow_dispatch`
+(`module_tag`), which runs only the module jobs, with `main`'s scripts against the tag's tree; the
+tag and the published version stay as they are.

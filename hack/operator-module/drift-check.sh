@@ -50,8 +50,9 @@ src=${SRC:-$ROOT/config}
 mkdir -p "$tmp/out"
 SRC=$src OUT=$tmp/out "$ROOT/hack/operator-module/generate.sh" >/dev/null
 
-# Top-level keys of a generated definition: the CRD or role names.
-keys() { sed -n 's/^\t"\([^"]*\)": {$/\1/p' "$1" | LC_ALL=C sort; }
+# Top-level keys of a generated definition: the CRD or role names, quoted or
+# not (cue fmt leaves an identifier-shaped name unquoted).
+keys() { sed -En 's/^\t"?([^":[:space:]]+)"?: \{$/\1/p' "$1" | LC_ALL=C sort; }
 
 rc=0
 for f in zz_generated_crds.cue zz_generated_rbac.cue; do

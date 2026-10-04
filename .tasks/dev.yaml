@@ -75,9 +75,12 @@ tasks:
 
   test:local:
     desc: Run unit and integration tests against local opm-registry (workspace modules must be published to localhost:5000)
-    deps: [manifests, generate, fmt, vet, ":tool:setup-envtest"]
+    deps: [manifests, generate, fmt, vet, ":tool:setup-envtest", ":tool:kustomize"]
     env:
       CUE_REGISTRY: '{{.CUE_REGISTRY}}'
+      # The operator module's parity spec builds config/default with it
+      # (test/integration/operatormodule).
+      KUSTOMIZE: '{{.KUSTOMIZE}}'
     cmds:
       - |
         KUBEBUILDER_ASSETS="$("{{.ENVTEST}}" use {{.ENVTEST_K8S_VERSION}} --bin-dir "{{.LOCALBIN}}" -p path)" \

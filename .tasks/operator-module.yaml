@@ -13,8 +13,9 @@ tasks:
       - hack/operator-module/generate.sh
 
   drift:
-    desc: 'Fail when config/ is stale against dev:manifests, then when the operator module''s generated data are stale against config/. REF=<tag> checks the data against that ref''s config/ instead (no manifests stage).'
+    desc: 'Fail when the operator module''s CUE is not cue fmt clean, when config/ is stale against dev:manifests, then when the module''s generated data are stale against config/. REF=<tag> checks the data against that ref''s config/ instead (no manifests stage).'
     cmds:
+      - task: fmt:check
       - task: drift:manifests
         if: '[ -z "{{.REF}}" ]'
       - cmd: hack/operator-module/drift-check.sh
@@ -38,3 +39,9 @@ tasks:
           echo "run 'task dev:manifests operator-module:generate' and commit the result" >&2
           exit 1
         fi
+
+  fmt:check:
+    desc: Fail when a CUE file of the operator module is not cue fmt clean
+    dir: modules/opm_operator
+    cmds:
+      - cue fmt --check ./...

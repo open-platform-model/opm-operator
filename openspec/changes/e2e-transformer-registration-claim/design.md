@@ -66,9 +66,17 @@ Section 1 runs this flow by hand on a throwaway cluster before the spec encodes 
 **Decision**: After the bare-spelling assertions, the spec patches `backup-provider` with `spec.suspend: true` and waits for `Ready=False/Suspended`. It then merge-patches the claim's `spec.version` to `v0.1.0` and waits, in this order:
 
 1. the claim's `status.observedGeneration` to equal its new `metadata.generation`, with `accepted: true`, `active: true` and Ready=True with reason `Accepted` and a message containing `at v0.1.0`;
-2. then the Platform's `status.registry` entry for the backup catalog to read `v0.1.0`, under a `status.packageIdentity` different from the bare-spelling one, with Ready=True/`Generated`; a second read of `packageIdentity` shows it is stable.
+2. then the Platform's `status.registry` entry for the backup catalog to name the same build (`0.1.0` once any leading `v` is trimmed; see the spike findings below), under a `status.packageIdentity` different from the bare-spelling one, with Ready=True/`Generated`; a second read of `packageIdentity` shows it is stable.
 
 The stale-verdict contribution is an operator gap outside this test-only change: a hand-edited claim contributes its new coordinate to the platform before it is judged, which skips the 0015:D11 checks for a short window. It goes to the supervisor as a follow-up issue.
+
+**Spike findings** (section 1, 2026-10-04, throwaway kind cluster, branch image on library beta.4):
+
+- Bare spelling: the claim `default.backup-provider` was rendered with `spec.version: 0.1.0`, accepted and active within seconds (Ready=True/`Accepted`, "Claim accepted for catalog testing.opmodel.dev/catalogs/operator/backup@v0 at 0.1.0"; Active=True/`ProviderReady`). The Platform moved to a new identity (`gen-1-e1f6ae3f2c30aa1a`) with the backup entry `{source: Registration, version: 0.1.0, enabled: true}` and Ready=True/`Generated`.
+- `v`-prefixed spelling: after `suspend: true` the provider read Ready=False/`Suspended`. The merge-patch to `v0.1.0` held for the whole 137-second watch (no re-apply). Within 2 seconds the claim read generation 2, observedGeneration 2, accepted and active, Ready=True/`Accepted` with "... at v0.1.0", and the Platform read a new identity (`gen-1-716335246d4da9d5`), Ready=True/`Generated`. The identity stayed put for the rest of the watch.
+- The Platform's backup entry recorded `version: v0.1.0`, the claim's own spelling, although the `ResolvedRegistryEntry.version` doc comment says "the bare SemVer build". The spec therefore checks that the entry names the same build in either spelling (the `v` trimmed), and relies on the package identity, a function of the claims' coordinates, to show the platform was regenerated for the edit. It does not pin the spelling of a status field whose documented contract disagrees with its behaviour. The disagreement goes to the supervisor as a follow-up.
+- Deleting the suspended provider removed the instance and pruned the claim, and the claim's removal guard released it (both `kubectl wait --for=delete` calls returned 0). Deletion runs before the suspend check in the instance reconcile.
+- Unrelated to the claim path, the controller log carried `Drift detection failed`: the drift dry-run of the rendered claim is sent as the controller's own ServiceAccount, which may not create `transformerregistrations` at cluster scope. The reconcile continues, so it does not affect this spec. It goes to the supervisor as a follow-up.
 
 **Rationale**: This is the narrowest path that pushes a `v`-prefixed coordinate through both reconcilers on a deployed operator, and it changes no fixture. The alternatives:
 
@@ -85,20 +93,22 @@ The owner decision names acceptance and platform build. `backup_consumer` render
 
 **Context**: Library f1d9908 (`feat(kernel)!`, first in v1.0.0-beta.2) makes `AcquireInstanceFromDir` validate an instance package's own values against the module's `#config`. Research N4 asked for a sweep of every consumer's instance packages.
 
-**Explored** (at each repo's `origin/main` on 2026-10-04):
+**Explored** (at each repo's `origin/main` on 2026-10-04, SHAs refreshed when section 1 ran):
 
 | Where | Instance packages | Verdict |
 | --- | --- | --- |
 | opm-operator (`8dc24b3`, library beta.4) | `test/fixtures/modulepackages/{hello,hello_web,podinfo,redis}`, acquired by `KernelPackageRenderer` | Every values key is declared in the module's `#config` with a matching type (`message`; `replicas`; `replicas`; `persistence.size`). Conforms. |
-| cli (`5180cad1`, library beta.4) | `examples/instances/podinfo` (`replicas`), `tests/e2e/testdata/operator-owned` (`image`, `replicas`), `internal/workflow/render/testdata/skip-unprovided/instance` (`values: {}`), `tests/integration/inst-tree/testdata` (no values) | Conforms. `tests/e2e/testdata/vet-errors/instance` is invalid on purpose: its test expects the refusal. |
+| cli (`abc0093c`, library beta.4) | `examples/instances/podinfo` (`replicas`), `tests/e2e/testdata/operator-owned` (`image`, `replicas`), `internal/workflow/render/testdata/skip-unprovided/instance` (`values: {}`), `tests/integration/inst-tree/testdata` (no values) | Conforms. `tests/e2e/testdata/vet-errors/instance` is invalid on purpose: its test expects the refusal. |
 | cli scaffold | `opm instance init` (`internal/cmd/instance/init.go`) writes `values.cue` from the module's `initValues`/`debugValues` | Derived from the module, so it conforms by construction. |
-| catalog_opm (`daae275`) | none | Not affected. |
+| catalog_opm (`344ad4f`) | none | Not affected. |
 | modules (`e4d3b65`) | none (`istio_ambient/testdata/values-full.cue` is passed as a values source, which was already validated before f1d9908) | Not affected. |
 | opm-modules (`f16a187`) | none | Not affected. |
 
 Both frontends already pin library beta.4, and their CI went green on that bump.
 
 **Decision**: Nothing in opm-operator needs a fix. Section 1 confirms the operator half by running the registry-backed ModulePackage specs (`KernelPackageRenderer Integration`) against GHCR on beta.4. If one fails on an undeclared or mistyped value, the fix is to the fixture's `values.cue` in this change.
+
+**Confirmed** (section 1): with the GHCR mapping and `OPM_TEST_REGISTRY_FORCE=1`, the focused run reported `5 Passed | 0 Failed | 0 Pending`, and the four "acquires the authored <pkg> package fixture" specs (hello, hello_web, podinfo, redis) ran and passed; the 63 skipped specs are the ones outside the focus. No fixture changed.
 
 ### D5. Running the spec
 

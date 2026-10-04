@@ -1,22 +1,22 @@
 ## MODIFIED Requirements
 
 ### Requirement: Changelog generation
-The workflow SHALL generate and maintain a `CHANGELOG.md` file at the repository root for the operator package. Entries SHALL be grouped under the visible sections that `release-please-config.json` declares (Features, Bug Fixes, Performance Improvements, Reverts, Dependencies, Code Refactoring). Commits of a hidden type (`docs`, `chore`, `test`, `ci`, `build`) SHALL NOT appear. A commit that changes only files under the operator module's directory belongs to the module's own changelog (see `operator-module-release`) and SHALL NOT appear in the root `CHANGELOG.md`. Documentation entries already in CHANGELOG.md from earlier releases SHALL stay as they are. Source: 0028:D1:R9.
+The workflow SHALL generate and maintain a `CHANGELOG.md` file at the repository root for the operator package. Entries SHALL be grouped under the visible sections that `release-please-config.json` declares (Features, Bug Fixes, Performance Improvements, Reverts, Dependencies, Code Refactoring). Commits of a hidden type (`docs`, `chore`, `test`, `ci`, `build`) SHALL NOT appear. A commit that changes only files under the operator module's directory `modules/opm_operator/` belongs to the module's own changelog (see `operator-module-release`) and SHALL NOT appear in the root `CHANGELOG.md`. Documentation entries already in CHANGELOG.md from earlier releases SHALL stay as they are.
 
 #### Scenario: Changelog includes all commit types
 - **WHEN** the Release PR is created or updated
-- **THEN** `CHANGELOG.md` SHALL list every commit since the last release whose type has a visible section in `release-please-config.json` and that changes a file outside the module directory, grouped under that section, with commit messages as entries, and SHALL list no commit of a hidden type
+- **THEN** `CHANGELOG.md` SHALL list every commit since the last release whose type has a visible section in `release-please-config.json` and that changes a file outside `modules/opm_operator/`, grouped under that section, with commit messages as entries, and SHALL list no commit of a hidden type
 
 #### Scenario: Changelog preserves history
 - **WHEN** a new release is cut
 - **THEN** the new changelog section SHALL be prepended to existing content, preserving prior release entries
 
 #### Scenario: Module-only commit stays out of the operator changelog
-- **WHEN** `fix(deps): deploy operator v1.0.0-beta.6 from the operator module`, which changes only the module directory, is merged
+- **WHEN** `fix(deps): deploy operator v1.0.0-beta.6 from the operator module`, which changes only `modules/opm_operator/`, is merged
 - **THEN** the operator's Release PR and root `CHANGELOG.md` do not list it
 
 ### Requirement: Release published once after every release job
-The release workflow SHALL contain a final job that depends on every job producing an operator release artifact (the image job and the example publishing job). It SHALL run only when the operator package created a release, hold `contents: write` and no other write permission, and check out only the files it runs. It SHALL confirm that the required asset `opm-examples.tar.gz` is attached to the draft, and then publish the draft. It SHALL leave the Pre-release flag set by release-please unchanged. When the release is already published it SHALL succeed without changing anything. An operator release SHALL NOT carry `install.yaml`: the install manifest is an asset of the module's release (`operator-module-release`). Source: 0028:D2:R13.
+The release workflow SHALL contain a final job that depends on every job producing an operator release artifact (the image job and the example publishing job). It SHALL run only when the operator package created a release, hold `contents: write` and no other write permission, and check out only the files it runs. It SHALL confirm that the required asset `opm-examples.tar.gz` is attached to the draft, and then publish the draft. It SHALL leave the Pre-release flag set by release-please unchanged. When the release is already published it SHALL succeed without changing anything. An operator release SHALL NOT carry `install.yaml`: the install manifest is an asset of the module's release (`operator-module-release`).
 
 #### Scenario: All release jobs succeed
 - **WHEN** the image and example jobs finish successfully for `v1.0.0-beta.3`

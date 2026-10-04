@@ -7,7 +7,7 @@ The task SHALL move exactly these pins:
   - the sample Platform's `version:` (stored bare);
   - `CatalogVersion()` in `test/fixtures/catalog.go` (stored bare);
   - the four `test/fixtures/modules/*/cue.mod/module.cue` files;
-  - the operator module's `cue.mod/module.cue`, a shipped pin (0028:D7).
+  - the operator module's `modules/opm_operator/cue.mod/module.cue`, a shipped pin: every user who installs the module receives it.
 
   A file whose catalog is above `K` SHALL NOT be lowered.
 - **Core.** It moves core in those modules, the operator module included, and in `test/fixtures/catalogs/provider/cue.mod/module.cue` to the version that the file's catalog after the move pins (the higher of the file's catalog and `K`; `K` for the provider fixture), and only when that is greater than the file's own core. Core SHALL never come from the newest published core directly.

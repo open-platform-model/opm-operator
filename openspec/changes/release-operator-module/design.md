@@ -2,30 +2,51 @@
 
 See proposal.md, "Why". This change touches only release automation. No reconcile phase changes: Source, Render, Apply, Prune and Status behave the same. No API type or CRD changes.
 
-What the repository has today, read 2026-10-04 at `origin/main` `40a2345`:
+### What the repository has today
 
-- **One release-please package.** `release-please-config.json` has the single package `"."`: release type `go`, `draft: true`, `force-tag-creation: true`, `versioning: prerelease`, beta, and `extra-files` for `internal/version/version.go` and the install page. At the top level it sets `"bump-minor-pre-major": false`, `"bump-patch-for-minor-pre-major": false` and `"include-component-in-tag": false`. `.release-please-manifest.json` is `{".": "1.0.0-beta.5"}`.
+Read 2026-10-04 at `origin/main` `40a2345`:
+
+- **One release-please package.** `release-please-config.json` has the single package `"."`: release type `go`, `package-name: opm-operator`, `draft: true`, `force-tag-creation: true`, `versioning: prerelease`, beta, and `extra-files` for `internal/version/version.go` and the install page. At the top level it sets `"bump-minor-pre-major": false`, `"bump-patch-for-minor-pre-major": false` and `"include-component-in-tag": false`. `.release-please-manifest.json` is `{".": "1.0.0-beta.5"}`.
 - **Every release job gates on `releases_created`.** `.github/workflows/release.yml` keys `image-release` (line 58), `publish-examples` (238), `publish-docs` (326) and `publish-release` (343) on `needs.release-please.outputs.releases_created == 'true'`, and reads `tag_name` (lines 35, 69 and others). release-please-action v5 (`release.yml:49`) sets `releases_created` when any package released. It sets `release_created` and `tag_name` for the root package and `<path>--release_created` and `<path>--tag_name` for any other package. With a second package, a module-only release would start `image-release` with an empty tag. The unmerged `join-release-cascade` adds `notify-downstream` with the same `if`.
 - **The previous-tag lookup is unanchored.** `publish-examples` finds its previous tag with `git describe --tags --abbrev=0 "${TAG}^"` (`release.yml:290`). Once a module tag exists, it would return that tag and skip fixtures that changed since the last operator release.
 - **The image job owns the install manifest.** `image-release` renders `dist/install.yaml` from `config/default` with the image digest (`release.yml:216-220`) and uploads it to the draft (224-231). `release-guard.sh publish` refuses a draft without `install.yaml` or `opm-examples.tar.gz` (`.github/scripts/release-guard.sh:15-18`).
-- **G1 runs only on release PRs.** The `Lint` job runs `task deps:release-check` when the head ref starts with `release-please--` (`lint.yml:29-31`). That runs `hack/release-pin-check.sh`, which covers `go.mod` and the fixtures only.
+- **The release-pin check runs only on release PRs.** The `Lint` job runs `task deps:release-check` when the head ref starts with `release-please--` (`lint.yml:29-31`). That runs `hack/release-pin-check.sh`, which covers `go.mod` and the fixtures only.
 - **Precedents.**
   - catalog_opm releases a module from a sub-path with `include-component-in-tag`, tags `opm-vX.Y.Z` and `separate-pull-requests: true`. Its release workflow pushes the identity-advance commit onto `release-please--branches--main--components--opm` with `opm catalog version set` (catalog_opm `.github/workflows/release.yml`, "Advance identity.Version on the release PR"). It publishes with `opm catalog publish ./src --version`, which asserts the version.
   - The image job's guard reuses a version tag only when its revision label names the release commit (`.github/scripts/image-tag-guard.sh`).
 - **The resolver lists only v-tags.** The cascade resolver lists operator releases from `refs/tags/v*` and counts one as published when `install.yaml` downloads (`.github` `.github/scripts/cascade/lib/release.sh:19`, `lib/query.sh:88-90`).
-- **The cli downloads the operator's manifest.** It fetches `releases/download/<operator tag>/install.yaml` for `opm operator install --version` (cli `internal/operator/fetch.go:13`) and for `task operator:sync` (cli `Taskfile.yml:497`).
+- **The cli downloads the operator's manifest.** It fetches `releases/download/<operator tag>/install.yaml` for `opm operator install --version` (cli `internal/operator/fetch.go:13`) and for `task operator:sync` (cli `Taskfile.yml:497`). This is the behaviour archived `0006:D35` set: one embedded `install.yaml`, `--version` fetching the release asset. `0021:D4` today calls the manifest an artifact of the operator release; the amendment that moves it to the module's release lives in enhancement 0021, not here.
 - **The pinned cli has the commands this needs.** `.opm-cli-version` is `v1.0.0-beta.7`. That cli has `opm module version set` (exit 0 when set or already set) and `opm module publish --version`, which only asserts a declared version. Its first-party publish gate admits `opmodel.dev/modules/<leaf>` (cli `internal/publish/gates.go:23` at `v1.0.0-beta.7`). A second publish of a held version is refused with "<path> already holds <tag>" (cli `internal/publish/registry.go:56`).
 
-**Interface with add-operator-module (assumed; G-dep confirms).** That change has no artifacts on disk yet. This design assumes:
+### Interface with add-operator-module
 
-- the module directory `module/`, whose `cue.mod` declares `opmodel.dev/modules/opm_operator@v0`;
-- an `identity/identity.cue` package holding `Version`;
-- one CUE file that holds the operator image tag and digest and nothing else, called the image file below;
-- generated CRD and RBAC files;
-- `task module:generate`, which regenerates them from a `config/` tree, with an override for the source directory;
-- `task module:drift-check`.
+That change is proposed on branch `feat/add-operator-module` and not merged. Its proposal and design (read 2026-10-04 at `e5445c7`) name what this change calls:
 
-Every name here is replaced by the real one in task G-dep.
+| What | Name in add-operator-module |
+| --- | --- |
+| Module directory | `modules/opm_operator/`, `cue.mod` declares `opmodel.dev/modules/opm_operator@v0` |
+| Identity | `modules/opm_operator/identity/identity.cue`: `ModulePath`, `Version` (tooling writes these two only) |
+| Deployed operator | `modules/opm_operator/operator/operator.cue`: `Version` (bare, e.g. `1.0.0-beta.5`) and `Image: {repository, tag, digest}`, with `tag: "v\(Version)"`, so tag and version cannot disagree. The image file below means this file. |
+| Generated data | `zz_generated_crds.cue` (`#crdSource`) and `zz_generated_rbac.cue` (`#rbacSource`), from `config/crd/bases` and eight `config/rbac` role files |
+| Generator | `hack/operator-module/generate.sh`, task `operator-module:generate` |
+| Drift check | `hack/operator-module/drift-check.sh`, task `operator-module:drift`; `--ref <tag>` compares against `config/` extracted from that tag with `git archive` |
+| Instance coordinates | the module renders only for instance `opm-operator` in `opm-operator-system` and refuses any other |
+| `#config` | image repository, registry mapping, default service account, resources, replicas, extra arguments; `image.tag`, `image.digest` and `image.pullPolicy` are refused, so the image moves only through `operator/operator.cue` |
+
+Task G-dep confirms each name against the merged tree and substitutes any that changed. Two of them this change depends on in a specific way: the drift check's `--ref` mode (the release gate must compare with the deployed tag, not `HEAD`), and a way to run the generator over another source tree (the image-bump PR regenerates from the operator tag). If the merged generator has no such override, section 3 adds a `--ref` mode to it that mirrors the drift check's.
+
+### Evidence from the prototype experiments
+
+Two prototypes were run on 2026-10-04 while this design was worked out, against operator `v1.0.0-beta.5`, core `v2.0.0-beta.2`, catalog opm `4.5.2` and a cli built from `main` at release `1.0.0-beta.7`. Their results that bear on releasing the module:
+
+- **The render needs no cluster.** `opm module build` with `KUBECONFIG=/nonexistent` rendered all 19 objects of the operator's install against a platform generated from the module's own dependency pins. Rendering the module after publishing it to a local registry produced the same output as rendering the local tree. This is what the publish job's install-manifest step does.
+- **Render cost.** 5.66 s wall time and 507 MB peak memory cold (fresh CUE cache, core, catalog and Kubernetes schemas fetched), 2.0 to 3.9 s and about 500 MB warm. The module was 1,977 lines of CUE, 1,713 of them generated. A release job absorbs this easily.
+- **The CRDs round-trip.** All four CRD specs rendered equal to the controller-gen YAML, including CEL validations, preserve-unknown-fields, list-map keys, the status subresource and printer columns.
+- **The drift check catches the drift that matters.** The regenerate-and-diff check passed against the operator's own `config/` and failed, with a readable diff, on a copy with one added RBAC verb (`list` on serviceaccounts) and one added CRD short name. That is the failure the release gate turns into a refused module release.
+- **A local registry accepted a re-push of the same module version.** The test registry did not refuse an overwrite, and GHCR has no tag-immutability control either. So "publish once" cannot rely on the registry: the publish job relies on the cli's own refusal ("already holds") and compares content itself (U7).
+- **A module upgrade is a re-apply that relabels everything.** Installing `0.1.0` and then `0.2.0` from the registry on kind applied `15 configured, 4 unchanged`: every non-CRD object changed because its `module.opmodel.dev/version` label changed. A reinstall of the same version changed no object (same uid and resourceVersion for all 19, same render digest). So every module release touches every object on every cluster that takes it, even a release that only moves a pin. That is why the operator package and the module package exclude each other's commits, and why the image-bump PR is one PR per operator release, not one per commit.
+- **The manifest must carry the Namespace first.** The install applied the Namespace before the other 18 objects. Creating the namespace separately (`--create-namespace`) left a Namespace without OPM labels that the module's own Namespace then collided with. The kubectl manifest therefore orders the Namespace and the CRDs before every namespaced object, and nothing else creates the Namespace.
+- **Install time.** Three fresh kind installs from the registry-pulled module took 28.6 to 31.8 s, of which render plus CRDs was 2.3 to 3.5 s; readiness (image pull, probes) dominates. The PR-time kind proof in section 2 budgets for that.
 
 ## Goals / Non-Goals
 
@@ -37,8 +58,8 @@ Every name here is replaced by the real one in task G-dep.
 
 **Non-Goals:**
 
-- The cli's install, pins, G1 and docs pins, workspace `RELEASING.md`, the `.github` resolver and opmodel.dev reading the module bundle. Those are their own changes.
-- Ownership transfer. Another session owns it.
+- The cli's install, pins, release-pin check and docs pins, workspace `RELEASING.md`, the `.github` resolver and opmodel.dev reading the module bundle. Those are their own changes.
+- Transferring ownership of the operator's own instance. Another change owns it; the instance `opm-operator` in `opm-operator-system` stays CLI-owned and the operator never reconciles it.
 - Release branches for either unit. None exist during beta (root `AGENTS.md`, "Release branches").
 - An SBOM for the module (see "Signature and provenance").
 
@@ -50,7 +71,7 @@ The module package sets `"component": "opm_operator"`, `"include-component-in-ta
 
 Why this shape:
 
-- An operator tag always starts with `v`, and an operator release branch with `release/v`, so neither can take this shape.
+- An operator tag always starts with `v`, and an operator release branch with `release/v`, so neither can take this shape. The workspace allows only release-please to create tags, and the operator's tags carry no component today, so the module's tags need one to be told apart.
 - The resolver's `refs/tags/v*` listing never sees module tags.
 - It mirrors catalog_opm's `opm-vX.Y.Z`: the leaf of the module path, then the version.
 - docs-kit reads the version with `prefix: "opm_operator-v"`.
@@ -61,72 +82,84 @@ Why this shape:
 - `opm_operator/vX.Y.Z` (Go-style) reads as a Go submodule path, and this repository is a Go module.
 - `opm-operator-module-vX.Y.Z` is long, and the leaf name is what users type.
 
+### Version rule: `@v0`, 0.x bumps, `1.0.0` only after operator GA
+
+A module version is breaking when its `#config` change is breaking, when the operator release it deploys is a declared break against the one the previous module release deployed, or when its CRDs stop serving a version the previous release's CRDs served. Those are the three things a consumer of a module version receives.
+
+The path starts at `@v0`. While the deployed operator is on its beta line, its controller arguments and so `#config` still change; a `@v1` start would move the path to a new major, an import change for every consumer, on each narrowing. On `@v0` a break raises the minor and every other release raises the patch. The module moves to `@v1` only with a `1.0.0` release made no earlier than the operator's first GA release.
+
+A `1.0.0-beta.N` line like the operator's was not chosen: it would look coupled to the operator's `1.0.0-beta.N` when it is not.
+
+These are supervisor defaults the owner has not yet confirmed (gate G-owner).
+
 ### Separate release PRs and excluded paths
 
-Top level: `separate-pull-requests: true`. Package `"."` gains `"exclude-paths": ["module"]`. Package `"module"` is release type `simple` with:
+Top level: `separate-pull-requests: true`. Package `"."` gains `"exclude-paths": ["modules/opm_operator"]`. Package `"modules/opm_operator"` is release type `simple` with:
 
 - `"component": "opm_operator"`, `"include-component-in-tag": true`, `"package-name": "opm_operator"`;
 - `"bump-minor-pre-major": true` and `"bump-patch-for-minor-pre-major": true`, which override the top-level `false`;
 - `"versioning": "default"`, `"prerelease": false`, `"initial-version": "0.1.0"`;
 - `"draft": true`, `"force-tag-creation": true`;
 - `"changelog-path": "CHANGELOG.md"` inside the module, so the changelog ships with it;
-- `extra-files: [{type: generic, path: "RELEASE"}]`, catalog_opm's pattern, so `module/RELEASE` carries the version and `x-release-please-version`;
+- `extra-files: [{type: generic, path: "RELEASE"}]`, catalog_opm's pattern, so `modules/opm_operator/RELEASE` carries the version and `x-release-please-version`;
 - the root package's changelog sections, `deps` included.
 
-The two pre-major flags are exactly 0028:D1:R16: a breaking change in 0.x raises the minor, and `feat` raises the patch.
+The two pre-major flags are exactly the 0.x rule above: a breaking change in 0.x raises the minor, and `feat` raises the patch.
 
 `exclude-paths` keeps the image-bump PR from cutting an operator release. Without it, an operator release would trigger an image PR, which would trigger another operator release, with no end.
 
-Separate PRs give the module its own release PR, as 0028:D1 requires. The root package's release PR branch then becomes `release-please--branches--main--components--opm-operator` (U3).
+Separate PRs give the module its own release PR, and one merge never releases both units. The root package's release PR branch is then `release-please--branches--main--components--opm-operator` (U3).
 
-**Alternative:** one combined release PR (the default). Not chosen: 0028:D1 asks for the module's own release PR, and one merge would release both units at once.
+**Alternative:** one combined release PR (the default). Not chosen: one merge would release both units at once, and the module's release could not wait for the operator it names to be published.
 
 ### Existing jobs key on the root package
 
-`image-release`, `publish-examples`, `publish-docs` and `publish-release` (and `notify-downstream` if `join-release-cascade` has merged) change `if:` to `needs.release-please.outputs.release_created == 'true'`. They keep `tag_name`, which is the root package's. The `release-please` job exports `module_release_created: ${{ steps.release.outputs['module--release_created'] }}`, `module_tag_name` and `module_version`. `publish-examples` uses `git describe --tags --abbrev=0 --match 'v[0-9]*' "${TAG}^"`.
+`image-release`, `publish-examples`, `publish-docs` and `publish-release` (and `notify-downstream` if `join-release-cascade` has merged) change `if:` to `needs.release-please.outputs.release_created == 'true'`. They keep `tag_name`, which is the root package's. The `release-please` job exports `module_release_created: ${{ steps.release.outputs['modules/opm_operator--release_created'] }}`, `module_tag_name` and `module_version`. `publish-examples` uses `git describe --tags --abbrev=0 --match 'v[0-9]*' "${TAG}^"`.
 
 ### Identity advance, the only writer of the module's version
 
-A step after "Run release-please" in the `release-please` job does the following:
+The published module must be its tagged source with nothing stamped at publish time, so the version must be in the tree before the tag exists. A step after "Run release-please" in the `release-please` job does the following:
 
 1. Install the opm CLI from `.opm-cli-version`, read at `main`, the same check as `release.yml:271-278`.
 2. Fetch `release-please--branches--main--components--opm_operator`. If it does not exist, exit 0.
-3. Read `VERSION=$(jq -r '.["module"]' .release-please-manifest.json)` from that branch. On the first release the manifest has no entry, so fall back to the version in the branch's `module/RELEASE` (U5).
-4. Run `opm module version set "$VERSION" ./module`. If the diff is empty, exit 0.
+3. Read `VERSION=$(jq -r '.["modules/opm_operator"]' .release-please-manifest.json)` from that branch. On the first release the manifest has no entry, so fall back to the version in the branch's `modules/opm_operator/RELEASE` (U5).
+4. Run `opm module version set "$VERSION" ./modules/opm_operator`. If the diff is empty, exit 0.
 5. Commit `chore: advance opm_operator identity.Version to ${VERSION}` and push to the branch with the App token checkout, so the release PR's CI runs.
 
-The step never runs `opm module publish --version` to fill the version: the version is in the tagged tree before the tag exists, as 0028:D1:R10 requires. release-please writes only `CHANGELOG.md` and `RELEASE` in the module. That `RELEASE` file is release-please's own record and is not read as the identity, the same split catalog_opm uses.
+The step never relies on `opm module publish --version` to fill the version. release-please writes only `CHANGELOG.md` and `RELEASE` in the module. That `RELEASE` file is release-please's own record and is not read as the identity, the same split catalog_opm uses.
 
 ### Module release gate inside `Lint`
 
-The new `hack/module-release-check.sh` runs as `task module:release-check`. It runs in the `Lint` job when the head ref is the module's release branch, after G1. Running inside the existing required job matters: a skipped job reports as passing, a failing step does not (workspace `RELEASING.md`, "G1 placement"). The job keeps its name. The publish job runs the same script from the tag before pushing.
+The new `hack/module-release-check.sh` runs as `task module:release-check`. It runs in the `Lint` job when the head ref is the module's release branch, after the existing release-pin check. Running inside the existing required job matters: a skipped job reports as passing, a failing step does not (workspace `RELEASING.md`, "G1 placement"). The job keeps its name. The publish job runs the same script from the tag before pushing.
 
 ```bash
-# module-release-check.sh <module-dir> <proposed-version>
-img=$(cue export ./module/<image file> -e ref --out text)   # repo:tag@digest
-[[ $img =~ ^ghcr\.io/open-platform-model/opm-operator:(v[^@]+)@(sha256:[0-9a-f]{64})$ ]] || bad ...
-tag=${BASH_REMATCH[1]} want=${BASH_REMATCH[2]}
-gh api repos/open-platform-model/opm-operator/releases/tags/$tag --jq '.draft' | grep -qx false || bad "$tag is not a published release"
-got=$(.github/scripts/image-tag-guard.sh ... digest-of "ghcr.io/...:$tag")         # same imagetools call
-[ "$got" = "$want" ] || bad "$tag: module names $want, GHCR serves $got"
-grep -nE 'v: *"[^"]*-0\.dev\.' module/cue.mod/module.cue && bad ...
-[ -e module/cue.mod/local-module.cue ] && bad ...
-[ "$(cue export ./module/identity -e Version --out text)" = "$proposed" ] || bad ...
-# v0 rules: major 0 on the v0 path; 1.0.0+ refused while $tag carries a prerelease suffix
-git worktree add "$tmp" "$tag" && task module:drift-check SRC="$tmp/config" || bad ...
+# module-release-check.sh <proposed-version>
+M=modules/opm_operator
+tag=$(cue export ./$M/operator -e Image.tag --out text)
+img=$(cue export ./$M/operator -e '"\(Image.repository):\(Image.tag)@\(Image.digest)"' --out text)
+[[ $img =~ ^ghcr\.io/open-platform-model/opm-operator:(v[^@]+)@(sha256:[0-9a-f]{64})$ ]] || bad "image reference $img"
+want=${BASH_REMATCH[2]}
+release-guard.sh assert-published "$tag"   || bad "$tag is not a published release"
+got=$(image-tag-guard.sh digest "ghcr.io/open-platform-model/opm-operator:$tag")
+[ "$got" = "$want" ]                       || bad "$tag: module names $want, GHCR serves $got"
+grep -nE 'v: *"[^"]*-0\.dev\.' $M/cue.mod/module.cue && bad "development pin"
+[ -e $M/cue.mod/local-module.cue ]         && bad "local-module.cue present"
+[ "$(cue export ./$M/identity -e Version --out text)" = "$proposed" ] || bad "identity.Version"
+# v0 rules: major 0 on the @v0 path; 1.0.0 or higher refused while $tag carries a prerelease suffix
+hack/operator-module/drift-check.sh --ref "$tag" || bad "CRDs or RBAC differ from $tag"
 ```
 
-The drift check compares against the operator source at the deployed tag, not at HEAD, so the gate enforces 0028:D2:R1 and R2 for the version being released. The image tag guard gains a read-only `digest` mode, factored from its `manifest_digest`.
+Every `bad` records the failure and the script exits non-zero after the last check, so one run names every failure. The drift check compares against the operator source at the deployed tag, not at `HEAD`, so a CRD that changed on `main` after the deployed release refuses the module release. The image tag guard gains a read-only `digest` mode, factored from its `manifest_digest`.
 
 ### Publish job
 
 `module-publish` needs `release-please` and runs only when `module_release_created == 'true'`. It holds `contents: write`, `packages: write`, `id-token: write` and `attestations: write`. Steps:
 
-1. Refuse unless `github.repository == 'open-platform-model/opm-operator'` and `MODULE_TAG` matches `^opm_operator-v[0-9]+\.[0-9]+\.[0-9]+$` (0028:D1:R5).
+1. Refuse unless `github.repository == 'open-platform-model/opm-operator'` and `MODULE_TAG` matches `^opm_operator-v[0-9]+\.[0-9]+\.[0-9]+$`.
 2. Check out the module tag with full history (the gate needs the operator tag).
 3. Set up CUE and Go, install opm from `.opm-cli-version` at the tag, log in to GHCR.
 4. Run `task module:release-check VERSION=<v>`.
-5. Run `opm module publish ./module --version <v>`. If it refuses only with "already holds", resolve the held digest and compare it with a dry publish into a job-local registry (U7). Equal is a reuse; anything else fails.
+5. Run `opm module publish ./modules/opm_operator --version <v>`. If it refuses only with "already holds", resolve the held digest and compare it with a dry publish into a job-local registry (U7). Equal is a reuse; anything else fails. The registry itself is not trusted to refuse an overwrite (see "Evidence").
 6. Read the manifest digest of `ghcr.io/open-platform-model/modules/opm_operator:v<v>`.
 7. Run `cosign sign --yes <ref>@<digest>`, then `actions/attest-build-provenance` with that subject name and digest and `push-to-registry: true`.
 8. Run `opm module build opmodel.dev/modules/opm_operator --version <v> --name opm-operator -n opm-operator-system -f hack/module-defaults.cue > install.yaml`, with empty values (U6). Then run `hack/module-manifest-order.sh` to put the Namespace and CRDs first, if the render does not already.
@@ -140,7 +173,7 @@ The drift check compares against the operator source at the deployed tag, not at
 
 ### Signature and provenance
 
-Like the image: a cosign keyless signature and a GitHub build provenance attestation pushed to the registry. 0028:D1:R4 names "signature and provenance attestation". The image also carries an SPDX SBOM attestation, but no SBOM generator reads CUE module dependencies. A hand-made SBOM listing core, the catalog and the Kubernetes schemas would duplicate `cue.mod/module.cue` without verifying anything. So the module carries no SBOM. Open question 2 asks whether R4's "same kinds" includes the SBOM. If it does, a syft-free SPDX document generated from `cue.mod/module.cue` is a small addition to step 7, with no other effect on the design.
+Like the image: a cosign keyless signature and a GitHub build provenance attestation pushed to the registry, so a consumer verifies the module the way it verifies the image. The image also carries an SPDX SBOM attestation, but no SBOM generator reads CUE module dependencies. A hand-made SBOM listing core, the catalog and the Kubernetes schemas would duplicate `cue.mod/module.cue` without verifying anything. So the module carries no SBOM. Open question 2 asks whether the owner wants one anyway. If so, an SPDX document generated from `cue.mod/module.cue` is a small addition to step 7, with no other effect on the design.
 
 ### Image-bump PR
 
@@ -148,11 +181,12 @@ Like the image: a cosign keyless signature and a GitHub build provenance attesta
 
 ```bash
 # module-image.sh set <operator-tag>
+M=modules/opm_operator
 release-guard.sh assert-published "$tag"        # new read-only mode: one release, draft == false
 digest=$(image-tag-guard.sh digest "ghcr.io/open-platform-model/opm-operator:$tag")
-prev=$(cue export ./module/<image file> -e tag --out text)
-write <image file> tag=$tag digest=$digest        # the file holds only these two values
-git worktree add "$tmp" "$tag"; task module:generate SRC="$tmp/config"
+prev=$(cue export ./$M/operator -e Image.tag --out text)
+write $M/operator/operator.cue Version=${tag#v} Image.digest=$digest   # tag follows Version
+regenerate $M/zz_generated_*.cue from config/ at $tag                  # generator's --ref mode
 breaking=0
 awk "/^## \[${tag#v}\]/,/^## \[${prev#v}\]/" CHANGELOG.md | grep -q '⚠ BREAKING CHANGES' && breaking=1
 crd-served-versions-before vs after: a version dropped -> breaking=1
@@ -160,7 +194,11 @@ crd-served-versions-before vs after: a version dropped -> breaking=1
 
 The workflow then checks `module/operator-image` out from `origin/main`. If the branch carries only commits by the App, it is rebuilt. If a human commit is on it, the workflow merges `origin/main` and adds a commit. It pushes with `--force-with-lease` and creates or edits the PR with the computed title. A `workflow_dispatch` input `tag` on a small `module-image.yml` workflow runs the same script for recovery.
 
-The cascade receiver could have moved this pin as a shipped pin. That is not chosen: the cascade is still dry (Phase 3), and an operator release is this repository's own event. A dedicated job keeps 0028:D1:R10 working whether the cascade is live or not. It also keeps a library bump and an image bump out of one PR. Such a PR would release the operator and, in the same merge, a module naming the previous operator.
+The cascade receiver could have moved this pin as a shipped pin. That is not chosen: the cascade is still dry, and an operator release is this repository's own event. A dedicated job keeps the image moving whether the cascade is live or not. It also keeps a library bump and an image bump out of one PR. Such a PR would release the operator and, in the same merge, a module naming the previous operator.
+
+### The module's core and catalog pins are shipped pins
+
+Every user who installs the module receives its core and catalog pins, so a held pin would ship a catalog no release was tested against. `deps:cascade` therefore moves them like any other shipped pin, and the operator module, not the operator binary, becomes the downstream of core and the catalog. The binary stays a downstream of the kernel library only. The cascade task never touches the image file, `identity.Version` or the generated files, which have their own writers.
 
 ### Release-flow sandbox unknowns
 
@@ -169,11 +207,11 @@ Each unknown is proven in `open-platform-model/release-flow-sandbox` with this c
 | # | Unknown | Pass condition |
 | --- | --- | --- |
 | U1 | A component-less root package `"."` beside a component package: release-please keeps finding the root's last release from `v*` tags, and the module's from `opm_operator-v*` | root proposes the next `beta.N`; module proposes `0.1.0`, then `0.1.1` |
-| U2 | `exclude-paths: ["module"]` on `"."` | a module-only commit opens no root release PR |
+| U2 | `exclude-paths: ["modules/opm_operator"]` on `"."` | a module-only commit opens no root release PR |
 | U3 | `separate-pull-requests: true` | both branch names as stated; an already open combined release PR is not merged into either (owner closes it) |
 | U4 | per-package `bump-minor-pre-major` and `bump-patch-for-minor-pre-major` override the top-level `false` | `fix!` raises 0.y; `feat` raises 0.y.z |
 | U5 | `initial-version: "0.1.0"` with no manifest entry, and the identity step's version source on the first PR | first PR proposes `0.1.0`; identity commit lands on that PR |
-| U6 | `opm module build <published path> --version <v> -f <empty values>` renders the `#config` defaults, not `debugValues`, and orders Namespace and CRDs first | render matches the defaults render; order checked |
+| U6 | `opm module build <published path> --version <v> -f <empty values>` renders the `#config` defaults, not `debugValues`, and orders Namespace and CRDs first | render matches the defaults render; order checked. The prototype rendered a published version from a registry with no cluster, but its `debugValues` was empty, so the defaults-versus-debugValues half is still open |
 | U7 | re-run of `opm module publish` on a held version: identify "same content" (digest of a dry publish to a local registry equals the held digest) | equal on a true re-run, unequal after a source change |
 | U8 | `cosign sign` and `attest-build-provenance` on a CUE module OCI artifact in GHCR; `opm` and `cue mod` resolution ignore the `sha256-*.sig`/`.att` tags; the resolver's GHCR tag listing ignores them | `cosign verify` and `gh attestation verify` pass; `opm module build` resolves the version; the resolver reports the right newest |
 | U9 | a published non-prerelease module release becomes GitHub's Latest while operator releases stay Pre-release | Latest is the module release |
@@ -182,23 +220,24 @@ If any unknown fails, the change stops at section 1. design.md and the spec delt
 
 ### Order with the cli (the last section)
 
-0028:D2:R13 removes the operator release's `install.yaml`. Today the cli downloads that asset when a user selects an operator version (`cli/internal/operator/fetch.go:13`), and in `task operator:sync` (`cli/Taskfile.yml:497`). The resolver also counts an operator release as published only when the asset downloads (`.github` `lib/query.sh:88-90`). Removing the asset first would break `opm operator install --version` for every released cli. It would also stop the cli's cascade from ever seeing a new operator release. So the last section's gate G-cli requires:
+The last section removes the operator release's `install.yaml`. Today the cli downloads that asset when a user selects an operator version (`cli/internal/operator/fetch.go:13`), and in `task operator:sync` (`cli/Taskfile.yml:497`). The resolver also counts an operator release as published only when the asset downloads (`.github` `lib/query.sh:88-90`). Removing the asset first would break `opm operator install --version` for every released cli. It would also stop the cli's cascade from ever seeing a new operator release. So the last section's gate G-cli requires:
 
-- a released cli that installs from the module (0028:D3);
+- a released cli that installs the operator from the module;
 - a cli `deps:cascade` that no longer resolves the operator with `--asset install.yaml`;
-- a cli G1 that keys on the module pin (0028:D7).
+- a cli release-pin check that keys on the module pin instead of the embedded manifest.
 
-The operator's own `notify-downstream` then stops dispatching to the cli. Per 0028:D7, the operator release notifies the module release, which here is the image-bump PR, and the module notifies the cli.
+The operator's own `notify-downstream` then stops dispatching to the cli. The operator release notifies the module release, which here is the image-bump PR, and the module notifies the cli.
 
 ## Risks / Trade-offs
 
 - [The release-please multi-package behaviour differs from the docs] → U1 to U5 are proven in the sandbox before any config lands. A failure stops the change at section 1.
 - [A module release merged before the operator it names has been published] → The gate refuses a draft operator tag on the release PR. The publish job reruns the gate before pushing. A stranded module tag rolls forward to the next version, as for every tag.
-- [A CRD change on `main` blocks module releases until the next operator release] → This is intended (0028:D2:R1). The gate names the CRD. The image-bump PR of the next operator release regenerates from that tag and unblocks it. A module-only fix in that window waits for the next operator release, or for a revert of the CRD change in the module's generated files.
+- [A CRD change on `main` blocks module releases until the next operator release] → Intended: a module release must render exactly the CRDs and RBAC of the operator it deploys. The gate names the CRD. The image-bump PR of the next operator release regenerates from that tag and unblocks it. A module-only fix in that window waits for the next operator release, or for a revert of the CRD change in the module's generated files.
+- [Every module release re-applies every object on every cluster] → Measured in the prototype (see "Evidence"). Mutual path exclusion and one image PR per operator release keep releases to the ones that carry a change.
 - [The App token's PR on `module/operator-image` rewrites a branch] → It rewrites only while every commit on the branch is the App's, and once a human commits it only adds commits. The lease refuses if the branch moved since it was fetched.
 - [Two release PRs confuse the owner] → `AGENTS.md` names both. The module's release PR also carries the identity-advance commit, so wait for it before merging, as in catalog_opm.
 - [GHCR package created with the wrong link or visibility on first publish] → G-owner runs after the first module release: link the package to this repository only, give Actions access only to it, and make it public. Until that is done, `opm` cannot pull it anonymously, so the cli's work waits.
-- [Module releases become GitHub's Latest] → The kubectl path `releases/latest/download/install.yaml` then serves the module's manifest, which is the intended manifest after 0028:D2:R13. Before the last section, the install page still names the operator release's asset. After operator GA both units could be Latest. Open question 3.
+- [Module releases become GitHub's Latest] → The kubectl path `releases/latest/download/install.yaml` then serves the module's manifest, which is the intended manifest once the last section lands. Before the last section, the install page still names the operator release's asset. After operator GA both units could be Latest. Open question 3.
 
 ## Migration Plan
 
@@ -213,29 +252,36 @@ Rollback before section 5: revert the section's PR. Tags and published module ve
 ## Open Questions
 
 1. Does the last section's removal of `install.yaml` from operator releases need a `!` (`ci(release)!:` cuts an operator `beta.N`, and the CHANGELOG then announces it)? The specs hold either way. Only the commit title changes. Ask the owner at that section's PR.
-2. Does 0028:D1:R4's "same kinds of signature and provenance" include the image's SBOM attestation? This design reads R4's text as signature plus provenance.
+2. Should the module carry an SBOM attestation like the image, even though no generator reads CUE dependencies? This design signs and attests provenance only.
 3. After operator GA, which unit should be GitHub's Latest release? That waits for GA.
+4. The tag shape, the `0.1.0` start, the 0.x rule and documenting `#config` at the module's own version are supervisor defaults the owner has not confirmed. G-owner asks before section 2 merges.
 
 ## Research & Decisions
 
 ### release-please outputs with two packages
 **Context**: Every release job reads `releases_created`, which a second package also sets.
 **Explored**: release-please-action v5 `outputReleases` (root outputs unprefixed, other paths `<path>--<key>`), `release.yml:34-35,58,238,326,343`, `join-release-cascade` notify job.
-**Decision**: Root jobs use `release_created`; module jobs use `module--release_created`, exported as `module_release_created`.
+**Decision**: Root jobs use `release_created`; module jobs use `modules/opm_operator--release_created`, exported as `module_release_created`.
 **Rationale**: Without it, a module-only release starts the image job with an empty tag.
 
 ### Where the module's version is written
-**Context**: 0028:D1:R10 forbids anything added at publish time; `opm module publish --version` can fill an open version.
+**Context**: The published module must be its tagged source with nothing added at publish time; `opm module publish --version` can fill an open version.
 **Explored**: catalog_opm's identity-advance step and its `RELEASE` extra file; cli `module version set` and `publish --version` help (`v1.0.0-beta.7`).
 **Decision**: Release-workflow identity advance on the module's release PR; `--version` only asserts.
 **Rationale**: One writer, the version is in the tagged tree, and the precedent is proven in production.
 
 ### How the image reference moves
-**Context**: 0028:D1:R10 and D7 need the module to follow each operator release.
-**Explored**: the cascade receiver (`join-release-cascade`, dry until Phase 4), a release.yml job, Renovate-style digest pinning.
+**Context**: Each operator release must be followed by a module change that names its image by tag and digest.
+**Explored**: the cascade receiver (`join-release-cascade`, dry for now), a release.yml job, Renovate-style digest pinning.
 **Decision**: A release.yml job after `publish-release` plus a dispatch workflow, both calling `hack/module-image.sh`.
-**Rationale**: Independent of cascade phase, one PR per operator release, regenerates CRDs from the same tag.
+**Rationale**: Independent of the cascade's state, one PR per operator release, regenerates CRDs and RBAC from the same tag.
+
+### Publish idempotence
+**Context**: "Re-run failed jobs" must not fail after a successful publish, and must not overwrite.
+**Explored**: the prototype's local registry accepted a re-push of the same version; GHCR has no tag immutability; the cli refuses a held version with "already holds".
+**Decision**: Publish through the cli; on "already holds" compare the held digest with a dry publish into a job-local registry (U7).
+**Rationale**: The registry cannot be trusted to refuse, and a blind skip would accept other content under the tag.
 
 ## G-sandbox evidence
 
-(Filled by task 1.1.)
+(Filled by task 1.2.)

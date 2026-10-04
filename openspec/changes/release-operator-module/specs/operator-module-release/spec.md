@@ -6,16 +6,16 @@ Release the operator module `opmodel.dev/modules/opm_operator` from this reposit
 
 ### Requirement: The module is a release unit of its own
 
-`release-please-config.json` SHALL declare the module directory as a second package beside the operator package `"."`. The module package SHALL have its own version in `.release-please-manifest.json`, its own changelog, its own release PR (`separate-pull-requests: true`) and its own release tags of the form `opm_operator-vX.Y.Z`. No operator release tag (`vX.Y.Z`) and no operator release branch (`release/vX.Y`) can take that form. Only release-please SHALL create these tags. The operator package SHALL exclude the module directory, so a commit that changes only the module directory proposes no operator release. A commit that changes no file under the module directory SHALL propose no module release. Source: 0028:D1:R9.
+`release-please-config.json` SHALL declare the module directory `modules/opm_operator` as a second package beside the operator package `"."`. The module package SHALL have its own version in `.release-please-manifest.json`, its own changelog, its own release PR (`separate-pull-requests: true`) and its own release tags of the form `opm_operator-vX.Y.Z`. No operator release tag (`vX.Y.Z`) and no operator release branch (`release/vX.Y`) can take that form. Only release-please SHALL create these tags, and no workflow SHALL move one. The operator package SHALL exclude the module directory, so a commit that changes only the module directory proposes no operator release. A commit that changes no file under the module directory SHALL propose no module release. The module's versions SHALL NOT follow the operator's versions or the cli's versions.
 
 #### Scenario: A module-only change releases only the module
 
-- **WHEN** a `feat(module): ...` PR that changes only files under the module directory is squash-merged to `main`
+- **WHEN** a `feat(module): ...` PR that changes only files under `modules/opm_operator/` is squash-merged to `main`
 - **THEN** release-please opens or updates the module's release PR and leaves the operator's release PR unchanged
 
 #### Scenario: An operator-only change releases only the operator
 
-- **WHEN** a `fix(controller): ...` PR that changes no file under the module directory is squash-merged
+- **WHEN** a `fix(controller): ...` PR that changes no file under `modules/opm_operator/` is squash-merged
 - **THEN** release-please opens or updates the operator's release PR and leaves the module's release PR unchanged
 
 #### Scenario: Module tag shape
@@ -30,11 +30,11 @@ Release the operator module `opmodel.dev/modules/opm_operator` from this reposit
 
 ### Requirement: The module version follows the 0.x bump rule on the v0 path
 
-While the module path is `opmodel.dev/modules/opm_operator@v0`, every module version SHALL be `0.y.z`. A release whose commits include a breaking change (a `!` in a squash commit subject) SHALL raise `y` and reset `z`. Every other release SHALL raise `z`, `feat` included. The first module release SHALL be `0.1.0`. The module SHALL move to the `v1` path only with a `1.0.0` release, and the module release gate SHALL refuse `1.0.0` or higher while the operator release the module deploys is a prerelease. The module's version SHALL NOT follow the operator's version or the cli's version. Source: 0028:D1:R13, 0028:D1:R16.
+A module release is breaking when its `#config` change is breaking, when the operator release it deploys is a declared breaking change against the one the previous module release deployed, or when its CRDs stop serving a version the previous release's CRDs served. While the module path is `opmodel.dev/modules/opm_operator@v0`, every module version SHALL be `0.y.z`: a breaking release SHALL raise `y` and reset `z`, and every other release SHALL raise `z`, `feat` included. The first module release SHALL be `0.1.0`. The module SHALL move to the `@v1` path only with a `1.0.0` release made no earlier than the operator's first GA release, and the module release gate SHALL refuse `1.0.0` or higher while the operator release the module deploys is a prerelease.
 
 #### Scenario: A breaking change raises the minor
 
-- **WHEN** the module's last release is `0.3.2` and an unreleased squash commit is titled `fix(deps)!: deploy operator v1.0.0-beta.9`
+- **WHEN** the module's last release is `0.3.2` and an unreleased squash commit is titled `fix(deps)!: deploy operator v1.0.0-beta.9 from the operator module`
 - **THEN** the module's release PR proposes `0.4.0`
 
 #### Scenario: A feature raises the patch
@@ -44,7 +44,7 @@ While the module path is `opmodel.dev/modules/opm_operator@v0`, every module ver
 
 #### Scenario: The first release
 
-- **WHEN** the module package has never released and a releasable commit touches the module directory
+- **WHEN** the module package has never released and a releasable commit touches `modules/opm_operator/`
 - **THEN** the module's release PR proposes `0.1.0`
 
 #### Scenario: 1.0.0 before operator GA is refused
@@ -54,7 +54,7 @@ While the module path is `opmodel.dev/modules/opm_operator@v0`, every module ver
 
 ### Requirement: The module's identity version has one writer
 
-The module's `identity.Version` SHALL be written only by the release workflow's identity-advance step. That step runs `opm module version set <version>` on the module's open release PR branch, commits `chore: advance opm_operator identity.Version to <version>`, and pushes to that branch. No `x-release-please-version` annotation or other release-please updater SHALL write the module's identity package. The step SHALL be idempotent: when the branch already declares the version it SHALL change nothing. Source: 0028:D1:R10 ("the module content it publishes is its tagged source").
+The module's `identity.Version` SHALL be written only by the release workflow's identity-advance step, so the module the publish job pushes is exactly its tagged source with nothing added at publish time. That step runs `opm module version set <version>` on the module's open release PR branch, commits `chore: advance opm_operator identity.Version to <version>`, and pushes to that branch. No `x-release-please-version` annotation or other release-please updater SHALL write the module's identity package, and `opm module publish --version` SHALL only assert the version. The step SHALL be idempotent: when the branch already declares the version it SHALL change nothing.
 
 #### Scenario: Release PR gains the identity commit
 
@@ -76,7 +76,7 @@ On the module's release PR, the required `Lint` job SHALL run a module release c
 - the proposed version breaks the v0 rules of "The module version follows the 0.x bump rule on the v0 path";
 - the module's generated CRDs or controller RBAC differ from what the operator source at `<tag>` generates.
 
-The check SHALL also run in the module publish job before anything is pushed, so a release merged past a red check still publishes nothing. Source: 0028:D1:R10, 0028:D1:R13, 0028:D7 (the development-pin gate covers the module); it runs the drift check of 0028:D2:R3 that add-operator-module provides.
+The last check exists because a module release must render exactly the CRDs the controller it deploys serves and exactly the cluster permissions that controller declares, and `main` can move ahead of the deployed operator release. The check SHALL also run in the module publish job before anything is pushed, so a release merged past a red check still publishes nothing.
 
 #### Scenario: Image digest does not match GHCR
 
@@ -93,6 +93,11 @@ The check SHALL also run in the module publish job before anything is pushed, so
 - **WHEN** `main` changed a CRD after `v1.0.0-beta.6` and the module still names `v1.0.0-beta.6` but carries the new CRD
 - **THEN** the check fails naming the CRD, and the module waits for the image-bump PR of the next operator release
 
+#### Scenario: Development pin
+
+- **WHEN** the module's `cue.mod/module.cue` pins catalog `v4.6.0-0.dev.3`
+- **THEN** the check fails naming the pin
+
 #### Scenario: Not a release PR
 
 - **WHEN** the `Lint` job runs on any other pull request
@@ -100,7 +105,7 @@ The check SHALL also run in the module publish job before anything is pushed, so
 
 ### Requirement: The module publishes its tagged source once
 
-When release-please creates a module release, the module publish job SHALL check out the module's release tag, install the opm CLI named by `.opm-cli-version`, run the module release check, and publish the module directory with `opm module publish <dir> --version <version>`. The `--version` flag only asserts the declared version and SHALL never write it. The job SHALL run only when the module package created a release. It SHALL never run for an operator-only release. Re-running the job for the same release SHALL succeed without pushing when the registry already holds that version with the content this tag produces. It SHALL fail when the registry holds that version with other content. Source: 0028:D1:R10.
+When release-please creates a module release, the module publish job SHALL check out the module's release tag, install the opm CLI named by `.opm-cli-version`, run the module release check, and publish `modules/opm_operator` with `opm module publish <dir> --version <version>`. The job SHALL run only when the module package created a release. It SHALL never run for an operator-only release. Re-running the job for the same release SHALL succeed without pushing when the registry already holds that version with the content this tag produces. It SHALL fail when the registry holds that version with other content. The job SHALL NOT rely on the registry to refuse an overwrite.
 
 #### Scenario: First publish
 
@@ -117,9 +122,9 @@ When release-please creates a module release, the module publish job SHALL check
 - **WHEN** GHCR already holds `v0.2.0` with a digest that differs from what the tagged tree publishes
 - **THEN** the job fails, the release stays a draft, and the fix is the next module version
 
-### Requirement: The module artifact carries the image's kinds of signature and provenance
+### Requirement: The module artifact carries the image's signature and provenance
 
-The module publish job SHALL sign the published module's manifest digest with cosign keyless (GitHub Actions OIDC, Fulcio certificate, Rekor entry) and SHALL attach a SLSA build provenance attestation for that digest, pushed to the registry, as the image release job does for the image. Signing and attestation SHALL complete before the module's release is published. Source: 0028:D1:R4.
+The module publish job SHALL sign the published module's manifest digest with cosign keyless (GitHub Actions OIDC, Fulcio certificate, Rekor entry) and SHALL attach a SLSA build provenance attestation for that digest, pushed to the registry, as the image release job does for the image. Signing and attestation SHALL complete before the module's release is published.
 
 #### Scenario: Signature verifies
 
@@ -138,7 +143,7 @@ The module publish job SHALL sign the published module's manifest digest with co
 
 ### Requirement: Every module release publishes the install manifest rendered from it
 
-The module publish job SHALL render the published module version from the registry at its default values, as the instance `opm-operator` in the namespace `opm-operator-system`, against the platform generated from the module's own pins. It SHALL write the result to `install.yaml`, with the Namespace and the CRDs before every namespaced object, and attach it to the module's draft release. The manifest SHALL name the operator image by the tag and digest the module names. Applying it with `kubectl apply --server-side` on a cluster with no operator SHALL yield a running operator. A pull request that changes the module directory SHALL prove this on a kind cluster. Source: 0028:D2:R9.
+The module publish job SHALL render the published module version from the registry at its default values, as the instance `opm-operator` in the namespace `opm-operator-system`, against the platform generated from the module's own pins and with no cluster. It SHALL write the result to `install.yaml`, with the Namespace and the CRDs before every namespaced object, and attach it to the module's draft release. The manifest SHALL name the operator image by the tag and digest the module names. Applying it with `kubectl apply --server-side` on a cluster with no operator SHALL yield a running operator. A pull request that changes `modules/opm_operator/` or the scripts that render the manifest SHALL prove this on a kind cluster.
 
 #### Scenario: Manifest equals the module's render
 
@@ -150,6 +155,11 @@ The module publish job SHALL render the published module version from the regist
 - **WHEN** the module declares non-empty `debugValues`
 - **THEN** the manifest is still the render at the `#config` defaults
 
+#### Scenario: Namespace first
+
+- **WHEN** `install.yaml` is read top to bottom
+- **THEN** the Namespace `opm-operator-system` and the four CRDs come before every namespaced object
+
 #### Scenario: Fresh cluster
 
 - **WHEN** CI applies the manifest rendered from a pull request's module to a kind cluster with no OPM CRDs
@@ -157,7 +167,7 @@ The module publish job SHALL render the published module version from the regist
 
 ### Requirement: Module releases are drafts until every asset is attached
 
-The module package SHALL set `draft: true` and `force-tag-creation: true`. Every upload to a module release SHALL first confirm that exactly one release carries the tag and that it is a draft. A final module publish job SHALL depend on the publish job and SHALL confirm `install.yaml` is attached before it publishes the draft. A module release is not a prerelease. Recovery before publication is "Re-run failed jobs". After publication it is the next module version. Source: 0028:D1:R9 (tags never moved, as for every release tag).
+The module package SHALL set `draft: true` and `force-tag-creation: true`. Every upload to a module release SHALL first confirm that exactly one release carries the tag and that it is a draft. A final module publish job SHALL depend on the publish job and SHALL confirm `install.yaml` is attached before it publishes the draft. A module release is not a prerelease. Recovery before publication is "Re-run failed jobs". After publication it is the next module version; a published tag is never moved.
 
 #### Scenario: Asset missing
 
@@ -171,11 +181,11 @@ The module package SHALL set `draft: true` and `force-tag-creation: true`. Every
 
 ### Requirement: Only this repository's module release publishes under the module path
 
-No workflow, task or script in this repository other than the module publish job SHALL publish to `opmodel.dev/modules/opm_operator` or to its GHCR repository `ghcr.io/open-platform-model/modules/opm_operator`. The module publish job SHALL refuse to run unless the repository is `open-platform-model/opm-operator` and the checked-out ref is a module release tag. Local and test flows SHALL publish the module only to a registry that maps `opmodel.dev` away from GHCR. Source: 0028:D1:R5.
+No workflow, task or script in this repository other than the module publish job SHALL publish to `opmodel.dev/modules/opm_operator` or to its GHCR repository `ghcr.io/open-platform-model/modules/opm_operator`. The module publish job SHALL refuse to run unless the repository is `open-platform-model/opm-operator` and the checked-out ref is a module release tag. Local and test flows SHALL publish the module only to a registry that maps `opmodel.dev` away from GHCR.
 
 #### Scenario: Search for publishers
 
-- **WHEN** `.github/workflows/`, `.github/scripts/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for a publish of the module directory or of `modules/opm_operator`
+- **WHEN** `.github/workflows/`, `.github/scripts/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for a publish of the module directory or of `ghcr.io/open-platform-model/modules/opm_operator`
 - **THEN** the only match is the module publish job and the task it calls
 
 #### Scenario: Fork or dispatch on another ref
@@ -185,7 +195,7 @@ No workflow, task or script in this repository other than the module publish job
 
 ### Requirement: An operator release opens the PR that moves the module's image
 
-Once an operator release has been published, the release workflow SHALL open or update one pull request on the branch `module/operator-image`. The PR SHALL set the module's operator image reference to that release's tag and the manifest-list digest GHCR serves under it. It SHALL regenerate the module's CRDs and controller RBAC from the operator source at that tag, and SHALL change no file outside the module directory. The PR's title SHALL be `fix(deps): deploy operator <tag> from the operator module`. The title SHALL be `fix(deps)!: ...` instead when the operator CHANGELOG sections between the module's previous operator tag and `<tag>` carry a breaking-change entry, or when a regenerated CRD stops serving a version it served before. The PR SHALL be created with the release App's token so its CI runs. A `workflow_dispatch` with a `tag` input SHALL do the same for a published operator release, for recovery. While the branch carries only bot commits, a later run SHALL rebuild it from `main`. Once a human commit is on it, the run SHALL add its own commit on top and never rewrite the branch. Source: 0028:D1:R10, 0028:D7.
+Once an operator release has been published, the release workflow SHALL open or update one pull request on the branch `module/operator-image`. The PR SHALL set the operator release the module deploys to that release's tag and the manifest-list digest GHCR serves under it. It SHALL regenerate the module's CRDs and controller RBAC from the operator source at that tag, and SHALL change no file outside `modules/opm_operator/`. The PR's title SHALL be `fix(deps): deploy operator <tag> from the operator module`. The title SHALL be `fix(deps)!: ...` instead when the operator CHANGELOG sections between the module's previous operator tag and `<tag>` carry a breaking-change entry, or when a regenerated CRD stops serving a version it served before. The PR SHALL be created with the release App's token so its CI runs. A `workflow_dispatch` with a `tag` input SHALL do the same for a published operator release, for recovery. While the branch carries only bot commits, a later run SHALL rebuild it from `main`. Once a human commit is on it, the run SHALL add its own commit on top and never rewrite the branch.
 
 #### Scenario: Operator release published
 
@@ -209,7 +219,7 @@ Once an operator release has been published, the release workflow SHALL open or 
 
 ### Requirement: A module release notifies the cli
 
-After the final module publish job has published the module's release, the release workflow SHALL dispatch `upstream-released` to the cli through the shared notify workflow, with the source `opm-operator` and the module tag. It SHALL never dispatch for a draft. The repository variable `CASCADE_NOTIFY=off` SHALL stop it. Source: 0028:D7.
+After the final module publish job has published the module's release, the release workflow SHALL dispatch `upstream-released` to the cli through the shared notify workflow, with the source `opm-operator` and the module tag. It SHALL never dispatch for a draft. The repository variable `CASCADE_NOTIFY=off` SHALL stop it.
 
 #### Scenario: Module release published
 

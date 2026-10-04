@@ -10,7 +10,7 @@ The `ModulePackage` reconciler SHALL watch the `Platform` resource. On a Platfor
 - `status.observedGeneration`
 - `status.operatorVersion`
 
-The trigger includes the Platform reconciler's own status update, which does not bump the Platform's generation. This lets packages blocked on `PlatformNotReady` retry promptly, not only on their interval requeue. A `status.operatorVersion` change re-enqueues because, after an operator upgrade, it is the only status change the regenerated Platform writes. A Platform update that changes none of these fields SHALL NOT enqueue any `ModulePackage`. Examples are a change to the `Ready` message, a change to its reason while it stays `False`, a `ContractsFulfilled` update, or a bump of `metadata.generation` alone. Platform create and delete events SHALL re-enqueue.
+The trigger includes the Platform reconciler's own status update, which does not bump the Platform's generation. This lets packages blocked on `PlatformNotReady` retry promptly, not only on their interval requeue. A `status.operatorVersion` change re-enqueues because, after an operator upgrade, it is the only status change the regenerated Platform writes. A Platform update that changes none of these fields SHALL NOT enqueue any `ModulePackage`. Examples are a change to the `Ready` message, a change to its reason while it stays `False`, a `ContractsFulfilled` update, or a bump of `metadata.generation` alone. Platform create and delete events SHALL re-enqueue. A `spec.skewPolicy` edit can render each package once under the previous policy before the `observedGeneration` write renders it under the new one.
 
 #### Scenario: Blocked package retries when the platform is generated
 

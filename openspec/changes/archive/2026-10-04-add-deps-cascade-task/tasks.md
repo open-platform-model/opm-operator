@@ -124,7 +124,7 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
   - a checkout of `open-platform-model/.github` at `main` into `org-github`, with `persist-credentials: false`, and `CASCADE_RESOLVER_REAL` set to its `cascade-resolve.sh`;
   - then `task -x deps:cascade:test`.
 - [x] 5.3 Check that both workflows parse (`python3 -c 'import yaml,sys;[yaml.safe_load(open(f)) for f in sys.argv[1:]]' .github/workflows/*.yml`, and `actionlint` if available).
-- [ ] 5.4 Once `.github` `add-cascade-resolver` has merged, run `cascade-task.yml` on the PR (or locally with `CASCADE_RESOLVER_REAL` pointing at a `.github` checkout of `main`), and confirm S5 passes. Until then, leave this box open and say so in the PR body.
+- After merge (a PR-body item, not a task): once `.github` `add-cascade-resolver` has merged, run `cascade-task.yml` on the PR (or locally with `CASCADE_RESOLVER_REAL` pointing at a `.github` checkout of `main`), and confirm S5 passes. S5 already passes locally against the `add-cascade-resolver` worktree (4.5).
 - [x] 5.5 Add one bullet to `AGENTS.md` "Registry". It says that `task -x deps:cascade` moves the upstream pins (library, the opm catalog and core with fixtures and consumers, and `.opm-cli-version`) and exits 0 changed, 3 nothing, or other on error; that `deps:cascade:title|body|test` exist; and that `.tasks/cascade/` holds the scripts (workspace RELEASING.md, section "What each repo's task moves").
 - [x] 5.6 `task dev:fmt dev:vet dev:lint dev:test` and `CASCADE_TEST_SET=offline task -x deps:cascade:test` green, then commit `ci(cascade): run the deps:cascade tests in CI`
 
@@ -150,4 +150,4 @@ Every section runs `shellcheck` on the scripts it adds or changes, as well as th
 
 ## 8. Archive
 
-- [ ] 8.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`
+- [x] 8.1 Run `openspec verify` for `add-deps-cascade-task` and resolve its findings. Then archive the change on this branch (`openspec archive add-deps-cascade-task`), so the archive rides the implementing PR; never push to main (owner decision 2026-10-01, workspace RELEASING.md, section "Owner settings"). Commit `chore(openspec): archive add-deps-cascade-task`

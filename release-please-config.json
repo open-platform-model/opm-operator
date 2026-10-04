@@ -36,6 +36,7 @@
       "component": "opm_operator",
       "include-component-in-tag": true,
       "package-name": "opm_operator",
+      "last-release-sha": "81a640dbbbb8a1d6d5adc8eae6afbabf31116498",
       "draft": true,
       "force-tag-creation": true,
       "changelog-path": "CHANGELOG.md",

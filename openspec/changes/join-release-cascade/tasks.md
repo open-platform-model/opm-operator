@@ -20,11 +20,11 @@ Every section runs `actionlint` v1.7.12 (the scratchpad binary, contract §10) o
 
 ## 3. Receiver, gates caller and resolver pin (§10.1 items 2 to 5)
 
-- [ ] 3.1 Make `deps-cascade.yml` contract §5 with the §5.2 opm-operator `jobs:` map: `cascade-receive.yml@<SHA>`, no `labels-managed` on the `cascade` job, and the whole `publish` job with `cascade-publish@<SHA>` and `labels-managed: false`. Rewrite the header comment: the reusable workflow computes and posts the gates and holds no secret; the caller-owned `publish` job holds the key.
-- [ ] 3.2 `cascade-gates.yml`: only the `uses:` line changes, to `cascade-gates.yml@<SHA> # .github main`.
-- [ ] 3.3 `cascade-task.yml`: the resolver checkout's `ref:` becomes `<SHA> # .github main`; the header comment says the resolver comes from the pinned `.github` commit; the "Point S5 at the resolver" step loses its comment and its skip fallback and fails with `no cascade resolver at the pinned .github commit` (§10.1 item 3).
-- [ ] 3.4 `grep -rn -A1 'open-platform-model/.github' .github/workflows` shows five references, all `<SHA>` with ` # .github main`, and no `@main`.
-- [ ] 3.5 `actionlint` on the three files, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): publish through a caller-owned job and pin the cascade to .github main`
+- [x] 3.1 Make `deps-cascade.yml` contract §5 with the §5.2 opm-operator `jobs:` map: `cascade-receive.yml@<SHA>`, no `labels-managed` on the `cascade` job, and the whole `publish` job with `cascade-publish@<SHA>` and `labels-managed: false`. Rewrite the header comment: the reusable workflow computes and posts the gates and holds no secret; the caller-owned `publish` job holds the key.
+- [x] 3.2 `cascade-gates.yml`: only the `uses:` line changes, to `cascade-gates.yml@<SHA> # .github main`.
+- [x] 3.3 `cascade-task.yml`: the resolver checkout's `ref:` becomes `<SHA> # .github main`; the header comment says the resolver comes from the pinned `.github` commit; the "Point S5 at the resolver" step loses its comment and its skip fallback and fails with `no cascade resolver at the pinned .github commit` (§10.1 item 3).
+- [x] 3.4 `grep -rn -A1 'open-platform-model/.github' .github/workflows` shows five references, all `<SHA>` with ` # .github main`, and no `@main`.
+- [x] 3.5 `actionlint` on the three files, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): publish through a caller-owned job and pin the cascade to .github main`
 
 ## 4. Wiring check in the Lint job, and Dependabot (§10.1 items 6, 7; the addendum)
 

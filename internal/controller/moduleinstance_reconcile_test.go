@@ -38,6 +38,7 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
 )
@@ -701,6 +702,395 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Unsupported value"))
 			Expect(err.Error()).To(ContainSubstring("future-actor"))
+		})
+	})
+
+	Context("Operator's own instance", func() {
+		// ownModulePath is the module path signal: it makes an instance the
+		// operator's own in any namespace, so most specs stay in "default".
+		const ownModulePath = "opmodel.dev/modules/opm_operator@v0"
+
+		newOwnInstance := func(name string, owner releasesv1alpha1.OwnerType) *releasesv1alpha1.ModuleInstance {
+			return &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  owner,
+					Module: releasesv1alpha1.ModuleReference{Path: ownModulePath, Version: "v0.1.0"},
+				},
+			}
+		}
+
+		newReconciler := func(recorder *events.FakeRecorder) *ModuleInstanceReconciler {
+			return &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   recorder,
+				Renderer:        failOnRenderRenderer{},
+			}
+		}
+
+		expectRefused := func(mi *releasesv1alpha1.ModuleInstance) {
+			GinkgoHelper()
+			Expect(controllerutil.ContainsFinalizer(mi, opmreconcile.FinalizerName)).To(BeFalse())
+			ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(status.SelfManagementRefusedReason))
+			Expect(ready.Message).To(ContainSubstring("Set spec.owner to cli"))
+			stalled := apimeta.FindStatusCondition(mi.Status.Conditions, status.StalledCondition)
+			Expect(stalled).NotTo(BeNil())
+			Expect(stalled.Status).To(Equal(metav1.ConditionTrue))
+			Expect(stalled.Reason).To(Equal(status.SelfManagementRefusedReason))
+			Expect(apimeta.FindStatusCondition(mi.Status.Conditions, status.ReconcilingCondition)).To(BeNil())
+			Expect(mi.Status.ObservedGeneration).To(Equal(mi.Generation))
+		}
+
+		It("refuses an own instance flipped to operator without adding the finalizer", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-operator-mi", releasesv1alpha1.OwnerOperator)
+			mi.Spec.Prune = true
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			recorder := events.NewFakeRecorder(10)
+			result, err := newReconciler(recorder).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.ReadyCondition).Message).
+				To(ContainSubstring("module opmodel.dev/modules/opm_operator"))
+			Expect(refused.Status.Inventory).To(BeNil())
+			Expect(refused.Status.InstanceUUID).To(BeEmpty())
+			Expect(refused.Status.LastAttemptedAction).To(BeEmpty())
+			Expect(refused.Status.LastAttemptedAt).To(BeNil())
+			Expect(refused.Status.History).To(BeEmpty())
+			Expect(refused.Status.FailureCounters).To(BeNil())
+
+			var event string
+			Eventually(recorder.Events).Should(Receive(&event))
+			Expect(event).To(ContainSubstring("Warning"))
+			Expect(event).To(ContainSubstring(status.SelfManagementRefusedReason))
+
+			var cm corev1.ConfigMap
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)
+			Expect(client.IgnoreNotFound(err)).To(Succeed())
+			Expect(err).To(HaveOccurred())
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
+		It("refuses an own instance with no owner at the fixed coordinates", func() {
+			ctx := context.Background()
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "opm-operator-system"}}
+			Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
+
+			mi := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "opm-operator", Namespace: "opm-operator-system"},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Module: releasesv1alpha1.ModuleReference{Path: "example.com/forks/operator@v0", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			_, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			Expect(refused.Spec.Owner).To(BeEmpty())
+			expectRefused(&refused)
+			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.ReadyCondition).Message).
+				To(ContainSubstring("name opm-operator in namespace opm-operator-system"))
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
+		It("refuses a suspended own instance instead of marking it Suspended", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-suspended-mi", releasesv1alpha1.OwnerOperator)
+			mi.Spec.Suspend = true
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			_, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
+		It("refuses an instance whose recorded inventory holds an operator CRD", func() {
+			ctx := context.Background()
+			mi := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "renamed-fork-mi", Namespace: namespace},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerOperator,
+					Module: releasesv1alpha1.ModuleReference{Path: "example.com/forks/operator@v0", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			var current releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			current.Status.Inventory = &releasesv1alpha1.Inventory{
+				Revision: 1,
+				Count:    1,
+				Entries: []releasesv1alpha1.InventoryEntry{{
+					Group:   "apiextensions.k8s.io",
+					Kind:    "CustomResourceDefinition",
+					Name:    "moduleinstances.opmodel.dev",
+					Version: "v1",
+				}},
+			}
+			Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+
+			_, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.ReadyCondition).Message).
+				To(ContainSubstring("inventory records CustomResourceDefinition moduleinstances.opmodel.dev"))
+			Expect(refused.Status.Inventory.Revision).To(Equal(int64(1)))
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
+		It("removes conditions left by an earlier adoption and leaves CLI-written status alone", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-adopted-mi", releasesv1alpha1.OwnerOperator)
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			var current releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			status.MarkModuleResolved(&current, ownModulePath)
+			status.MarkDrifted(&current, 1)
+			current.Status.InstanceUUID = "cli-uuid-own"
+			current.Status.LastAppliedSourceDigest = "sha256:clisource"
+			current.Status.LastAppliedConfigDigest = "sha256:cliconfig"
+			current.Status.LastAppliedRenderDigest = "sha256:clirender"
+			current.Status.Inventory = &releasesv1alpha1.Inventory{
+				Revision: 3,
+				Digest:   "sha256:cliinv",
+				Count:    1,
+				Entries: []releasesv1alpha1.InventoryEntry{
+					{Kind: "ServiceAccount", Name: "opm-operator-controller-manager", Namespace: namespace, Version: "v1"},
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+
+			_, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.ModuleResolvedCondition)).To(BeNil())
+			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.DriftedCondition)).To(BeNil())
+			Expect(refused.Status.InstanceUUID).To(Equal("cli-uuid-own"))
+			Expect(refused.Status.LastAppliedSourceDigest).To(Equal("sha256:clisource"))
+			Expect(refused.Status.LastAppliedConfigDigest).To(Equal("sha256:cliconfig"))
+			Expect(refused.Status.LastAppliedRenderDigest).To(Equal("sha256:clirender"))
+			Expect(refused.Status.Inventory).NotTo(BeNil())
+			Expect(refused.Status.Inventory.Revision).To(Equal(int64(3)))
+			Expect(refused.Status.Inventory.Digest).To(Equal("sha256:cliinv"))
+			Expect(refused.Status.Inventory.Entries).To(HaveLen(1))
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
+		It("re-refuses with an empty patch and no event, and hands back to the CLI cleanly", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-rerefuse-mi", releasesv1alpha1.OwnerOperator)
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			recorder := events.NewFakeRecorder(10)
+			reconciler := newReconciler(recorder)
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(recorder.Events).Should(Receive())
+
+			var first releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &first)).To(Succeed())
+			expectRefused(&first)
+			firstReady := apimeta.FindStatusCondition(first.Status.Conditions, status.ReadyCondition)
+
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Consistently(recorder.Events, 200*time.Millisecond).ShouldNot(Receive())
+
+			var second releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &second)).To(Succeed())
+			Expect(second.ResourceVersion).To(Equal(first.ResourceVersion))
+			Expect(apimeta.FindStatusCondition(second.Status.Conditions, status.ReadyCondition).LastTransitionTime).
+				To(Equal(firstReady.LastTransitionTime))
+
+			// Hand the instance back to the CLI: the owner-skip gate acknowledges
+			// it and the refusal's Stalled goes away.
+			second.Spec.Owner = releasesv1alpha1.OwnerCLI
+			Expect(k8sClient.Update(ctx, &second)).To(Succeed())
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var handedBack releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &handedBack)).To(Succeed())
+			ready := apimeta.FindStatusCondition(handedBack.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionUnknown))
+			Expect(ready.Reason).To(Equal(status.ManagedExternallyReason))
+			Expect(apimeta.FindStatusCondition(handedBack.Status.Conditions, status.StalledCondition)).To(BeNil())
+
+			Expect(k8sClient.Delete(ctx, &handedBack)).To(Succeed())
+		})
+
+		It("releases a leftover finalizer from a live own instance and refuses it", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-leftover-mi", releasesv1alpha1.OwnerOperator)
+			mi.Finalizers = []string{opmreconcile.FinalizerName}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			_, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
+		It("releases a leftover finalizer from a deleting own instance and prunes nothing", func() {
+			ctx := context.Background()
+
+			// OPM-managed, so the normal deletion path would prune it.
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "own-deleting-kept",
+					Namespace: namespace,
+					Labels:    map[string]string{core.LabelManagedBy: core.LabelManagedByControllerValue},
+				},
+				Data: map[string]string{"k": "v"},
+			}
+			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+
+			mi := newOwnInstance("own-deleting-mi", releasesv1alpha1.OwnerOperator)
+			mi.Spec.Prune = true
+			mi.Finalizers = []string{opmreconcile.FinalizerName}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			var current releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			current.Status.Inventory = &releasesv1alpha1.Inventory{
+				Revision: 1,
+				Count:    1,
+				Entries: []releasesv1alpha1.InventoryEntry{
+					{Kind: "ConfigMap", Name: "own-deleting-kept", Namespace: namespace, Version: "v1"},
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &current)).To(Succeed())
+
+			result, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			Eventually(func() bool {
+				var gone releasesv1alpha1.ModuleInstance
+				return k8sClient.Get(ctx, nn, &gone) != nil
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			var kept corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), &kept)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &kept)).To(Succeed())
+		})
+
+		It("leaves a CLI-owned own instance alone, leftover finalizer included", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-cli-mi", releasesv1alpha1.OwnerCLI)
+			mi.Finalizers = []string{opmreconcile.FinalizerName}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			_, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var acked releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &acked)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&acked, opmreconcile.FinalizerName)).To(BeTrue())
+			ready := apimeta.FindStatusCondition(acked.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Reason).To(Equal(status.ManagedExternallyReason))
+
+			controllerutil.RemoveFinalizer(&acked, opmreconcile.FinalizerName)
+			Expect(k8sClient.Update(ctx, &acked)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &acked)).To(Succeed())
+		})
+
+		It("refuses the operator's own instance when the CLI hands it to the operator", func() {
+			ctx := context.Background()
+			mi := newOwnInstance("own-handoff-mi", releasesv1alpha1.OwnerCLI)
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			reconciler := newReconciler(events.NewFakeRecorder(10))
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var acked releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &acked)).To(Succeed())
+			Expect(apimeta.FindStatusCondition(acked.Status.Conditions, status.ReadyCondition).Reason).
+				To(Equal(status.ManagedExternallyReason))
+
+			acked.Spec.Owner = releasesv1alpha1.OwnerOperator
+			Expect(k8sClient.Update(ctx, &acked)).To(Succeed())
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			var refused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &refused)).To(Succeed())
+			expectRefused(&refused)
+
+			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+		})
+
+		It("still registers the finalizer on an instance with only similar names", func() {
+			ctx := context.Background()
+			mi := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "opm-operator", Namespace: namespace},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerOperator,
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/modules/opm_operator_dashboard@v0", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			result, err := newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{Requeue: true}))
+
+			var registered releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &registered)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&registered, opmreconcile.FinalizerName)).To(BeTrue())
+
+			controllerutil.RemoveFinalizer(&registered, opmreconcile.FinalizerName)
+			Expect(k8sClient.Update(ctx, &registered)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &registered)).To(Succeed())
 		})
 	})
 
@@ -1752,3 +2142,16 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 
 	})
 })
+
+// failOnRenderRenderer fails the running spec if the reconciler renders: the
+// operator's own instance must be refused before any render.
+type failOnRenderRenderer struct{}
+
+func (failOnRenderRenderer) RenderModule(
+	_ context.Context,
+	name, namespace, _, _ string,
+	_ *releasesv1alpha1.RawValues,
+) (*render.RenderResult, error) {
+	Fail(fmt.Sprintf("render called for ModuleInstance %s/%s", namespace, name))
+	return nil, nil
+}

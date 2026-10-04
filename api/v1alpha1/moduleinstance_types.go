@@ -49,6 +49,15 @@ type ModuleInstanceSpec struct {
 	// (no render/apply/prune, no finalizer) and record a single
 	// ManagedExternally acknowledgement. There is no CRD default; the
 	// reconciler carries the operator-managed default semantics.
+	//
+	// The operator never reconciles the instance that deploys the operator
+	// itself, whatever this field says: an instance named opm-operator in
+	// opm-operator-system, an instance of the opmodel.dev/modules/opm_operator
+	// module, or one whose inventory records the operator's own
+	// CustomResourceDefinitions. With an absent or "operator" value such an
+	// instance is refused (Ready=False, Stalled=True, reason
+	// SelfManagementRefused) and never gets the cleanup finalizer, so
+	// re-running the install can always repair the operator. Keep it "cli".
 	// +kubebuilder:validation:Enum=cli;operator
 	// +optional
 	Owner OwnerType `json:"owner,omitempty"`

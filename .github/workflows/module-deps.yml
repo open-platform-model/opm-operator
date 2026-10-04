@@ -200,6 +200,10 @@ jobs:
           bad=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -vE '^modules/opm_operator/' | head -n5 || true)
           bad+=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -E '(^|/)\.\.(/|$)' | head -n5 || true)
           [ -z "${bad}" ] || { echo "::error::the handed-over change holds paths outside modules/opm_operator/: ${bad}"; exit 1; }
+          # Plain files and directories only: a symlink or hard link member
+          # would point the commit at another file, such as .git/config.
+          bad=$(tar -tvf "${RUNNER_TEMP}/change/module.tar" | grep -v '^[-d]' | head -n5 || true)
+          [ -z "${bad}" ] || { echo "::error::the handed-over change holds a link or special file: ${bad}"; exit 1; }
           tar -xf "${RUNNER_TEMP}/change/module.tar" --no-same-owner
           id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
           BOT_NAME="${APP_SLUG}[bot]" BOT_EMAIL="${id}+${APP_SLUG}[bot]@users.noreply.github.com" \

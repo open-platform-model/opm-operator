@@ -58,4 +58,4 @@ weight: 40
 
 ## See also
 
-<!-- By title: Operator resources (the four kinds and their spec fields), the diagnostics entries Unresolved demands, No matching transformer, Identity mismatch, Version skew, Transform failed, Over-subscribed provider contracts and Colliding contracts, the explanations Who owns an instance and Deletion and pruning, and the guide Delete an instance safely. Check against: opm-operator/config/crd/bases and opm-operator/config/samples (the docs bundle generates the Operator resources page from them), opm-operator/docs/site/operating/ -->
+<!-- By title: Operator Reference (the four kinds and their spec fields), the diagnostics entries Unresolved demands, No matching transformer, Identity mismatch, Version skew, Transform failed, Over-subscribed provider contracts and Colliding contracts, the explanations Who owns an instance and Deletion and pruning, and the guide Delete an instance safely. Check against: opm-operator/config/crd/bases and opm-operator/config/samples (the docs bundle generates the Operator Reference pages from them), opm-operator/docs/site/operating/ -->

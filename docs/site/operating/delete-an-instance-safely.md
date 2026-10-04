@@ -56,6 +56,6 @@ Check against: cli/internal/workflow/query/list.go, core/src/transformer.cue -->
 
 ## Related
 
-<!-- The reference page "Operator resources" (`spec.owner`, `spec.prune`, `spec.serviceAccountName`, the `opm.dev/force-delete-orphan` annotation), the reference page "Operator conditions" (DeletionSAMissing, ImpersonationFailed, OrphanedOnDeletion), and the concept pages "Deletion and pruning" and "Who owns an instance".
+<!-- The reference section "Operator Reference" (`spec.owner`, `spec.prune`, `spec.serviceAccountName`, the `opm.dev/force-delete-orphan` annotation), the reference page "Operator conditions" (DeletionSAMissing, ImpersonationFailed, OrphanedOnDeletion), and the concept pages "Deletion and pruning" and "Who owns an instance".
 
 Check against: opm-operator/api/v1alpha1/moduleinstance_types.go, opm-operator/api/v1alpha1/common_types.go, opm-operator/internal/status/conditions.go -->

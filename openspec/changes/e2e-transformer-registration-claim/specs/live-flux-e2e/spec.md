@@ -21,7 +21,7 @@ The spec SHALL deploy and tear down its own controller. It SHALL need no registr
 - **WHEN** the provider instance is suspended and the live claim's `spec.version` is set to the same build with a `v` prefix
 - **THEN** the claim's `status.observedGeneration` SHALL reach its new `metadata.generation` with `accepted: true` and `active: true`
 - **AND** the claim's Ready condition SHALL be `True` with reason `Accepted` and a message containing `at v` followed by the build
-- **AND**, once that verdict is recorded, the Platform's `status.registry` SHALL list the backup catalog at the same build, with or without the `v`, under a package identity different from the bare-version one and stable on a second read
+- **AND**, once that verdict is recorded, the Platform's `status.registry` SHALL list the backup catalog at the same build, with or without the `v`, under a package identity different from the bare-version one and stable on a second read; the identity moves only because the claim coordinates keep the claim's own spelling, so a change that normalises the version to bare SemVer SHALL turn this into the same identity (no regeneration)
 - **AND** the Platform SHALL report `Ready=True` with reason `Generated`
 
 #### Scenario: Teardown releases the claim

@@ -125,10 +125,14 @@ var _ = Describe("TransformerRegistration claim", Ordered, func() {
 		// per-commit pre-release published to GHCR, which needs credentials.
 		if dockerCfg := os.Getenv("OPERATOR_DOCKER_CONFIG"); dockerCfg != "" {
 			By("provisioning GHCR pull credentials for the controller")
-			// Ignore AlreadyExists: the podinfo spec may have created it in
-			// this namespace earlier in the same suite run.
-			_, _ = kubectl("-n", namespace, "create", "secret", "generic",
+			// Tolerate only AlreadyExists; any other failure (an unreadable
+			// OPERATOR_DOCKER_CONFIG) would otherwise surface as a rollout
+			// timeout on a pod stuck mounting a missing secret.
+			_, err = kubectl("-n", namespace, "create", "secret", "generic",
 				"ghcr-auth", "--from-file=config.json="+dockerCfg)
+			if err != nil && !strings.Contains(err.Error(), "AlreadyExists") {
+				Fail(fmt.Sprintf("Failed to create the ghcr-auth secret: %v", err))
+			}
 
 			patch := `spec:
   template:
@@ -246,6 +250,7 @@ var _ = Describe("TransformerRegistration claim", Ordered, func() {
 		By("waiting for the claim to be accepted and active")
 		Eventually(func(g Gomega) {
 			g.Expect(claimField(g, "{.status.accepted},{.status.active}")).To(Equal("true,true"))
+			g.Expect(claimField(g, `{.status.conditions[?(@.type=="Ready")].status}`)).To(Equal("True"))
 			g.Expect(claimField(g, `{.status.conditions[?(@.type=="Ready")].reason}`)).To(Equal("Accepted"))
 		}, 5*time.Minute, 3*time.Second).Should(Succeed())
 
@@ -309,6 +314,11 @@ var _ = Describe("TransformerRegistration claim", Ordered, func() {
 			g.Expect(strings.TrimPrefix(platformField(g, backupEntry("version")), "v")).To(Equal(backup.Version))
 			identityV = platformField(g, "{.status.packageIdentity}")
 			g.Expect(identityV).NotTo(BeEmpty())
+			// The identity moves on a spelling-only edit only because the
+			// claim coordinates keep the claim's own spelling
+			// (opm-operator#234). A change that normalises the version to
+			// bare SemVer must turn this into identityV == identityBare: the
+			// same build, no regeneration.
 			g.Expect(identityV).NotTo(Equal(identityBare), "package identity did not move")
 			g.Expect(identityV).NotTo(Equal(identityBefore))
 			g.Expect(platformField(g, `{.status.conditions[?(@.type=="Ready")].status}`)).To(Equal("True"))

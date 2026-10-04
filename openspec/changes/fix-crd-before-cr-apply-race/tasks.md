@@ -14,26 +14,26 @@ Run the binary from `test/integration/apply`.
 
 ## 1. Spike: reproduction harnesses (test/integration/apply)
 
-- [ ] 1.0 Repair the shape of the main spec `openspec/specs/ssa-apply/spec.md`. Today its three requirements sit outside a `## Requirements` section, so `openspec validate ssa-apply --type spec --strict` fails, and archive would refuse this change's delta ("target spec is structurally invalid").
+- [x] 1.0 Repair the shape of the main spec `openspec/specs/ssa-apply/spec.md`. Today its three requirements sit outside a `## Requirements` section, so `openspec validate ssa-apply --type spec --strict` fails, and archive would refuse this change's delta ("target spec is structurally invalid").
   - Add a `## Purpose` paragraph: the capability applies rendered resources with Server-Side Apply as `opm-controller`, in Flux's stages, and reports created, updated and unchanged counts.
   - Put a `## Requirements` heading above the first requirement.
   - Change no requirement or scenario text.
   - Verify: `openspec validate ssa-apply --type spec --strict` passes, and `openspec validate fix-crd-before-cr-apply-race --strict` no longer prints the "Archive would refuse this delta" notice.
-- [ ] 1.1 In `test/integration/apply/suite_test.go`, add `laggingMapper` per design.md D5.
+- [x] 1.1 In `test/integration/apply/suite_test.go`, add `laggingMapper` per design.md D5.
   - It is a `meta.RESTMapper` that wraps a real mapper, `apiutil.NewDynamicRESTMapper(cfg, httpClient)` with `rest.HTTPClientFor(cfg)`.
   - It takes one `schema.GroupKind` and a lag `time.Duration`.
   - `RESTMapping` and `RESTMappings` for that GroupKind return `&meta.NoKindMatchError{GroupKind: gk, SearchedVersions: versions}` until the lag has passed since the first lookup of that GroupKind.
   - Every other method and GroupKind delegates.
   - Add a helper `newLaggingResourceManager(gk, lag) *fluxssa.ResourceManager`. It builds `client.New(cfg, client.Options{Mapper: m})` and passes it to `apply.NewResourceManager`.
   - Doc comments say it simulates API discovery lagging a CRD's `Established` condition.
-- [ ] 1.2 In `test/integration/apply/apply_test.go`, add a Context "When discovery serves a new CRD's kind late" with a spec "reproduces the no-match failure of a single staged apply".
+- [x] 1.2 In `test/integration/apply/apply_test.go`, add a Context "When discovery serves a new CRD's kind late" with a spec "reproduces the no-match failure of a single staged apply".
   - It uses its own CRD and kind (`gadgets.lag.example.com`, `Gadget`), so it shares no state with the Widget spec.
   - It uses a 1 s lag on `lag.example.com/Gadget`, and calls `apply.Apply(ctx, rm, {gadget, crd}, false)`.
   - It asserts that the error satisfies `meta.IsNoMatchError` and that its message contains `no matches for kind "Gadget" in version "lag.example.com/v1"`. That is the CI shape of Tests run 37176383926.
   - It cleans up the CRD and waits for it to be gone, using `Eventually` (no sleeps).
   - Move the spec reference comment at `apply_test.go:173-174` to `openspec/specs/ssa-apply/spec.md`.
-- [ ] 1.3 In the same file, add a Context "When applying many new CRDs and their instances together" with a spec "applies every custom resource in one call". It applies 20 CRDs, each in a fresh group (`s<i>.stress.example.com`, kind `Stress<i>`), plus one instance of each, in one `apply.Apply` through the suite's real mapper, and asserts success and `Created == 40`. It deletes the CRDs and waits for them to be gone.
-- [ ] 1.4 Reproduction runs, before the fix, on envtest 1.36.2.
+- [x] 1.3 In the same file, add a Context "When applying many new CRDs and their instances together" with a spec "applies every custom resource in one call". It applies 20 CRDs, each in a fresh group (`s<i>.stress.example.com`, kind `Stress<i>`), plus one instance of each, in one `apply.Apply` through the suite's real mapper, and asserts success and `Created == 40`. It deletes the CRDs and waits for them to be gone.
+- [x] 1.4 Reproduction runs, before the fix, on envtest 1.36.2.
   - Run the 1.2 spec 30 times. 30 of 30 pass. This shows only that the fake mapper returns the error it is built to return (design.md D5), not that the race is real.
   - Run the 1.3 stress spec 30 times serially and the whole suite 64 times at `xargs -P 24`, to try for a natural reproduction.
   - Run the unchanged Widget spec (focus `apply the CRD before the custom resource`) 30 times serially.

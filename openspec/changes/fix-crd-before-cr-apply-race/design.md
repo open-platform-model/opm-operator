@@ -196,6 +196,17 @@ The loop scripts are `p3-operator-flaky-loop.sh` and `p3-operator-flaky-par.sh` 
 
 Section 1 lands the lagging mapper with a spec that asserts today's failure, and the stress spec. Section 2 flips the lag spec to assert success when it lands the fix.
 
+**Runs before the fix** (envtest 1.36.2, loop script `p3-operator-flaky-runs.sh before` in the supervisor scratchpad; a serial run is about 5.7 s, mostly envtest start-up):
+
+| Spec | Load | Runs | Failures |
+| --- | --- | --- | --- |
+| lag spec (asserts today's no-match) | serial | 30 | 0 (the no-match appeared 30 of 30 times, as the fake guarantees) |
+| stress spec (20 CRDs and instances) | serial | 30 | 0 |
+| Widget spec | serial | 30 | 0 |
+| whole suite, stress spec included | `xargs -P 24` | 64 | 0 |
+
+The stress spec gave the discovery window 1,880 chances (94 applies of 20 kinds) on the CI envtest version and never lost the race. The race did not reproduce naturally on this host.
+
 **What the evidence shows.** If the stress loop never reproduces the race before the fix, then the evidence that the fix closes the real window is the code-path argument (Context, D2) plus the single CI log, and nothing more. The lag spec then proves the retry handles the error shape that log shows.
 
 ## Risks / Trade-offs

@@ -1,3 +1,11 @@
+# ssa-apply Specification
+
+## Purpose
+
+The `internal/apply` package applies rendered resources to the cluster with Server-Side Apply as the `opm-controller` field manager, in Flux's `ApplyAllStaged` stages, and reports how many resources it created, updated and left unchanged.
+
+## Requirements
+
 ### Requirement: SSA apply with opm-controller field manager
 The `internal/apply` package MUST apply resources using Server-Side Apply with field manager name `opm-controller`.
 

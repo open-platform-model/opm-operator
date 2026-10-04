@@ -39,3 +39,4 @@ Every section runs `actionlint` on the workflows it changes, `task cascade:wirin
 ## 7. Review fixes
 
 - [x] 7.1 Skip `dependabot/*` heads in `image-pr.yml` and the e2e `publish-fixtures` job, and add a 7-day `cooldown` to the `github-actions` Dependabot ecosystem (design D5). Commit `ci: keep write tokens away from Dependabot heads`
+- [x] 7.2 `test-e2e.yml`: when `publish-fixtures` did not succeed, seed a job-local registry from the tree, connect it to kind and set `LOCAL_REGISTRY`, so the podinfo and redis specs run on bot heads and forks (design D4). Commit `ci: run the podinfo e2e specs on heads without a publish`

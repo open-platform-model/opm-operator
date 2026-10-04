@@ -75,8 +75,15 @@ job and do not take expressions. So the write grant has to leave the job that ru
   `publish-fixtures` did not fail or get cancelled (`!cancelled() && result != 'failure'`), so a
   skipped publish still runs the suite. When the publish succeeded, it writes a docker config
   holding its own job token (`packages: read`; every fixture package is public) and pins the
-  fixtures to the pre-release. Otherwise it does neither, and the podinfo spec skips, as it
-  already does on a fork.
+  fixtures to the pre-release. Otherwise it seeds a job-local registry from the tree
+  (`task registry:start`, `task examples:seed`), creates the kind cluster, connects the
+  registry to the kind network and sets `LOCAL_REGISTRY`, as `task dev:e2e:local` does. The
+  controller then resolves the fixtures from `opm-registry:5000` and core and the catalogs
+  from GHCR, so the podinfo and redis specs run on every head, including a fork.
+
+  Review added the seeded path. The first cut let the podinfo spec skip on bot heads, which
+  dropped the only live check of the `pkg/ssa` apply path and kstatus readiness from every
+  cascade PR, the automated library, core and catalog bumps that most need it.
 
 The job name `Run on Ubuntu` stays on the test job. Only `Lint` is a required check on `main`.
 
@@ -119,8 +126,10 @@ effect until the supervisor turns on `require_code_owner_review` (decision 28).
 
 - Release image builds take longer without layer caching (multi-arch with QEMU). This is
   accepted: a release happens a few times a week at most.
-- Cascade and release PRs no longer run the podinfo e2e spec or build a PR image. The suite's
-  other specs still run, and the push to `main` after merge runs everything.
+- Cascade, release and Dependabot PRs no longer build a PR image. They run the podinfo spec
+  against the tree's fixtures from a job-local registry instead of the GHCR pre-release, so
+  they do not exercise the controller's authenticated GHCR pull; human PRs and the push to
+  `main` still do.
 - `test-e2e.yml` still installs `kind` from `latest` and pipes `fluxcd.io/install.sh` into
   bash. The job that runs them now holds only read grants, but the downloads are still
   unpinned. That is follow-up work, not part of this change.

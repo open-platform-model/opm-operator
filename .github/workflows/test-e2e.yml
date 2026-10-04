@@ -16,6 +16,13 @@ env:
   OPM_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
   # CUE CLI used to publish the example modules. Matches release.yml.
   CUE_VERSION: 'v0.17.1'
+  # Heads without a pre-release publish (a fork, or a cascade, release or
+  # Dependabot head) resolve the fixtures from a job-local registry seeded
+  # from this tree, and everything else from GHCR, the same split test.yml
+  # uses. The host seeds through localhost:5000; the controller in kind
+  # reaches the same registry as opm-registry:5000 (task registry:connect).
+  SEED_CUE_REGISTRY: 'testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+  KIND_LOCAL_REGISTRY: 'testing.opmodel.dev=opm-registry:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
   # Hard-fail gating for the live-Flux e2e specs: with this marker set, a
   # missing flux CLI / source-controller fails the suite instead of skipping.
   OPM_E2E_FLUX: '1'
@@ -148,12 +155,6 @@ jobs:
           echo "flux2 distribution pin: v$FLUX_VERSION"
           echo "flux CLI: $(flux version --client)"
 
-      # Without the published pre-release, the podinfo example spec self-skips
-      # (no resolvable module), keeping fork, cascade and release PRs green.
-      - name: Note the skipped publish
-        if: needs.publish-fixtures.result != 'success'
-        run: echo "::notice::No e2e fixture publish for this head (fork, deps/cascade, release-please--* or dependabot/*); the podinfo example e2e spec will be skipped."
-
       - name: Prepare read-only GHCR credentials
         if: needs.publish-fixtures.result == 'success'
         env:
@@ -175,6 +176,20 @@ jobs:
           [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
             || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
           go install "github.com/open-platform-model/cli/cmd/opm@${v}"
+
+      # Without the published pre-release (a fork, deps/cascade,
+      # release-please--* or dependabot/*), seed a job-local registry from
+      # this tree and point the controller at it (LOCAL_REGISTRY), as
+      # `task dev:e2e:local` does. The podinfo and redis specs then run in
+      # full on every head, and no GHCR credential reaches this job's cluster.
+      - name: Seed a job-local fixture registry
+        if: needs.publish-fixtures.result != 'success'
+        run: |
+          task registry:start
+          task examples:seed CUE_REGISTRY="$SEED_CUE_REGISTRY"
+          task kind:setup
+          task registry:connect
+          echo "LOCAL_REGISTRY=$KIND_LOCAL_REGISTRY" >> "$GITHUB_ENV"
 
       - name: Pin example fixtures to the published pre-release
         if: needs.publish-fixtures.result == 'success'

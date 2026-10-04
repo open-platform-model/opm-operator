@@ -46,7 +46,11 @@ A job triggered by `pull_request` that holds any write scope or `id-token: write
 
 #### Scenario: Cascade PR e2e runs read-only
 - **WHEN** a pull request from `deps/cascade` or `release-please--*` opens or updates
-- **THEN** `test-e2e.yml`'s `publish-fixtures` job is skipped, and the `test-e2e` job runs the suite with `contents: read` and `packages: read`, without the pre-release pins or a GHCR credential, so the podinfo spec skips
+- **THEN** `test-e2e.yml`'s `publish-fixtures` job is skipped, and the `test-e2e` job runs the suite with `contents: read` and `packages: read`, without the pre-release pins or a GHCR credential
+
+#### Scenario: E2E without a publish still runs the podinfo spec
+- **WHEN** `test-e2e.yml`'s `publish-fixtures` job is skipped (a fork, or a `deps/cascade`, `release-please--*` or `dependabot/*` head)
+- **THEN** the `test-e2e` job seeds a job-local registry from the tree, connects it to the kind network, sets `LOCAL_REGISTRY` so the controller resolves the fixtures from it, and the podinfo and redis specs run instead of skipping
 
 #### Scenario: Dependabot PR holds no write token
 - **WHEN** a pull request from a `dependabot/*` head opens or updates

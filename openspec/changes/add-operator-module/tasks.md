@@ -36,10 +36,10 @@
 
 ## 5. Documentation
 
-- [ ] 5.1 Add `modules/opm_operator/README.md`: what the module renders (naming the five administrator ClusterRoles as raw objects until the catalog renders roles with no subjects), `#config` with each field's effect, that the image tag and digest come from `operator/operator.cue`, how to regenerate (`task dev:manifests operator-module:generate`), and that it is not published by this repository yet
-- [ ] 5.2 Update AGENTS.md: the layout entry for `modules/`, the two generated files under "Generated Files And Scaffold Boundaries", the `operator-module:*` tasks, `hack/operator-module/min-operator-version` (the operator module never names an operator below it), and the rule that an API or RBAC marker change runs `task operator-module:generate` with `dev:manifests`
-- [ ] 5.3 Name the `test/integration/operatormodule` package and its registry requirement in AGENTS.md "Testing Style" (the `docs/TESTING.md` that section links does not exist in the tree; do not create it here)
-- [ ] 5.4 `task dev:fmt dev:vet dev:lint dev:test`, `task operator-module:drift` and `task docs:bundle:check` green, then commit `docs(module): document the operator module and its regeneration`
+- [x] 5.1 Add `modules/opm_operator/README.md`: what the module renders (naming the five administrator ClusterRoles as raw objects until the catalog renders roles with no subjects), `#config` with each field's effect, that the image tag and digest come from `operator/operator.cue`, how to regenerate (`task dev:manifests operator-module:generate`), and that it is not published by this repository yet
+- [x] 5.2 Update AGENTS.md: the layout entry for `modules/`, the two generated files under "Generated Files And Scaffold Boundaries", the `operator-module:*` tasks, `hack/operator-module/min-operator-version` (the operator module never names an operator below it), and the rule that an API or RBAC marker change runs `task operator-module:generate` with `dev:manifests`
+- [x] 5.3 Name the `test/integration/operatormodule` package and its registry requirement in AGENTS.md "Testing Style" (the `docs/TESTING.md` that section links does not exist in the tree; do not create it here)
+- [x] 5.4 `task dev:fmt dev:vet dev:lint dev:test`, `task operator-module:drift` and `task docs:bundle:check` green, then commit `docs(module): document the operator module and its regeneration`
 
 ## 6. Follow-up
 

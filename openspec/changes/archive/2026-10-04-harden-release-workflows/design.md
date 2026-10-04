@@ -54,7 +54,10 @@ job that publishes or signs must not restore the cache:
   image with the repo's OIDC identity.
 - `test-e2e.yml` `publish-fixtures` (D4): `cache: false`.
 
-Jobs that publish nothing keep their caches: Lint, Tests, the e2e test job and Cascade task.
+Jobs that publish nothing keep their caches: Lint, Tests and Cascade task. The e2e test job
+gave up its Go cache in review: the canonical wiring check's no-cache rule is per workflow, and
+`test-e2e.yml` and `image-pr.yml` go on its `publish-workflows` list in the wave-2 pin bump,
+which a cached suite job would fail.
 `docs.yml` and `release.yml`'s `publish-docs` call docs-kit's reusable `publish.yml` (v0.7.0), which already sets up Go with `cache: false` and uses no other cache.
 
 ### D4. Split `test-e2e.yml` so the suite never holds a write token

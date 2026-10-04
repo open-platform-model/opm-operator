@@ -30,11 +30,15 @@ Every workflow file under `.github/workflows/` SHALL declare a top-level `permis
 - **THEN** it declares `permissions: {}` and acts only with the release App token it mints
 
 ### Requirement: No Actions cache in a publishing job
-A job that publishes, signs or attests anything (a container image, a CUE module, a release asset) SHALL NOT restore or save the GitHub Actions cache: no `type=gha` cache in a Docker build, `cache: false` on `actions/setup-go`, and no `actions/cache`. Jobs that publish nothing MAY keep their caches.
+A job that publishes, signs or attests anything (a container image, a CUE module, a release asset) SHALL NOT restore or save the GitHub Actions cache: no `type=gha` cache in a Docker build, `cache: false` on `actions/setup-go`, and no `actions/cache`. Jobs that publish nothing MAY keep their caches, except in a workflow that also has a publishing job: `test-e2e.yml` and `image-pr.yml` use no cache at all, so the cascade wiring check's per-workflow no-cache rule can cover them.
 
 #### Scenario: Release image built without the Actions cache
 - **WHEN** `release.yml`'s `image-release` job builds the release image
 - **THEN** its build step has no `cache-from` or `cache-to`
+
+#### Scenario: E2E workflow holds no cache
+- **WHEN** either job of `test-e2e.yml` sets up Go
+- **THEN** `actions/setup-go` runs with `cache: false`
 
 #### Scenario: Module publishing jobs skip the Go cache
 - **WHEN** `release.yml`'s `publish-examples`, `publish-fixtures.yml` or `test-e2e.yml`'s `publish-fixtures` job sets up Go

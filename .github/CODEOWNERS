@@ -7,3 +7,9 @@
 /.cascade-frozen                @emil-jacero @orvis98
 # hack/fixtures.sh and hack/render-config.sh run in jobs that hold write tokens.
 /hack/                          @emil-jacero @orvis98
+# .opm-cli-version picks the opm binary the fixture and example publish jobs
+# (packages: write) install; .opm-docs-version and docs-kit.cue drive the
+# signed docs publish (id-token: write) that the site trusts.
+/.opm-cli-version               @emil-jacero @orvis98
+/.opm-docs-version              @emil-jacero @orvis98
+/docs-kit.cue                   @emil-jacero @orvis98

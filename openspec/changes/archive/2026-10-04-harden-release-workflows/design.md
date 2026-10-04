@@ -122,7 +122,11 @@ The supervisor's spec, keeping only paths that exist here: `/.github/`, `/.tasks
 `/Taskfile*.yml`, `/release-please-config.json`, `/.release-please-manifest.json`,
 `/.cascade-frozen`. Add `/hack/`, because `hack/fixtures.sh` runs in `publish-fixtures.yml`
 (`packages: write`) and the e2e publish job, and `hack/render-config.sh` runs in
-`image-release` (`contents`, `packages`, `id-token`, `attestations: write`). The file has no
+`image-release` (`contents`, `packages`, `id-token`, `attestations: write`). Review added
+`/.opm-cli-version`, which picks the opm binary that `publish-examples`, `publish-fixtures.yml`
+and the e2e publish job install under `packages: write`, and `/.opm-docs-version` and
+`/docs-kit.cue`, which drive the docs-kit publish whose signature (`id-token: write`) the site
+trusts. The file has no
 effect until the supervisor turns on `require_code_owner_review` (decision 28).
 
 ### D7. Exact tool versions

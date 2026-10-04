@@ -50,8 +50,9 @@ than they need to code that no human has reviewed yet:
   and set `cache: false` on setup-go in `release.yml`'s `publish-examples`,
   `publish-fixtures.yml` and the e2e `publish-fixtures` job.
 - `.github/CODEOWNERS` assigns `/.github/`, `/.tasks/`, `/Taskfile*.yml`, the release-please
-  config and manifest, `/.cascade-frozen` and `/hack/` (`hack/fixtures.sh` and
-  `hack/render-config.sh` run in jobs that hold write tokens) to both admins.
+  config and manifest, `/.cascade-frozen`, `/hack/` (`hack/fixtures.sh` and
+  `hack/render-config.sh` run in jobs that hold write tokens), `/.opm-cli-version`,
+  `/.opm-docs-version` and `/docs-kit.cue` to both admins.
 - Every `go-task/setup-task` step pins an exact Task version instead of `3.x`, and
   `publish-fixtures.yml` stops passing the job token to it as `repo-token`.
 - `AGENTS.md` records these rules.

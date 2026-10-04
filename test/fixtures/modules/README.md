@@ -32,6 +32,12 @@ Until then `backup_consumer`'s render is refused, naming the trait. The claim
 names the catalog build literally, so a bump of the `backup` catalog re-pins
 `version` in `backup_provider/components.cue`; the registry-backed spec
 `test/integration/reconcile/backup_fixture_test.go` fails when they drift.
+The e2e spec `test/e2e/registration_test.go` resolves that literal live from
+GHCR, and PR CI publishes only `-e2e.g<sha>` pre-releases, so a catalog bump
+needs two pull requests: one that publishes the new `backup` build, then one
+that re-pins the claim. Bumped and re-pinned in one pull request, the claim is
+refused `CatalogUnresolved` and the e2e spec fails until the catalog is
+released.
 An operator accepts the claim only when its library accepts a bare SemVer in
 `spec.version` (library v1.0.0-beta.2 or later); earlier ones refuse it
 `CatalogUnresolved`.

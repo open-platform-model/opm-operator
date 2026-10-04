@@ -30,6 +30,11 @@ on:
 
 permissions: {}
 
+# bash -eo pipefail: a failing script piped into tee fails its step.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: module-deps-${{ github.ref }}
   cancel-in-progress: false
@@ -188,6 +193,11 @@ jobs:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
           TITLE: ${{ needs.compute.outputs.title }}
         run: |
+          # Only the module may ride the PR: refuse any other member (a .git/
+          # hook or config would never show in git status) before extracting.
+          bad=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -vE '^modules/opm_operator/' | head -n5 || true)
+          bad+=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -E '(^|/)\.\.(/|$)' | head -n5 || true)
+          [ -z "${bad}" ] || { echo "::error::the handed-over change holds paths outside modules/opm_operator/: ${bad}"; exit 1; }
           tar -xf "${RUNNER_TEMP}/change/module.tar" --no-same-owner
           id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
           BOT_NAME="${APP_SLUG}[bot]" BOT_EMAIL="${id}+${APP_SLUG}[bot]@users.noreply.github.com" \

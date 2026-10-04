@@ -77,6 +77,7 @@ Options:
 
 - `meta.IsNoMatchError(err)` is true.
 - `errors.As` finds a `*meta.NoKindMatchError` whose `GroupKind` equals a set CRD's `spec.group` and `spec.names.kind`, or a `*meta.NoResourceMatchError` whose `PartialResource.Group` equals a set CRD's `spec.group`. The second form is the aggregated-discovery path, which carries no kind.
+- The requirement states both forms: a kind that a set CRD defines, or, when discovery reports only the group, a group that a set CRD defines. A group-only match can retry a kind of that group that no set CRD defines; that costs at most the bound, and only for a set that ships a CRD of that group.
 
 `errors.As` walks `Unwrap() []error` (Go 1.20+), so it reaches through `fmt.Errorf("%w")`, `DryRunErr` and `ErrResourceDiscoveryFailed`.
 
@@ -113,50 +114,56 @@ func pendingCRDKind(err error, resources []*unstructured.Unstructured) bool {
 
 ### D3. The retry loop and its bound
 
-**Decision.**
+**Decision.** `Apply` hands a closure over `rm.ApplyAllStaged` to an internal `applyWithDiscoveryRetry`, so the loop can be unit tested with a stub instead of a `ResourceManager`:
 
 ```go
-const (
+// The bound and interval are variables so the package's unit tests can shorten them.
+var (
 	discoveryRetryInterval = 500 * time.Millisecond
 	discoveryRetryTimeout  = 10 * time.Second
 )
 
-func Apply(ctx context.Context, rm *fluxssa.ResourceManager, resources []*unstructured.Unstructured, force bool) (*ApplyResult, error) {
-	opts := fluxssa.DefaultApplyOptions()
-	opts.Force = force
+type stagedApply func(ctx context.Context) (*fluxssa.ChangeSet, error)
 
-	acc := newActionLedger() // first non-Unchanged action per object
-	var lastErr error
-	pollErr := wait.PollUntilContextTimeout(ctx, discoveryRetryInterval, discoveryRetryTimeout, true,
-		func(ctx context.Context) (bool, error) {
-			cs, err := rm.ApplyAllStaged(ctx, resources, opts)
-			acc.record(cs) // cs holds the entries applied up to a failure; nil-safe
-			if err == nil {
-				lastErr = nil
-				return true, nil
-			}
-			lastErr = err
-			if pendingCRDKind(err, resources) {
-				logf.FromContext(ctx).V(1).Info("Waiting for the API server to serve a custom resource kind", "error", err.Error())
-				return false, nil
-			}
-			return false, err // not retryable: stop now
-		})
-	if lastErr != nil {
-		return nil, fmt.Errorf("failed to apply resources: %w", lastErr)
+func applyWithDiscoveryRetry(ctx context.Context, apply stagedApply, resources []*unstructured.Unstructured) (*ApplyResult, error) {
+	ledger := newActionLedger() // first created or configured action per object
+	var pending error            // the last retryable no-match
+	var deadline time.Time       // set at the first retryable failure
+	for {
+		cs, err := apply(ctx) // every attempt gets the caller's ctx, unchanged
+		ledger.record(cs)     // cs holds the entries applied up to a failure; nil-safe
+		if err == nil {
+			return ledger.result(cs), nil
+		}
+		if pending != nil && ctx.Err() != nil {
+			return nil, fmt.Errorf("failed to apply resources: %w", pending)
+		}
+		if !pendingCRDKind(err, resources) {
+			return nil, fmt.Errorf("failed to apply resources: %w", err)
+		}
+		pending = err
+		if deadline.IsZero() {
+			deadline = time.Now().Add(discoveryRetryTimeout)
+		}
+		logf.FromContext(ctx).V(1).Info("Waiting for the API server to serve a custom resource kind", "error", err.Error())
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("failed to apply resources: %w", pending)
+		case <-time.After(discoveryRetryInterval):
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("failed to apply resources: %w", pending)
+		}
 	}
-	if pollErr != nil { // context ended before any attempt finished
-		return nil, fmt.Errorf("failed to apply resources: %w", pollErr)
-	}
-	return acc.result(), nil
 }
 ```
 
-- **Interval and cap.** 500 ms and 10 s. The observed lag is milliseconds. 10 s bounds a reconcile's extra time in the worst case and is far below the 60 s `WaitTimeout` that Flux already allows the CRD stage (`DefaultApplyOptions`, `manager_apply.go:111-118`).
-- **The caller's context bounds the retry too.** `PollUntilContextTimeout` derives from `ctx`.
-- **On timeout or cancellation** after a retryable error, `Apply` returns the last no-match error, wrapped as today (`failed to apply resources: ...`). The reconcile then reports `ApplyFailed` with the same message it gives today. A poll error never replaces a real apply error.
-- **No new log at Info.** The single V(1) line follows the logging rules in `AGENTS.md` (capitalised message, structured keys).
-- `immediate=true` keeps the first attempt synchronous, so the common path costs nothing.
+- **The bound limits when a new attempt may start, not how long an attempt may run.** Each attempt runs under the caller's `ctx`, exactly as the single call does today. A large module, a slow API server, a CRD stage that waits several seconds or a force-recreate whose finalizer holds keeps today's behaviour. The first draft used `wait.PollUntilContextTimeout`, which wraps `ctx` in a 10 s `context.WithTimeout` and hands that to every attempt, the first one included (apimachinery v0.36.4 `pkg/util/wait/poll.go:45-48`); it would have added a new `ApplyFailed` on any apply that runs past 10 s. A unit test with a stub that records whether its context has a deadline guards this.
+- **Interval and bound.** 500 ms and 10 s. The observed lag is milliseconds. 10 s bounds a reconcile's extra time in the worst case and is far below the 60 s `WaitTimeout` that Flux already allows the CRD stage (`DefaultApplyOptions`, `manager_apply.go:111-118`).
+- **The caller's context ends the retry too.** The wait between attempts selects on `ctx.Done()`.
+- **On the bound or a context end** after a retryable error, `Apply` returns the last no-match error, wrapped as today (`failed to apply resources: ...`). That includes an attempt that the context cut short in flight: its error is a context error, not the cause, so the earlier no-match is returned. The reconcile then reports `ApplyFailed` with the message it gives today. A first attempt that fails keeps its own error, whatever it is.
+- **No new log at Info.** The V(1) line, once per retry, follows the logging rules in `AGENTS.md` (capitalised message, structured keys).
+- The first attempt starts at once, so the common path costs nothing.
 
 ### D4. Counting across attempts
 
@@ -168,9 +175,9 @@ func Apply(ctx context.Context, rm *fluxssa.ResourceManager, resources []*unstru
 - The counts come from the ledger after the successful attempt.
 - Only objects in the successful attempt's change set are counted. That attempt's change set covers every input object, so nothing is dropped and nothing is double-counted.
 
-### D5. Deterministic reproduction instead of timing
+### D5. Reproduction: a simulated lag for the retry, a stress spec for the race
 
-**Context.** On this host the race did not reproduce naturally: 264 local runs of the unchanged suite, 0 failures. The recorded runs, all against envtest 1.36.0 from `bin/k8s`, are:
+**Context.** On this host the race did not reproduce naturally: 264 local runs of the unchanged suite, 0 failures. Those planning runs used envtest 1.36.0 from the main checkout's `bin/k8s`; the failing CI run used 1.36.2 (CI log, `bin/k8s/1.36.2-linux-amd64`). They are:
 
 | Load | Runs | Failures |
 | --- | --- | --- |
@@ -180,30 +187,28 @@ func Apply(ctx context.Context, rm *fluxssa.ResourceManager, resources []*unstru
 | CI seed 1791087360, `-P 16` | 100 | 0 |
 | `taskset -c 0`, `-P 6` | 40 | 0 |
 
-The loop scripts are `p3-operator-flaky-loop.sh` and `p3-operator-flaky-par.sh` in the supervisor scratchpad.
+The loop scripts are `p3-operator-flaky-loop.sh` and `p3-operator-flaky-par.sh` in the supervisor scratchpad. Every run recorded from here on uses the envtest version that `task dev:test` resolves in the worktree (`ENVTEST_K8S_VERSION` 1.36, which resolves to 1.36.2, as in CI).
 
-A natural "before and after" comparison therefore proves nothing on its own.
+**Decision.** Two harnesses, with different jobs:
 
-**Decision.**
-- The integration suite gets a `laggingMapper`, a `meta.RESTMapper` wrapper. For one configured `GroupKind` it returns `&meta.NoKindMatchError{...}` from `RESTMapping` and `RESTMappings` until a lag window has passed since the first lookup of that kind. Every other kind delegates to the real mapper from `apiutil.NewDynamicRESTMapper(cfg, httpClient)`.
-- A per-spec client built with `client.New(cfg, client.Options{Mapper: lagging})` feeds `apply.NewResourceManager`. The kstatus poller also uses `c.RESTMapper()`, but it only looks up the CRD's own kind, which is never lagged.
-- Before the fix, an `Apply` of `{widget, crd}` under a 1 s lag fails with the CI error text: `no matches for kind "Widget" in version "test.example.com/v1"`.
-- After the fix it succeeds with `Created == 2` and takes at least the lag.
-- Section 1 lands the harness with a spec that asserts today's failure. Section 2 flips that spec to assert success when it lands the fix.
+- **A lagging RESTMapper tests the retry logic, not the race.** The integration suite gets a `laggingMapper`, a `meta.RESTMapper` wrapper. For one configured `GroupKind` it returns `&meta.NoKindMatchError{...}` from `RESTMapping` and `RESTMappings` until a lag window has passed since the first lookup of that kind. Every other kind delegates to the real mapper from `apiutil.NewDynamicRESTMapper(cfg, httpClient)`. A per-spec client built with `client.New(cfg, client.Options{Mapper: lagging})` feeds `apply.NewResourceManager`. The kstatus poller also uses `c.RESTMapper()`, but it only looks up the CRD's own kind, which is never lagged. Before the fix, an `Apply` of `{gadget, crd}` under a 1 s lag fails with the CI error shape (`no matches for kind "Gadget" in version "lag.example.com/v1"`); after it, the call succeeds with `Created == 2` and takes at least the lag. That the spec fails every time before the fix only proves the fake returns the error it is built to return.
+- **A natural stress spec tries for the real race.** One `Apply` of 20 CRDs, each in a fresh group, plus one instance of each, through the real mapper. Each apply gives the discovery window 20 chances. It runs in loops before and after the fix.
 
-**Rationale.** The harness simulates exactly what the CI log showed: the kind is missing from client-side discovery after the CRD stage. It does so without depending on scheduler timing.
+Section 1 lands the lagging mapper with a spec that asserts today's failure, and the stress spec. Section 2 flips the lag spec to assert success when it lands the fix.
+
+**What the evidence shows.** If the stress loop never reproduces the race before the fix, then the evidence that the fix closes the real window is the code-path argument (Context, D2) plus the single CI log, and nothing more. The lag spec then proves the retry handles the error shape that log shows.
 
 ## Risks / Trade-offs
 
-- **Up to 10 s of extra reconcile time** when a set's CRD never becomes served, for example when the CRD is Established but its version is `served: false`. Previously this failed at once. The error and reason are unchanged. The 10 s is bounded and only applies to a set that contains the defining CRD.
+- **Up to 10 s of extra reconcile time** when a set's CRD never becomes served, for example when the CRD is Established but its version is `served: false`. Previously this failed at once. The error and reason are unchanged. The 10 s is bounded and only applies to a set that contains the defining CRD (or, on the group-only path, a CRD of the same group).
 - **A whole-set retry repeats the dry runs of already-applied objects.** SSA is idempotent, and the dry runs are cheap compared with a reconcile requeue. The CRD stage's `WaitForSet` returns at once on the retry, because the CRD is already Established.
-- **The lag mapper tests the retry, not the API server.** The real lag is covered by the existing spec (`apply_test.go:176`) staying in the suite. Section 2 runs it 30 times serially and 64 times at `-P 24` after the fix.
-- **The cli may have the same race.** Its apply path waits for CRDs itself (cli archive `2026-10-03-order-instance-apply-by-weight`, design D3/D4) and was not examined here. If it uses a client RESTMapper after an Established wait, it has the same window. This is a follow-up to raise with the supervisor, not part of this change.
+- **The lag mapper tests the retry, not the API server.** See D5. The real window is exercised only by the stress spec and the existing Widget spec (`apply_test.go:176`) staying in the suite.
+- **The cli does not share this race.** Checked on cli main 19f19cd2: `internal/kubernetes/apply.go` `applyOne` builds the GroupVersionResource from the kind by name (`GVRFromUnstructured`, `KindToResource` in `resource.go`) and calls the dynamic client directly. No client-side RESTMapper or discovery lookup sits between its Established wait (`waitEstablished`) and the custom resource's request, so the client-side discovery miss this change fixes cannot happen there. No cli issue is filed.
 - **The ssa library could change `ApplyAllStaged`'s partial change set contract.** D4 relies on `manager_apply.go:379-416` returning `changeSet` with every error. A Dependabot bump of `fluxcd/pkg/ssa` that changes this would make the counts on the retry path wrong, but not the apply itself. The D4 integration assertion (`Created == 2` under lag) would catch it.
 
 ## Sections
 
-1. **Spike: deterministic reproduction (test only).** The lagging mapper and a spec that asserts today's failure under a simulated lag. This records the reproduction. It ends green and ships nothing.
-2. **Fix: bounded discovery retry in `apply.Apply`.** It adds the predicate, the loop and the ledger. The spike spec flips to success. It adds the no-retry and timeout specs and the predicate unit tests. It runs the before and after loops and records them here. The commit is `fix(apply): ...`.
+1. **Spike: reproduction harnesses (test only).** The lagging mapper with a spec that asserts today's failure under a simulated lag, and the natural stress spec. This records the reproduction. It ends green and ships nothing.
+2. **Fix: bounded discovery retry in `apply.Apply`.** It adds the predicate, the loop and the ledger. The lag spec flips to success. It adds the no-retry and context-end specs and the unit tests for the predicate, the loop and the ledger. It runs the before and after loops and records them here. The commit is `fix(apply): ...`. Then `openspec verify` and the archive ride the same PR.
 
 Two sections, one PR (the default). The PR title is `fix(apply): wait for discovery of a CRD applied in the same set`.

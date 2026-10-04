@@ -19,11 +19,11 @@ The failure blocks nothing by itself, but a flaky required check matters more on
 
 ## What Changes
 
-- **`apply.Apply` waits for discovery of a CRD it is applying.** When `ApplyAllStaged` fails only because the API server does not serve a kind yet (`meta.IsNoMatchError`), and a `CustomResourceDefinition` in the same resource set defines that kind, `Apply` retries the whole staged apply. The retry is bounded: every 500 ms for at most 10 s, and never past the caller's context. SSA apply is idempotent, so re-running the set is safe.
+- **`apply.Apply` waits for discovery of a CRD it is applying.** When `ApplyAllStaged` fails only because the API server does not serve a kind yet (`meta.IsNoMatchError`), and a `CustomResourceDefinition` in the same resource set defines that kind, `Apply` retries the whole staged apply. The retry is bounded: every 500 ms, no new attempt once 10 s have passed since the first retryable failure, and never past the caller's context. Each attempt runs under the caller's context unchanged, so an apply that runs long today is not cut short. SSA apply is idempotent, so re-running the set is safe.
 - **No retry for any other no-match.** A custom resource whose CRD is not in the set fails at once, as today. So does any error that is not a no-match. A genuine missing CRD in some other module is never delayed.
 - **Counts stay truthful across a retry.** `ApplyResult` reports each object by the first attempt that created or configured it. A CRD that the first attempt created counts as `Created` even though the retry sees it `Unchanged`. The `Applied N resources (...)` event and log stay correct.
-- **Tests.** A lagging RESTMapper in the apply integration suite simulates discovery lag deterministically. It reproduces the exact CI error before the fix and proves the retry after it. Further specs cover the no-retry and timeout cases. Predicate unit tests live in `internal/apply`.
-- **Housekeeping on the touched code.** The `apply.go` doc comment and the `Staged apply ordering` requirement both cite `docs/design/flux-ssa-staging.md`, which does not exist. Both state the stage model inline instead. The test's spec reference comment (`apply_test.go:173-174`) points at the main spec, not the long-archived change `08-ssa-apply`.
+- **Tests.** A lagging RESTMapper in the apply integration suite simulates discovery lag deterministically. It reproduces the CI error shape before the fix and proves the retry after it; it tests the retry logic, not the race. A stress spec that applies 20 new CRDs and their instances in one call tries for the real race before and after the fix. Further specs cover the no-retry and context-end cases. Unit tests in `internal/apply` cover the predicate, the ledger and the loop, including its bound and that no attempt gets a deadline the caller did not set.
+- **Housekeeping on the touched code.** The `apply.go` doc comment, the `Staged apply ordering` requirement and a scenario of `SSA apply with opm-controller field manager` cite `docs/design/flux-ssa-staging.md`, which does not exist. The first two state the stage model inline instead; the scenario drops the citation. The test's spec reference comment (`apply_test.go:173-174`) points at the main spec, not the long-archived change `08-ssa-apply`.
 
 ## Classification
 
@@ -49,15 +49,17 @@ None.
 
 - `ssa-apply`:
   - A new requirement: a custom resource whose CRD is in the same apply set is retried while discovery catches up, within a bound, and nothing else is retried.
+  - A new requirement: apply result counts across a discovery retry.
   - `Staged apply ordering` loses its dead design-doc link and states the stage model inline. Both of its scenarios are kept.
+  - `SSA apply with opm-controller field manager` loses the same dead link from one scenario. All three scenarios are kept.
 
 ## Impact
 
 - `internal/apply/apply.go`: the retry around `rm.ApplyAllStaged`, the predicate and the result merge.
-- New `internal/apply/apply_test.go`: unit tests for the predicate and the result merge.
+- New `internal/apply/apply_test.go`: unit tests for the predicate, the result merge and the retry loop.
 - `test/integration/apply/apply_test.go`, `test/integration/apply/suite_test.go`: the lagging mapper and the new specs.
 - `openspec/specs/ssa-apply/spec.md`:
   - The delta applies at archive.
   - Before that, task 1.0 gives the file the `## Purpose` and `## Requirements` sections it lacks. Today `openspec validate ssa-apply --type spec --strict` fails on it, and archive would refuse the delta. This is one of the 17 opm-operator main specs that currently fail `--strict`.
-- Downstream: none in code. The cli has its own apply path (`internal/kubernetes`), and its archived change `order-instance-apply-by-weight` handles CRD ordering itself. Whether the cli has the same discovery race is out of scope here and is named in design.md under Risks.
+- Downstream: none in code. The cli has its own apply path (`internal/kubernetes`), and its archived change `order-instance-apply-by-weight` handles CRD ordering itself. The cli resolves a custom resource's endpoint from its kind without client-side discovery, so it does not share this race (design.md, Risks).
 - No enhancement decision backs this change, so there is no `enhancement.yaml`.

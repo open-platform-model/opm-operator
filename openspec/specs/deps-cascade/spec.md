@@ -50,7 +50,7 @@ The task SHALL move exactly these pins:
   A file whose catalog is above `K` SHALL NOT be lowered.
 - **Core.** It moves core in those modules and in `test/fixtures/catalogs/provider/cue.mod/module.cue` to the version that the file's catalog after the move pins (the higher of the file's catalog and `K`; `K` for the provider fixture), and only when that is greater than the file's own core. Core SHALL never come from the newest published core directly.
 - **The opm CLI.** It writes `.opm-cli-version` last.
-- **The resource reference.** When it changed any file under `config/samples/`, it regenerates the `hack/crdref` block of `docs/site/reference/operator-resources.md` before writing `.opm-cli-version`. If `hack/crdref` fails, it SHALL warn and still produce the rest of the diff.
+- **No regenerated reference.** It SHALL NOT edit `docs/site/reference/operator-resources.md`: the docs bundle generates the resource reference from `config/samples` when it is built.
 
 `cue mod get` SHALL name only `opmodel.dev/*` and `testing.opmodel.dev/*` modules, each with an exact version, and SHALL run, followed by one `cue mod tidy`, only in a module where a pin moved. Third-party pins SHALL never be named. A third-party pin that `tidy` raises, adds or removes, a change to `go.mod`'s `go` or `toolchain` directive, and a dep a fixture module gains that its modulepackage lacks SHALL each be reported as a warning. The task SHALL never edit an import path or a `@vN` key; a new major SHALL appear only as the resolver's warning.
 
@@ -68,7 +68,7 @@ The task SHALL move exactly these pins:
 
 #### Scenario: Sample Platform moved
 - **WHEN** the task moves the catalog `version:` in the sample Platform
-- **THEN** `go run ./hack/crdref -check` passes on the resulting tree
+- **THEN** `docs/site/reference/operator-resources.md` is unchanged, and `task docs:bundle` on the resulting tree shows the moved version in the Platform entry's example
 
 #### Scenario: Tidy adds a dependency
 - **WHEN** `go mod tidy` or `cue mod tidy` adds or removes a third-party dependency, or `go get` raises the `go` or `toolchain` directive

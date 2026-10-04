@@ -14,8 +14,13 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      # "deps" is not a Conventional Commit type, so release-please drops such
-      # merge commits from the changelog. Use "build(deps)".
+      # build is a hidden type here, so a Dependabot Go bump releases nothing as
+      # titled. Retitle it fix(deps) only for a security fix the image must ship
+      # (workspace RELEASING.md, "Dependabot PRs"); until the owner applies the
+      # PR_TITLE squash setting, merge that retitled PR with
+      # gh pr merge --squash --subject "<PR title> (#N)" --body '' (root AGENTS.md,
+      # "Beta line"), or the squash keeps the build(deps) commit subject. deps would
+      # release: it is a visible section in release-please-config.json.
       prefix: "build"
       include: "scope"
     groups:

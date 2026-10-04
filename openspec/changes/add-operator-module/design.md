@@ -189,10 +189,24 @@ Everything a platform team tunes on the operator becomes a value of its instance
 		limits: cpu:      _ | *2
 		limits: memory:   _ | *"4Gi"
 	}
+	resources: limits: memory: string | error("resources.limits.memory: give the memory limit in Mi or Gi, ...")
 	replicas: int & >=1 | *1
-	extraArgs: [...string & !~"^--?(registry|default-service-account|metrics-bind-address|leader-elect|health-probe-bind-address)(=|$)"] | *[]
+	extraArgs: [...#extraArg] | *[]
+}
+
+// Each refused flag fails with error() naming the argument and the typed value to use.
+#extraArg: A={
+	string
+	[
+		if A =~ "^--?registry(=|$)" {error("extraArgs: \"\(A)\" sets the registry mapping; set #config.registry instead")},
+		if A =~ "^--?default-service-account(=|$)" {error("... set #config.defaultServiceAccount instead")},
+		if A =~ "^--?(metrics-bind-address|leader-elect|health-probe-bind-address)(=|$)" {error("... overrides an argument the module renders itself")},
+		_,
+	][0]
 }
 ```
+
+As implemented, each refusal is an `error()` naming the argument and the value to use instead, rather than one negated regular expression, whose failure (`out of bound !~"..."`) names neither; the refused set is the same.
 
 Each resource quantity carries its own default, so `resources: limits: memory: "8Gi"` keeps the CPU limit and both requests; a single default for the whole `resources` struct would be dropped by any value that sets one field, and the cli's deep merge of recorded values does not prevent that, since a first install's values may set one field alone. The exact spelling depends on how the released catalog's optional fields unify with a default (a default on an optional field makes it present); task 3.3 confirms it renders, and the render test sets one field alone to prove the rest keep their defaults. The memory limit can be changed but never removed (a CUE default cannot be unset by a value), which matches the manifest's intent that the limit and `GOMEMLIMIT` move together, and means every render has a memory limit to derive `GOMEMLIMIT` from.
 

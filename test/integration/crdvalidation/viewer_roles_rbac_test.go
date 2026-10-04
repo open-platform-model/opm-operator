@@ -18,6 +18,7 @@ package crdvalidation_test
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,6 +94,44 @@ func TestViewerRolesShape(t *testing.T) {
 	}
 }
 
+// The manifest ships no binding naming a viewer role. A cluster started for a
+// test never applies the manifest, so this reads every binding under config/,
+// the tree the install manifest and the operator module are rendered from.
+func TestViewerRolesShipUnbound(t *testing.T) {
+	names := map[string]bool{}
+	for _, vr := range viewerRoles {
+		names[loadShippedRole(t, vr.file).Name] = true
+	}
+	root := filepath.Join("..", "..", "..", "config")
+	bindings := 0
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for doc := range strings.SplitSeq(string(raw), "\n---") {
+			var b struct {
+				Kind    string         `json:"kind"`
+				RoleRef rbacv1.RoleRef `json:"roleRef"`
+			}
+			if yaml.Unmarshal([]byte(doc), &b) != nil {
+				continue
+			}
+			if b.Kind != "RoleBinding" && b.Kind != "ClusterRoleBinding" {
+				continue
+			}
+			bindings++
+			require.False(t, names[b.RoleRef.Name], "%s binds %s, which ships unbound", path, b.RoleRef.Name)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.Positive(t, bindings, "the scan must see the operator's own bindings")
+}
+
 func TestViewerRolesRBAC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -154,22 +193,6 @@ func TestViewerRolesRBAC(t *testing.T) {
 			for _, verb := range []string{"get", "list"} {
 				require.False(t, allowed(verb, vr.resource, "", scope(vr.resource)),
 					"%s %s must be refused before any binding", verb, vr.resource)
-			}
-		}
-	})
-
-	t.Run("the shipped roles are not bound by default", func(t *testing.T) {
-		var crbs rbacv1.ClusterRoleBindingList
-		require.NoError(t, admin.List(ctx, &crbs))
-		var rbs rbacv1.RoleBindingList
-		require.NoError(t, admin.List(ctx, &rbs))
-		for _, vr := range viewerRoles {
-			name := loadShippedRole(t, vr.file).Name
-			for _, b := range crbs.Items {
-				require.NotEqual(t, name, b.RoleRef.Name, "%s ships unbound", name)
-			}
-			for _, b := range rbs.Items {
-				require.NotEqual(t, name, b.RoleRef.Name, "%s ships unbound", name)
 			}
 		}
 	})

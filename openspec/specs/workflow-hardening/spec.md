@@ -68,11 +68,15 @@ A job triggered by `pull_request` that holds any write scope or `id-token: write
 - **THEN** `publish-fixtures` publishes the pre-release fixtures holding `packages: write`, and the `test-e2e` job pins them and runs the suite holding only read scopes, with a docker config built from its own read-only token
 
 ### Requirement: Tools installed at an exact version
-Every workflow step that installs a tool SHALL name an exact version, never a floating range such as `3.x` or `latest`. A tool action SHALL NOT receive the job token unless it needs it.
+Every workflow step that installs a tool SHALL name an exact version, never a floating range such as `3.x` or `latest`. A tool downloaded by a `run:` step SHALL be checked against a sha256 digest kept in this repo before it runs, and no downloaded script SHALL be piped into a shell. A tool action SHALL NOT receive the job token unless it needs it.
 
 #### Scenario: Task installed at an exact version
 - **WHEN** a workflow uses `go-task/setup-task`
 - **THEN** its `version:` is an exact release such as `3.54.0`, and the step passes no `repo-token`
+
+#### Scenario: kind and flux checked before they run
+- **WHEN** `test-e2e.yml` installs `kind` and the `flux` CLI
+- **THEN** it downloads the pinned release assets (`KIND_VERSION`, and `FLUX_VERSION` from `.tasks/flux.yaml`), checks each against its in-tree sha256 (`KIND_SHA256`, `FLUX_CLI_SHA256_LINUX_AMD64`), and pipes no install script into `bash`
 
 ### Requirement: Code owners on the release machinery
 `.github/CODEOWNERS` SHALL name code owners for `/.github/`, `/.tasks/`, `/Taskfile*.yml`, `/release-please-config.json`, `/.release-please-manifest.json`, `/.cascade-frozen`, `/hack/` (scripts that run in jobs holding write tokens), `/.opm-cli-version` (the opm binary the publishing jobs install), and `/.opm-docs-version` and `/docs-kit.cue` (the signed docs publish).

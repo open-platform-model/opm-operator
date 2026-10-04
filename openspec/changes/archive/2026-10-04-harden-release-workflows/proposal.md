@@ -55,6 +55,8 @@ than they need to code that no human has reviewed yet:
   `/.opm-docs-version` and `/docs-kit.cue` to both admins.
 - Every `go-task/setup-task` step pins an exact Task version instead of `3.x`, and
   `publish-fixtures.yml` stops passing the job token to it as `repo-token`.
+- `test-e2e.yml` installs `kind` and the `flux` CLI from pinned release assets checked against
+  in-tree sha256 digests, instead of `dl/latest` and `curl | sudo bash`.
 - `AGENTS.md` records these rules.
 
 Not changed: the cascade key-holding jobs (`notify-downstream`, `publish`), the `.github` pin,
@@ -78,8 +80,8 @@ Dependabot `github-actions` entry already exists with the `.github` ignore; revi
 
 ## Impact
 
-- Workflows: `release.yml`, `lint.yml`, `test.yml`, `test-e2e.yml`, `image-pr.yml`,
-  `publish-fixtures.yml`, `.github/dependabot.yml`. New file `.github/CODEOWNERS`. `AGENTS.md`.
+- Workflows: `release.yml`, `lint.yml`, `test.yml`, `test-e2e.yml`, `image-pr.yml`, `cascade-task.yml`,
+  `publish-fixtures.yml`, `.github/dependabot.yml`. New file `.github/CODEOWNERS`. `.tasks/flux.yaml`. `AGENTS.md`.
 - No Go, API, CRD or reconcile change, and no release: every commit is `ci` or `docs` typed.
 - Cascade, release and Dependabot PRs lose the PR image. They run the full e2e suite against
   a job-local registry seeded from the tree. Release image builds get slower without the layer cache.

@@ -134,9 +134,14 @@ jobs:
         with:
           version: 3.54.0 # exact, never a floating 3.x
 
-      - name: Install the latest version of kind
+      - name: Install kind (pinned)
+        env:
+          # Bump both together; the digest is the release's kind-linux-amd64.sha256sum.
+          KIND_VERSION: v0.33.0
+          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
         run: |
-          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)"
+          curl -fsSLo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  ./kind" | sha256sum -c -
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -146,15 +151,21 @@ jobs:
       - name: Install Flux CLI (pinned)
         run: |
           # Same pin as the e2e source-controller install (.tasks/flux.yaml,
-          # single FLUX_VERSION variable); the flux CLI refuses to install a
-          # toolkit distribution newer than itself, so CLI and distribution
-          # must move together. The suite installs source-controller itself
-          # (task flux:install) once the kind cluster exists.
-          FLUX_VERSION=$(grep -oP 'FLUX_VERSION:\s*v\K[0-9.]+' .tasks/flux.yaml)
+          # FLUX_VERSION, with the CLI tarball digest beside it); the flux CLI
+          # refuses to install a toolkit distribution newer than itself, so CLI
+          # and distribution must move together. The suite installs
+          # source-controller itself (task flux:install) once the kind cluster
+          # exists. The release tarball is checked against the in-tree digest
+          # before anything from it runs.
+          FLUX_VERSION=$(grep -oP '^\s*FLUX_VERSION:\s*v\K[0-9.]+' .tasks/flux.yaml)
+          FLUX_SHA256=$(grep -oP '^\s*FLUX_CLI_SHA256_LINUX_AMD64:\s*\K[0-9a-f]{64}' .tasks/flux.yaml)
           [ -n "$FLUX_VERSION" ] || { echo "FLUX_VERSION pin not found in .tasks/flux.yaml" >&2; exit 1; }
-          # install.sh reads the version from the FLUX_VERSION env var; its
-          # positional argument is the install DIRECTORY, not the version.
-          curl -s https://fluxcd.io/install.sh | sudo FLUX_VERSION="$FLUX_VERSION" bash
+          [ -n "$FLUX_SHA256" ] || { echo "FLUX_CLI_SHA256_LINUX_AMD64 not found in .tasks/flux.yaml" >&2; exit 1; }
+          tgz="flux_${FLUX_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$tgz" "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/${tgz}"
+          echo "${FLUX_SHA256}  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP" flux
+          sudo install -m 0755 "$RUNNER_TEMP/flux" /usr/local/bin/flux
           echo "flux2 distribution pin: v$FLUX_VERSION"
           echo "flux CLI: $(flux version --client)"
 

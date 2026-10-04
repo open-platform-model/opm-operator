@@ -138,6 +138,16 @@ resolved `3.x` to. Bumping it is an ordinary reviewed edit. `publish-fixtures.ym
 `repo-token: secrets.GITHUB_TOKEN` (a `packages: write` token) to the action, which needs it
 only to list releases when resolving a range; that line is gone.
 
+### D8. kind and flux from checked release assets
+
+Added in review. The e2e suite job installed `kind` from `dl/latest` and piped
+`fluxcd.io/install.sh` into `sudo bash`. After D4 that job holds only read grants, but a
+tampered download still ran PR CI with root and saw the read-only token mounted in the cluster.
+`kind` now comes from the `v0.33.0` release asset, checked against `KIND_SHA256` in the
+workflow. The flux CLI comes from the `flux_<FLUX_VERSION>_linux_amd64.tar.gz` release asset,
+checked against `FLUX_CLI_SHA256_LINUX_AMD64`, which sits beside `FLUX_VERSION` in
+`.tasks/flux.yaml` so the single version pin and its digest move together.
+
 ## Risks / Trade-offs
 
 - Release image builds take longer without layer caching (multi-arch with QEMU). This is
@@ -146,8 +156,8 @@ only to list releases when resolving a range; that line is gone.
   against the tree's fixtures from a job-local registry instead of the GHCR pre-release, so
   they do not exercise the controller's authenticated GHCR pull; human PRs and the push to
   `main` still do.
-- `test-e2e.yml` still installs `kind` from `latest` and pipes `fluxcd.io/install.sh` into
-  bash. The job that runs them now holds only read grants, but the downloads are still
-  unpinned. That is follow-up work, not part of this change.
+- The pinned `kind` and `flux` digests are copied from each release's own checksum asset, so
+  they lock the content seen on 2026-10-04 rather than prove its origin. A bump has to update
+  the digest with the version, by hand.
 - The wiring check (`.tasks/cascade/wiring-check.sh`) is unchanged and passes. It asserts
   nothing about `release-please` or the cache lines.

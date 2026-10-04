@@ -213,7 +213,7 @@ add-operator-module's drift check runs on every pull request against `config/` a
 
 A module notify job is not part of this change. Notify is now the `cascade-notify` action in a key-holding job, the wiring contract admits one such job in `release.yml`, the `.github` resolver lists operator releases from `v*` tags only, and no cli consumes the module yet. A follow-up adds `module-notify` once the contract and the cli's receiver know module tags (see "Deferred").
 
-Both units' releases now attach an asset named `install.yaml`. Anything that lists this repository's releases and reads that asset must filter by tag shape. The cli change `migrate-manifest-installed-operator` has a tool, `hack/operator-legacy`, that downloads `install.yaml` from every opm-operator release that has it; it must read only `v*` releases, or it takes module renders in as legacy operator manifests. That is reported to the cli change, not edited here. The same name is kept because `releases/latest/download/install.yaml` is the kubectl path the install page will use once module releases are the Latest release (U8).
+Both units' releases now attach an asset named `install.yaml`. Anything that lists this repository's releases and reads that asset must filter by tag shape. The cli change `migrate-manifest-installed-operator` has a tool, `hack/operator-legacy`, that downloads `install.yaml` from every opm-operator release that has it; it must read only `v*` releases, or it takes module renders in as legacy operator manifests. That is reported to the cli change, not edited here. The same name is kept because both are the same kind of thing, an install manifest. A module release never takes the repository's "latest" mark (`0021:D11:R12`, and `0021:D8:R6` for a `0.x` release): `release-guard.sh publish` publishes an `opm_operator-v*` draft with `make_latest=false`, so `releases/latest/download/install.yaml` is never the module's manifest and the install page names a module release by tag.
 
 ### Image-bump PR
 
@@ -264,7 +264,7 @@ Each unknown is proven in `open-platform-model/release-flow-sandbox` with this c
 | U5 | first release: hidden commits under the module, then a visible carrier, with `initial-version: "0.1.0"` and no manifest entry | hidden commits alone open no module release PR; the carrier opens one proposing `0.1.0`; the branch's manifest names `0.1.0`; the identity commit lands on that PR |
 | U6 | `opm module build <published path> --version <v> -f <empty values>` renders the `#config` defaults, not `debugValues`, and orders Namespace and CRDs first | render matches the defaults render; order checked. The prototype rendered a published version from a registry with no cluster, but its `debugValues` was empty, so the defaults-versus-debugValues half is still open |
 | U7 | re-run of `opm module publish` on a held version: identify "same content" (digest of a dry publish to a local registry equals the held digest) | equal on a true re-run, unequal after a source change |
-| U8 | a published non-prerelease module release becomes GitHub's Latest while operator releases stay Pre-release | Latest is the module release |
+| U8 | a module release published with `make_latest=false` stays off GitHub's "latest" mark (`0021:D11:R12`), and an operator release published later is unaffected | after the module release, `gh api repos/<sandbox>/releases/latest` does not return the module tag |
 
 If any unknown fails, the PR does not merge. design.md and the spec deltas are revised, through a follow-up change once this one is archived.
 
@@ -280,7 +280,7 @@ If any unknown fails, the PR does not merge. design.md and the spec deltas are r
 - [Two release PRs confuse the owner] → `AGENTS.md` names both. The module's release PR also carries the identity-advance commit, so wait for it before merging, as in catalog_opm.
 - [GHCR package created with the wrong link or visibility on first publish] → G-owner runs after the first module release: link the package to this repository only, give Actions access only to it, and make it public. Until that is done, `opm` cannot pull it anonymously, so the cli's work waits.
 - [This repository's wiring check departs from the wiring contract's printed `if` for `notify-downstream`] → The contract's `releases_created` predates a second package; keeping it would notify the cli with an empty tag on every module release. `.github` should take the same edit into contract §4.6; until then the in-repo check is the source of truth for this repository.
-- [Module releases become GitHub's Latest] → The kubectl path `releases/latest/download/install.yaml` then serves the module's manifest. Until `stop-operator-install-manifest` lands, the install page still names the operator release's asset by tag, so nothing a user follows changes. After operator GA both units could be Latest. Open question 2.
+- [A module release takes GitHub's "latest" mark] → `0021:D11:R12` forbids it, and GitHub marks a published non-prerelease as latest by default. `release-guard.sh publish` sends `make_latest=false` for every `opm_operator-v*` tag; U8 proves it in the sandbox. `stop-operator-install-manifest` still plans a kubectl path through `releases/latest/download/install.yaml`, which this rule rules out; that change is revised before it is implemented (reported to the supervisor).
 
 ## Migration Plan
 
@@ -300,7 +300,7 @@ Rollback: revert the section's PR. Tags and published module versions stay, as f
 ## Open Questions
 
 1. The tag shape, the `0.1.0` start and the 0.x rule are supervisor defaults the owner has not confirmed. G-owner asks before section 2 merges.
-2. After operator GA, which unit should be GitHub's Latest release? That waits for GA.
+2. Settled by `0021:D11:R12` (merged after this design was written): a module release never takes the "latest" mark.
 
 ## Research & Decisions
 

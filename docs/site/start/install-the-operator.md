@@ -28,28 +28,35 @@ There are two ways to install the operator, and both apply the manifest a releas
 
    The output should look similar to this, shortened:
 
+   <!-- x-release-please-start-version -->
+
    ```text
    INFO installing opm-operator
    ...
-   ✔ opm-operator v1.0.0-beta.4 installed (embedded, 19 resource(s) applied)
-   INFO seeded cluster Platform subscribed to opmodel.dev/catalogs/opm@v4 4.4.4
+   ✔ opm-operator v1.0.0-beta.5 installed (embedded, 19 resource(s) applied)
    ```
 
-   `opm operator install` server-side applies the operator release built into the CLI. It waits until the resource definitions are established and the controller has rolled out, then creates the cluster Platform (step 3). opm v1.0.0-beta.5 carries opm-operator v1.0.0-beta.4. To install another release, add `--version <tag>`: the CLI downloads that release's `install.yaml` from GitHub and reports it as `fetched`. `--timeout` bounds the whole wait, 5 minutes by default. The command is safe to run again, and it first waits out objects that an earlier uninstall left terminating.
+   <!-- x-release-please-end -->
 
-   Without the CLI, apply the `install.yaml` asset of a release. Pick a tag from the [operator releases](https://github.com/open-platform-model/opm-operator/releases); this page uses v1.0.0-beta.4:
+   `opm operator install` server-side applies the operator release built into the CLI. It waits until the resource definitions are established and the controller has rolled out, then creates the cluster Platform (step 3). Each opm release carries one operator release, which the output names. To install another release, add `--version <tag>`: the CLI downloads that release's `install.yaml` from GitHub and reports it as `fetched`. `--timeout` bounds the whole wait, 5 minutes by default. The command is safe to run again, and it first waits out objects that an earlier uninstall left terminating.
+
+   <!-- x-release-please-start-version -->
+
+   Without the CLI, apply the `install.yaml` asset of a release. Pick a tag from the [operator releases](https://github.com/open-platform-model/opm-operator/releases); this page uses v1.0.0-beta.5:
 
    ```sh
-   kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/v1.0.0-beta.4/install.yaml
+   kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/v1.0.0-beta.5/install.yaml
    ```
 
-   The manifest pins the controller image by digest, `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.4@sha256:...`. To check the image's signature, run:
+   The manifest pins the controller image by digest, `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.5@sha256:...`. To check the image's signature, run:
 
    ```sh
-   cosign verify ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.4 \
+   cosign verify ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.5 \
      --certificate-identity-regexp='^https://github.com/open-platform-model/opm-operator/\.github/workflows/release\.yml@refs/heads/main$' \
      --certificate-oidc-issuer=https://token.actions.githubusercontent.com
    ```
+
+   <!-- x-release-please-end -->
 
    Do not use the `releases/latest/download/install.yaml` link. Every v1.0.0 operator release is marked Pre-release, GitHub's Latest link skips Pre-releases, and so that link serves the retired v0.7.5 manifest.
 
@@ -84,8 +91,10 @@ There are two ways to install the operator, and both apply the manifest a releas
      type: kubernetes
      registry:
        opmodel.dev/catalogs/opm@v4:
-         version: "4.4.4"
+         version: "4.Y.Z"
    ```
+
+   Replace `4.Y.Z` with a published build of the opm catalog, such as the newest on the [opm catalog](/catalogs/opm/4/) page.
 
    Apply it:
 
@@ -170,10 +179,14 @@ kubectl get platform cluster
 
 The output should look similar to this:
 
+<!-- x-release-please-start-version -->
+
 ```text
 NAME      TYPE         READY   REASON      OPERATOR
-cluster   kubernetes   True    Generated   v1.0.0-beta.4
+cluster   kubernetes   True    Generated   v1.0.0-beta.5
 ```
+
+<!-- x-release-please-end -->
 
 `Generated` means the operator generated the platform from the subscribed catalogs and built it. `OPERATOR` is the version of the running operator. `READY` `False` with reason `BuildFailed` usually means a subscribed catalog version did not resolve: it is not published, or the cluster cannot reach the registry. The condition's message names the cause. See [Operator conditions](/docs/diagnostics/operator-conditions/).
 
@@ -183,14 +196,18 @@ To read the controller's log:
 kubectl -n opm-operator-system logs deploy/opm-operator-controller-manager
 ```
 
-The first lines should look similar to this:
+The first lines should look similar to this; the second names the core version it resolved:
+
+<!-- x-release-please-start-version -->
 
 ```text
-INFO	setup	Starting opm-operator	{"version": "v1.0.0-beta.4"}
-INFO	setup	OPM core schema resolved	{"version": "v2.0.0-beta.1"}
+INFO	setup	Starting opm-operator	{"version": "v1.0.0-beta.5"}
+INFO	setup	OPM core schema resolved	{"version": "..."}
 INFO	Flux source CRDs not installed; ModulePackage source watches disabled	{"controller": "modulepackage", "kinds": "OCIRepository,GitRepository,Bucket"}
 INFO	setup	Starting manager
 ```
+
+<!-- x-release-please-end -->
 
 The Flux line appears on a cluster without Flux. If you install Flux after the operator, restart the controller so that it watches Flux sources:
 

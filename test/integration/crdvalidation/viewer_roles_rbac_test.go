@@ -42,11 +42,20 @@ type viewerRole struct {
 	resource string
 }
 
+// viewerRoles are the roles that grant reads of the Platform kinds; the
+// envtest binds these.
 var viewerRoles = []viewerRole{
 	{file: "platform_viewer_role.yaml", resource: "platforms"},
 	{file: "modulepackage_viewer_role.yaml", resource: "modulepackages"},
 	{file: "transformerregistration_viewer_role.yaml", resource: "transformerregistrations"},
 }
+
+// shippedViewerRoles is the whole viewer-role set the viewer-roles spec
+// governs, the scaffolded ModuleInstance role included; the shape and unbound
+// checks hold for every one of them.
+var shippedViewerRoles = append([]viewerRole{
+	{file: "moduleinstance_viewer_role.yaml", resource: "moduleinstances"},
+}, viewerRoles...)
 
 func loadShippedRole(t *testing.T, file string) *rbacv1.ClusterRole {
 	t.Helper()
@@ -67,7 +76,7 @@ func loadShippedRole(t *testing.T, file string) *rbacv1.ClusterRole {
 // The roles are read from config/rbac/ rather than written inline, so the test
 // asserts the artifacts the operator actually ships.
 func TestViewerRolesShape(t *testing.T) {
-	for _, vr := range viewerRoles {
+	for _, vr := range shippedViewerRoles {
 		t.Run(vr.file, func(t *testing.T) {
 			role := loadShippedRole(t, vr.file)
 
@@ -99,7 +108,7 @@ func TestViewerRolesShape(t *testing.T) {
 // the tree the install manifest and the operator module are rendered from.
 func TestViewerRolesShipUnbound(t *testing.T) {
 	names := map[string]bool{}
-	for _, vr := range viewerRoles {
+	for _, vr := range shippedViewerRoles {
 		names[loadShippedRole(t, vr.file).Name] = true
 	}
 	root := filepath.Join("..", "..", "..", "config")
@@ -188,20 +197,23 @@ func TestViewerRolesRBAC(t *testing.T) {
 		return ""
 	}
 
+	for _, vr := range viewerRoles {
+		require.NoError(t, admin.Create(ctx, loadShippedRole(t, vr.file)))
+	}
+
+	// The roles exist but nothing binds them yet: this is the control for the
+	// bound case below, so the allow there is the binding's doing.
 	t.Run("an unbound user reads nothing", func(t *testing.T) {
 		for _, vr := range viewerRoles {
 			for _, verb := range []string{"get", "list"} {
 				require.False(t, allowed(verb, vr.resource, "", scope(vr.resource)),
-					"%s %s must be refused before any binding", verb, vr.resource)
+					"%s %s must be refused while the role is unbound", verb, vr.resource)
 			}
 		}
 	})
 
 	// Bind as the install page documents: the cluster-scoped kinds through a
 	// ClusterRoleBinding, ModulePackages through a RoleBinding in one namespace.
-	for _, vr := range viewerRoles {
-		require.NoError(t, admin.Create(ctx, loadShippedRole(t, vr.file)))
-	}
 	subject := []rbacv1.Subject{{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: viewer}}
 	for _, file := range []string{platformRole, claimRoleFile} {
 		name := loadShippedRole(t, file).Name

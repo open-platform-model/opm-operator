@@ -258,6 +258,84 @@ package opm_operator
 	}
 }
 #rbacSource: {
+	"platform-viewer-role": {
+		apiVersion: "rbac.authorization.k8s.io/v1"
+		kind:       "ClusterRole"
+		metadata: {
+			labels: {
+				"app.kubernetes.io/name":       "opm-operator"
+				"app.kubernetes.io/managed-by": "kustomize"
+			}
+			name: "platform-viewer-role"
+		}
+		rules: [{
+			apiGroups: ["opmodel.dev"]
+			resources: ["platforms"]
+			verbs: [
+				"get",
+				"list",
+				"watch",
+			]
+		}, {
+			apiGroups: ["opmodel.dev"]
+			resources: ["platforms/status"]
+			verbs: ["get"]
+		}]
+	}
+}
+#rbacSource: {
+	"modulepackage-viewer-role": {
+		apiVersion: "rbac.authorization.k8s.io/v1"
+		kind:       "ClusterRole"
+		metadata: {
+			labels: {
+				"app.kubernetes.io/name":       "opm-operator"
+				"app.kubernetes.io/managed-by": "kustomize"
+			}
+			name: "modulepackage-viewer-role"
+		}
+		rules: [{
+			apiGroups: ["opmodel.dev"]
+			resources: ["modulepackages"]
+			verbs: [
+				"get",
+				"list",
+				"watch",
+			]
+		}, {
+			apiGroups: ["opmodel.dev"]
+			resources: ["modulepackages/status"]
+			verbs: ["get"]
+		}]
+	}
+}
+#rbacSource: {
+	"transformerregistration-viewer-role": {
+		apiVersion: "rbac.authorization.k8s.io/v1"
+		kind:       "ClusterRole"
+		metadata: {
+			labels: {
+				"app.kubernetes.io/name":       "opm-operator"
+				"app.kubernetes.io/managed-by": "kustomize"
+			}
+			name: "transformerregistration-viewer-role"
+		}
+		rules: [{
+			apiGroups: ["opmodel.dev"]
+			resources: ["transformerregistrations"]
+			verbs: [
+				"get",
+				"list",
+				"watch",
+			]
+		}, {
+			apiGroups: ["opmodel.dev"]
+			resources: ["transformerregistrations/status"]
+			verbs: ["get"]
+		}]
+	}
+}
+#rbacSource: {
 	"transformerregistration-admin-role": {
 		apiVersion: "rbac.authorization.k8s.io/v1"
 		kind:       "ClusterRole"

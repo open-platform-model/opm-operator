@@ -93,17 +93,34 @@ spec:
                 type: object
               owner:
                 description: |-
-                  Owner identifies which actor manages this instance. An absent, empty, or
+                  Owner identifies which actor manages this instance. An absent or
                   "operator" value means operator-managed: the controller reconciles
-                  normally. Only an explicit "cli" makes the operator skip the instance
+                  normally. The API server rejects any other value, including an explicit
+                  empty string. Only an explicit "cli" makes the operator skip the instance
                   (no render/apply/prune, no finalizer) and record a single
                   ManagedExternally acknowledgement. There is no CRD default; the
                   reconciler carries the operator-managed default semantics.
+
+                  The operator never reconciles the instance that deploys the operator
+                  itself, whatever this field says: an instance named opm-operator in
+                  opm-operator-system, an instance of the opmodel.dev/modules/opm_operator
+                  module, or one whose inventory records the operator's own
+                  CustomResourceDefinitions. With an absent or "operator" value such an
+                  instance is refused (Ready=False, Stalled=True, reason
+                  SelfManagementRefused) and never gets the cleanup finalizer, so
+                  re-running the install can always repair the operator. Keep it "cli".
                 enum:
                 - cli
                 - operator
                 type: string
               prune:
+                description: |-
+                  Prune controls whether the operator deletes what an instance no longer
+                  renders. When true, the operator deletes stale resources on reconcile
+                  and every applied object when the ModuleInstance is deleted. When false
+                  or absent, it leaves them in place: deleting the ModuleInstance leaves
+                  its applied objects running. Namespaces and CustomResourceDefinitions
+                  are never deleted.
                 type: boolean
               rollout:
                 description: RolloutSpec configures apply behavior for a release.
@@ -412,7 +429,10 @@ spec:
               dependsOn:
                 description: |-
                   DependsOn references other ModulePackage CRs that must be Ready=True before
-                  this ModulePackage is reconciled. References are same-namespace only.
+                  this ModulePackage is reconciled. References are same-namespace only: an
+                  entry whose namespace is set to anything other than this ModulePackage's
+                  own is refused: the ModulePackage reports Ready=False with reason
+                  DependenciesNotReady and does not reconcile.
                 items:
                   description: |-
                     NamespacedObjectReference contains enough information to locate the referenced Kubernetes resource object in any
@@ -431,8 +451,13 @@ spec:
                 type: array
               interval:
                 description: |-
-                  Interval at which the reconciler re-evaluates the package to detect drift
-                  and re-apply. Also the requeue interval after transient failures.
+                  Interval at which the reconciler runs again: it re-fetches the source
+                  artifact, re-renders the package and compares the source, render and
+                  inventory digests with the last applied ones, and skips the apply when
+                  they all match. It does not compare the live objects, so a change made
+                  directly to an applied object is not detected or reverted until the
+                  rendered output changes. Also the requeue interval after transient
+                  failures. Defaults to 5 minutes.
                 type: string
               path:
                 description: |-
@@ -835,8 +860,9 @@ spec:
               type:
                 description: |-
                   Type is the informational discriminator for the platform (core
-                  #Platform.type). It does not affect matching; it labels the platform
-                  flavor for operators and downstream tooling.
+                  #Platform.type). It is required and shown in the Type column of
+                  kubectl get. The operator passes it on to the generated platform
+                  module, and nothing in OPM acts on its value.
                 minLength: 1
                 type: string
             required:
@@ -1169,7 +1195,8 @@ spec:
               active:
                 description: |-
                   active reports whether an accepted claim's provider is serving. An
-                  accepted claim stays inactive until its ModulePackage is Ready.
+                  accepted claim stays inactive until its provider ModuleInstance (named by
+                  spec.providerRef) reports Ready, and once active it stays active.
                 type: boolean
               conditions:
                 description: |-
@@ -1506,6 +1533,52 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: opm-operator
+  name: opm-operator-modulepackage-viewer-role
+rules:
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - modulepackages
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - modulepackages/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-platform-viewer-role
+rules:
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - platforms
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - platforms/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: opm-operator
   name: opm-operator-transformerregistration-admin-role
 rules:
 - apiGroups:
@@ -1517,6 +1590,29 @@ rules:
   - update
   - patch
   - delete
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - transformerregistrations/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: opm-operator
+  name: opm-operator-transformerregistration-viewer-role
+rules:
+- apiGroups:
+  - opmodel.dev
+  resources:
+  - transformerregistrations
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - opmodel.dev
   resources:

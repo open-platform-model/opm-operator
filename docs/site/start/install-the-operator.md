@@ -217,7 +217,7 @@ kubectl -n opm-operator-system rollout restart deployment/opm-operator-controlle
 
 ## Related
 
-- [Operator resources](/docs/reference/operator-resources/)
+- [Operator Reference](/docs/reference/operator/)
 - [Platforms and catalogs](/docs/concepts/platforms-and-catalogs/)
 - [Who owns an instance](/docs/concepts/who-owns-an-instance/)
 - [Delete an instance safely](/docs/operating/delete-an-instance-safely/). To remove the operator, run `opm operator uninstall`. It keeps the resource definitions and the namespace, and refuses while any ModuleInstance still carries the operator's cleanup finalizer.

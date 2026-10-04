@@ -18,7 +18,7 @@ This repository does not publish it yet. Until the module's release change lands
 
 The eight administrator ClusterRoles render as raw objects with no binding until a catalog release can render a role with no subjects (catalog_opm `add-subjectless-roles`); their rules still come from the generated RBAC data. Nothing else uses raw objects.
 
-Every name is a constant, the name an operator installed from an earlier manifest has; only the bindings take the catalog's names (the role's own). The Deployment's selector is fixed across module versions, and the render test fails if anything changes it.
+Every name is a constant, the name the operator's own install manifest gives the object; only the bindings take the catalog's names (the role's own). The Deployment's selector is fixed across module versions, and the render test fails if anything changes it.
 
 ## Vetting and building it with the cli
 

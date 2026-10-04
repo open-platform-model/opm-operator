@@ -8,7 +8,7 @@ version: '3'
 
 tasks:
   generate:
-    desc: Regenerate the operator module's CRD and RBAC data from config/ (run after dev:manifests)
+    desc: Regenerate the operator module's CRD and RBAC data from config/ (dev:manifests runs it)
     cmds:
       - hack/operator-module/generate.sh
 
@@ -28,7 +28,7 @@ tasks:
   drift:manifests:
     internal: true
     cmds:
-      - task: :dev:manifests
+      - task: :dev:manifests:config
       - |
         stale=$( { git diff --name-only -- config/crd/bases config/rbac/role.yaml;
           git ls-files --others --exclude-standard -- config/crd/bases; } )
@@ -36,7 +36,7 @@ tasks:
           echo "DRIFT: config/ is stale against 'task dev:manifests' (differs from the index):"
           echo "$stale" | sed 's/^/  /'
           git --no-pager diff -- config/crd/bases config/rbac/role.yaml | head -80
-          echo "run 'task dev:manifests operator-module:generate' and commit the result" >&2
+          echo "run 'task dev:manifests' and commit the result" >&2
           exit 1
         fi
 

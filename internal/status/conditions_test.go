@@ -90,6 +90,25 @@ func TestMarkSuspended(t *testing.T) {
 	assert.False(t, conditions.Has(obj, StalledCondition))
 }
 
+func TestMarkSelfManagementRefused(t *testing.T) {
+	obj := newModuleInstance()
+	// Conditions an earlier adoption may have left behind.
+	MarkModuleResolved(obj, "opmodel.dev/modules/opm_operator@v0")
+	MarkDrifted(obj, 2)
+	MarkReconciling(obj, "Progressing", "working")
+
+	MarkSelfManagementRefused(obj, "this ModuleInstance deploys the operator")
+
+	assert.True(t, conditions.IsFalse(obj, ReadyCondition))
+	assert.Equal(t, SelfManagementRefusedReason, conditions.GetReason(obj, ReadyCondition))
+	assert.Equal(t, "this ModuleInstance deploys the operator", conditions.GetMessage(obj, ReadyCondition))
+	assert.True(t, conditions.IsTrue(obj, StalledCondition))
+	assert.Equal(t, SelfManagementRefusedReason, conditions.GetReason(obj, StalledCondition))
+	assert.False(t, conditions.Has(obj, ReconcilingCondition))
+	assert.False(t, conditions.Has(obj, ModuleResolvedCondition))
+	assert.False(t, conditions.Has(obj, DriftedCondition))
+}
+
 func TestMarkNotReady(t *testing.T) {
 	obj := newModuleInstance()
 	MarkNotReady(obj, RenderFailedReason, "render failed: invalid values")
@@ -132,6 +151,7 @@ func TestReasonConstants(t *testing.T) {
 		ApplyFailedReason,
 		PruneFailedReason,
 		ReconciliationSucceededReason,
+		SelfManagementRefusedReason,
 	}
 	for _, r := range reasons {
 		assert.NotEmpty(t, r, "reason constant should not be empty")

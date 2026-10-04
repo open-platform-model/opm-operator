@@ -60,6 +60,12 @@ const (
 	ReconciliationSucceededReason = "ReconciliationSucceeded"
 	DriftDetectedReason           = "DriftDetected"
 	ManagedExternallyReason       = "ManagedExternally"
+	// SelfManagementRefusedReason: Ready=False, Stalled=True, the instance
+	// deploys the operator itself and its owner is absent or operator. The
+	// operator never applies, prunes or finalizes the instance that deploys
+	// it, so that re-running install can always repair the operator without
+	// the running operator's help. The fix is setting spec.owner to cli.
+	SelfManagementRefusedReason = "SelfManagementRefused"
 
 	// Platform-specific reasons (0019:D6: the reconciler generates
 	// and builds the platform module).
@@ -273,6 +279,18 @@ func MarkManagedExternally(obj conditions.Setter) {
 	conditions.Delete(obj, ReconcilingCondition)
 	conditions.Delete(obj, StalledCondition)
 	conditions.MarkUnknown(obj, ReadyCondition, ManagedExternallyReason, "ModuleInstance is managed externally by the CLI")
+}
+
+// MarkSelfManagementRefused records the refusal of the operator's own
+// instance: Ready=False and Stalled=True with reason SelfManagementRefused,
+// and Reconciling, ModuleResolved and Drifted removed. The last two may be
+// left by an earlier adoption and would read as live next to the refusal.
+// The caller passes a message that is stable per generation, so re-refusing
+// an already-refused instance produces an empty patch diff.
+func MarkSelfManagementRefused(obj conditions.Setter, message string) {
+	conditions.Delete(obj, ModuleResolvedCondition)
+	conditions.Delete(obj, DriftedCondition)
+	MarkStalled(obj, SelfManagementRefusedReason, "%s", message)
 }
 
 // MarkNotReady sets Ready=False with the given reason and message.

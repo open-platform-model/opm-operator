@@ -30,6 +30,10 @@ test/fixtures/modulepackages/hello/cue.mod/module.cue
 test/fixtures/modulepackages/hello_web/cue.mod/module.cue
 test/fixtures/modulepackages/podinfo/cue.mod/module.cue
 test/fixtures/modulepackages/redis/cue.mod/module.cue
+test/fixtures/modules/backup_consumer/identity/identity.cue
+test/fixtures/modules/backup_consumer/moduleinstance.yaml
+test/fixtures/modules/backup_provider/identity/identity.cue
+test/fixtures/modules/backup_provider/moduleinstance.yaml
 test/fixtures/modules/hello/identity/identity.cue
 test/fixtures/modules/hello/moduleinstance.yaml
 test/fixtures/modules/hello_web/identity/identity.cue

@@ -44,7 +44,9 @@ const backupTraitFQN = "opmodel.dev/catalogs/opm/traits/backup@v1alpha1"
 // the contracts that catalog implements, and backup_consumer renders through
 // that catalog once it is in the registry and is refused naming the contract
 // while it is not. The literal claim in backup_provider is what the first spec
-// guards: a bump of the backup catalog that skips its re-pin fails here.
+// guards: a bump of the backup catalog that skips its re-pin fails here. That
+// literal deviates from 0015:D11:R1 (no field of a rendered registration is
+// authored) on purpose; the fixture README says why.
 var _ = Describe("Backup fixture set (registry-backed)", func() {
 	var (
 		k        *kernel.Kernel
@@ -95,10 +97,12 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 		Expect(ref).To(Equal(map[string]string{"name": "backup-provider", "namespace": "default"}),
 			"providerRef is stamped from the rendering instance (0015:D11)")
 
-		// Acceptance's provides check (0015:D11) re-derives the set from the
-		// catalog it names; this is the same derivation, against the build the
-		// tree publishes.
-		cat, err := k.AcquireCatalogFromRegistry(ctx, backup.ModulePath, backup.Tag())
+		// Acceptance resolves the catalog with the claim's own fields, the bare
+		// SemVer opm renders included, and re-derives provides from it
+		// (0015:D11): this is the same call with the same inputs. A library
+		// that resolves only a v-prefixed version fails here, as acceptance
+		// would refuse the claim CatalogUnresolved (opm-operator#210).
+		cat, err := k.AcquireCatalogFromRegistry(ctx, catalogPath, version)
 		Expect(err).NotTo(HaveOccurred())
 		derived, err := cat.Provides()
 		Expect(err).NotTo(HaveOccurred())

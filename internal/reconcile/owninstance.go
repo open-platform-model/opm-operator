@@ -40,7 +40,8 @@ const (
 //  2. a module path of the operator module, in any major;
 //  3. a recorded inventory holding a CustomResourceDefinition of the
 //     operator's own API group, which catches a renamed or forked copy
-//     of the module once anything has recorded what it deployed.
+//     of the module once anything has recorded what it deployed. Only the
+//     operator module may ship CRDs of that group.
 func isOwnInstance(mi *releasesv1alpha1.ModuleInstance) (string, bool) {
 	if mi.Name == ownInstanceName && mi.Namespace == ownInstanceNamespace {
 		return "name " + ownInstanceName + " in namespace " + ownInstanceNamespace, true

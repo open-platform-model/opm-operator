@@ -18,11 +18,11 @@ Gate G2-operator: docs-kit's `add-crd-extractor` (with C18's sample selection: t
 
 Gate: section 1 is merged. Part of gate G2-pins (core `v2.0.0-beta.1`, library `v1.0.0-beta.1` and opm-operator `v1.0.0-beta.4` backfilled, then cli `v1.0.0-beta.6`). This section's deliverable is a publishing operation (the owner's), so its steps are the implementation.
 
-- [ ] 2.1 Owner: dispatch `gh workflow run docs.yml --ref main -f mode=release -f tag=v1.0.0-beta.4` (owner decision 2026-10-03), then check `ghcr.io/open-platform-model/docs/opm-operator` is public and linked to `open-platform-model/opm-operator` (change it in the package settings if not).
-- [ ] 2.2 Optional: a fresh operator release (release PR opm-operator#178) publishes through `publish-docs`; it is not needed here. If the release cascade moves the cli's `PinnedOperatorVersion` before cli `v1.0.0-beta.6`, that version needs its bundle first.
-- [ ] 2.3 Verify the full, release, minor and major tags of `1.0.0-beta.4` with `cosign verify` and docs-kit C9's identity flags, or an anonymous `opm-docs pull` with a scratch `bundles.cue` naming `opm-operator` under `docs`.
-- [ ] 2.4 Record in design.md the run URL, version, digest and the verification; tell the cli that the operator's part of G2-pins holds.
-- [ ] 2.5 `openspec validate publish-crd-bundle --strict` passes; `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): record the first operator docs bundle`.
+- [x] 2.1 Owner: dispatch `gh workflow run docs.yml --ref main -f mode=release -f tag=v1.0.0-beta.4` (owner decision 2026-10-03), then check `ghcr.io/open-platform-model/docs/opm-operator` is public and linked to `open-platform-model/opm-operator` (change it in the package settings if not).
+- [x] 2.2 Optional: a fresh operator release (release PR opm-operator#178) publishes through `publish-docs`; it is not needed here. If the release cascade moves the cli's `PinnedOperatorVersion` before cli `v1.0.0-beta.6`, that version needs its bundle first.
+- [x] 2.3 Verify the full, release, minor and major tags of `1.0.0-beta.4` with `cosign verify` and docs-kit C9's identity flags, or an anonymous `opm-docs pull` with a scratch `bundles.cue` naming `opm-operator` under `docs`.
+- [x] 2.4 Record in design.md the run URL, version, digest and the verification; tell the cli that the operator's part of G2-pins holds.
+- [x] 2.5 `openspec validate publish-crd-bundle --strict` passes; `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): record the first operator docs bundle`.
 
 ## 3. Retire hack/crdref
 

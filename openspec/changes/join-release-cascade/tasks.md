@@ -1,57 +1,46 @@
-Depends on: `.github` `add-release-cascade-workflows` merged before this change's PR merges, with E1, E1b and E6 recorded in its `design.md` (proposal, "Depends on / gates"). Sections 2 to 4 may be written before that, but the PR merges only after it.
+Rebuilt on the Phase 3 wiring contract (version 3.1), `.github/openspec/changes/archive/2026-10-04-add-release-cascade-workflows/contract.md` in the `.github` repo, with the supervisor's addendum. Its §10.1 is the checklist; each task names the item it applies. The version 2 sections (a reusable notify workflow and receiver at `@main`) were committed earlier on this branch and are replaced by sections 2 to 4 below.
 
-Every section runs `actionlint` (the local binary, contract §10) on the workflows it adds or changes, as well as the repo gates `task dev:fmt dev:vet dev:lint dev:test`. No section adds a CI job or changes a required check.
+`<SHA>` is `2376ffae4bfc665f327d51581350dea694c01504`, the `.github` PR #9 squash commit on `main`, written `@<SHA> # .github main` (or `ref: <SHA> # .github main`).
 
-## 1. Spike: confirm the sandbox results this change relies on
+Every section runs `actionlint` v1.7.12 (the scratchpad binary, contract §10) on the workflows it adds or changes, and the repo gates `task dev:fmt dev:vet dev:lint dev:test`. From section 4 on, `task cascade:wiring:check` too. No section adds a CI job or changes a required check's name.
 
-- [ ] 1.1 Read `.github` `add-release-cascade-workflows`'s `design.md` and record in this change's design.md ("Research & Decisions") the E1, E1b and E6 results, each with its run URL.
-  - E1: a called job's `environment: cascade` minted a token from the caller's Environment secret.
-  - E1b: a branch run was refused by the Environment's branch policy.
-  - E6: `sha_pinning_required: true` accepted or refused a `uses: …/cascade-*.yml@main` call.
-- [ ] 1.2 If E1 failed (contract §13.1), or E6 refused `@main` (contract §15 item 2), stop here. Report the result to the supervisor and do not start section 2. The callers' shape is then a contract change or an owner decision. Contract §13.1 at `@main` cannot work in this repo without an owner decision either: its composite actions are action references, which `sha_pinning_required` refuses unless they are SHA-pinned (design.md, "Is `@main` allowed under `sha_pinning_required: true`?").
-- [ ] 1.3 Confirm on `.github` `main` that `cascade-notify.yml`, `cascade-receive.yml` and `cascade-gates.yml` exist, and that their `workflow_call` inputs match contract §4.1, §6.1 and §8.3 (`tag`; `dry-run`, `gates-only`, `g2-mode`, `g3-mode`, `setup-go`, `labels-managed`; `g2-mode`, `g3-mode`). Record any difference in design.md and report it.
-  - Check statically that every step `uses:` in those three files is `owner/repo@<40-hex>`: opm-operator's `sha_pinning_required` applies to every action step that runs in its runs, called workflows included. Stop and report on any miss.
-- [x] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): record the sandbox results join-release-cascade relies on`
+## 1. Spike: read `.github` `main` at the pin
 
-## 2. Notify the cli after a release is published
+- [x] 1.1 `gh api repos/open-platform-model/.github/compare/<SHA>...main --jq .status` prints `identical`.
+- [x] 1.2 At `<SHA>`: `cascade-notify` (inputs `tag`, `client-id`, `private-key`), `cascade-publish` (`dry-run`, `labels-managed`, `client-id`, `private-key`), `cascade-receive.yml` (`dry-run`, `gates-only`, `g2-mode`, `g3-mode`, `setup-go`, `setup-cue`, `cue-version`), `cascade-gates.yml` (`g2-mode`, `g3-mode`) and the resolver exist; `cascade-notify.yml` does not. Every nested third-party `uses:` is `owner/repo@<40-hex>`, so `sha_pinning_required` refuses nothing. Recorded in design.md ("What `.github` `main` carries at the pin").
+- [x] 1.3 Record E1, E1b and E6 from A's archived `design.md`, with run URLs, in design.md ("Sandbox results").
+- [x] 1.4 Rewrite proposal.md, design.md, the spec deltas and this file to contract 3.1 (§10.1 item 8), applying the earlier implementation review's open findings (design.md: `hack/crdref` gone, `publish-docs` needs, the E6 evidence, the CUE drift question).
+- [x] 1.5 `openspec validate join-release-cascade --strict`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(openspec): rebuild join-release-cascade on wiring contract 3.1`
 
-- [x] 2.1 Append the job `notify-downstream` to `.github/workflows/release.yml` after `publish-release`, exactly as design.md D1 shows:
-  - `needs: [release-please, publish-release]`;
-  - `if: needs.release-please.outputs.releases_created == 'true' && vars.CASCADE_NOTIFY != 'off'`;
-  - `permissions: {contents: read}`;
-  - `uses: open-platform-model/.github/.github/workflows/cascade-notify.yml@main` with `tag: ${{ needs.release-please.outputs.tag_name }}`;
-  - no `secrets:`.
+## 2. Notify through the pinned action (§10.1 items 1, 2)
 
-  Add a comment that says why it waits for `publish-release`.
-- [x] 2.2 Check that no other job changed (`git diff` touches only the appended lines), and that the "Workflows carry no tag mutation" search (release-automation spec) still finds no match.
-- [x] 2.3 `actionlint .github/workflows/release.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): notify the cli after an operator release is published`
+- [ ] 2.1 Replace `release.yml`'s `notify-downstream` with contract §4.6's opm-operator block, byte for byte with `<SHA>`, as the last job. The comment above it says only that the job is caller-owned, declares `environment: cascade` and passes the key to the pinned `cascade-notify` action as an input.
+- [ ] 2.2 `git diff origin/main -- .github/workflows/release.yml` touches only the appended job; the "Workflows carry no tag mutation" search (release-automation spec) still finds no match.
+- [ ] 2.3 `actionlint .github/workflows/release.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(release): run the pinned cascade-notify action in a caller-owned job`
 
-## 3. Receiver
+## 3. Receiver, gates caller and resolver pin (§10.1 items 2 to 5)
 
-- [x] 3.1 Add `.github/workflows/deps-cascade.yml`, exactly as design.md D2 shows. That is contract §5 with the opm-operator row of §5.1: cron `47 5 * * *`, `setup-go: true`, `labels-managed: false`, and no `setup-cue`, `cue-version` or `org-github-ref`.
-- [x] 3.2 Check by reading the file:
-  - top-level `permissions: {}`;
-  - the single job grants only `contents: read`, `pull-requests: read` and `statuses: write`;
-  - no `secrets:` key and no `steps:`;
-  - the concurrency expression is contract §5's, character for character.
-- [x] 3.3 `actionlint .github/workflows/deps-cascade.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): add the deps cascade receiver`
+- [ ] 3.1 Make `deps-cascade.yml` contract §5 with the §5.2 opm-operator `jobs:` map: `cascade-receive.yml@<SHA>`, no `labels-managed` on the `cascade` job, and the whole `publish` job with `cascade-publish@<SHA>` and `labels-managed: false`. Rewrite the header comment: the reusable workflow computes and posts the gates and holds no secret; the caller-owned `publish` job holds the key.
+- [ ] 3.2 `cascade-gates.yml`: only the `uses:` line changes, to `cascade-gates.yml@<SHA> # .github main`.
+- [ ] 3.3 `cascade-task.yml`: the resolver checkout's `ref:` becomes `<SHA> # .github main`; the header comment says the resolver comes from the pinned `.github` commit; the "Point S5 at the resolver" step loses its comment and its skip fallback and fails with `no cascade resolver at the pinned .github commit` (§10.1 item 3).
+- [ ] 3.4 `grep -rn -A1 'open-platform-model/.github' .github/workflows` shows five references, all `<SHA>` with ` # .github main`, and no `@main`.
+- [ ] 3.5 `actionlint` on the three files, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): publish through a caller-owned job and pin the cascade to .github main`
 
-## 4. Gates caller and docs
+## 4. Wiring check in the Lint job, and Dependabot (§10.1 items 6, 7; the addendum)
 
-- [x] 4.1 Add `.github/workflows/cascade-gates.yml`, exactly as contract §8.3:
-  - `pull_request_target` with types `opened`, `reopened` and `synchronize`;
-  - `permissions: {}`;
-  - concurrency `cascade-gates-${{ github.event.pull_request.number }}` with `cancel-in-progress: true`;
-  - one job `gates`, named `Cascade gates`, granting `statuses: write` and `actions: write`, which calls `cascade-gates.yml@main` with `g2-mode` and `g3-mode` from the repo variables (default `warn`).
+- [ ] 4.1 Add `.tasks/cascade/wiring-check.sh`: the §10.1 item 6 script with `RECEIVER=true` and `PIN_COMMENT='.github main'`, the `release.yml` `env` deny-list replaced by the allow-list `REGISTRY IMAGE_NAME CUE_VERSION` (and a map check), and `runs-on: ubuntu-latest` asserted on both key-holding jobs. shellcheck clean.
+- [ ] 4.2 Add `cascade:wiring:check` to `Taskfile.yml` next to `docs:pins:check`, and the step "Verify the cascade wiring" (`task cascade:wiring:check`) to `lint.yml`'s `Lint` job directly after "Install Task". No aggregate `check` task or Make target (opm-operator has none).
+- [ ] 4.3 `.github/dependabot.yml`: add the `open-platform-model/.github*` ignore after the docs-kit entry in the `github-actions` entry, with the §10.1 item 7 comment.
+- [ ] 4.4 Test the check: the real tree passes; each mutation of a copy is refused; the allowed edits pass. Record the result in design.md ("Wiring check, tested").
+- [ ] 4.5 `actionlint .github/workflows/lint.yml`, `task cascade:wiring:check`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): check the cascade wiring in the Lint job`
 
-  Check that it has no `steps:` and no checkout.
-- [x] 4.2 Add one bullet to `AGENTS.md`, after the `task -x deps:cascade` bullet (`AGENTS.md:149`):
-  - `release.yml`'s `notify-downstream` dispatches `upstream-released` to the cli once `publish-release` has published the draft; `CASCADE_NOTIFY=off` stops it;
-  - `deps-cascade.yml` runs the shared receiver on dispatch, daily at 05:47 UTC and by hand (`dry_run`), and it pushes only when `CASCADE_DRY_RUN` is exactly `false`;
-  - `cascade-gates.yml` posts `cascade/freshness` and `cascade/settled` on every PR, in `warn` mode until `CASCADE_G2_MODE` and `CASCADE_G3_MODE` say `enforce`;
-  - all three call `open-platform-model/.github` at `@main` (workspace RELEASING.md, "The cascade", "Gates", "Stop switches").
-- [x] 4.3 `actionlint .github/workflows/*.yml`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci(cascade): post the cascade gate statuses on every pull request`
+## 5. Docs and the re-grep (§10.1 items 8 to 11)
 
-## 5. Archive
+- [ ] 5.1 `AGENTS.md`: the cascade bullet describes the caller-owned notify and publish jobs, the reusable receive and gates workflows, the one-SHA pin moved only by a `ci(deps)` pin PR, the Dependabot ignore, and `task cascade:wiring:check` in the `Lint` job; add `task cascade:wiring:check` to the command list.
+- [ ] 5.2 Replace every "no secret" wording about the notify or publish job (§10.1 item 9) and any recovery text that names a missing `cascade-notify.yml` (item 10).
+- [ ] 5.3 Run the §10.1 item 11 re-grep; every hit is fixed or an allowed one (`labels-managed` on the publish step, `@main`/`ref: main` about something other than the cascade, "no secret" about `compute` or `gates`, superseded history). Record the remaining hits in the PR notes.
+- [ ] 5.4 `openspec validate join-release-cascade --strict`, `task cascade:wiring:check`, `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs: describe the pinned cascade wiring in AGENTS.md`
 
-- [ ] 5.1 Once the supervisor says the change may be archived, run `openspec verify` for `join-release-cascade` and resolve its findings. Then archive the change on this branch (`openspec archive join-release-cascade`), so the archive rides the implementing PR. Never push to `main` (workspace RELEASING.md, "Rulesets on main"). After archiving, check that `openspec/specs/cascade-receiver/spec.md` carries the real Purpose (not "TBD") and that `openspec validate cascade-receiver --strict` passes. Commit `chore(openspec): archive join-release-cascade`
+## 6. Archive
+
+- [ ] 6.1 Once the supervisor says the change may be archived, run `openspec verify` for `join-release-cascade` and resolve its findings. Then archive the change on this branch (`openspec archive join-release-cascade`), so the archive rides the implementing PR. Never push to `main` (workspace RELEASING.md, "Rulesets on main"). After archiving, check that `openspec/specs/cascade-receiver/spec.md` carries the real Purpose (not "TBD") and that `openspec validate cascade-receiver --strict` passes. Commit `chore(openspec): archive join-release-cascade`

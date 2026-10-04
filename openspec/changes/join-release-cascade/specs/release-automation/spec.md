@@ -30,14 +30,29 @@ The release workflow SHALL contain a publish job (`publish-release`) that depend
 - **WHEN** `publish-release` runs and the draft lacks `install.yaml`
 - **THEN** the job fails and the release stays a draft
 
+### Requirement: Dependabot leaves OPM Go modules to the release cascade
+The `gomod` entry of `.github/dependabot.yml` SHALL ignore every dependency matching `github.com/open-platform-model/*`. Those pins move only through the release cascade, which titles a shipped bump `fix(deps)` so it releases (workspace RELEASING.md, section "Pin classes"). The `github-actions` entry SHALL ignore `open-platform-model/.github*`: the cascade references move together, one `.github` SHA for the repo, only through a `ci(deps): pin the cascade to .github <sha7>` pull request (Phase 3 wiring contract (version 3.1) §2.4, §10.1 item 7). Third-party Go modules and other GitHub Actions SHALL keep their Dependabot updates.
+
+#### Scenario: Library release opens no Dependabot PR
+- **WHEN** library publishes a new tag
+- **THEN** Dependabot opens no PR bumping `github.com/open-platform-model/library` in opm-operator
+
+#### Scenario: Third-party bumps continue
+- **WHEN** a new `k8s.io/api` release exists
+- **THEN** Dependabot still proposes the grouped Kubernetes bump
+
+#### Scenario: A .github main commit opens no Dependabot PR
+- **WHEN** a commit lands on `open-platform-model/.github` `main` after the repo's pinned SHA
+- **THEN** Dependabot opens no PR moving any `open-platform-model/.github` reference, and the five references keep one SHA
+
 ## ADDED Requirements
 
 ### Requirement: Release notifies downstream after it is published
-The release workflow SHALL contain a job `notify-downstream` that calls the shared `open-platform-model/.github/.github/workflows/cascade-notify.yml@main` with the release tag `needs.release-please.outputs.tag_name`. The job SHALL need `release-please` and `publish-release`, and SHALL run only when `releases_created` is `true`, `publish-release` succeeded, and the repo variable `CASCADE_NOTIFY` is not `off`. It SHALL NOT wait for, or be skipped by, `publish-docs`. The caller job SHALL grant `contents: read` and no other permission, and SHALL pass no secrets. The App token and the `cascade` Environment belong to the called workflow (workspace RELEASING.md, "Notify after publish"). The notify job SHALL dispatch `upstream-released` only to `cli` (Phase 3 wiring contract §3.1).
+The release workflow SHALL contain a job `notify-downstream`, owned by this repo, that needs `release-please` and `publish-release`, runs on `ubuntu-latest`, declares `environment: cascade`, has a 20-minute timeout, grants `contents: read` and no other permission, and has exactly one step: the action `open-platform-model/.github/.github/actions/cascade-notify` at the repo's pinned `.github` `main` SHA, with the inputs `tag: ${{ needs.release-please.outputs.tag_name }}`, `client-id: ${{ vars.CASCADE_APP_CLIENT_ID }}` and `private-key: ${{ secrets.CASCADE_APP_PRIVATE_KEY }}` and no other input. It SHALL run only when `releases_created` is `true`, `publish-release` succeeded, and the repo variable `CASCADE_NOTIFY` is not `off`. It SHALL NOT wait for, or be skipped by, `publish-docs`. The key SHALL be read only in the caller-owned `notify-downstream` or `publish` job, which declares `environment: cascade` and passes `secrets.CASCADE_APP_PRIVATE_KEY` only as the `private-key` input of the SHA-pinned cascade action; that job SHALL have no checkout or `run:` of its own, and no `env:`, `container:` or `services:`; no reusable call SHALL pass `secrets:` or `secrets: inherit`. The action mints the App token and SHALL dispatch `upstream-released` only to `cli` (Phase 3 wiring contract (version 3.1) §3.1, §4.3, §4.6, §10.1 item 9; workspace RELEASING.md, "Notify after publish").
 
 #### Scenario: Published release notifies the cli
 - **WHEN** the release run for `v1.0.0-beta.9` publishes the draft with `install.yaml` attached
-- **THEN** `notify-downstream` runs after `publish-release`, and the cli receives a `repository_dispatch` of type `upstream-released` with source `opm-operator` and tag `v1.0.0-beta.9`
+- **THEN** `notify-downstream` runs after `publish-release` in the `cascade` Environment, and the cli receives a `repository_dispatch` of type `upstream-released` with source `opm-operator` and tag `v1.0.0-beta.9`
 
 #### Scenario: Release left a draft does not notify
 - **WHEN** `publish-examples` fails, so `publish-release` does not run and the release stays a draft
@@ -58,3 +73,7 @@ The release workflow SHALL contain a job `notify-downstream` that calls the shar
 #### Scenario: Run without a release
 - **WHEN** a push to `main` cuts no release
 - **THEN** `notify-downstream` is skipped
+
+#### Scenario: A step added beside the action is refused
+- **WHEN** a pull request adds a checkout or a `run:` step to `notify-downstream`
+- **THEN** the `Lint` job's "Verify the cascade wiring" step fails naming `release.yml:notify-downstream step count`

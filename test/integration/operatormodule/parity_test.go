@@ -31,11 +31,59 @@ import (
 // Until the module renders the install manifest, config/manager and
 // config/default still produce dist/install.yaml, while the module writes the
 // controller's pod by hand through the catalog. These specs keep the two
-// equal: the default render's pod spec and metrics Service against a
-// kustomize build of config/default. Excluded: the image (the module names a
-// release), labels and the selector (the catalog's, pinned in module_test.go),
-// the fields the catalog sets to Kubernetes API defaults, and binding names.
+// equal: the default render's object set, Deployment, pod spec and metrics
+// Service against a kustomize build of config/default. Excluded: the image
+// (the module names a release), labels and the selector (the catalog's,
+// pinned in module_test.go), the fields the catalog sets to Kubernetes API
+// defaults, and binding names (a binding is matched by its role and subjects).
 var _ = Describe("The operator module against the kustomize install", func() {
+	It("renders the object set of config/default, bindings matched by role and subjects", func() {
+		Expect(objectSetDiffs(mustRender(moduleDir), kustomizeBuild(repoRoot))).To(BeEmpty())
+	})
+
+	It("fails naming the binding when config/rbac gains one the module does not render", func() {
+		tree := GinkgoT().TempDir()
+		copyTree(filepath.Join(repoRoot, "config"), filepath.Join(tree, "config"))
+		rbac := filepath.Join(tree, "config", "rbac")
+		binding := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metrics-reader-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: system
+`
+		Expect(os.WriteFile(filepath.Join(rbac, "metrics_reader_role_binding.yaml"), []byte(binding), 0o644)).To(Succeed())
+		kust := filepath.Join(rbac, "kustomization.yaml")
+		b, err := os.ReadFile(kust)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(kust, append(b, []byte("- metrics_reader_role_binding.yaml\n")...), 0o644)).To(Succeed())
+
+		diffs := objectSetDiffs(mustRender(moduleDir), kustomizeBuild(tree))
+		Expect(diffs).To(ConsistOf(
+			"only in config/: ClusterRoleBinding roleRef=ClusterRole/opm-operator-metrics-reader " +
+				"subjects=[ServiceAccount opm-operator-system/opm-operator-controller-manager]"))
+	})
+
+	It("fails naming the field when the Deployment's replicas change in config/manager only", func() {
+		tree := GinkgoT().TempDir()
+		copyTree(filepath.Join(repoRoot, "config"), filepath.Join(tree, "config"))
+		path := filepath.Join(tree, "config", "manager", "manager.yaml")
+		b, err := os.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred())
+		changed := strings.Replace(string(b), "replicas: 1", "replicas: 2", 1)
+		Expect(changed).NotTo(Equal(string(b)))
+		Expect(os.WriteFile(path, []byte(changed), 0o644)).To(Succeed())
+
+		Expect(parityDiffs(mustRender(moduleDir), kustomizeBuild(tree))).To(
+			ContainElement(ContainSubstring("deployment.replicas")))
+	})
+
 	It("renders the controller's pod spec and metrics Service of config/default", func() {
 		manifest := kustomizeBuild(repoRoot)
 		objs := mustRender(moduleDir)
@@ -94,10 +142,109 @@ func parityDiffs(objs []obj, manifest []map[string]any) []string {
 	rService := find(objs, "Service", "opm-operator-controller-manager-metrics-service").Object
 
 	var diffs []string
+	diff("deployment", comparableDeployment(dict(rDeploy, "spec")), comparableDeployment(dict(mDeploy, "spec")), &diffs)
 	diff("pod", comparablePodSpec(dict(rDeploy, "spec", "template", "spec")),
 		comparablePodSpec(dict(mDeploy, "spec", "template", "spec")), &diffs)
 	diff("service", comparableService(dict(rService, "spec")), comparableService(dict(mService, "spec")), &diffs)
 	return diffs
+}
+
+// objectSetDiffs lists every object that only one of the render and the
+// kustomize build has, by kind, namespace and name; a binding by kind,
+// namespace, role and subjects instead, since the catalog names a binding
+// after its role. A changed object is named once on each side.
+func objectSetDiffs(objs []obj, manifest []map[string]any) []string {
+	GinkgoHelper()
+	rendered := map[string]bool{}
+	for _, o := range objs {
+		rendered[objectKey(o.Object)] = true
+	}
+	built := map[string]bool{}
+	for _, m := range manifest {
+		built[objectKey(m)] = true
+	}
+	var diffs []string
+	for k := range built {
+		if !rendered[k] {
+			diffs = append(diffs, "only in config/: "+k)
+		}
+	}
+	for k := range rendered {
+		if !built[k] {
+			diffs = append(diffs, "only in the module: "+k)
+		}
+	}
+	sort.Strings(diffs)
+	return diffs
+}
+
+// objectKey identifies an object for objectSetDiffs.
+func objectKey(m map[string]any) string {
+	kind := str(m, "kind")
+	ns := str(m, "metadata", "namespace")
+	switch kind {
+	case "RoleBinding", "ClusterRoleBinding":
+		subjects := make([]string, 0, len(list(m, "subjects")))
+		for _, s := range list(m, "subjects") {
+			sm, _ := s.(map[string]any)
+			subjects = append(subjects, fmt.Sprintf("%s %s/%s", str(sm, "kind"), str(sm, "namespace"), str(sm, "name")))
+		}
+		sort.Strings(subjects)
+		key := fmt.Sprintf("%s roleRef=%s/%s subjects=[%s]", kind,
+			str(m, "roleRef", "kind"), str(m, "roleRef", "name"), strings.Join(subjects, ", "))
+		if ns != "" {
+			key += " namespace=" + ns
+		}
+		return key
+	default:
+		return fmt.Sprintf("%s %s/%s", kind, ns, str(m, "metadata", "name"))
+	}
+}
+
+// comparableDeployment keeps the Deployment spec outside the pod spec, the
+// selector and the pod labels: the replicas, the rollout fields and the pod
+// annotations, with the Kubernetes API defaults dropped.
+func comparableDeployment(spec map[string]any) map[string]any {
+	GinkgoHelper()
+	s := normalize(spec).(map[string]any)
+	delete(s, "selector")
+	if t, ok := s["template"].(map[string]any); ok {
+		delete(t, "spec")
+		if md, ok := t["metadata"].(map[string]any); ok {
+			delete(md, "labels")
+		}
+	}
+	dropIf(s, "replicas", float64(1))
+	dropIf(s, "revisionHistoryLimit", float64(10))
+	dropIf(s, "progressDeadlineSeconds", float64(600))
+	dropIf(s, "minReadySeconds", float64(0))
+	dropIf(s, "strategy", map[string]any{"type": "RollingUpdate"})
+	return dropEmptyMaps(s).(map[string]any)
+}
+
+// dropEmptyMaps removes empty maps and lists from v, recursively.
+func dropEmptyMaps(v any) any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	for k, e := range m {
+		e = dropEmptyMaps(e)
+		switch t := e.(type) {
+		case map[string]any:
+			if len(t) == 0 {
+				delete(m, k)
+				continue
+			}
+		case []any:
+			if len(t) == 0 {
+				delete(m, k)
+				continue
+			}
+		}
+		m[k] = e
+	}
+	return m
 }
 
 // comparablePodSpec drops what the comparison excludes, keys containers and

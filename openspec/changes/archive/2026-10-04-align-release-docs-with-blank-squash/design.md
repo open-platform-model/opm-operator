@@ -1,9 +1,9 @@
 ## Context
 
 The owner decided `squash_merge_commit_message: BLANK` on 2026-10-02 (not yet applied, see D5),
-reversing `PR_BODY` (workspace
-`RELEASING.md`, "Owner settings", "Merge settings"). The reason: a ruleset-required mention-guard
-ignores the `edited` event, so a PR body edited after a green run could reach `main` unchecked.
+reversing `PR_BODY` (workspace `RELEASING.md`, "Owner settings", "Merge settings"). The reason: a
+ruleset-required mention-guard ignores the `edited` event, so a PR body edited after a green run
+could reach `main` unchecked.
 Under `BLANK` a squash commit is the PR title alone. That rules out both commit footers that
 release-please reads:
 
@@ -60,16 +60,16 @@ releasable commits on push to main".
 ### D2 What the new requirement says, grounded in release-please
 
 - `release-as` in config overrides the computed version before the footer or the versioning
-  strategy is consulted (`buildNewVersion`, release-please v17.6.0 `src/strategies/base.ts:547-551`). The
-  override also applies under `versioning: prerelease`, so the key can change a label (alpha to
-  beta), which a `prerelease-type` flip cannot do.
+  strategy is consulted (`buildNewVersion`, release-please v17.6.0
+  `src/strategies/base.ts:547-551`). The override also applies under `versioning: prerelease`,
+  so the key can change a label (alpha to beta), which a `prerelease-type` flip cannot do.
 - The value stays in force on every run until it is removed, and the next Release PR would
   re-propose an already-tagged version. So the next PR after the cut removes it
   (`RELEASING.md:465-467`).
 - A Release PR still needs a commit with a visible type: release-please skips the path when the
-  release notes are empty (`base.ts:331-337`, "No user facing commits found"). A
-  carrier PR typed `ci:` therefore waits for the next visible commit. The spec states this in a
-  scenario, so nobody expects the config edit alone to cut the release.
+  release notes are empty (`base.ts:331-337`, "No user facing commits found"). A carrier PR
+  typed `ci:` therefore waits for the next visible commit. The spec states this in a scenario, so
+  nobody expects the config edit alone to cut the release.
 
 ```jsonc
 // release-please-config.json, package "." — only between the carrier PR and the cut release
@@ -94,10 +94,12 @@ migration note" keeps its name and now asserts that link instead of footer text 
 `build` is hidden (`release-please-config.json:28`), so a Dependabot Go bump releases nothing as
 titled. `deps` is a visible section here (`:23`), so the old reason ("release-please drops
 `deps`") is false. `RELEASING.md` ("Runbook", "Dependabot PRs") tells the merger to check the
-title's type before merging, and `AGENTS.md:147` says a `go.mod` bump that changes the image is
-`deps`/`fix(deps)`. Review triage settled on 2026-10-04 that the prefix stays `build(deps)` and a human retitles a bump
-to `fix(deps)` only for a security fix. Keeping `build` keeps
-today's behaviour, and the comment now says so:
+title's type before merging. `AGENTS.md:147` said every `go.mod` bump is `deps`/`fix(deps)`
+because it changes the image; review triage settled on 2026-10-04 that a Dependabot bump stays
+`build(deps)` and a human retitles it `fix(deps)` only for a security fix. So `AGENTS.md:147` now
+splits the two: an OPM `go.mod` bump (library) is `fix(deps)`, and a Dependabot third-party Go
+bump stays `build(deps)` unless retitled for a security fix. Keeping `build` keeps today's
+behaviour, and the comment now says so:
 
 ```yaml
     commit-message:
@@ -112,7 +114,8 @@ today's behaviour, and the comment now says so:
 ```
 
 Switching the prefix to `fix` would make every third-party Go bump release the operator and
-cascade into the cli. Review triage kept `build(deps)` (see Open Questions); flipping it stays an owner call.
+cascade into the cli. Review triage kept `build(deps)` (see Open Questions); flipping it stays
+an owner call.
 
 ### D5 Interim before the owner applies `BLANK`
 
@@ -135,10 +138,10 @@ settings are verified, which is outside this change.
 
 ### Does a release-as config value alone open a Release PR?
 **Context**: The new requirement must not promise that the carrier PR cuts the release.
-**Explored**: release-please `src/strategies/base.ts` at v17.6.0, the version the pinned action bundles (see Rationale):
-`buildReleasePullRequest` returns early with "No user facing commits found" when the release notes
-are empty (`:331-337`), after the version is computed, so a `release-as` value alone opens nothing; `buildNewVersion` takes `releaseAs` first
-(`:547-551`).
+**Explored**: release-please `src/strategies/base.ts` at v17.6.0, the version the pinned action
+bundles (see Rationale): `buildReleasePullRequest` returns early with "No user facing commits
+found" when the release notes are empty (`:331-337`), after the version is computed, so a
+`release-as` value alone opens nothing; `buildNewVersion` takes `releaseAs` first (`:547-551`).
 **Decision**: The spec says a `release-as` value opens no Release PR by itself. A scenario covers
 a hidden-type carrier.
 **Rationale**: It matches the source the repo actually runs. The repo pins
@@ -152,8 +155,8 @@ a hidden-type carrier.
 **Explored**: `release-please-config.json:19-30`, `RELEASING.md` "Dependabot PRs", `AGENTS.md:147`,
 and the commit that introduced the prefix (`641f713`, opm-operator#101: "deps is not a
 Conventional Commit type").
-**Decision**: Keep `build`; rewrite the comment (D4). Review triage 2026-10-04: retitle to `fix(deps)`
-only for a security fix.
+**Decision**: Keep `build`; rewrite the comment (D4). Review triage 2026-10-04: retitle to
+`fix(deps)` only for a security fix.
 **Rationale**: This is a docs-alignment change. Changing which third-party bumps release is a
 release-policy decision for the owner.
 
@@ -175,10 +178,11 @@ release-policy decision for the owner.
 
 ## Migration Plan
 
-One PR (squash-merged): prose, Dependabot comment, review fixes, then the archive commit, which syncs the
-delta into the main spec. Nothing is published and nothing releases. Rollback is reverting the PR.
+One PR (squash-merged): prose, Dependabot comment, review fixes, then the archive commit, which
+syncs the delta into the main spec. Nothing is published and nothing releases. Rollback is
+reverting the PR.
 
 ## Open Questions
 
-- Settled in review triage 2026-10-04: Dependabot `gomod` bumps keep prefix `build` and release nothing; a human
-  retitles one to `fix(deps)` for a security fix (D4).
+- Settled in review triage 2026-10-04: Dependabot `gomod` bumps keep prefix `build` and release
+  nothing; a human retitles one to `fix(deps)` for a security fix (D4).

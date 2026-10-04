@@ -8,18 +8,18 @@
 
 ## 2. Correct the Dependabot gomod prefix comment
 
-- [x] 2.1 `.github/dependabot.yml:17-18`: replace the comment above `prefix: "build"` with the four lines in design.md D4. Keep `prefix: "build"`, `include: "scope"`, the `kubernetes` group and the `github.com/open-platform-model/*` ignore unchanged.
+- [x] 2.1 `.github/dependabot.yml:17-18`: replace the comment above `prefix: "build"` with the comment lines in design.md D4. Keep `prefix: "build"`, `include: "scope"`, the `kubernetes` group and the `github.com/open-platform-model/*` ignore unchanged.
 - [x] 2.2 Verify: `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/dependabot.yml` parses. `git diff origin/main -- .github/dependabot.yml` shows comment lines only.
 - [x] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `ci: say what the build prefix does to Dependabot Go bumps`
 
 ## 3. Apply the implementation review
 
-- [x] 3.1 `openspec/config.yaml` apply guidance "Delivery mode": the PR title carries the highest release class among the section commits (`!` over `feat` over `fix` over a hidden type), because only the title reaches `main`. Re-wrap the long "Beta line" line of the `context` copy without changing its words.
-- [x] 3.2 `.github/dependabot.yml` and design.md D4: retitle a Dependabot Go bump to `fix(deps)` only for a security fix, and merge it with an explicit squash subject until the owner applies `PR_TITLE`. Record the settled prefix question in design.md.
+- [x] 3.1 `openspec/config.yaml` apply guidance "Delivery mode": the PR title carries the highest release class among the section commits (`!` over `feat` over a releasing patch type (`fix`, `deps`, `perf`, `refactor`, `revert`) over a hidden type), because only the title reaches `main`. Re-wrap the long "Beta line" line of the `context` copy without changing its words.
+- [x] 3.2 `.github/dependabot.yml` and design.md D4: retitle a Dependabot Go bump to `fix(deps)` only for a security fix, and merge it with an explicit squash subject until the owner applies `PR_TITLE`. Record the settled prefix question in design.md. `AGENTS.md:147`: replace "`go.mod` bumps are `deps`/`fix(deps)` (they change the image)." with "An OPM `go.mod` bump (library) is `fix(deps)` (it changes the image); a Dependabot third-party Go bump stays `build(deps)` and releases nothing unless a human retitles it `fix(deps)` for a security fix (`.github/dependabot.yml`)."
 - [x] 3.3 Fix the review's citations and wording in proposal.md and design.md (`AGENTS.md:147`, "decided" not "set", the empty-notes ordering, the commit count) and drop the repeated citation at the end of `AGENTS.md` "Beta line".
 - [x] 3.4 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green, then commit `docs: apply the implementation review of the blank-squash alignment`
 
 ## 4. Archive
 
-- [x] 4.1 `openspec verify` (via `/opsx:verify`) reports the three files of section 1 and the comment of section 2 match the change.
+- [x] 4.1 Check the implementation against the change by hand (no `/opsx:verify` run): the grep of 1.4 matches only the new sentence, `.github/dependabot.yml` differs from `origin/main` in comment lines only, the "Beta line" text of `CONSTITUTION.md` and its `openspec/config.yaml` copy match word for word, and both YAML files parse.
 - [x] 4.2 Archive the change on this branch (`openspec archive align-release-docs-with-blank-squash`), which syncs the delta into `openspec/specs/release-automation/spec.md`, so the archive rides the implementing PR; never push to `main` (owner decision 2026-10-01, workspace `RELEASING.md`, "Owner settings"). Confirm that `grep -n 'Release-As\|BREAKING CHANGE:' openspec/specs/release-automation/spec.md` matches only lines of the new requirement "Forced version via the release-as config key" (its footer sentence and the scenario "A footer forces nothing"), and that requirement "Manual version override via release-as" is gone; `openspec validate release-automation --type spec --strict` reports it valid. Commit `chore(openspec): archive align-release-docs-with-blank-squash`

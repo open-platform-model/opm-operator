@@ -205,11 +205,12 @@ operations:
         again: the checked boxes plus a clean tree are the resume state."
       - "Delivery mode: unless proposal.md carries `Delivery: one PR per section`, all section
         commits ship in one PR after the last section and the PR title carries the change's
-        release class: the highest class among its section commits (`!` over `feat` over `fix`
-        over a hidden type), because under the `BLANK` squash message only the title reaches
-        `main`. In per-section mode each section commit is the PR title and therefore a
-        release trigger; the change stays active on main between PRs, and spec sync and enhancement
-        delivery logging wait for archive after the last PR."
+        release class: the highest class among its section commits (`!` over `feat` over a
+        releasing patch type (`fix`, `deps`, `perf`, `refactor`, `revert`) over a hidden type),
+        because under the `BLANK` squash message only the title reaches `main`. In per-section
+        mode each section commit is the PR title and therefore a release trigger; the change
+        stays active on main between PRs, and spec sync and enhancement delivery logging wait
+        for archive after the last PR."
   archive:
     guidance:
       - "If this change directory contains enhancement.yaml, finish the archive by logging the landing: from the workspace root run `task enhancements:delivery:log FROM=<archived-change-path> SUMMARY=\"<one line: what landed>\"`. It appends a CUE-validated entry to each declared enhancement's delivery.yaml; confirm it printed 'logged' for every declared enhancement."

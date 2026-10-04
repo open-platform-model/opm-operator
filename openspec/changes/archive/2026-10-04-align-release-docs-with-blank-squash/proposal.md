@@ -1,9 +1,9 @@
 ## Why
 
-On 2026-10-02 the owner decided the squash merge message of the releasing repos is `BLANK` (not yet
-applied, see Depends on; workspace `RELEASING.md`, "Owner settings", "Merge settings"): a squash commit carries only the PR title.
-The PR body and the branch commit messages never reach `main`, so no footer does either. Under
-that setting:
+On 2026-10-02 the owner decided the squash merge message of the releasing repos is `BLANK` (not
+yet applied, see Depends on; workspace `RELEASING.md`, "Owner settings", "Merge settings"): a
+squash commit carries only the PR title. The PR body and the branch commit messages never reach
+`main`, so no footer does either. Under that setting:
 
 - a breaking change is `!` in the PR title (`feat!:`, `fix(deps)!:`); a `BREAKING CHANGE:` footer
   never reaches `main`;
@@ -61,6 +61,9 @@ same-named change for its own copies.
 - **`.github/dependabot.yml`:** the `gomod` prefix comment states what `build(deps)` does here:
   hidden, so no release unless a human retitles it `fix(deps)` for a security fix, merged with an
   explicit squash subject until the owner applies `PR_TITLE`. The prefix itself does not change.
+- **`AGENTS.md:147`:** "`go.mod` bumps are `deps`/`fix(deps)`" becomes: an OPM `go.mod` bump
+  (library) is `fix(deps)`; a Dependabot third-party Go bump stays `build(deps)` and releases
+  nothing unless a human retitles it `fix(deps)` for a security fix.
 
 No workflow, task, script, Go code, CRD or `release-please-config.json` value changes.
 

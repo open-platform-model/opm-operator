@@ -45,8 +45,13 @@ jobs:
       - name: Verify the cascade wiring
         run: task cascade:wiring:check
 
+      # The operator's release PRs only: the operator module's release PR
+      # ships none of go.mod or the fixtures, and its own pins are checked by
+      # the module release gate below.
       - name: Release-pin gate (G1, release PRs only)
-        if: startsWith(github.head_ref || github.ref_name, 'release-please--')
+        if: >-
+          startsWith(github.head_ref || github.ref_name, 'release-please--')
+          && (github.head_ref || github.ref_name) != 'release-please--branches--main--components--opm_operator'
         run: task deps:release-check
 
       # The operator module's release gate (operator-module-release, "Module

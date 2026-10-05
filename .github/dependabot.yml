@@ -41,3 +41,14 @@ updates:
       # OPM modules move only through the release cascade, which titles a
       # shipped bump fix(deps) so it releases (workspace RELEASING.md, "Pin classes").
       - dependency-name: "github.com/open-platform-model/*"
+      # CUE moves only through a library release, whose own pull request runs
+      # the CUE check; it reaches the operator through the cascade's library
+      # bump, whose go get raises cuelang.org/go by minimal version selection,
+      # kept by go mod tidy (owner decision j4, 2026-10-03; workspace
+      # RELEASING.md, "Pin classes").
+      # cuelabs.dev/go/oci/ociregistry is the CUE team's OCI module; the
+      # library's go.mod sets its version (cuelang.org/go sets only a floor),
+      # so it reaches the operator through the library bump and moves with
+      # library releases.
+      - dependency-name: "cuelang.org/go"
+      - dependency-name: "cuelabs.dev/go/oci/ociregistry"

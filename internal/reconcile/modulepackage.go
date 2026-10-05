@@ -539,8 +539,8 @@ func renderModulePackage(
 		converted *convertedRender
 		err       error
 	)
-	if waitErr := params.RenderSlots.Run(ctx, func() {
-		kind, result, err = params.Renderer.Render(ctx, packageDir)
+	if waitErr := params.RenderSlots.Run(ctx, renderKey("ModulePackage", pkg.Namespace, pkg.Name), 0, func(renderCtx context.Context) {
+		kind, result, err = params.Renderer.Render(renderCtx, packageDir)
 		if err == nil && kind == render.KindModuleInstance {
 			converted, err = params.convertFn()(result)
 		}

@@ -391,8 +391,8 @@ func ReconcileModuleInstance(
 		err          error
 		convErr      *conversionError
 	)
-	if waitErr := params.RenderSlots.Run(ctx, func() {
-		renderResult, converted, err = renderAndConvertInstance(ctx, params.Renderer, params.convertFn(), &mi)
+	if waitErr := params.RenderSlots.Run(ctx, renderKey("ModuleInstance", mi.Namespace, mi.Name), 0, func(renderCtx context.Context) {
+		renderResult, converted, err = renderAndConvertInstance(renderCtx, params.Renderer, params.convertFn(), &mi)
 	}); waitErr != nil {
 		// The context ended while waiting for a slot (manager shutdown).
 		// Nothing was rendered, so commit nothing and classify nothing.

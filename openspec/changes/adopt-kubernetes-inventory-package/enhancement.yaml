@@ -1,0 +1,13 @@
+# Enhancement declaration, read by `task enhancements:delivery:log` at archive time.
+# See enhancements/schema.cue #ChangeDeclaration.
+#
+# Under-claimed on purpose. This is the operator half of the library's
+# opm/k8s/inventory package (library#203). 0012:D6 (one render digest that
+# ignores the runtime name) and 0012:D7 (component-blind stale set, canonical
+# inventory digest) hold only once both frontends compute through that
+# package (0012:D1), so the claim belongs to whichever frontend adoption
+# lands second, or to a delivery-log entry made after both have merged.
+implements:
+  - enhancement: "0012"
+    decisions: []
+    resolves: []

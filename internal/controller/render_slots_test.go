@@ -443,6 +443,8 @@ var _ = Describe("Render slots", func() {
 		mi.RenderTimeout = 50 * time.Millisecond
 		pkgRenderer := &countingPackageRenderer{inner: &stubPackageRenderer{result: stubRenderResult(mpNS, nil)}}
 		mp := newMPReconciler(k8sClient, &stubFetcher{pathInArtifact: renderTestPath}, pkgRenderer, pool)
+		// A render that finishes within its timeout is unaffected by it.
+		mp.RenderTimeout = time.Minute
 		addFinalizer(ctx, mi, miNN)
 		addFinalizer(ctx, mp, mpNN)
 
@@ -474,5 +476,15 @@ var _ = Describe("Render slots", func() {
 		Expect(k8sClient.Get(ctx, mpNN, &gotMP)).To(Succeed())
 		expectReady(mpNN, gotMP.Status.Conditions)
 		expectSlotFree(pool)
+
+		// Recovery: the next render of the instance finishes in time.
+		mi.Renderer = &stubRenderer{}
+		_, err = mi.Reconcile(ctx, reconcile.Request{NamespacedName: miNN})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, miNN, &gotMI)).To(Succeed())
+		expectReady(miNN, gotMI.Status.Conditions)
+		Expect(gotMI.Status.NextRetryAt).To(BeNil())
+		Expect(gotMI.Status.FailureCounters).NotTo(BeNil())
+		Expect(gotMI.Status.FailureCounters.Reconcile).To(BeZero(), "a success resets the reconcile counter")
 	})
 })

@@ -80,6 +80,34 @@ func (c *callCountingFetcher) Fetch(ctx context.Context, url, digest, dir string
 	return c.stubFetcher.Fetch(ctx, url, digest, dir, opts)
 }
 
+// patchCountingClient wraps the envtest API server in a client that counts
+// every write a reconcile sends: patches and updates of the object and of
+// its status. A resourceVersion check cannot see a patch whose content
+// matches the stored object; this counter can.
+func patchCountingClient() (client.Client, *atomic.Int32) {
+	base, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	var writes atomic.Int32
+	return interceptor.NewClient(base, interceptor.Funcs{
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
+			writes.Add(1)
+			return c.Patch(ctx, obj, p, opts...)
+		},
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			writes.Add(1)
+			return c.Update(ctx, obj, opts...)
+		},
+		SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, p client.Patch, opts ...client.SubResourcePatchOption) error {
+			writes.Add(1)
+			return c.SubResource(sub).Patch(ctx, obj, p, opts...)
+		},
+		SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			writes.Add(1)
+			return c.SubResource(sub).Update(ctx, obj, opts...)
+		},
+	}), &writes
+}
+
 // createSkipPlatform creates the cluster Platform with identity as its
 // status.packageIdentity and deletes it when the spec ends.
 func createSkipPlatform(ctx context.Context, identity string) {
@@ -188,10 +216,14 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 			before := get(ctx, nn)
 			calls := renderer.calls.Load()
 
-			res := reconcileOnce(ctx, newReconciler(renderer, interval), nn)
+			r := newReconciler(renderer, interval)
+			counting, writes := patchCountingClient()
+			r.Client = counting
+			res := reconcileOnce(ctx, r, nn)
 
 			Expect(res).To(Equal(reconcile.Result{}), "a skipped instance does not requeue")
 			Expect(renderer.calls.Load()).To(Equal(calls), "the renderer is not called")
+			Expect(writes.Load()).To(BeZero(), "no patch or status patch is sent")
 			after := get(ctx, nn)
 			Expect(after.ResourceVersion).To(Equal(before.ResourceVersion), "no status patch is sent")
 			Expect(after.Status.LastAppliedVersion).To(Equal(before.Status.LastAppliedVersion))
@@ -470,10 +502,13 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 			var before releasesv1alpha1.ModulePackage
 			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
 			fetches, renders := fetcher.calls.Load(), renderer.calls.Load()
+			counting, writes := patchCountingClient()
+			r.Client = counting
 
 			res, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 
 			Expect(err).NotTo(HaveOccurred())
+			Expect(writes.Load()).To(BeZero(), "no patch or status patch is sent")
 			Expect(res.RequeueAfter).To(Equal(time.Minute), "the skip keeps spec.interval")
 			Expect(fetcher.calls.Load()).To(Equal(fetches), "no artifact fetch")
 			Expect(renderer.calls.Load()).To(Equal(renders), "no render")

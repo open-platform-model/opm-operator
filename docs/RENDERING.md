@@ -112,7 +112,8 @@ only when all of these hold:
 
 - `--drift-render-interval` is greater than zero (default `30m`);
 - `status.lastAppliedInputs` is set and its `renderedAt` is less than the
-  interval ago, which bounds how long anything outside the key goes unseen;
+  interval ago, which bounds how long anything outside the key goes unseen
+  (a `renderedAt` in the future counts as expired, so the bound holds);
 - `Ready` is `True` with reason `ReconciliationSucceeded`, so a failed,
   refused or suspended attempt always renders, and a revert to the last
   applied inputs after a failed apply still runs drift detection;

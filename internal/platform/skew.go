@@ -31,3 +31,11 @@ func SkewPolicyName(p kernel.SkewPolicy) string {
 	}
 	return releasesv1alpha1.SkewPolicyWarn
 }
+
+// PinSet is the Platform field that names the generated package a render
+// consumes: status.packageIdentity. The render input key hashes it and the
+// ModuleInstance watch predicate wakes on it; both read it here, so the two
+// cannot drift apart.
+func PinSet(plat *releasesv1alpha1.Platform) string {
+	return plat.Status.PackageIdentity
+}

@@ -383,14 +383,16 @@ func packageRenderSkippable(
 	if params.DriftRenderInterval <= 0 || pkg.Status.LastAppliedInputs == nil {
 		return false
 	}
-	identity, skew := platformKeyParts(ctx, params.Client)
-	key := status.RenderInputKey{
-		Source:          sourceDigest,
-		Config:          status.ConfigDigest(nil),
-		PackageIdentity: identity,
-		SkewPolicy:      skew,
-		OperatorVersion: params.OperatorVersion,
-		LibraryVersion:  params.LibraryVersion,
+	key := func() status.RenderInputKey {
+		identity, skew := platformKeyParts(ctx, params.Client)
+		return status.RenderInputKey{
+			Source:          sourceDigest,
+			Config:          status.ConfigDigest(nil),
+			PackageIdentity: identity,
+			SkewPolicy:      skew,
+			OperatorVersion: params.OperatorVersion,
+			LibraryVersion:  params.LibraryVersion,
+		}
 	}
 	skip := renderSkip{interval: params.DriftRenderInterval, now: time.Now()}
 	if !skip.maySkip(conditions, pkg.Generation, pkg.Status.ObservedGeneration, pkg.Status.LastAppliedInputs, key) {

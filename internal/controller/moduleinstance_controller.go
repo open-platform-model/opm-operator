@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -220,7 +221,7 @@ func platformConsumedFieldsChanged() predicate.Predicate {
 				return true
 			}
 			return old.Status.ObservedGeneration != cur.Status.ObservedGeneration ||
-				old.Status.PackageIdentity != cur.Status.PackageIdentity ||
+				platformstore.PinSet(old) != platformstore.PinSet(cur) ||
 				!equality.Semantic.DeepEqual(old.Status.Registry, cur.Status.Registry) ||
 				skewPolicyOf(old) != skewPolicyOf(cur) ||
 				readyStatus(old) != readyStatus(cur) ||

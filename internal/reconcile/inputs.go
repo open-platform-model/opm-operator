@@ -60,8 +60,7 @@ func noOpInputs(interval time.Duration, key *status.RenderInputKey) *status.Rend
 }
 
 // platformKeyParts reads the platform parts of the pre-render key from the
-// cluster Platform: status.packageIdentity, the pin-set field a render
-// consumes, and the resolved spec.skewPolicy in its API spelling. It reads
+// cluster Platform: its pin set ([platformstore.PinSet]), and the resolved spec.skewPolicy in its API spelling. It reads
 // the CR rather than the platform store because the CR survives an operator
 // restart: an unchanged object can skip while the store is still empty. A
 // missing Platform or any read error returns empty parts, which make the key
@@ -74,7 +73,7 @@ func platformKeyParts(ctx context.Context, c client.Reader) (identity, skew stri
 		}
 		return "", ""
 	}
-	return plat.Status.PackageIdentity, platformstore.SkewPolicyName(platformstore.ResolveSkewPolicy(&plat))
+	return platformstore.PinSet(&plat), platformstore.SkewPolicyName(platformstore.ResolveSkewPolicy(&plat))
 }
 
 // renderSkip decides whether a reconcile may skip its render.
@@ -88,17 +87,23 @@ type renderSkip struct {
 // skip is enabled, the last confirming render (recorded) is younger than the
 // interval, the object is Ready with reason ReconciliationSucceeded, it has
 // observed its generation, and the pre-render key is complete and matches
-// the recorded one. The checks run cheapest first. Each guards against a
-// skip hiding something a render would find: a stale render (the interval),
-// a failed or refused attempt (Ready), a spec edit outside the key (the
-// generation), and an input change (the key).
+// the recorded one. The checks run cheapest first, and key, which reads the
+// Platform, is called only once every other check has passed. Each guards
+// against a skip hiding something a render would find: a stale render (the
+// interval), a failed or refused attempt (Ready), a spec edit outside the key
+// (the generation), and an input change (the key). A renderedAt in the future
+// (a clock that was ahead, or a hand-written status) counts as expired, so
+// the interval stays an upper bound on how long drift goes unchecked.
 func (s renderSkip) maySkip(
 	conditions []metav1.Condition,
 	generation, observedGeneration int64,
 	recorded *releasesv1alpha1.RenderInputs,
-	key status.RenderInputKey,
+	key func() status.RenderInputKey,
 ) bool {
-	if s.interval <= 0 || recorded == nil || s.now.Sub(recorded.RenderedAt.Time) >= s.interval {
+	if s.interval <= 0 || recorded == nil {
+		return false
+	}
+	if age := s.now.Sub(recorded.RenderedAt.Time); age < 0 || age >= s.interval {
 		return false
 	}
 	ready := apimeta.FindStatusCondition(conditions, status.ReadyCondition)
@@ -108,7 +113,8 @@ func (s renderSkip) maySkip(
 	if generation != observedGeneration {
 		return false
 	}
-	return key.Complete() && key.Digest() == recorded.Digest
+	k := key()
+	return k.Complete() && k.Digest() == recorded.Digest
 }
 
 // logRenderSkip records a skipped render: one line, with the time from which

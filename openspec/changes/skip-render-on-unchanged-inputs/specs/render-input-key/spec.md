@@ -63,7 +63,7 @@ An attempt that fails, is refused, panics, or skips its render SHALL leave the f
 Before rendering, a ModuleInstance or ModulePackage reconcile SHALL compute the key from the object (for a ModulePackage, after resolving its source), `Platform.status.packageIdentity`, the resolved `Platform.spec.skewPolicy` of the `cluster` Platform, and the running operator and library versions. It SHALL skip the render when, and only when, all of these hold:
 
 - the drift render interval is greater than zero;
-- `status.lastAppliedInputs` is set and its `renderedAt` is less than the drift render interval ago;
+- `status.lastAppliedInputs` is set and its `renderedAt` is less than the drift render interval ago and not in the future;
 - `Ready` is `True` with reason `ReconciliationSucceeded`;
 - `status.observedGeneration` equals `metadata.generation`;
 - the key is complete and its digest equals `status.lastAppliedInputs.digest`;

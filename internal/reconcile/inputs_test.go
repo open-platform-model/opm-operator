@@ -58,6 +58,18 @@ func TestNoOpInputs(t *testing.T) {
 	assert.Same(t, &k, noOpInputs(time.Minute, &k))
 }
 
+func TestMaySkipReadsTheKeyLast(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	key := completeKey()
+	recorded := &releasesv1alpha1.RenderInputs{Digest: key.Digest(), RenderedAt: metav1.NewTime(now.Add(-time.Minute))}
+	reads := 0
+	read := func() status.RenderInputKey { reads++; return key }
+	s := renderSkip{interval: 30 * time.Minute, now: now}
+
+	assert.False(t, s.maySkip(nil, 1, 1, recorded, read), "not Ready")
+	assert.Zero(t, reads, "a failed cheap check never reads the Platform")
+}
+
 func TestMaySkip(t *testing.T) {
 	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 	interval := 30 * time.Minute
@@ -91,6 +103,9 @@ func TestMaySkip(t *testing.T) {
 		{"render older than the interval", func(in *input) {
 			in.recorded.RenderedAt = metav1.NewTime(now.Add(-31 * time.Minute))
 		}, false},
+		{"render time in the future", func(in *input) {
+			in.recorded.RenderedAt = metav1.NewTime(now.Add(time.Hour))
+		}, false},
 		{"render exactly one interval ago", func(in *input) {
 			in.recorded.RenderedAt = metav1.NewTime(now.Add(-interval))
 		}, false},
@@ -110,7 +125,7 @@ func TestMaySkip(t *testing.T) {
 			in := base()
 			tc.mutate(&in)
 			s := renderSkip{interval: in.interval, now: now}
-			assert.Equal(t, tc.want, s.maySkip(in.conditions, in.gen, in.obs, in.recorded, in.key))
+			assert.Equal(t, tc.want, s.maySkip(in.conditions, in.gen, in.obs, in.recorded, func() status.RenderInputKey { return in.key }))
 		})
 	}
 }

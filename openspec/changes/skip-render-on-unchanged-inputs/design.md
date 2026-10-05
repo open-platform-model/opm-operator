@@ -111,33 +111,41 @@ The singleton's name moves to `internal/platform` (`SingletonName = "cluster"`) 
 **Decision**: A reconcile skips only when all of these hold, checked in this order (cheapest first):
 
 1. `params.DriftRenderInterval > 0` (the flag; zero in params also disables it, so every existing test and caller keeps rendering).
-2. `status.lastAppliedInputs` is set, and `now - renderedAt < DriftRenderInterval`.
+2. `status.lastAppliedInputs` is set, and `0 <= now - renderedAt < DriftRenderInterval` (a `renderedAt` in the future counts as expired).
 3. `Ready` is `True` with reason `ReconciliationSucceeded`.
 4. `status.observedGeneration == metadata.generation`.
 5. The pre-render key is complete and its digest equals `status.lastAppliedInputs.digest`.
 6. ModulePackage only: the source just resolved (ref, revision, digest, URL) equals `status.source`.
 
 ```go
-// internal/reconcile/inputs.go (sketch)
+// internal/reconcile/inputs.go
 type renderSkip struct {
-	interval        time.Duration
-	operatorVersion string
-	libraryVersion  string
-	now             func() time.Time
+	interval time.Duration // the drift render interval; zero or less never skips
+	now      time.Time
 }
 
-func (s renderSkip) maySkip(obj conditions.Getter, gen, observed int64,
-	recorded *releasesv1alpha1.RenderInputs, key status.RenderInputKey) bool {
-	if s.interval <= 0 || recorded == nil || s.now().Sub(recorded.RenderedAt.Time) >= s.interval {
+// key is called last, so a failed cheap check never reads the Platform.
+func (s renderSkip) maySkip(conditions []metav1.Condition, gen, observed int64,
+	recorded *releasesv1alpha1.RenderInputs, key func() status.RenderInputKey) bool {
+	if s.interval <= 0 || recorded == nil {
 		return false
 	}
-	ready := apimeta.FindStatusCondition(obj.GetConditions(), status.ReadyCondition)
+	if age := s.now.Sub(recorded.RenderedAt.Time); age < 0 || age >= s.interval {
+		return false // a renderedAt in the future counts as expired
+	}
+	ready := apimeta.FindStatusCondition(conditions, status.ReadyCondition)
 	if ready == nil || ready.Status != metav1.ConditionTrue || ready.Reason != status.ReconciliationSucceededReason {
 		return false
 	}
-	return gen == observed && key.Complete() && key.Digest() == recorded.Digest
+	if gen != observed {
+		return false
+	}
+	k := key()
+	return k.Complete() && k.Digest() == recorded.Digest
 }
 ```
+
+`maySkip` takes the conditions as a slice, not the object. The ModulePackage passes the conditions it had before this attempt marked itself `Reconciling` (`conditionsAtStart` in `modulepackage.go`); read after that mark, `Ready` is never `True` with reason `ReconciliationSucceeded`, and a package could never skip. The operator and library versions live in the reconcile params, not in `renderSkip`.
 
 **Rationale**:
 

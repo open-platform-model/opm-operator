@@ -1304,14 +1304,16 @@ func instanceRenderSkippable(ctx context.Context, params *ModuleInstanceParams, 
 	if params.DriftRenderInterval <= 0 || mi.Status.LastAppliedInputs == nil {
 		return false
 	}
-	identity, skew := platformKeyParts(ctx, params.Client)
-	key := status.RenderInputKey{
-		Source:          status.ModuleSourceDigest(mi.Spec.Module.Path, mi.Spec.Module.Version),
-		Config:          status.ConfigDigest(mi.Spec.Values),
-		PackageIdentity: identity,
-		SkewPolicy:      skew,
-		OperatorVersion: params.OperatorVersion,
-		LibraryVersion:  params.LibraryVersion,
+	key := func() status.RenderInputKey {
+		identity, skew := platformKeyParts(ctx, params.Client)
+		return status.RenderInputKey{
+			Source:          status.ModuleSourceDigest(mi.Spec.Module.Path, mi.Spec.Module.Version),
+			Config:          status.ConfigDigest(mi.Spec.Values),
+			PackageIdentity: identity,
+			SkewPolicy:      skew,
+			OperatorVersion: params.OperatorVersion,
+			LibraryVersion:  params.LibraryVersion,
+		}
 	}
 	skip := renderSkip{interval: params.DriftRenderInterval, now: time.Now()}
 	if !skip.maySkip(mi.Status.Conditions, mi.Generation, mi.Status.ObservedGeneration, mi.Status.LastAppliedInputs, key) {

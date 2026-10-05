@@ -3,6 +3,7 @@ package status
 import (
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Condition types.
@@ -31,6 +32,17 @@ const (
 	// the package renders consume, which is why it is written on both
 	// success paths and left untouched by a failure or a refusal.
 	ContractsFulfilledCondition = "ContractsFulfilled"
+
+	// HealthyCondition reports whether the objects in a ModuleInstance's or
+	// ModulePackage's status.inventory have rolled out, as the library's
+	// opm/k8s/health judges them. It is independent of Ready: Ready says the
+	// render was applied, Healthy says what the applied objects report now.
+	// Keeping them apart leaves every reader of Ready (render skip,
+	// spec.dependsOn, TransformerRegistration activation, Flux kstatus) as it
+	// was. Only a reconcile that leaves Ready=True with reason
+	// ReconciliationSucceeded writes it, so after a failure it keeps
+	// describing the last applied render.
+	HealthyCondition = "Healthy"
 )
 
 // Condition reasons.
@@ -234,6 +246,21 @@ const (
 	// depend on it — so they report it under one reason.
 	DependentsRemainReason = "DependentsRemain"
 
+	// Healthy reasons.
+
+	// RolledOutReason: Healthy=True, every inventory object was read after
+	// the apply it reflects and judged healthy.
+	RolledOutReason = "RolledOut"
+	// NotRolledOutReason: Healthy=False, an inventory object is not healthy
+	// yet or does not exist.
+	NotRolledOutReason = "NotRolledOut"
+	// ProgressDeadlineExceededReason: Healthy=False, a Deployment reports
+	// its rollout stalled past its progress deadline.
+	ProgressDeadlineExceededReason = "ProgressDeadlineExceeded"
+	// HealthUnknownReason: Healthy=Unknown, an object could not be read, the
+	// reader could not be built, or the inventory is empty.
+	HealthUnknownReason = "HealthUnknown"
+
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
 	PrunedReason  = "Pruned"
@@ -280,26 +307,43 @@ func MarkSuspended(obj conditions.Setter) {
 }
 
 // MarkManagedExternally sets Ready=Unknown with reason ManagedExternally and
-// removes Reconciling and Stalled conditions. Used by the owner-skip gate for
-// CLI-owned instances the operator deliberately does not reconcile. The static
-// message keeps the write idempotent: re-acknowledging an already-marked
-// instance produces an empty patch diff.
+// removes Reconciling, Stalled and Healthy conditions. Used by the owner-skip
+// gate for CLI-owned instances the operator deliberately does not reconcile;
+// it judges no health there, so a Healthy left from an operator-owned past
+// would describe objects it no longer follows. The static message keeps the
+// write idempotent: re-acknowledging an already-marked instance produces an
+// empty patch diff.
 func MarkManagedExternally(obj conditions.Setter) {
 	conditions.Delete(obj, ReconcilingCondition)
 	conditions.Delete(obj, StalledCondition)
+	conditions.Delete(obj, HealthyCondition)
 	conditions.MarkUnknown(obj, ReadyCondition, ManagedExternallyReason, "ModuleInstance is managed externally by the CLI")
 }
 
 // MarkSelfManagementRefused records the refusal of the operator's own
 // instance: Ready=False and Stalled=True with reason SelfManagementRefused,
-// and Reconciling, ModuleResolved and Drifted removed. The last two may be
-// left by an earlier adoption and would read as live next to the refusal.
+// and Reconciling, ModuleResolved, Drifted and Healthy removed. The last
+// three may be left by an earlier adoption and would read as live next to
+// the refusal.
 // The caller passes a message that is stable per generation, so re-refusing
 // an already-refused instance produces an empty patch diff.
 func MarkSelfManagementRefused(obj conditions.Setter, message string) {
 	conditions.Delete(obj, ModuleResolvedCondition)
 	conditions.Delete(obj, DriftedCondition)
+	conditions.Delete(obj, HealthyCondition)
 	MarkStalled(obj, SelfManagementRefusedReason, "%s", message)
+}
+
+// MarkHealthy sets the Healthy condition and touches no other condition.
+func MarkHealthy(obj conditions.Setter, s metav1.ConditionStatus, reason, messageFormat string, messageArgs ...any) {
+	switch s {
+	case metav1.ConditionTrue:
+		conditions.MarkTrue(obj, HealthyCondition, reason, messageFormat, messageArgs...)
+	case metav1.ConditionFalse:
+		conditions.MarkFalse(obj, HealthyCondition, reason, messageFormat, messageArgs...)
+	default:
+		conditions.MarkUnknown(obj, HealthyCondition, reason, messageFormat, messageArgs...)
+	}
 }
 
 // MarkNotReady sets Ready=False with the given reason and message.

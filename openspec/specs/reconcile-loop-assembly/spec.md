@@ -58,15 +58,22 @@ attempt, including `NoOp`. On meaningful outcomes (`Applied`, `AppliedAndPruned`
 `FailedTransient`, `FailedStalled`), the patch updates conditions,
 `lastAttempted*`, `lastApplied*` (on success), `inventory` (on success),
 history, failure counters, and `nextRetryAt`. On `NoOp`, the patch is bounded
-to: drift condition (`Drifted`), failure counter deltas (incl. drift counter),
-`nextRetryAt` clearing, `requiredContracts`, and `lastAppliedVersion` and
-`lastAppliedInputs` when the attempt rendered. `lastAttempted*`, `inventory`,
+to: drift condition (`Drifted`), the `Healthy` condition (`instance-health`),
+failure counter deltas (incl. drift counter), `nextRetryAt` clearing,
+`requiredContracts`, and `lastAppliedVersion` and `lastAppliedInputs` when the
+attempt rendered. `lastAttempted*`, `inventory`,
 and history MUST NOT be modified on `NoOp` — those fields describe meaningful
 reconcile outcomes.
 
 A reconcile that skips its render because its inputs are unchanged
-(`render-input-key`) is not an attempt and MUST NOT patch status at all: every
-condition it read is already final, and nothing it could record has moved.
+(`render-input-key`) is not an attempt. It judges health (`instance-health`)
+and MUST NOT patch anything but the `Healthy` condition, which it patches only
+when the judgement changed it: every other condition it read is already final,
+and nothing else it could record has moved.
+
+On a successful outcome the patch also carries the `Healthy` condition the
+reconcile judged (`instance-health`). A failed attempt leaves `Healthy` as it
+was.
 
 `requiredContracts` is in the `NoOp` set deliberately, and it is the one field
 there that does not describe an outcome. It describes what the instance
@@ -119,10 +126,18 @@ on the controller. Status subresource patches do not bump
 - **AND** no follow-up reconcile is queued from the status patch alone
 
 #### Scenario: A skipped render patches nothing
-- **WHEN** a reconcile skips its render because its inputs are unchanged
+- **WHEN** a reconcile skips its render because its inputs are unchanged and
+  its `Healthy` judgement is the one already on status
 - **THEN** no status patch is sent
 - **AND** `lastAttemptedAt`, history and `status.lastAppliedInputs.renderedAt`
   keep their values
+
+#### Scenario: A skipped render records a changed health judgement
+- **WHEN** a reconcile skips its render and the inventory's Deployment has
+  rolled out since the last judgement (`Healthy` was `NotRolledOut`)
+- **THEN** the only status change is `Healthy=True` with reason `RolledOut`
+- **AND** `observedGeneration`, `lastAttemptedAt`, history and
+  `status.lastAppliedInputs.renderedAt` keep their values
 
 ### Requirement: Inventory updated only on full success
 The `status.inventory` MUST only be replaced after a fully successful apply (and prune, if enabled).

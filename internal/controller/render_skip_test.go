@@ -120,16 +120,16 @@ func patchCountingClient() (client.Client, *atomic.Int32) {
 	}), &writes
 }
 
-// createSkipPlatform creates the cluster Platform with identity as its
-// status.packageIdentity and deletes it when the spec ends.
-func createSkipPlatform(ctx context.Context, identity string) {
+// createSkipPlatform creates the cluster Platform with the stub render's
+// identity as its status.packageIdentity and deletes it when the spec ends.
+func createSkipPlatform(ctx context.Context) {
 	plat := &releasesv1alpha1.Platform{
 		ObjectMeta: metav1.ObjectMeta{Name: platformSingletonName},
 		Spec:       releasesv1alpha1.PlatformSpec{Type: "kubernetes"},
 	}
 	Expect(k8sClient.Create(ctx, plat)).To(Succeed())
 	DeferCleanup(deletePlatform)
-	setPackageIdentity(ctx, identity)
+	setPackageIdentity(ctx, stubPlatformIdentity)
 }
 
 // setPackageIdentity writes Platform.status.packageIdentity.
@@ -255,7 +255,7 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 		// appliedInstance creates an instance against a gen-1 Platform and
 		// reconciles it to a first successful apply, which records its key.
 		appliedInstance := func(ctx context.Context, name string, renderer *callCountingRenderer) types.NamespacedName {
-			createSkipPlatform(ctx, stubPlatformIdentity)
+			createSkipPlatform(ctx)
 			mi := &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 				Spec: releasesv1alpha1.ModuleInstanceSpec{
@@ -614,7 +614,7 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 		// appliedPackage creates a package against a gen-1 Platform and an
 		// artifact at revision main@sha256:skip, reconciled to a first apply.
 		appliedPackage := func(ctx context.Context, name string, fetcher *callCountingFetcher, renderer *callCountingPackageRenderer) (types.NamespacedName, *sourcev1.OCIRepository, *ModulePackageReconciler) {
-			createSkipPlatform(ctx, stubPlatformIdentity)
+			createSkipPlatform(ctx)
 			src := &sourcev1.OCIRepository{
 				ObjectMeta: metav1.ObjectMeta{Name: name + "-src", Namespace: namespace},
 				Spec: sourcev1.OCIRepositorySpec{

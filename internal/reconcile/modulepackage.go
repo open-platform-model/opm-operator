@@ -192,7 +192,8 @@ func ReconcileModulePackage(
 		// reconcile skips the render. A skip is not an attempt: every
 		// condition it read is already final and nothing it could record has
 		// moved, so the commit sends no patch (it would only write the
-		// transient Reconciling set below).
+		// transient Reconciling set below). The skip patches its Healthy
+		// judgement itself.
 		renderSkipped bool
 
 		// renderedVersion is the module version this attempt's render
@@ -306,7 +307,10 @@ func ReconcileModulePackage(
 	// unchanged.
 	if sourceRecorded && packageRenderSkippable(ctx, params, &pkg, conditionsAtStart, digests.Source) {
 		renderSkipped = true
-		return ctrl.Result{RequeueAfter: interval}, nil
+		// The transient Reconciling this attempt set is never written: the
+		// skip patches the Healthy condition alone.
+		pkg.Status.Conditions = conditionsAtStart
+		return judgeSkippedPackage(ctx, params, patcher, &pkg, interval), nil
 	}
 
 	// Phase 2: fetch + extract artifact.
@@ -344,7 +348,10 @@ func ReconcileModulePackage(
 		log.Info("No changes detected, skipping apply")
 		params.EventRecorder.Eventf(&pkg, nil, corev1.EventTypeNormal, status.NoOpReason, "Reconcile", "No changes detected")
 		outcome = NoOp
-		return ctrl.Result{RequeueAfter: interval}, nil
+		// Judged before the deferred NoOp commit, which patches it.
+		v := judgePackageHealth(ctx, params, &pkg, inventoryEntries(pkg.Status.Inventory))
+		applyHealth(&pkg, v)
+		return ctrl.Result{RequeueAfter: packageRequeue(healthRequeue(v, pkg.Status.LastAppliedAt, time.Now()), interval)}, nil
 	}
 
 	applyedResult, fail := applyAndPruneModulePackage(ctx, params, &pkg, converted, &phases)
@@ -360,7 +367,49 @@ func ReconcileModulePackage(
 	params.EventRecorder.Eventf(&pkg, nil, corev1.EventTypeNormal, status.ReconciliationSucceededReason, "Reconcile", "Reconciliation succeeded")
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
-	return ctrl.Result{RequeueAfter: interval}, nil
+	// Judge health after the apply and prune returned, through the identity
+	// that applied. lastAppliedAt is about to be written as now.
+	v := judgeHealth(ctx, applyedResult.healthReader, newEntries)
+	applyHealth(&pkg, v)
+	now := metav1.Now()
+	return ctrl.Result{RequeueAfter: packageRequeue(healthRequeue(v, &now, now.Time), interval)}, nil
+}
+
+// judgePackageHealth is judgeInstanceHealth for a ModulePackage.
+func judgePackageHealth(
+	ctx context.Context,
+	params *ModulePackageParams,
+	pkg *releasesv1alpha1.ModulePackage,
+	entries []releasesv1alpha1.InventoryEntry,
+) healthVerdict {
+	if sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount); sa == "" {
+		return judgeHealth(ctx, managerReader(params.APIReader, params.Client), entries)
+	}
+	_, impClient, err := buildModulePackageApplyClient(ctx, params, pkg)
+	if err != nil {
+		return unreadableVerdict(entries, err)
+	}
+	return judgeHealth(ctx, impClient, entries)
+}
+
+// judgeSkippedPackage is judgeSkippedInstance for a ModulePackage: it
+// patches the Healthy condition alone, and requeues after spec.interval or
+// sooner when health asks for it.
+func judgeSkippedPackage(
+	ctx context.Context,
+	params *ModulePackageParams,
+	patcher *patch.SerialPatcher,
+	pkg *releasesv1alpha1.ModulePackage,
+	interval time.Duration,
+) ctrl.Result {
+	v := judgePackageHealth(ctx, params, pkg, inventoryEntries(pkg.Status.Inventory))
+	applyHealth(pkg, v)
+	if err := patcher.Patch(ctx, pkg,
+		patch.WithOwnedConditions{Conditions: []string{status.HealthyCondition}},
+	); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to patch the Healthy condition of a skipped render")
+	}
+	return ctrl.Result{RequeueAfter: packageRequeue(healthRequeue(v, pkg.Status.LastAppliedAt, time.Now()), interval)}
 }
 
 // packageRenderSkippable reports whether this reconcile of pkg may skip its
@@ -651,6 +700,9 @@ func computeModulePackageDigests(converted *convertedRender, digests *status.Dig
 type applyPruneResult struct {
 	outcome Outcome
 	entries []releasesv1alpha1.InventoryEntry
+	// healthReader reads as the identity that applied: the impersonated
+	// client, or the manager's uncached reader.
+	healthReader client.Reader
 }
 
 func applyAndPruneModulePackage(
@@ -716,7 +768,9 @@ func applyAndPruneModulePackage(
 		outcome = AppliedAndPruned
 	}
 
-	return &applyPruneResult{outcome: outcome, entries: converted.entries}, nil
+	sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
+	reader := appliedReader(sa, applyClient, params.APIReader, params.Client)
+	return &applyPruneResult{outcome: outcome, entries: converted.entries, healthReader: reader}, nil
 }
 
 func modulePackageBackoff(pkg *releasesv1alpha1.ModulePackage) time.Duration {
@@ -831,6 +885,7 @@ func patchModulePackageStatus(ctx context.Context, patcher *patch.SerialPatcher,
 				status.ReconcilingCondition,
 				status.StalledCondition,
 				status.DriftedCondition,
+				status.HealthyCondition,
 			},
 		},
 		patch.WithStatusObservedGeneration{},
@@ -982,6 +1037,7 @@ func patchModulePackageDeletionStatus(ctx context.Context, patcher *patch.Serial
 				status.ReconcilingCondition,
 				status.StalledCondition,
 				status.DriftedCondition,
+				status.HealthyCondition,
 			},
 		},
 	)
@@ -1004,7 +1060,7 @@ func buildModulePackageApplyClient(
 		return params.ResourceManager, params.Client, nil
 	}
 	log := logf.FromContext(ctx)
-	log.Info("Building impersonated client",
+	log.V(1).Info("Building impersonated client",
 		"serviceAccount", effectiveSA,
 		"serviceAccountSource", source)
 	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), pkg.Namespace, effectiveSA)

@@ -455,6 +455,9 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			current.Status.LastAppliedSourceDigest = "sha256:clisource"
 			current.Status.LastAppliedConfigDigest = "sha256:cliconfig"
 			current.Status.LastAppliedRenderDigest = "sha256:clirender"
+			// A Healthy left from an operator-owned past must not survive the
+			// hand-over: the operator judges no health on a CLI-owned instance.
+			status.MarkHealthy(&current, metav1.ConditionTrue, status.RolledOutReason, "1/1 objects ready")
 			current.Status.Inventory = &releasesv1alpha1.Inventory{
 				Revision: 7,
 				Digest:   "sha256:cliinv",
@@ -494,6 +497,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(ackReady).NotTo(BeNil())
 			Expect(ackReady.Reason).To(Equal(status.ManagedExternallyReason))
 			firstTransition := ackReady.LastTransitionTime
+			Expect(apimeta.FindStatusCondition(afterAck.Status.Conditions, status.HealthyCondition)).To(BeNil())
 
 			// Re-reconcile (e.g. a Platform-watch re-enqueue) is a no-op: the
 			// condition does not transition again and CLI status is still intact.
@@ -507,6 +511,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(reReady.Reason).To(Equal(status.ManagedExternallyReason))
 			Expect(reReady.LastTransitionTime).To(Equal(firstTransition))
 			Expect(afterReAck.Status.Inventory.Digest).To(Equal("sha256:cliinv"))
+			Expect(afterReAck.ResourceVersion).To(Equal(afterAck.ResourceVersion), "the re-acknowledgement patch is empty")
 
 			// Cleanup.
 			Expect(k8sClient.Delete(ctx, &afterReAck)).To(Succeed())
@@ -879,6 +884,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
 			status.MarkModuleResolved(&current, ownModulePath)
 			status.MarkDrifted(&current, 1)
+			status.MarkHealthy(&current, metav1.ConditionTrue, status.RolledOutReason, "1/1 objects ready")
 			current.Status.InstanceUUID = "cli-uuid-own"
 			current.Status.LastAppliedSourceDigest = "sha256:clisource"
 			current.Status.LastAppliedConfigDigest = "sha256:cliconfig"
@@ -901,6 +907,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			expectRefused(&refused)
 			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.ModuleResolvedCondition)).To(BeNil())
 			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.DriftedCondition)).To(BeNil())
+			Expect(apimeta.FindStatusCondition(refused.Status.Conditions, status.HealthyCondition)).To(BeNil())
 			Expect(refused.Status.InstanceUUID).To(Equal("cli-uuid-own"))
 			Expect(refused.Status.LastAppliedSourceDigest).To(Equal("sha256:clisource"))
 			Expect(refused.Status.LastAppliedConfigDigest).To(Equal("sha256:cliconfig"))
@@ -910,7 +917,14 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(refused.Status.Inventory.Digest).To(Equal("sha256:cliinv"))
 			Expect(refused.Status.Inventory.Entries).To(HaveLen(1))
 
-			Expect(k8sClient.Delete(ctx, &refused)).To(Succeed())
+			// Re-refusal after the removal stays a no-op.
+			_, err = newReconciler(events.NewFakeRecorder(10)).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			var reRefused releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &reRefused)).To(Succeed())
+			Expect(reRefused.ResourceVersion).To(Equal(refused.ResourceVersion))
+
+			Expect(k8sClient.Delete(ctx, &reRefused)).To(Succeed())
 		})
 
 		It("re-refuses with an empty patch and no event, and hands back to the CLI cleanly", func() {

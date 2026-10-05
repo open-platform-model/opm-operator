@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -783,5 +784,102 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
 			})).To(Succeed())
 		})
+	})
+})
+
+// The Healthy condition reads through the identity that applied the
+// instance (instance-health): an impersonated instance's health reads are
+// made as its ServiceAccount, never as the manager.
+var _ = Describe("Health reads under impersonation", func() {
+	It("judges through the ServiceAccount, and reports what it cannot read", func() {
+		mrName := "imp-health-mr"
+		saName := "health-sa"
+		roleName := "imp-health-role"
+
+		Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace},
+		})).To(Succeed())
+		allVerbs := []string{"get", "list", "watch", "create", "update", "patch", "delete"}
+		Expect(k8sClient.Create(ctx, &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName},
+			Rules:      []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: allVerbs}},
+		})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName},
+			RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: roleName},
+			Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: saName, Namespace: namespace}},
+		})).To(Succeed())
+		DeferCleanup(func() {
+			for _, obj := range []client.Object{
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace}},
+				&releasesv1alpha1.ModuleInstance{ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace}},
+				&rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: roleName}},
+				&rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: roleName}},
+			} {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, obj))).To(Succeed())
+			}
+		})
+
+		mr := &releasesv1alpha1.ModuleInstance{
+			ObjectMeta: metav1.ObjectMeta{Name: mrName, Namespace: namespace},
+			Spec: releasesv1alpha1.ModuleInstanceSpec{
+				Module:             releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+				ServiceAccountName: saName,
+			},
+		}
+		Expect(k8sClient.Create(ctx, mr)).To(Succeed())
+		params := reconcileParamsWithConfig()
+		nn := types.NamespacedName{Name: mrName, Namespace: namespace}
+		ensureFinalizer(params, nn)
+
+		healthOf := func() *metav1.Condition {
+			GinkgoHelper()
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			return apimeta.FindStatusCondition(mi.Status.Conditions, status.HealthyCondition)
+		}
+
+		By("with get, the ServiceAccount reads the real verdict")
+		_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(healthOf().Reason).To(Equal(status.RolledOutReason))
+
+		By("without get, the read is forbidden and health is unknown")
+		Eventually(func() error {
+			var role rbacv1.ClusterRole
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: roleName}, &role); err != nil {
+				return err
+			}
+			role.Rules[0].Verbs = []string{"list", "watch", "create", "update", "patch", "delete"}
+			return k8sClient.Update(ctx, &role)
+		}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+		// The authorizer sees the role change asynchronously; the NoOp
+		// reconcile re-judges each time.
+		Eventually(func(g Gomega) {
+			result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			var mi releasesv1alpha1.ModuleInstance
+			g.Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			h := apimeta.FindStatusCondition(mi.Status.Conditions, status.HealthyCondition)
+			g.Expect(h).NotTo(BeNil())
+			g.Expect(h.Status).To(Equal(metav1.ConditionUnknown))
+			g.Expect(h.Reason).To(Equal(status.HealthUnknownReason))
+			g.Expect(h.Message).To(ContainSubstring("forbidden"))
+			g.Expect(h.Message).To(ContainSubstring("system:serviceaccount:" + namespace + ":" + saName))
+			g.Expect(result.RequeueAfter).To(BeNumerically(">=", 5*time.Second))
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
+
+		By("without the ServiceAccount, the reader cannot be built")
+		Expect(k8sClient.Delete(ctx, &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace},
+		})).To(Succeed())
+		_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		h := healthOf()
+		Expect(h.Status).To(Equal(metav1.ConditionUnknown))
+		Expect(h.Reason).To(Equal(status.HealthUnknownReason))
+		Expect(h.Message).To(ContainSubstring("building the health reader"))
+		Expect(h.Message).To(ContainSubstring(saName))
 	})
 })

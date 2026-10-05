@@ -169,10 +169,24 @@ only when all of these hold:
   and records the new revision.
 
 A skipped reconcile takes no render slot, leases no platform, fetches no
-artifact, runs no drift detection, applies and prunes nothing, emits no event
-and patches no status; it logs `Render inputs unchanged, skipping render` with
-the time from which the object renders again. A skipped ModuleInstance does
-not requeue; a skipped ModulePackage requeues on its `spec.interval`.
+artifact, runs no drift detection, applies and prunes nothing and emits no
+event; it logs `Render inputs unchanged, skipping render` with the time from
+which the object renders again. Its only status write is the `Healthy`
+judgement: it reads the objects in `status.inventory` (and, under
+impersonation, the ServiceAccount) through the identity that applied them,
+and patches the `Healthy` condition alone, only when the judgement changed it. A skipped ModuleInstance requeues only when health asks
+for it (half the time since `lastAppliedAt`, 5 seconds to 2 minutes, while it
+has not rolled out; 30 minutes after a Deployment's progress deadline); a
+skipped ModulePackage requeues on its `spec.interval`, or sooner when health
+asks for it.
+
+Every health requeue of an object that has not rolled out renders when the
+skip cannot apply: with `--drift-render-interval=0`, and while
+`status.lastAppliedInputs` is unset because the key is incomplete (a Platform
+without `status.packageIdentity`, for example). A `NoOp` does not move
+`lastAppliedAt`, so such an object renders from every 5 seconds just after the
+apply, settling at every 2 minutes about four minutes later, until it rolls
+out.
 
 `status.lastAppliedInputs` is written on a successful apply and on a `NoOp`
 that rendered, from the platform identity and skew policy the render itself
@@ -224,10 +238,11 @@ Rules for later changes:
   release, so every operator-managed object rendered and applied once after
   the upgrade and then converged.
 - **A per-reconcile check runs before the skip.** A check that must run on
-  every reconcile, such as a health condition that requeues until a rollout
-  converges, either runs before the skip or makes its own not-yet-converged
-  state a no-skip condition; placed after the render, it would not run within
-  the interval.
+  every reconcile either runs before the skip or makes its own
+  not-yet-converged state a no-skip condition; placed after the render, it
+  would not run within the interval. The `Healthy` judgement is such a check:
+  it runs in the skip itself, so a requeue waiting for a rollout observes it
+  without rendering.
 
 ## `Platform.spec.skewPolicy`
 

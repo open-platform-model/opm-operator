@@ -1,0 +1,13 @@
+# Enhancement declaration, read by `task enhancements:delivery:log` at archive time.
+# See enhancements/schema.cue #ChangeDeclaration.
+#
+# Under-claimed on purpose. This is the operator's adoption of the library's
+# opm/k8s/health package (library#199), one of the packages 0012:D3 places in
+# the Kubernetes tier. The operator had no evaluator of its own, so it deletes
+# nothing; 0012:D3:R6 for this package holds once the cli also judges health
+# only through it (0012:D1), so the claim belongs to the cli's adoption or to
+# a delivery-log entry made after both have merged.
+implements:
+  - enhancement: "0012"
+    decisions: []
+    resolves: []

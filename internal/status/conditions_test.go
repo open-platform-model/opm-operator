@@ -193,3 +193,64 @@ func TestReasonConstants(t *testing.T) {
 		assert.NotEmpty(t, r, "reason constant should not be empty")
 	}
 }
+
+func TestHealthyConstants(t *testing.T) {
+	assert.Equal(t, "Healthy", HealthyCondition)
+	assert.Equal(t, "RolledOut", RolledOutReason)
+	assert.Equal(t, "NotRolledOut", NotRolledOutReason)
+	assert.Equal(t, "ProgressDeadlineExceeded", ProgressDeadlineExceededReason)
+	assert.Equal(t, "HealthUnknown", HealthUnknownReason)
+}
+
+func TestMarkHealthy_SetsOnlyHealthy(t *testing.T) {
+	for _, s := range []metav1.ConditionStatus{metav1.ConditionTrue, metav1.ConditionFalse, metav1.ConditionUnknown} {
+		obj := newModuleInstance()
+		MarkReady(obj, "applied")
+		ClearDrifted(obj)
+		MarkDrifted(obj, 1)
+		before := conditions.Get(obj, ReadyCondition).DeepCopy()
+
+		MarkHealthy(obj, s, RolledOutReason, "%d/%d objects ready", 1, 1)
+
+		got := conditions.Get(obj, HealthyCondition)
+		if assert.NotNil(t, got) {
+			assert.Equal(t, s, got.Status)
+			assert.Equal(t, RolledOutReason, got.Reason)
+			assert.Equal(t, "1/1 objects ready", got.Message)
+		}
+		assert.Equal(t, before, conditions.Get(obj, ReadyCondition))
+		assert.True(t, conditions.IsTrue(obj, DriftedCondition))
+		assert.Len(t, obj.GetConditions(), 3)
+	}
+}
+
+func TestReadyHelpers_LeaveHealthyAlone(t *testing.T) {
+	marks := map[string]func(*releasesv1alpha1.ModuleInstance){
+		"MarkReady":       func(o *releasesv1alpha1.ModuleInstance) { MarkReady(o, "applied") },
+		"MarkReconciling": func(o *releasesv1alpha1.ModuleInstance) { MarkReconciling(o, "Progressing", "working") },
+		"MarkStalled":     func(o *releasesv1alpha1.ModuleInstance) { MarkStalled(o, RenderFailedReason, "bad") },
+		"MarkSuspended":   func(o *releasesv1alpha1.ModuleInstance) { MarkSuspended(o) },
+		"MarkNotReady":    func(o *releasesv1alpha1.ModuleInstance) { MarkNotReady(o, ApplyFailedReason, "bad") },
+	}
+	for name, mark := range marks {
+		t.Run(name, func(t *testing.T) {
+			obj := newModuleInstance()
+			MarkHealthy(obj, metav1.ConditionFalse, NotRolledOutReason, "0/1 objects ready")
+			before := conditions.Get(obj, HealthyCondition).DeepCopy()
+			mark(obj)
+			assert.Equal(t, before, conditions.Get(obj, HealthyCondition))
+		})
+	}
+}
+
+func TestOwnerHelpers_RemoveHealthy(t *testing.T) {
+	obj := newModuleInstance()
+	MarkHealthy(obj, metav1.ConditionTrue, RolledOutReason, "1/1 objects ready")
+	MarkManagedExternally(obj)
+	assert.False(t, conditions.Has(obj, HealthyCondition))
+
+	obj = newModuleInstance()
+	MarkHealthy(obj, metav1.ConditionTrue, RolledOutReason, "1/1 objects ready")
+	MarkSelfManagementRefused(obj, "this ModuleInstance deploys the operator")
+	assert.False(t, conditions.Has(obj, HealthyCondition))
+}

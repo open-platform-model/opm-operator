@@ -133,6 +133,11 @@ The manager SHALL accept `--max-concurrent-renders` (integer, default 1) and SHA
 - **WHEN** a renderer panics while a reconcile holds a render slot and the controller runtime recovers the panic
 - **THEN** the slot is free again, and the next render of either kind takes it without waiting
 
+#### Scenario: Conversion runs while the slot is held
+
+- **WHEN** a ModuleInstance or ModulePackage reconcile exports its render result for apply, on a pool of one slot
+- **THEN** that slot is taken for the whole export, and it is free again once the reconcile has dropped the rendered resources
+
 ### Requirement: Rendered values are dropped after conversion
 
 A rendered resource carries the CUE value it was read from, and a held value keeps the whole build reachable. The ModuleInstance and ModulePackage reconcilers SHALL therefore drop the render result's CUE-backed resources as soon as they have converted them to unstructured objects, before apply, so a reconcile holds a build only from the render to that conversion, and does both while it holds its render slot. Every later phase (shrink judgment, apply, prune, inventory and status) SHALL read the unstructured objects or the render result's plain data (inventory entries, warnings, required contracts, platform identity), never the dropped resources.

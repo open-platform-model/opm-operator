@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"cuelang.org/go/cue/cuecontext"
+	fluxmeta "github.com/fluxcd/pkg/apis/meta"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -41,6 +43,7 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
+	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
@@ -48,10 +51,11 @@ import (
 const healthDeploymentName = "health-web"
 
 // deploymentRenderResult is stubRenderResult's ConfigMap plus a one-replica
-// Deployment named healthDeploymentName, so a render has an object whose
+// Deployment named healthDeploymentName, both in the default namespace, so a render has an object whose
 // rollout the Healthy condition follows. Envtest runs no workload
 // controller: the specs write the Deployment's status by hand.
-func deploymentRenderResult(namespace string) *render.RenderResult {
+func deploymentRenderResult() *render.RenderResult {
+	const namespace = "default"
 	result := stubRenderResult(namespace, nil)
 	dep := cuecontext.New().CompileString(fmt.Sprintf(`{
 	apiVersion: "apps/v1"
@@ -159,7 +163,7 @@ var _ = Describe("ModuleInstance Healthy condition", func() {
 	// its cleanup, and reconciles the finalizer on.
 	newInstance := func(ctx context.Context, name string, r *ModuleInstanceReconciler) types.NamespacedName {
 		GinkgoHelper()
-		createSkipPlatform(ctx, stubPlatformIdentity)
+		createSkipPlatform(ctx)
 		mi := &releasesv1alpha1.ModuleInstance{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 			Spec: releasesv1alpha1.ModuleInstanceSpec{
@@ -202,7 +206,7 @@ var _ = Describe("ModuleInstance Healthy condition", func() {
 
 	It("requeues a rollout in progress and records the rollout on a skipped render", func() {
 		ctx := context.Background()
-		renderer := &callCountingRenderer{stubRenderer: stubRenderer{result: deploymentRenderResult(namespace)}}
+		renderer := &callCountingRenderer{stubRenderer: stubRenderer{result: deploymentRenderResult()}}
 		r := newReconciler(renderer, interval)
 		nn := newInstance(ctx, "health-rollout-mi", r)
 
@@ -252,7 +256,7 @@ var _ = Describe("ModuleInstance Healthy condition", func() {
 
 	It("stops the fast requeue for a stalled Deployment", func() {
 		ctx := context.Background()
-		renderer := &callCountingRenderer{stubRenderer: stubRenderer{result: deploymentRenderResult(namespace)}}
+		renderer := &callCountingRenderer{stubRenderer: stubRenderer{result: deploymentRenderResult()}}
 		r := newReconciler(renderer, interval)
 		nn := newInstance(ctx, "health-stalled-mi", r)
 		reconcileOnce(ctx, r, nn)
@@ -269,7 +273,7 @@ var _ = Describe("ModuleInstance Healthy condition", func() {
 
 	It("re-judges on a NoOp", func() {
 		ctx := context.Background()
-		renderer := &callCountingRenderer{stubRenderer: stubRenderer{result: deploymentRenderResult(namespace)}}
+		renderer := &callCountingRenderer{stubRenderer: stubRenderer{result: deploymentRenderResult()}}
 		// The skip is disabled, so every reconcile renders and ends NoOp.
 		r := newReconciler(renderer, 0)
 		nn := newInstance(ctx, "health-noop-mi", r)
@@ -328,5 +332,151 @@ var _ = Describe("ModuleInstance Healthy condition", func() {
 		after := get(ctx, nn)
 		Expect(apimeta.IsStatusConditionTrue(after.Status.Conditions, status.ReadyCondition)).To(BeFalse())
 		Expect(healthy(after)).To(Equal(before))
+	})
+})
+
+// The Healthy condition on a ModulePackage: the same judgement, with
+// spec.interval as the upper bound of every requeue.
+var _ = Describe("ModulePackage Healthy condition", func() {
+	const namespace = "default"
+
+	get := func(ctx context.Context, nn types.NamespacedName) *releasesv1alpha1.ModulePackage {
+		GinkgoHelper()
+		var pkg releasesv1alpha1.ModulePackage
+		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())
+		return &pkg
+	}
+
+	healthy := func(pkg *releasesv1alpha1.ModulePackage) *metav1.Condition {
+		return apimeta.FindStatusCondition(pkg.Status.Conditions, status.HealthyCondition)
+	}
+
+	// appliedPackage creates a package of result's render against a gen-1
+	// Platform and a ready artifact, reconciles it to its first apply, and
+	// returns the apply's result.
+	appliedPackage := func(ctx context.Context, name string, result *render.RenderResult) (types.NamespacedName, *ModulePackageReconciler, *callCountingPackageRenderer, reconcile.Result) {
+		GinkgoHelper()
+		createSkipPlatform(ctx)
+		src := &sourcev1.OCIRepository{
+			ObjectMeta: metav1.ObjectMeta{Name: name + "-src", Namespace: namespace},
+			Spec:       sourcev1.OCIRepositorySpec{URL: "oci://example.com/repo", Interval: metav1.Duration{Duration: time.Minute}},
+		}
+		Expect(k8sClient.Create(ctx, src)).To(Succeed())
+		Eventually(func() error {
+			var latest sourcev1.OCIRepository
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(src), &latest); err != nil {
+				return err
+			}
+			latest.Status.Conditions = []metav1.Condition{{
+				Type: fluxmeta.ReadyCondition, Status: metav1.ConditionTrue,
+				Reason: "Succeeded", Message: "ready", LastTransitionTime: metav1.Now(),
+			}}
+			latest.Status.Artifact = &fluxmeta.Artifact{
+				URL: "http://source-controller/artifact.tar.gz", Revision: "main@sha256:health", Digest: "sha256:health",
+				Path: "ocirepository/default/" + src.Name + "/health.tar.gz", LastUpdateTime: metav1.Now(),
+			}
+			return k8sClient.Status().Update(ctx, &latest)
+		}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+		pkg := &releasesv1alpha1.ModulePackage{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Spec: releasesv1alpha1.ModulePackageSpec{
+				SourceRef: releasesv1alpha1.SourceReference{Kind: opmsource.SourceKindOCIRepository, Name: src.Name},
+				Path:      "releases/app",
+				Interval:  metav1.Duration{Duration: time.Minute},
+			},
+		}
+		Expect(k8sClient.Create(ctx, pkg)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			}))).To(Succeed())
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: healthDeploymentName, Namespace: namespace},
+			}))).To(Succeed())
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pkg))).To(Succeed())
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, src))).To(Succeed())
+		})
+		renderer := &callCountingPackageRenderer{stubPackageRenderer: stubPackageRenderer{result: result}}
+		r := &ModulePackageReconciler{
+			Client:              k8sClient,
+			Scheme:              k8sClient.Scheme(),
+			ResourceManager:     apply.NewResourceManager(k8sClient, "opm-controller"),
+			EventRecorder:       events.NewFakeRecorder(100),
+			Fetcher:             &stubFetcher{pathInArtifact: "releases/app"},
+			Renderer:            renderer,
+			OperatorVersion:     testOperatorVersion,
+			LibraryVersion:      testLibraryVersion,
+			DriftRenderInterval: 30 * time.Minute,
+		}
+		nn := client.ObjectKeyFromObject(pkg)
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn}) // finalizer
+		Expect(err).NotTo(HaveOccurred())
+		res, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn}) // apply
+		Expect(err).NotTo(HaveOccurred())
+		Expect(get(ctx, nn).Status.LastAppliedInputs).NotTo(BeNil(), "the apply records the key")
+		return nn, r, renderer, res
+	}
+
+	It("keeps spec.interval once rolled out", func() {
+		ctx := context.Background()
+		nn, _, _, res := appliedPackage(ctx, "health-configmap-pkg", stubRenderResult(namespace, nil))
+
+		Expect(res.RequeueAfter).To(Equal(time.Minute))
+		h := healthy(get(ctx, nn))
+		Expect(h.Status).To(Equal(metav1.ConditionTrue))
+		Expect(h.Reason).To(Equal(status.RolledOutReason))
+	})
+
+	It("requeues sooner than spec.interval until rolled out, and a skip writes only Healthy", func() {
+		ctx := context.Background()
+		nn, r, renderer, res := appliedPackage(ctx, "health-rollout-pkg", deploymentRenderResult())
+
+		By("the apply leaves the Deployment rolling out")
+		Expect(res.RequeueAfter).To(Equal(5 * time.Second))
+		applied := get(ctx, nn)
+		Expect(apimeta.IsStatusConditionTrue(applied.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		Expect(healthy(applied).Reason).To(Equal(status.NotRolledOutReason))
+		Expect(applied.Status.NextRetryAt).To(BeNil())
+
+		By("a skip after the rollout writes Healthy=True and never Reconciling")
+		setDeploymentStatus(ctx, true, false)
+		renders := renderer.calls.Load()
+		res, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(renderer.calls.Load()).To(Equal(renders), "the render is skipped")
+		Expect(res.RequeueAfter).To(Equal(time.Minute))
+		after := get(ctx, nn)
+		Expect(healthy(after).Reason).To(Equal(status.RolledOutReason))
+		Expect(apimeta.FindStatusCondition(after.Status.Conditions, status.ReconcilingCondition)).To(BeNil())
+		Expect(after.Status.ObservedGeneration).To(Equal(applied.Status.ObservedGeneration))
+		Expect(after.Status.LastAttemptedAt).To(Equal(applied.Status.LastAttemptedAt))
+		Expect(after.Status.History).To(Equal(applied.Status.History))
+		Expect(apimeta.FindStatusCondition(after.Status.Conditions, status.ReadyCondition)).
+			To(Equal(apimeta.FindStatusCondition(applied.Status.Conditions, status.ReadyCondition)))
+
+		By("a skip after a lost replica records NotRolledOut and requeues sooner")
+		setDeploymentStatus(ctx, false, false)
+		res, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res.RequeueAfter).To(BeNumerically("<", time.Minute))
+		lost := get(ctx, nn)
+		Expect(healthy(lost).Reason).To(Equal(status.NotRolledOutReason))
+		Expect(apimeta.FindStatusCondition(lost.Status.Conditions, status.ReconcilingCondition)).To(BeNil())
+	})
+})
+
+// Readers of Ready keep reading Ready: a TransformerRegistration activates on
+// a provider that is Ready and not yet rolled out.
+var _ = Describe("Healthy does not gate TransformerRegistration activation", func() {
+	It("activates on a Ready=True, Healthy=False provider", func() {
+		provider := &releasesv1alpha1.ModuleInstance{}
+		status.MarkReady(provider, "applied")
+		status.MarkHealthy(provider, metav1.ConditionFalse, status.NotRolledOutReason, "0/1 objects ready")
+		claim := &releasesv1alpha1.TransformerRegistration{}
+		claim.Spec.ProviderRef.Name = "provider"
+
+		gateActivation(claim, provider)
+
+		Expect(claim.Status.Active).To(BeTrue())
 	})
 })

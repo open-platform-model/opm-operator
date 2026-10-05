@@ -38,6 +38,12 @@ func readyModulePackageFixture(name string, ready bool) *releasesv1alpha1.Module
 	}
 }
 
+func notRolledOutModulePackageFixture(name string) *releasesv1alpha1.ModulePackage {
+	pkg := readyModulePackageFixture(name, true)
+	status.MarkHealthy(pkg, metav1.ConditionFalse, status.NotRolledOutReason, "0/1 objects ready")
+	return pkg
+}
+
 func TestCheckDependsOn(t *testing.T) {
 	const ns = "default"
 	_ = ns
@@ -64,6 +70,12 @@ func TestCheckDependsOn(t *testing.T) {
 				readyModulePackageFixture("dep-a", true),
 				readyModulePackageFixture("dep-b", true),
 			},
+		},
+		{
+			// spec.dependsOn waits on Ready, never on Healthy.
+			name:      "ready dependency that has not rolled out",
+			dependsOn: []fluxmeta.NamespacedObjectReference{{Name: "dep-rolling"}},
+			objects:   []runtime.Object{notRolledOutModulePackageFixture("dep-rolling")},
 		},
 		{
 			name:      "one dependency not ready",

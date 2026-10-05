@@ -42,11 +42,11 @@ Sections per design.md, Sections. Run every test with a private absolute `TMPDIR
 
 ## 3. Wire it into the ModulePackage reconciler
 
-- [ ] 3.1 `internal/reconcile/modulepackage.go`: let `applyAndPruneModulePackage` also return the apply client and whether it is impersonated, so the success path (`:357`) judges over `newEntries` with the reader of design.md D2. Return `RequeueAfter: shorterRequeue(healthRequeue(...), interval)`, where a zero health requeue means `interval`.
-- [ ] 3.2 The NoOp path (`:340`): build the reader with `buildModulePackageApplyClient` (or `params.APIReader`), judge over `pkg.Status.Inventory`, apply the verdict before the deferred commit's NoOp branch patches, and return the shorter requeue.
-- [ ] 3.3 The skip path (`:307`): restore `pkg.Status.Conditions` from `conditionsAtStart`, judge, apply the verdict, and patch with `WithOwnedConditions{HealthyCondition}` only (design.md D6). Keep `renderSkipped` so the deferred commit still sends nothing else, and return the shorter requeue.
-- [ ] 3.4 Envtest specs in `internal/controller/modulepackage_controller_test.go` and `render_skip_test.go`. They mirror 2.6 for a package: `RolledOut` keeps `spec.interval`, `NotRolledOut` requeues after the shorter interval, and a skip that changes `Healthy` writes only `Healthy` and never `Reconciling`. A `dependsOn` spec: a package that depends on a `Ready=True, Healthy=False` package proceeds.
-- [ ] 3.5 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): report whether a ModulePackage has rolled out in a Healthy condition`.
+- [x] 3.1 `internal/reconcile/modulepackage.go`: let `applyAndPruneModulePackage` also return the apply client and whether it is impersonated, so the success path (`:357`) judges over `newEntries` with the reader of design.md D2. Return `RequeueAfter: shorterRequeue(healthRequeue(...), interval)`, where a zero health requeue means `interval`.
+- [x] 3.2 The NoOp path (`:340`): build the reader with `buildModulePackageApplyClient` (or `params.APIReader`), judge over `pkg.Status.Inventory`, apply the verdict before the deferred commit's NoOp branch patches, and return the shorter requeue.
+- [x] 3.3 The skip path (`:307`): restore `pkg.Status.Conditions` from `conditionsAtStart`, judge, apply the verdict, and patch with `WithOwnedConditions{HealthyCondition}` only (design.md D6). Keep `renderSkipped` so the deferred commit still sends nothing else, and return the shorter requeue.
+- [x] 3.4 Envtest specs in `internal/controller/modulepackage_controller_test.go` and `render_skip_test.go`. They mirror 2.6 for a package: `RolledOut` keeps `spec.interval`, `NotRolledOut` requeues after the shorter interval, and a skip that changes `Healthy` writes only `Healthy` and never `Reconciling`. A `dependsOn` spec: a package that depends on a `Ready=True, Healthy=False` package proceeds.
+- [x] 3.5 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller): report whether a ModulePackage has rolled out in a Healthy condition`.
 
 ## 4. Docs and end-to-end check
 

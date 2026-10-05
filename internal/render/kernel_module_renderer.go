@@ -122,12 +122,7 @@ func (r *KernelModuleRenderer) RenderModule(
 		return nil, fmt.Errorf("rendering module instance: %w", err)
 	}
 
-	contracts, err := declaredContracts(inst)
-	if err != nil {
-		return nil, fmt.Errorf("reading the instance's contract demand: %w", err)
-	}
-
-	result, err := resultFromRender(out, rec.Identity, contracts)
+	result, err := resultFromRender(out, rec.Identity)
 	if err != nil {
 		return nil, err
 	}
@@ -226,14 +221,13 @@ func cueFindings(err error) string {
 // returned bare so both classifiers find its type and status carries its
 // message verbatim.
 //
-// contracts is the instance's declared demand, computed by the caller from
-// the instance rather than from this output: the kernel reports matched
-// PAIRS, which name transformers, and turning a transformer back into the
-// contracts it serves would need the platform.
+// The instance's contract demand is the kernel's: the render build reports
+// it on its diagnostics, computed from the instance alone (0013:D24), and
+// both renderers read it here so they cannot fill it differently. An absent
+// list becomes an empty one, so status never alternates between the two.
 func resultFromRender(
 	out *kernel.RenderResult,
 	identity platformstore.PackageIdentity,
-	contracts []string,
 ) (*RenderResult, error) {
 	if dups := object.Duplicates(out.Compiled); len(dups) > 0 {
 		return nil, &object.DuplicateIdentitiesError{Duplicates: dups}
@@ -255,7 +249,16 @@ func resultFromRender(
 		Warnings:          renderWarnings(out.Diagnostics),
 		UnhandledTraits:   out.Diagnostics.UnhandledTraits,
 		ResolvedVersions:  out.Diagnostics.ResolvedVersions,
-		RequiredContracts: contracts,
+		RequiredContracts: demandOf(out.Diagnostics),
 		PlatformIdentity:  identity.String(),
 	}, nil
+}
+
+// demandOf returns the contract demand the render reported, normalising an
+// absent list to an empty, non-nil one.
+func demandOf(diag kernel.RenderDiagnostics) []string {
+	if diag.RequiredContracts == nil {
+		return []string{}
+	}
+	return diag.RequiredContracts
 }

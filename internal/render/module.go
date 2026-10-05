@@ -41,15 +41,15 @@ type RenderResult struct {
 	// fact behind a skew warning.
 	ResolvedVersions []kernel.ResolvedVersion
 
-	// RequiredContracts is every contract FQN the instance's components
-	// declare, sorted and deduplicated (0015:D3, D16): the
-	// instance's demand, in the keyspace TransformerRegistration.spec.provides
-	// carries. The reconciler persists it on status.requiredContracts, where
-	// the claim reconciler's removal guard intersects it with a claim's
-	// provides to count that claim's dependents.
-	//
-	// Read off the synthesized instance, never off the platform, so it is a
-	// property of the instance alone and does not move when the platform does.
+	// RequiredContracts is the kernel's contract demand for the instance
+	// (0013:D24): every #resources and #traits key of every component,
+	// sorted and deduplicated, in the keyspace
+	// TransformerRegistration.spec.provides carries. The render build
+	// computes it from the instance alone and does not narrow it by the
+	// platform, so it does not move when the platform does. Never nil. The
+	// reconciler persists it on status.requiredContracts, where the claim
+	// reconciler's removal guard intersects it with a claim's provides to
+	// count that claim's dependents (0015:D3/D16).
 	RequiredContracts []string
 
 	// ModuleVersion is the version the rendered instance's source module

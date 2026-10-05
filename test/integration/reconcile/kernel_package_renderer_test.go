@@ -166,6 +166,26 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 			Expect(res.SkewPolicy).To(Equal(releasesv1alpha1.SkewPolicyRefuse))
 			Expect(res.PlatformIdentity).To(Equal(refuse.Identity().String()))
 		})
+
+		// The package path reports the kernel's demand through the same
+		// adapter as the ModuleInstance path, so the hello package demands
+		// exactly what the hello entry of the ModuleInstance table pins
+		// (kernel_module_renderer_test.go).
+		It("reports the contracts the package instance's components declare", func() {
+			fixtureDir, err := filepath.Abs(filepath.Join("..", "..", "fixtures", "modulepackages", "hello"))
+			Expect(err).NotTo(HaveOccurred())
+
+			renderer := &render.KernelPackageRenderer{
+				Kernel:      k,
+				Store:       store,
+				RuntimeName: core.LabelManagedByControllerValue,
+			}
+			_, res, err := renderer.Render(ctx, fixtureDir)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.RequiredContracts).To(Equal([]string{
+				"opmodel.dev/catalogs/opm/resources/config-maps@v1beta1",
+			}))
+		})
 	})
 })
 

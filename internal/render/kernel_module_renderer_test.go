@@ -54,7 +54,7 @@ func TestResultFromRender_RefusesTwoRegistrationsUnderOneName(t *testing.T) {
 		}`),
 	}}
 
-	res, err := resultFromRender(out, platformstore.PackageIdentity{}, nil)
+	res, err := resultFromRender(out, platformstore.PackageIdentity{})
 
 	assert.Nil(t, res, "a refused render must produce no partial result")
 	dupErr, ok := errors.AsType[*object.DuplicateIdentitiesError](err)
@@ -85,7 +85,7 @@ func TestResultFromRender_AdaptsDistinctIdentities(t *testing.T) {
 		}`),
 	}}
 
-	res, err := resultFromRender(out, platformstore.PackageIdentity{}, nil)
+	res, err := resultFromRender(out, platformstore.PackageIdentity{})
 
 	require.NoError(t, err)
 	require.NotNil(t, res)
@@ -116,7 +116,7 @@ func TestResultFromRender_NamesOnlyTheSharedIdentity(t *testing.T) {
 		}`),
 	}}
 
-	res, err := resultFromRender(out, platformstore.PackageIdentity{}, nil)
+	res, err := resultFromRender(out, platformstore.PackageIdentity{})
 
 	assert.Nil(t, res)
 	dupErr, ok := errors.AsType[*object.DuplicateIdentitiesError](err)
@@ -127,4 +127,31 @@ func TestResultFromRender_NamesOnlyTheSharedIdentity(t *testing.T) {
 	msg := err.Error()
 	assert.Contains(t, msg, "apps/v1 Deployment web-system/web")
 	assert.NotContains(t, msg, "Service")
+}
+
+// The demand is the kernel's: the adapter carries the list the render build
+// reported on its diagnostics through unchanged (0013:D24).
+func TestResultFromRender_ReportsKernelDemand(t *testing.T) {
+	want := []string{
+		"opmodel.dev/catalogs/opm/resources/config-maps@v1beta1",
+		"opmodel.dev/catalogs/opm/traits/scaling@v1beta1",
+	}
+	out := &kernel.RenderResult{Diagnostics: kernel.RenderDiagnostics{RequiredContracts: want}}
+
+	res, err := resultFromRender(out, platformstore.PackageIdentity{})
+
+	require.NoError(t, err)
+	assert.Equal(t, want, res.RequiredContracts)
+}
+
+// An absent list reads as an empty, non-nil one, so status never alternates
+// between an absent and an empty requiredContracts.
+func TestResultFromRender_EmptyDemandIsNotNil(t *testing.T) {
+	out := &kernel.RenderResult{Diagnostics: kernel.RenderDiagnostics{RequiredContracts: nil}}
+
+	res, err := resultFromRender(out, platformstore.PackageIdentity{})
+
+	require.NoError(t, err)
+	require.NotNil(t, res.RequiredContracts)
+	assert.Empty(t, res.RequiredContracts)
 }

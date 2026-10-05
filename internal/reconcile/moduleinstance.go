@@ -450,7 +450,7 @@ func ReconcileModuleInstance(
 	}
 
 	// Persist the contracts this instance's components demand (enhancement
-	// 0015:D3, D16). Written here rather than in the success path because
+	// 0015:D3/D16), as the kernel's render reported them. Written here rather than in the success path because
 	// the demand is a fact about the render, not about the apply: a
 	// regenerated platform re-enqueues every instance, and the render that
 	// follows is frequently a no-op for apply while being the only evidence

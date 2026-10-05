@@ -198,11 +198,11 @@ The module package SHALL set `draft: true` and `force-tag-creation: true`. Every
 
 ### Requirement: Only this repository's module release publishes under the module path
 
-No workflow, task or script in this repository other than the module publish job SHALL publish to `opmodel.dev/modules/opm_operator` or to its GHCR repository `ghcr.io/open-platform-model/modules/opm_operator`. The module publish job SHALL refuse to run unless the repository is `open-platform-model/opm-operator` and the checked-out ref is a module release tag. Local and test flows SHALL publish the module only to a registry that maps `opmodel.dev` away from GHCR.
+No workflow, task or script in this repository other than the module publish job SHALL publish to `opmodel.dev/modules/opm_operator` or to its GHCR repository `ghcr.io/open-platform-model/opmodel.dev/modules/opm_operator`. The module publish job SHALL refuse to run unless the repository is `open-platform-model/opm-operator` and the checked-out ref is a module release tag. Local and test flows SHALL publish the module only to a registry that maps `opmodel.dev` away from GHCR.
 
 #### Scenario: Search for publishers
 
-- **WHEN** `.github/workflows/`, `.github/scripts/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for a publish of the module directory or of `ghcr.io/open-platform-model/modules/opm_operator`
+- **WHEN** `.github/workflows/`, `.github/scripts/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for a publish of the module directory or of `ghcr.io/open-platform-model/opmodel.dev/modules/opm_operator`
 - **THEN** the only match is the module publish job and the task it calls
 
 #### Scenario: Fork or dispatch on another ref

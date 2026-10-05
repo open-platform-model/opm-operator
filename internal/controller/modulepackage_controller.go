@@ -128,11 +128,15 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 //   - OCIRepository, GitRepository, Bucket (artifact-change predicate, mapped to
 //     referencing ModulePackages) — only when those Flux source CRDs are
 //     installed; see fluxSourceCRDsInstalled.
-//   - Platform (cluster singleton) — every change re-enqueues all ModulePackages via
-//     mapPlatformToModulePackages so packages blocked on PlatformNotReady recover
-//     promptly when the platform is generated. The generation predicate lives on
-//     For() (not as a global filter) so it does not suppress the Platform watch,
-//     whose trigger (the reconciler's status update) does not bump generation.
+//   - Platform (cluster singleton) — a create or delete, or an update that moves a
+//     field a package render consumes (platformConsumedFieldsChanged, shared with
+//     the ModuleInstance controller), re-enqueues all ModulePackages via
+//     mapPlatformToModulePackages, so packages blocked on PlatformNotReady recover
+//     promptly when the platform is generated. A status write that changes only a
+//     message or a report such as ContractsFulfilled re-enqueues none. The
+//     generation predicate lives on For() (not as a global filter) so it does
+//     not suppress the Platform watch, whose trigger (the reconciler's status
+//     update) does not bump generation.
 //
 // MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
 // controller's MaxConcurrentReconciles, so phases outside the render (apply,
@@ -146,6 +150,7 @@ func (r *ModulePackageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&releasesv1alpha1.Platform{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToModulePackages),
+			builder.WithPredicates(platformConsumedFieldsChanged()),
 		)
 
 	// The Flux source CRDs are an optional dependency: the ModulePackage source
@@ -254,11 +259,13 @@ func (r *ModulePackageReconciler) mapSourceToModulePackages(kind string) handler
 	}
 }
 
-// mapPlatformToModulePackages enqueues every ModulePackage in the cluster when the
-// (singleton) Platform changes. This unblocks packages sitting in
-// PlatformNotReady the moment the platform is generated, rather than waiting
-// for the interval requeue. List-all is cheap: the Platform is a cluster singleton,
-// its changes are rare, and the ModulePackage count is bounded.
+// mapPlatformToModulePackages enqueues every ModulePackage in the cluster for each
+// (singleton) Platform event that platformConsumedFieldsChanged passes: a create,
+// a delete, or an update that moves a field a package render consumes. This
+// unblocks packages sitting in PlatformNotReady the moment the platform is
+// generated, rather than waiting for the interval requeue. List-all is cheap: the
+// Platform is a cluster singleton, the events that pass the predicate are rare,
+// and the ModulePackage count is bounded.
 func (r *ModulePackageReconciler) mapPlatformToModulePackages(ctx context.Context, _ client.Object) []reconcile.Request {
 	var list releasesv1alpha1.ModulePackageList
 	if err := r.List(ctx, &list); err != nil {

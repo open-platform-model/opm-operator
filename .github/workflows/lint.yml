@@ -75,6 +75,11 @@ jobs:
       - name: Operator module release gate (offline test)
         run: task operator-module:release-check:test
 
+      # The publish script's GHCR and job-local references and its once-only
+      # and reuse rules, against stub opm and crane (offline).
+      - name: Operator module publish script (offline test)
+        run: task operator-module:publish:test
+
       # The image PR's title, breaking and refusal rules, and the bot branch's
       # create, rebuild and extend rules (offline).
       - name: Operator module image PR scripts (offline tests)

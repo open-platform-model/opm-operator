@@ -281,9 +281,13 @@ var _ = Describe("filtered Platform watch (manager-driven)", func() {
 		Expect(successes[0]).To(BeTemporally("<", backoffFloor),
 			"the recovering render must come from the Platform watch, not the transient backoff")
 
-		// (c) Wait past the last instant a backoff requeue scheduled while
-		// blocked could fire, then for quiet, so the success path (which does
-		// not requeue) is settled.
+		// (c) Wait one BackoffBaseDelay past the backoff floor, then for quiet,
+		// so the success path (which does not requeue) is settled. This is not
+		// the last instant a backoff requeue scheduled while blocked could fire:
+		// a second or third NotReady render requeues at +10s or +20s. The spec is
+		// stable because controller-runtime's priority queue (the default) merges
+		// the Platform watch's immediate add into the pending delayed item for the
+		// same key, so the recovering render consumed that requeue.
 		settleAfter := backoffFloor.Add(opmreconcile.BackoffBaseDelay)
 		Eventually(time.Now).WithTimeout(time.Until(settleAfter) + 5*time.Second).WithPolling(100 * time.Millisecond).
 			Should(BeTemporally(">", settleAfter))

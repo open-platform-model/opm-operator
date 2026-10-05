@@ -66,6 +66,20 @@ type ModulePackageParams struct {
 	// Warnings remembers each package's last render warnings so RenderWarning
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
+
+	// convert exports a render result for apply. Nil, as in production,
+	// means convertRender; tests in this package set it to observe the
+	// conversion, for example that it runs while the render slot is held.
+	convert func(*render.RenderResult) (*convertedRender, error)
+}
+
+// convertFn is the conversion this reconcile uses: convert when a test set
+// it, convertRender otherwise.
+func (p *ModulePackageParams) convertFn() func(*render.RenderResult) (*convertedRender, error) {
+	if p.convert != nil {
+		return p.convert
+	}
+	return convertRender
 }
 
 // ReconcileModulePackage runs the full ModulePackage reconcile loop: source resolution,
@@ -151,11 +165,21 @@ func ReconcileModulePackage(
 
 		// skipCommit is set only when the wait for a render slot is cut
 		// short: nothing was attempted, so there is nothing to record, and
-		// the zero outcome (NoOp) would otherwise report a success.
+		// the zero outcome (NoOp) would otherwise report a success. A panic
+		// is caught before this flag and the NoOp branch are read.
 		skipCommit bool
 	)
 
+	// A panic is recovered first: the outcome is still its zero value, NoOp,
+	// so without this branch the commit would mark a panicking reconcile
+	// Ready. The attempt is recorded as failed and the panic re-raised with
+	// its original value, so the controller runtime still logs it, counts it
+	// and requeues the object on its rate limiter.
 	defer func() {
+		if r := recover(); r != nil {
+			commitModulePackagePanicStatus(ctx, patcher, &pkg, r, digests, reconcileStart)
+			panic(r)
+		}
 		if skipCommit {
 			return
 		}
@@ -172,7 +196,7 @@ func ReconcileModulePackage(
 			return
 		}
 
-		pkg.Status.LastAttemptedAction = "reconcile"
+		pkg.Status.LastAttemptedAction = reconcileAction
 		pkg.Status.LastAttemptedAt = &now
 		duration := metav1.Duration{Duration: time.Since(reconcileStart)}
 		pkg.Status.LastAttemptedDuration = &duration
@@ -186,22 +210,12 @@ func ReconcileModulePackage(
 			pkg.Status.LastAppliedConfigDigest = digests.Config
 			pkg.Status.LastAppliedRenderDigest = digests.Render
 
-			invDigest := inventory.ComputeDigest(newEntries)
-			rev := int64(1)
-			if pkg.Status.Inventory != nil {
-				rev = pkg.Status.Inventory.Revision + 1
-			}
-			pkg.Status.Inventory = &releasesv1alpha1.Inventory{
-				Revision: rev,
-				Digest:   invDigest,
-				Count:    int64(len(newEntries)),
-				Entries:  newEntries,
-			}
-			digests.Inventory = invDigest
+			pkg.Status.Inventory = nextInventory(pkg.Status.Inventory, newEntries)
+			digests.Inventory = pkg.Status.Inventory.Digest
 
-			status.RecordModulePackageHistory(&pkg.Status, status.NewSuccessEntry("reconcile", "complete", digests, int64(len(newEntries))))
+			status.RecordModulePackageHistory(&pkg.Status, status.NewSuccessEntry(reconcileAction, "complete", digests, int64(len(newEntries))))
 		} else if errMsg != "" {
-			status.RecordModulePackageHistory(&pkg.Status, status.NewFailureEntry("reconcile", errMsg, digests))
+			status.RecordModulePackageHistory(&pkg.Status, status.NewFailureEntry(reconcileAction, errMsg, digests))
 		}
 
 		updateModulePackageFailureCounters(&pkg.Status, outcome, phases)
@@ -295,6 +309,43 @@ func ReconcileModulePackage(
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
 	return ctrl.Result{RequeueAfter: interval}, nil
+}
+
+// commitModulePackagePanicStatus is the ModulePackage twin of
+// commitPanicStatus: Ready=False with reason ReconcilePanic, a failure history
+// entry, one more reconcile failure with the phase counters left alone,
+// nextRetryAt cleared, and lastApplied* and the inventory kept. The
+// ModulePackage commit records no reconcile metrics.
+func commitModulePackagePanicStatus(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	pkg *releasesv1alpha1.ModulePackage,
+	recovered any,
+	digests status.DigestSet,
+	reconcileStart time.Time,
+) {
+	msg := fmt.Sprintf("reconcile panicked: %v", recovered)
+	// The controller runtime's logger already carries the object's name and
+	// namespace, and its panic handler logs the stack after the re-panic.
+	logf.FromContext(ctx).Error(errors.New(msg), "Recording the panicking reconcile as failed")
+
+	status.MarkReconcilePanic(pkg, "%s", msg)
+	now := metav1.Now()
+	pkg.Status.ObservedGeneration = pkg.Generation
+	pkg.Status.LastAttemptedAction = reconcileAction
+	pkg.Status.LastAttemptedAt = &now
+	duration := metav1.Duration{Duration: time.Since(reconcileStart)}
+	pkg.Status.LastAttemptedDuration = &duration
+	pkg.Status.LastAttemptedSourceDigest = digests.Source
+	pkg.Status.LastAttemptedConfigDigest = digests.Config
+	pkg.Status.LastAttemptedRenderDigest = digests.Render
+	status.RecordModulePackageHistory(&pkg.Status, status.NewFailureEntry(reconcileAction, msg, digests))
+	updateModulePackageFailureCounters(&pkg.Status, FailedTransient, phaseOutcomes{})
+	pkg.Status.NextRetryAt = nil
+
+	if err := patchModulePackageStatus(ctx, patcher, pkg); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to patch ModulePackage status after a panic")
+	}
 }
 
 // phaseFail captures a phase failure so the top-level loop can record outcome,
@@ -392,7 +443,7 @@ func renderModulePackage(
 	if waitErr := params.RenderSlots.Run(ctx, func() {
 		kind, result, err = params.Renderer.Render(ctx, packageDir)
 		if err == nil && kind == render.KindModuleInstance {
-			converted, err = convertRender(result)
+			converted, err = params.convertFn()(result)
 		}
 	}); waitErr != nil {
 		// The context ended while waiting for a slot (manager shutdown).

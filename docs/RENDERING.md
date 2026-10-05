@@ -110,14 +110,18 @@ The policy is not part of the generated platform module: changing it alone
 bumps the Platform generation, regenerates a byte-identical module in a new
 directory and re-enqueues every ModulePackage and every operator-managed,
 unsuspended ModuleInstance through the Platform watch, so a switch to
-`Refuse` takes effect on the next reconcile of each object. ModuleInstances
-are re-enqueued on a Platform create or delete, and on an update only when
+`Refuse` takes effect on the reconcile that follows the regeneration.
+ModulePackages and operator-managed, unsuspended ModuleInstances are
+re-enqueued on a Platform create or delete, and on an update only when
 the Platform's `Ready` status, pin set (`status.packageIdentity`,
 `status.registry`), skew policy, `status.observedGeneration` or
 `status.operatorVersion` changes. A Platform status write that changes only
 a message or a report such as `ContractsFulfilled`, and a spec edit's
-`metadata.generation` bump before the platform is regenerated, re-enqueue
-none of them.
+`metadata.generation` bump alone (other than `spec.skewPolicy`) before the
+platform is regenerated, re-enqueue none of them. A `spec.skewPolicy` edit
+can render each workload once under the old policy, because the store
+records the policy only when the platform is regenerated; the regenerated
+platform's status write then renders it under the new one.
 
 Every render also logs the resolved-versions rows (each OPM path the module
 requires, the build it asked for and the build the platform carries) at
@@ -201,3 +205,4 @@ with reason `BuildFailed`, and the message names the field the read failed on.
 | `SkewRefused` | catalog skew under `Refuse` | bump the platform pin or downgrade the module |
 | `DuplicateIdentities` | two rendered objects share one `apiVersion`, `kind`, `namespace` and `name`, so the last apply would silently overwrite the first | remove or rename one of the components the message names |
 | `RenderFailed` | a transformer failed, the instance could not be synthesized, or any other evaluation error after the module was acquired. Over-subscription also reaches here as a fallback, for a package recorded before the contract gate existed; the gate refuses it at the Platform now, and the gate and the render read one provider count, so a fresh package cannot reach a render over-subscribed | fix the module or the platform |
+| `ReconcilePanic` | the reconcile panicked anywhere after the status commit is set up (render, export for apply, shrink judgment, drift detection, apply, prune): an operator bug or an input the operator could not handle. The attempt is recorded as a failure (`Reconciling=True`, not stalled) before the panic propagates, and the inventory and last-applied digests keep the last success | automatic retry on controller-runtime's rate limiter, so `nextRetryAt` stays empty; read the operator log for the stack, then upgrade the operator or report the bug |

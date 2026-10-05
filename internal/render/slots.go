@@ -47,6 +47,16 @@ func (s *Slots) Acquire(ctx context.Context) (release func(), err error) {
 	return func() { once.Do(func() { <-s.ch }) }, nil
 }
 
+// Held reports how many slots are taken. A nil pool holds none. It exists so
+// tests can observe that a step runs while its caller holds a slot; it is a
+// snapshot and orders nothing.
+func (s *Slots) Held() int {
+	if s == nil {
+		return 0
+	}
+	return len(s.ch)
+}
+
 // Run takes a slot, calls fn, and gives the slot back with a deferred call,
 // so a panic in fn frees the slot too: controller-runtime recovers reconcile
 // panics and keeps the worker, and a slot leaked that way would block every

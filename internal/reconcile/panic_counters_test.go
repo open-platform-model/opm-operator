@@ -24,7 +24,6 @@ import (
 	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -69,13 +68,8 @@ func configMapRenderResult(t *testing.T) *render.RenderResult {
 		t.Fatalf("compiling ConfigMap: %v", v.Err())
 	}
 	resource := &object.Resource{Value: v, Instance: loopTestName, Component: "web", Transformer: "kubernetes#simple"}
-	u, err := resource.ToUnstructured()
-	if err != nil {
-		t.Fatalf("converting ConfigMap: %v", err)
-	}
 	return &render.RenderResult{
-		Resources:        []*object.Resource{resource},
-		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
+		Resources: []*object.Resource{resource},
 	}
 }
 

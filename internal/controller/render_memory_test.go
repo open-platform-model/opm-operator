@@ -130,7 +130,7 @@ var _ = Describe("Render memory", func() {
 		last := renderer.lastResult()
 		Expect(last).NotTo(BeNil())
 		Expect(last.Resources).To(BeNil(), "the CUE-backed resources are dropped after conversion")
-		Expect(last.InventoryEntries).To(HaveLen(1), "plain data on the result is untouched")
+		Expect(last.RequiredContracts).To(ConsistOf(stubContract), "plain data on the result is untouched")
 
 		var mi releasesv1alpha1.ModuleInstance
 		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
@@ -162,7 +162,7 @@ var _ = Describe("Render memory", func() {
 		last := renderer.lastResult()
 		Expect(last).NotTo(BeNil())
 		Expect(last.Resources).To(BeNil(), "the CUE-backed resources are dropped after conversion")
-		Expect(last.InventoryEntries).To(HaveLen(1), "plain data on the result is untouched")
+		Expect(last.RequiredContracts).To(ConsistOf(stubContract), "plain data on the result is untouched")
 
 		var pkg releasesv1alpha1.ModulePackage
 		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())

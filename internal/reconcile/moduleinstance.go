@@ -450,7 +450,7 @@ func ReconcileModuleInstance(
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 	digests.Render = converted.digest
-	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
+	digests.Inventory = inventory.ComputeDigest(converted.entries)
 	renderedVersion = &renderResult.ModuleVersion
 	key := renderedKey(digests.Source, digests.Config, renderResult, params.OperatorVersion, params.LibraryVersion)
 	renderedInputs = &key
@@ -539,7 +539,7 @@ func ReconcileModuleInstance(
 	if mi.Status.Inventory != nil {
 		previousEntries = mi.Status.Inventory.Entries
 	}
-	staleSet := inventory.ComputeStaleSet(previousEntries, renderResult.InventoryEntries)
+	staleSet := inventory.ComputeStaleSet(previousEntries, converted.entries)
 
 	// Build impersonated client and resource manager if serviceAccountName is set.
 	// Apply and prune use the impersonated identity; all other phases use the controller's own client.
@@ -612,7 +612,7 @@ func ReconcileModuleInstance(
 	// Successful apply resolves any drift.
 	status.ClearDrifted(&mi)
 
-	newEntries = renderResult.InventoryEntries
+	newEntries = converted.entries
 
 	// Phase 6: Prune stale resources (only if spec.prune=true and apply succeeded).
 	phases.pruneRan = true

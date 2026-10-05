@@ -33,7 +33,6 @@ import (
 	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -68,14 +67,9 @@ func unknownKindRenderResult(namespace string) *render.RenderResult {
 		Component:   "phantom",
 		Transformer: "kubernetes#simple",
 	}
-	u, err := resource.ToUnstructured()
-	if err != nil {
-		panic(fmt.Sprintf("converting phantom stub resource: %v", err))
-	}
 
 	return &render.RenderResult{
-		Resources:        []*object.Resource{resource},
-		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
+		Resources: []*object.Resource{resource},
 	}
 }
 

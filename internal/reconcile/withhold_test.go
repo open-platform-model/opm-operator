@@ -25,6 +25,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/open-platform-model/library/opm/k8s/object"
+
+	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/shrink"
 )
 
@@ -181,5 +184,47 @@ func TestRefusalMessage(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message does not carry %q: %s", want, msg)
 		}
+	}
+}
+
+// TestWithholdRefused_KeepsEntriesForTheFullSet pins the invariant the
+// refusal rests on: the inventory entries come from the full converted set,
+// so a resource withheld from the apply list stays owned and never becomes
+// stale. convertRender builds the entries before withholdRefused runs, and
+// withholdRefused neither sees nor changes them.
+func TestWithholdRefused_KeepsEntriesForTheFullSet(t *testing.T) {
+	result := &render.RenderResult{Resources: []*object.Resource{
+		convertTestResource(t, `{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "a", namespace: "x"}}`),
+		convertTestResource(t, `{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "b", namespace: "x"}}`),
+		convertTestResource(t, `{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "c", namespace: "x"}}`),
+	}}
+	converted, err := convertRender(result)
+	if err != nil {
+		t.Fatalf("convertRender: %v", err)
+	}
+	entriesBefore := slices.Clone(converted.entries)
+
+	apply, refused, err := withholdRefused(context.Background(), refuseByName{names: []string{"b"}}, converted.resources)
+	if err != nil {
+		t.Fatalf("withholdRefused: %v", err)
+	}
+	if got := namesOf(apply); !slices.Equal(got, []string{"a", "c"}) {
+		t.Fatalf("apply list: got %v, want [a c]", got)
+	}
+	if len(refused) != 1 {
+		t.Fatalf("want one refusal, got %d", len(refused))
+	}
+	if len(converted.entries) != 3 {
+		t.Fatalf("want three entries for the full set, got %d", len(converted.entries))
+	}
+	if !slices.Equal(converted.entries, entriesBefore) {
+		t.Fatalf("withholdRefused changed the entries: got %v, want %v", converted.entries, entriesBefore)
+	}
+	names := make([]string, 0, len(converted.entries))
+	for _, e := range converted.entries {
+		names = append(names, e.Name)
+	}
+	if !slices.Equal(names, []string{"a", "b", "c"}) {
+		t.Fatalf("entries: got %v, want [a b c]", names)
 	}
 }

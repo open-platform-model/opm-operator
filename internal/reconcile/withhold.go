@@ -51,10 +51,12 @@ func shrinkDecider(params *ModuleInstanceParams) *shrink.Decider {
 // withholdRefused splits the rendered resources into the list that may be
 // applied and the refusals that kept the rest out of it.
 //
-// The inventory is deliberately not derived from the returned list: the
-// operator still owns a resource it declined to update, and dropping it from
-// the inventory would mark it stale and prune the very object the refusal
-// exists to protect (verified in withhold_invariant_test.go).
+// The inventory is deliberately not derived from the returned list:
+// convertRender builds the entries from the full converted set before this
+// runs. The operator still owns a resource it declined to update, and
+// dropping it from the inventory would mark it stale and prune the very
+// object the refusal exists to protect (pinned by
+// TestWithholdRefused_KeepsEntriesForTheFullSet).
 func withholdRefused(
 	ctx context.Context,
 	decider ClaimShrinkDecider,

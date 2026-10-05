@@ -153,10 +153,6 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Expect(got[labels.ModuleInstanceUUID]).NotTo(BeEmpty(),
 					"module-instance uuid must be non-empty (catalog ownership labels must continue to flow)")
 			}
-
-			// One inventory entry per rendered resource, built via the existing
-			// ToUnstructured bridge.
-			Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))
 		})
 
 		It("reports the superseded identity when a newer package lands mid-render", func() {

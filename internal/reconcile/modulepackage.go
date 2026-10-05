@@ -642,7 +642,7 @@ func renderErrorReason(err error) string {
 
 func computeModulePackageDigests(converted *convertedRender, digests *status.DigestSet) {
 	digests.Render = converted.digest
-	digests.Inventory = inventory.ComputeDigest(converted.result.InventoryEntries)
+	digests.Inventory = inventory.ComputeDigest(converted.entries)
 	// A ModulePackage carries no user values — config digest hashes empty input so
 	// NoOp detection stays consistent across reconciles.
 	digests.Config = status.ConfigDigest(nil)
@@ -666,13 +666,12 @@ func applyAndPruneModulePackage(
 	// The resources were converted under the render slot, and the CUE
 	// values that pinned the build are already gone.
 	resources := converted.resources
-	renderResult := converted.result
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
 	if pkg.Status.Inventory != nil {
 		previousEntries = pkg.Status.Inventory.Entries
 	}
-	staleSet := inventory.ComputeStaleSet(previousEntries, renderResult.InventoryEntries)
+	staleSet := inventory.ComputeStaleSet(previousEntries, converted.entries)
 
 	applyRM, applyClient, impErr := buildModulePackageApplyClient(ctx, params, pkg)
 	if impErr != nil {
@@ -718,7 +717,7 @@ func applyAndPruneModulePackage(
 		outcome = AppliedAndPruned
 	}
 
-	return &applyPruneResult{outcome: outcome, entries: renderResult.InventoryEntries}, nil
+	return &applyPruneResult{outcome: outcome, entries: converted.entries}, nil
 }
 
 func modulePackageBackoff(pkg *releasesv1alpha1.ModulePackage) time.Duration {

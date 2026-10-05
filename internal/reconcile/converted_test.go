@@ -6,8 +6,11 @@ import (
 
 	"cuelang.org/go/cue/cuecontext"
 
+	k8sinventory "github.com/open-platform-model/library/opm/k8s/inventory"
 	"github.com/open-platform-model/library/opm/k8s/object"
 
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
@@ -98,8 +101,9 @@ func TestConvertRender_OneExport(t *testing.T) {
 }
 
 // TestConvertRender_FailureMessages pins the reason and the exact message of
-// each export step's failure, unchanged from before the export moved to the
-// library.
+// each export step's failure. The conversion is the only export of a
+// rendered resource, so these are the first report of a value that will not
+// export.
 func TestConvertRender_FailureMessages(t *testing.T) {
 	t.Run("marshal", func(t *testing.T) {
 		src := `{apiVersion: "v1", kind: "ConfigMap", metadata: name: string}`
@@ -136,4 +140,58 @@ func TestConvertRender_FailureMessages(t *testing.T) {
 			t.Fatalf("message:\n got %q\nwant %q", err.Error(), want)
 		}
 	})
+}
+
+// TestConvertRender_EntriesFromTheOneExport checks that the inventory entries
+// come from the same export as the apply objects: one entry per object, in
+// input order, equal to what the renderer's own export used to build, and
+// built after the rendered CUE values are dropped.
+func TestConvertRender_EntriesFromTheOneExport(t *testing.T) {
+	srcs := []string{
+		`{apiVersion: "apps/v1", kind: "Deployment", metadata: {name: "nginx", namespace: "default", labels: "component.opmodel.dev/name": "web"}}`,
+		`{apiVersion: "v1", kind: "Namespace", metadata: name: "team"}`,
+		`{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "a", namespace: "x"}, data: k: "v"}`,
+	}
+	build := func() []*object.Resource {
+		out := make([]*object.Resource, 0, len(srcs))
+		for _, src := range srcs {
+			out = append(out, convertTestResource(t, src))
+		}
+		return out
+	}
+
+	result := &render.RenderResult{Resources: build()}
+	converted, err := convertRender(result)
+	if err != nil {
+		t.Fatalf("convertRender: %v", err)
+	}
+	if result.Resources != nil {
+		t.Fatal("the rendered resources must be dropped once converted")
+	}
+	if len(converted.entries) != len(srcs) {
+		t.Fatalf("want %d entries, got %d", len(srcs), len(converted.entries))
+	}
+	for i, obj := range converted.resources {
+		if want := inventory.FromEntry(k8sinventory.NewEntry(obj)); converted.entries[i] != want {
+			t.Fatalf("entry %d: got %+v, want %+v", i, converted.entries[i], want)
+		}
+	}
+
+	// The renderer used to build the entries from a second export of each
+	// resource; the one export must yield the same entries.
+	for i, r := range build() {
+		u, err := r.ToUnstructured()
+		if err != nil {
+			t.Fatalf("ToUnstructured: %v", err)
+		}
+		if want := inventory.NewEntryFromResource(u); converted.entries[i] != want {
+			t.Fatalf("entry %d differs from the second-export entry: got %+v, want %+v", i, converted.entries[i], want)
+		}
+	}
+
+	if want := (releasesv1alpha1.InventoryEntry{
+		Group: "apps", Kind: "Deployment", Version: "v1", Namespace: "default", Name: "nginx", Component: "web",
+	}); converted.entries[0] != want {
+		t.Fatalf("deployment entry: got %+v, want %+v", converted.entries[0], want)
+	}
 }

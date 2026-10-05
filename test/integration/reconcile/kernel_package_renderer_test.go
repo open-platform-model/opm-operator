@@ -138,8 +138,6 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 						"module-instance uuid must be non-empty (catalog ownership labels must flow)")
 				}
 
-				Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))
-
 				Expect(res.ModuleVersion).To(Equal(pinnedModuleVersion(fixtureDir, pkg)),
 					"the render reports the version of the module the package's instance imports")
 				Expect(res.PlatformIdentity).To(Equal(store.Identity().String()),

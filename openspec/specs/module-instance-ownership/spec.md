@@ -57,14 +57,14 @@ When `spec.owner == cli`, the controller MUST return from `Reconcile` without re
 
 ### Requirement: The operator acknowledges a CLI-owned instance with a single condition
 
-On a non-deleting `ModuleInstance` with `spec.owner == cli`, the controller MUST set `Ready: Unknown` with reason `ManagedExternally` and MUST NOT write any other status field — specifically it MUST NOT set `status.observedGeneration`, and MUST NOT modify `status.inventory`, the `lastApplied*` digests, `instanceUUID`, or any field the CLI writes. The `internal/status` package MUST expose a `ManagedExternally` reason constant and a helper that sets this condition (clearing `Reconciling` and `Stalled`). The acknowledgement MUST be idempotent: reconciling an already-acknowledged instance MUST produce no status change.
+On a non-deleting `ModuleInstance` with `spec.owner == cli`, the controller MUST set `Ready: Unknown` with reason `ManagedExternally` and MUST NOT write any other status field — specifically it MUST NOT set `status.observedGeneration`, and MUST NOT modify `status.inventory`, the `lastApplied*` digests, `instanceUUID`, or any field the CLI writes. The `internal/status` package MUST expose a `ManagedExternally` reason constant and a helper that sets this condition (clearing `Reconciling`, `Stalled` and `Healthy`; the operator judges no health on an instance it does not reconcile, so a `Healthy` condition left from an operator-owned past would describe objects it no longer follows). The acknowledgement MUST be idempotent: reconciling an already-acknowledged instance MUST produce no status change.
 
 #### Scenario: ManagedExternally condition is set
 
 - **GIVEN** a `ModuleInstance` with `spec.owner == cli`
 - **WHEN** the controller reconciles it
 - **THEN** the `Ready` condition is `Unknown` with reason `ManagedExternally`
-- **AND** the `Reconciling` and `Stalled` conditions are absent
+- **AND** the `Reconciling`, `Stalled` and `Healthy` conditions are absent
 
 #### Scenario: No observedGeneration and no CLI-written status is touched
 
@@ -136,7 +136,7 @@ The coordinates are the ones every CLI install records the operator's instance u
 
 On the operator's own instance, whatever `spec.owner` says, the controller MUST never apply, never prune and never add the `opmodel.dev/cleanup` finalizer. An own instance with `spec.owner: cli` is handled by the owner-skip gate and acknowledged with `ManagedExternally`; an own instance with `spec.owner` absent or `operator` MUST be refused before finalizer registration, before the suspend check, and before any render. On refusal the controller MUST:
 
-- set `Ready=False` and `Stalled=True`, both with reason `SelfManagementRefused`, and remove `Reconciling`, `ModuleResolved` and `Drifted`, with a message that names the signal that matched and says to set `spec.owner` to `cli`;
+- set `Ready=False` and `Stalled=True`, both with reason `SelfManagementRefused`, and remove `Reconciling`, `ModuleResolved`, `Drifted` and `Healthy`, with a message that names the signal that matched and says to set `spec.owner` to `cli`;
 - set `status.observedGeneration` to the instance's generation, so a client waiting on that generation reads a final verdict instead of timing out;
 - emit a Warning event with reason `SelfManagementRefused` when the instance was not already refused;
 - leave `status.inventory`, the `lastApplied*` digests, `instanceUUID`, `lastAttempted*`, history and failure counters unchanged;
@@ -164,9 +164,9 @@ Rationale: the operator is the one workload whose failure stops every other inst
 
 #### Scenario: Refusal clears conditions left by an earlier adoption
 
-- **GIVEN** the operator's own instance with `spec.owner: operator` carrying `ModuleResolved=True` and `Drifted=True` from an earlier reconcile
+- **GIVEN** the operator's own instance with `spec.owner: operator` carrying `ModuleResolved=True`, `Drifted=True` and `Healthy=True` from an earlier reconcile
 - **WHEN** the controller refuses it
-- **THEN** `ModuleResolved` and `Drifted` are removed
+- **THEN** `ModuleResolved`, `Drifted` and `Healthy` are removed
 
 #### Scenario: An own instance with no owner is refused
 

@@ -1,3 +1,7 @@
+## Purpose
+
+Defines how the `internal/apply` package deletes resources that a previous inventory recorded and the current render no longer contains, and the live-state ownership guard that keeps it from deleting objects the instance does not own.
+
 ## Requirements
 
 ### Requirement: Delete stale resources
@@ -53,12 +57,12 @@ For each entry in the stale set that passes safety exclusions (Namespace, CRD), 
 1. `Get` the live object by GVK, Namespace, Name.
 2. If `Get` returns NotFound, treat as success (already-deleted) and continue. (Existing behavior, preserved.)
 3. If `Get` returns any other error, append to the error collection and continue with the next entry. (Existing fail-slow behavior, preserved.)
-4. If the live object's `app.kubernetes.io/managed-by` label value is not recognized by `core.IsOPMManagedBy` (i.e., the live object is not OPM-managed), skip the deletion, increment `PruneResult.Skipped`, log a structured warning, and continue.
+4. If the live object's `app.kubernetes.io/managed-by` label value is not recognized by `labels.IsOPMManagedBy` from the library's `opm/k8s/labels` (i.e., the live object is not OPM-managed), skip the deletion, increment `PruneResult.Skipped`, log a structured warning, and continue.
 5. If the live object carries a non-empty `module-instance.opmodel.dev/uuid` label whose value differs from the supplied `ownerUUID`, skip the deletion, increment `PruneResult.Skipped`, log a structured warning, and continue. (An empty live UUID label is tolerated for backward compatibility with resources applied before the UUID label was stamped.)
 6. Otherwise, proceed with `Delete`.
 
 #### Scenario: Skip resource missing OPM managed-by label
-- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with no `app.kubernetes.io/managed-by` label (or a value not recognized by `core.IsOPMManagedBy`)
+- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with no `app.kubernetes.io/managed-by` label (or a value not recognized by `labels.IsOPMManagedBy`)
 - **WHEN** the controller runs Prune with any `ownerUUID`
 - **THEN** the ConfigMap is NOT deleted
 - **AND** `PruneResult.Skipped` is incremented
@@ -85,9 +89,9 @@ For each entry in the stale set that passes safety exclusions (Namespace, CRD), 
 
 #### Scenario: Delete resource still carrying the CLI manager identity
 
-- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with `app.kubernetes.io/managed-by=opm-cli` and a UUID label matching the reconciling instance (the post-handoff window: applied by the CLI, removed from the module before any relabeling reconcile ran — enhancement 0006 D40)
+- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with `app.kubernetes.io/managed-by=opm-cli` and a UUID label matching the reconciling instance (the post-handoff window: applied by the CLI, removed from the module before any relabeling reconcile ran — 0006:D40)
 - **WHEN** the controller runs Prune with the matching `ownerUUID`
-- **THEN** the ConfigMap is deleted (all OPM manager identities are accepted by `core.IsOPMManagedBy`)
+- **THEN** the ConfigMap is deleted (all OPM manager identities are accepted by `labels.IsOPMManagedBy`)
 - **AND** `PruneResult.Deleted` is incremented
 
 ### Requirement: Release UUID persisted on ModuleReleaseStatus

@@ -38,7 +38,7 @@ None beyond the Go API removal. No CRD, status field, condition, reason, message
 - `kernel-module-renderer`: "Adapt compiled output to operator resources" names the library's `object.Resource`.
 - `prune-stale-resources`: "Live-state UUID-based ownership guard" names the library's `labels.IsOPMManagedBy`.
 - `digest-computation`: "Render digest computation" is computed from the one export, with its bytes pinned.
-- `inventory-bridge`: "Component label constant" and "CLI packages copied to `pkg/`" are removed; the key and the types come from the library.
+- `inventory-bridge`: "Component label constant", "CLI packages copied to `pkg/`" and "Process file remains in pkg/render (revised)" are removed (the key and the types come from the library, and no `pkg/` tree is left); "Inventory type alias preserved" gains a scenario.
 
 ## Impact
 

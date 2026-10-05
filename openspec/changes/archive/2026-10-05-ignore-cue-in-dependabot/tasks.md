@@ -11,5 +11,5 @@ Gates for section 1: task 1.2 (the YAML parses, its parsed `gomod` ignore list h
 
 The archive rides the implementing PR, never a push to main. This section runs only after the review of section 1, never in the planning or implementation run.
 
-- [ ] 2.1 `openspec archive ignore-cue-in-dependabot --yes`. This adds "Dependabot leaves cuelang.org/go to library releases" to `openspec/specs/release-automation/spec.md` and applies the MODIFIED "Dependabot leaves OPM Go modules to the release cascade". The spec's Purpose line does not mention Dependabot and stays as it is.
-- [ ] 2.2 `openspec validate --specs --strict` shows no new failure in `release-automation`, then commit `chore(openspec): archive ignore-cue-in-dependabot`. The commit touches only `openspec/`.
+- [x] 2.1 `openspec archive ignore-cue-in-dependabot --yes`. This adds "Dependabot leaves cuelang.org/go to library releases" to `openspec/specs/release-automation/spec.md` and applies the MODIFIED "Dependabot leaves OPM Go modules to the release cascade". The spec's Purpose line does not mention Dependabot and stays as it is.
+- [x] 2.2 `openspec validate --specs --strict` shows no new failure in `release-automation`, then commit `chore(openspec): archive ignore-cue-in-dependabot`. The commit touches only `openspec/`.

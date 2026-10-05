@@ -14,7 +14,7 @@ The synthesis flow MUST behave predictably across the common user-facing scenari
 
 #### Scenario: Invalid values
 - **WHEN** a user creates a `ModuleRelease` CR with values that conflict with `#config`
-- **THEN** the controller acquires the module, instance synthesis refuses the values with an error naming their positions in `spec.values`, and `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True`
+- **THEN** the controller acquires the module, the values are refused against the module's `#config` with an error naming their positions in `spec.values`, and `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True`
 
 #### Scenario: Version upgrade
 - **WHEN** a user updates `spec.module.version` on an existing `ModuleRelease` CR

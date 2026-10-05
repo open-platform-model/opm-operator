@@ -2,7 +2,7 @@
 
 The operator keeps no readable record of which module version it last applied. `status.lastAppliedSourceDigest` holds it only as a hash: for a ModuleInstance it is `sha256(path@version)` (`internal/status/digests.go`, `ModuleSourceDigest`), and for a ModulePackage it is the Flux artifact digest, which does not name a module version at all. A reader of `kubectl get mi -o yaml` cannot tell from status what is running, and a later change that needs the applied version (an upgrade or uninstall step, the parked 0009 hook work) has nothing to read it from.
 
-The owner settled this in the kernel-plan walkthrough (task j5, 2026-10-03): "Operator adds an additive status.lastAppliedVersion (plain text) next to the digest." The ADR-008 half of j5 merged in wave 1 (library#167). This change is the operator half.
+The owner settled this in the kernel-plan walkthrough (task j5, 2026-10-03): "Operator adds an additive status.lastAppliedVersion (plain text) next to the digest." The deletion half of j5 merged in wave 1 as the ADR-008 amendment (library#167); ADR-008 does not record this field. This change is the operator half.
 
 ## What Changes
 
@@ -38,5 +38,5 @@ None.
 - Reconcile: `internal/reconcile/moduleinstance.go` (deferred commit and `commitNoOpStatus`), `internal/reconcile/modulepackage.go` (deferred commit and its inline NoOp branch). Two small helpers in `internal/reconcile/version.go` (`appliedVersion`, `recordNoOpVersion`) keep both loops' writes identical. Builds on the deferred-commit shape of op-fix-panic-seam (#236): `reconcileAction`, `nextInventory` and the recover branch.
 - Generated: `config/crd/bases/opmodel.dev_moduleinstances.yaml`, `config/crd/bases/opmodel.dev_modulepackages.yaml`, `dist/install.yaml`, `modules/opm_operator/zz_generated_crds.cue`.
 - Tests: `internal/render` (the read helper), `test/integration/reconcile` (both kernel renderers report the fixture's version), `internal/controller` (envtest: set on apply, unchanged on a failed apply, filled on NoOp, corrected by a NoOp after a handback, cleared by an apply whose render reports no version).
-- Downstream: none required. The cli writes `lastApplied*` digests for CLI-owned instances and does not learn this field here, so while `spec.owner` is `cli` the field is not updated and may name the version of an earlier operator apply. Whether the cli records it too is not part of the owner's decision and is left open (a follow-up issue at most).
-- No enhancement decision backs this change (the owner's j5 answer is a walkthrough decision recorded in ADR-008), so there is no `enhancement.yaml`.
+- Downstream: none required. The cli writes `lastApplied*` digests for CLI-owned instances and does not learn this field here, so while `spec.owner` is `cli` the field is not updated and may name the version of an earlier operator apply. Whether the cli records it too is not part of the owner's decision and is tracked as a follow-up in open-platform-model/cli#320.
+- No enhancement decision backs this change (the owner's j5 answer is a kernel-plan walkthrough decision, 2026-10-03; the ADR-008 amendment in library#167 carries only j5's deletion half), so there is no `enhancement.yaml`.

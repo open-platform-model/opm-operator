@@ -12,7 +12,7 @@ A version that cannot be read as a concrete string SHALL NOT fail the reconcile.
 
 The version SHALL NOT be an input to no-op detection; the source digest already covers it.
 
-Source: owner decision j5 of the kernel-plan walkthrough (2026-10-03), recorded in library ADR-008.
+Source: owner decision j5 of the kernel-plan walkthrough (2026-10-03): "Operator adds an additive status.lastAppliedVersion (plain text) next to the digest." The ADR-008 amendment (library#167) carries only j5's deletion half.
 
 #### Scenario: A successful apply records the module version
 

@@ -52,6 +52,7 @@ The behaviour paragraph of the migration note. No CRD, status field, condition, 
 - `kernel-module-renderer`: "Adapt compiled output to operator resources" names the library's `object.Resource`.
 - `prune-stale-resources`: "Live-state UUID-based ownership guard" names the library's `labels.IsOPMManagedBy`.
 - `digest-computation`: "Render digest computation" is computed from the one export, with its bytes pinned.
+- `inventory-bridge`: "Component label constant" and "CLI packages copied to `pkg/`" are removed; the key and the types come from the library.
 
 ## Impact
 

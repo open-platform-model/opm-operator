@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
+	"github.com/open-platform-model/library/opm/k8s/object"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 func rawValues(jsonStr string) *releasesv1alpha1.RawValues {
@@ -18,12 +19,21 @@ func rawValues(jsonStr string) *releasesv1alpha1.RawValues {
 	}
 }
 
-func testResource(t *testing.T, cueSrc string) *core.Resource {
+func testResource(t *testing.T, cueSrc string) *object.Resource {
 	t.Helper()
 	ctx := cuecontext.New()
 	v := ctx.CompileString(cueSrc)
 	require.NoError(t, v.Err())
-	return &core.Resource{Value: v}
+	return &object.Resource{Value: v}
+}
+
+// exported runs the library's single export over resources, as the
+// reconciler does before it computes the render digest.
+func exported(t *testing.T, resources ...*object.Resource) []object.Exported {
+	t.Helper()
+	out, err := object.Export(resources)
+	require.NoError(t, err)
+	return out
 }
 
 // --- ModuleSourceDigest tests ---
@@ -88,10 +98,8 @@ func TestRenderDigest_OrderIndependent(t *testing.T) {
 		spec: type: "ClusterIP"
 	}`)
 
-	d1, err := RenderDigest([]*core.Resource{deploy, svc})
-	require.NoError(t, err)
-	d2, err := RenderDigest([]*core.Resource{svc, deploy})
-	require.NoError(t, err)
+	d1 := RenderDigest(exported(t, deploy, svc))
+	d2 := RenderDigest(exported(t, svc, deploy))
 	assert.Equal(t, d1, d2, "order should not affect digest")
 	assert.Contains(t, d1, "sha256:")
 }
@@ -108,16 +116,42 @@ func TestRenderDigest_ContentSensitive(t *testing.T) {
 		metadata: { name: "app-b", namespace: "ns" }
 	}`)
 
-	da, err := RenderDigest([]*core.Resource{a})
-	require.NoError(t, err)
-	db, err := RenderDigest([]*core.Resource{b})
-	require.NoError(t, err)
+	da := RenderDigest(exported(t, a))
+	db := RenderDigest(exported(t, b))
 	assert.NotEqual(t, da, db, "different resources should produce different digests")
 }
 
+// TestRenderDigest_GoldenBytes pins the render digest of a fixed set, given
+// out of sort order. lastAppliedRenderDigest gates no-op detection, so a
+// change to these bytes makes every applied instance re-apply once after an
+// upgrade. The literal was recorded before the digest read the library's
+// export; never edit it to make a refactor pass.
+func TestRenderDigest_GoldenBytes(t *testing.T) {
+	role := testResource(t, `{
+		apiVersion: "rbac.authorization.k8s.io/v1"
+		kind:       "ClusterRole"
+		metadata: name: "reader"
+		rules: [{apiGroups: [""], resources: ["pods"], verbs: ["get", "list"]}]
+	}`)
+	svc := testResource(t, `{
+		apiVersion: "v1"
+		kind:       "Service"
+		metadata: { name: "web", namespace: "apps" }
+		spec: { type: "ClusterIP", ports: [{port: 80}] }
+	}`)
+	deploy := testResource(t, `{
+		apiVersion: "apps/v1"
+		kind:       "Deployment"
+		metadata: { name: "web", namespace: "apps", labels: app: "web" }
+		spec: replicas: 2
+	}`)
+
+	d := RenderDigest(exported(t, svc, deploy, role))
+	assert.Equal(t, "sha256:27ca646c68345860d39c6bf8409e9a8dc4df1980a24b483a60af1b759545dfea", d)
+}
+
 func TestRenderDigest_Empty(t *testing.T) {
-	d, err := RenderDigest(nil)
-	require.NoError(t, err)
+	d := RenderDigest(nil)
 	assert.Contains(t, d, "sha256:")
 }
 

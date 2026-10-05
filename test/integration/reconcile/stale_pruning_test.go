@@ -32,12 +32,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+	"github.com/open-platform-model/library/opm/k8s/object"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // namedConfigMapRenderResult builds a render result of one ConfigMap per name
@@ -64,15 +66,15 @@ func namedConfigMapRenderResult(names ...string) *render.RenderResult {
 		name: %q
 	}
 }`, name, namespace,
-			core.LabelManagedBy, core.LabelManagedByControllerValue,
-			core.LabelModuleInstanceNamespace, namespace,
-			core.LabelModuleInstanceUUID, stubInstanceUUID,
+			labels.ManagedBy, labels.ManagedByController,
+			labels.ModuleInstanceNamespace, namespace,
+			labels.ModuleInstanceUUID, stubInstanceUUID,
 			name))
 		if cm.Err() != nil {
 			panic(fmt.Sprintf("compiling named stub ConfigMap: %v", cm.Err()))
 		}
 
-		resource := &core.Resource{
+		resource := &object.Resource{
 			Value:       cm,
 			Instance:    name,
 			Component:   name,

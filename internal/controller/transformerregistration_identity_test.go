@@ -29,11 +29,13 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+	"github.com/open-platform-model/library/opm/k8s/object"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // This spec is the measurement behind the rule that the rendered claim carries
@@ -85,7 +87,7 @@ func renderedClaimResult() *render.RenderResult {
 		spikeClaimInstanceName, spikeClaimInstanceNamespace))
 	Expect(claim.Err()).NotTo(HaveOccurred())
 
-	resource := &core.Resource{
+	resource := &object.Resource{
 		Value:       claim,
 		Instance:    spikeClaimInstanceName,
 		Component:   spikeClaimInstanceName,
@@ -95,7 +97,7 @@ func renderedClaimResult() *render.RenderResult {
 	Expect(err).NotTo(HaveOccurred())
 
 	return &render.RenderResult{
-		Resources:        []*core.Resource{resource},
+		Resources:        []*object.Resource{resource},
 		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 	}
 }
@@ -141,10 +143,10 @@ var _ = Describe("TransformerRegistration claim identity", func() {
 		// The finding: the label set identifies an instance NAME and nothing
 		// else. No namespace label, no uuid label, so a label-only owner check
 		// cannot tell two same-named instances in different namespaces apart.
-		Expect(claim.Labels).To(HaveKey(core.LabelModuleInstanceName))
-		Expect(claim.Labels).NotTo(HaveKey(core.LabelModuleInstanceNamespace),
+		Expect(claim.Labels).To(HaveKey(labels.ModuleInstanceName))
+		Expect(claim.Labels).NotTo(HaveKey(labels.ModuleInstanceNamespace),
 			"a namespace label would make the label-only owner check D11 suggested implementable")
-		Expect(claim.Labels).NotTo(HaveKey(core.LabelModuleInstanceUUID))
+		Expect(claim.Labels).NotTo(HaveKey(labels.ModuleInstanceUUID))
 		Expect(claim.Namespace).To(BeEmpty(), "the claim is cluster-scoped")
 
 		By("measuring what the instance inventory records for the claim")

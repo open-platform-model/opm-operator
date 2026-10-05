@@ -29,12 +29,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+	"github.com/open-platform-model/library/opm/k8s/object"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // unknownKindRenderResult builds a render result whose single resource has a
@@ -54,13 +56,13 @@ func unknownKindRenderResult(namespace string) *render.RenderResult {
 		}
 	}
 }`, namespace,
-		core.LabelManagedBy, core.LabelManagedByControllerValue,
-		core.LabelModuleInstanceUUID, stubInstanceUUID))
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceUUID, stubInstanceUUID))
 	if obj.Err() != nil {
 		panic(fmt.Sprintf("compiling phantom stub resource: %v", obj.Err()))
 	}
 
-	resource := &core.Resource{
+	resource := &object.Resource{
 		Value:       obj,
 		Instance:    "phantom-1",
 		Component:   "phantom",
@@ -72,7 +74,7 @@ func unknownKindRenderResult(namespace string) *render.RenderResult {
 	}
 
 	return &render.RenderResult{
-		Resources:        []*core.Resource{resource},
+		Resources:        []*object.Resource{resource},
 		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 	}
 }

@@ -3,11 +3,11 @@ package render
 import (
 	"fmt"
 
+	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // RenderResult holds the output of a successful RenderModule call.
@@ -15,7 +15,7 @@ import (
 // caller everything needed for apply + inventory in one call.
 type RenderResult struct {
 	// Resources is the ordered list of rendered Kubernetes resources.
-	Resources []*core.Resource
+	Resources []*object.Resource
 
 	// InventoryEntries are the CRD-typed inventory entries built from Resources.
 	InventoryEntries []releasesv1alpha1.InventoryEntry
@@ -76,7 +76,7 @@ type RenderResult struct {
 }
 
 // buildInventoryEntries converts rendered resources to inventory entries.
-func buildInventoryEntries(resources []*core.Resource) ([]releasesv1alpha1.InventoryEntry, error) {
+func buildInventoryEntries(resources []*object.Resource) ([]releasesv1alpha1.InventoryEntry, error) {
 	entries := make([]releasesv1alpha1.InventoryEntry, 0, len(resources))
 	for _, r := range resources {
 		u, err := r.ToUnstructured()

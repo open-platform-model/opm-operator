@@ -39,6 +39,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	"github.com/open-platform-model/opm-operator/internal/controller"
@@ -47,7 +49,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/source"
 	opmversion "github.com/open-platform-model/opm-operator/internal/version"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -338,7 +339,7 @@ func main() {
 			Kernel:      k,
 			Store:       platformStore,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		},
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,
@@ -363,7 +364,7 @@ func main() {
 		Renderer: &render.KernelPackageRenderer{
 			Kernel:      k,
 			Store:       platformStore,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		},
 		DefaultServiceAccount: defaultServiceAccount,
 		Kernel:                k,

@@ -21,6 +21,8 @@ import (
 
 	"github.com/fluxcd/pkg/runtime/patch"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
@@ -28,7 +30,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/shrink"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 const (
@@ -1282,7 +1283,7 @@ func recordReconcileMetrics(name, namespace string, outcome Outcome, duration ti
 // carries the label.
 func extractInstanceUUID(resources []*unstructured.Unstructured) string {
 	for _, r := range resources {
-		if uuid := r.GetLabels()[core.LabelModuleInstanceUUID]; uuid != "" {
+		if uuid := r.GetLabels()[labels.ModuleInstanceUUID]; uuid != "" {
 			return uuid
 		}
 	}

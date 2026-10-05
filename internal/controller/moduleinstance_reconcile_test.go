@@ -37,12 +37,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 var _ = Describe("ModuleInstance Reconcile Loop", func() {
@@ -982,7 +983,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "own-deleting-kept",
 					Namespace: namespace,
-					Labels:    map[string]string{core.LabelManagedBy: core.LabelManagedByControllerValue},
+					Labels:    map[string]string{labels.ManagedBy: labels.ManagedByController},
 				},
 				Data: map[string]string{"k": "v"},
 			}
@@ -1688,7 +1689,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 					Name:      "safety-test-cm",
 					Namespace: namespace,
 					Labels: map[string]string{
-						core.LabelManagedBy: core.LabelManagedByControllerValue,
+						labels.ManagedBy: labels.ManagedByController,
 					},
 				},
 				Data: map[string]string{"key": "value"},
@@ -2027,7 +2028,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 					Name:      "stale-cm",
 					Namespace: namespace,
 					Labels: map[string]string{
-						core.LabelManagedBy: core.LabelManagedByControllerValue,
+						labels.ManagedBy: labels.ManagedByController,
 					},
 				},
 				Data: map[string]string{"key": "value"},

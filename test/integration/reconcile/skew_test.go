@@ -30,12 +30,13 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	opmcontroller "github.com/open-platform-model/opm-operator/internal/controller"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -78,7 +79,7 @@ var _ = Describe("Catalog version skew (registry-backed)", func() {
 			Kernel:      k,
 			Store:       store,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		}
 
 		hello := fixtures.Must(GinkgoT(), "hello")
@@ -107,7 +108,7 @@ var _ = Describe("Catalog version skew (registry-backed)", func() {
 				Kernel:      k,
 				Store:       store,
 				Registry:    registry,
-				RuntimeName: core.LabelManagedByControllerValue,
+				RuntimeName: labels.ManagedByController,
 			},
 		}
 
@@ -154,7 +155,7 @@ var _ = Describe("Catalog version skew (registry-backed)", func() {
 			Kernel:      k,
 			Store:       store,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		}
 
 		hello := fixtures.Must(GinkgoT(), "hello")

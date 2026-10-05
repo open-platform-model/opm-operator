@@ -3,16 +3,16 @@ package inventory
 import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // NewEntryFromResource creates an inventory entry from an unstructured Kubernetes resource.
 // Extracts GVK, namespace, name, and the component label.
 func NewEntryFromResource(r *unstructured.Unstructured) releasesv1alpha1.InventoryEntry {
 	gvk := r.GroupVersionKind()
-	labels := r.GetLabels()
-	component := labels[core.LabelComponentName]
+	component := r.GetLabels()[labels.ComponentName]
 	return releasesv1alpha1.InventoryEntry{
 		Group:     gvk.Group,
 		Kind:      gvk.Kind,

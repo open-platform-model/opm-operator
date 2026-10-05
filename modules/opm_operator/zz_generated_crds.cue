@@ -28,6 +28,10 @@ package opm_operator
 					name:     "Ready"
 					type:     "string"
 				}, {
+					jsonPath: ".status.conditions[?(@.type=='Healthy')].status"
+					name:     "Healthy"
+					type:     "string"
+				}, {
 					jsonPath: ".spec.module.path"
 					name:     "Module"
 					type:     "string"
@@ -169,7 +173,15 @@ package opm_operator
 							description: "status defines the observed state of ModuleInstance"
 							properties: {
 								conditions: {
-									description: "conditions represent the current state of the ModuleInstance resource."
+									description: """
+	conditions represent the current state of the ModuleInstance resource.
+	Ready reports whether the operator applied the last render. Healthy
+	reports whether the applied objects have rolled out: True once every
+	object in the inventory reports ready, False while one is still rolling
+	out, missing, or stalled past its progress deadline, and Unknown when
+	an object cannot be read. The two are independent, and nothing that
+	waits on Ready waits on Healthy.
+	"""
 									items: {
 										description: "Condition contains details for one aspect of the current state of this API Resource."
 										properties: {
@@ -475,6 +487,10 @@ package opm_operator
 					name:     "Ready"
 					type:     "string"
 				}, {
+					jsonPath: ".status.conditions[?(@.type=='Healthy')].status"
+					name:     "Healthy"
+					type:     "string"
+				}, {
 					jsonPath: ".spec.sourceRef.name"
 					name:     "Source"
 					type:     "string"
@@ -648,7 +664,15 @@ package opm_operator
 							description: "status defines the observed state of ModulePackage"
 							properties: {
 								conditions: {
-									description: "conditions represent the current state of the ModulePackage resource."
+									description: """
+	conditions represent the current state of the ModulePackage resource.
+	Ready reports whether the operator applied the last render. Healthy
+	reports whether the applied objects have rolled out: True once every
+	object in the inventory reports ready, False while one is still rolling
+	out, missing, or stalled past its progress deadline, and Unknown when
+	an object cannot be read. The two are independent, and nothing that
+	waits on Ready waits on Healthy.
+	"""
 									items: {
 										description: "Condition contains details for one aspect of the current state of this API Resource."
 										properties: {

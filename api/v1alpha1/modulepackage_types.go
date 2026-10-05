@@ -80,6 +80,12 @@ type ModulePackageStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the current state of the ModulePackage resource.
+	// Ready reports whether the operator applied the last render. Healthy
+	// reports whether the applied objects have rolled out: True once every
+	// object in the inventory reports ready, False while one is still rolling
+	// out, missing, or stalled past its progress deadline, and Unknown when
+	// an object cannot be read. The two are independent, and nothing that
+	// waits on Ready waits on Healthy.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -161,6 +167,7 @@ type ModulePackageStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=mpkg
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Healthy",type=string,JSONPath=".status.conditions[?(@.type=='Healthy')].status"
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=".spec.sourceRef.name"
 // +kubebuilder:printcolumn:name="Path",type=string,JSONPath=".spec.path"
 // +kubebuilder:printcolumn:name="Revision",type=string,JSONPath=".status.source.artifactRevision",priority=1

@@ -247,10 +247,13 @@ func ReconcileModuleInstance(
 		return ctrl.Result{}, handleSuspend(ctx, params, patcher, &mi, reconcileStart)
 	}
 
-	// Check for resume from suspend.
-	if ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition); ready != nil && ready.Reason == status.SuspendedReason {
-		log.Info("Reconciliation resumed")
-		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeNormal, status.ResumedReason, "Resume", "Reconciliation resumed")
+	reportResume(ctx, params.EventRecorder, &mi)
+
+	// Skip the render when its inputs are unchanged. It sits before the
+	// deferred status commit is armed: a skip is not an attempt, patches
+	// nothing, emits no event and records no reconcile metric.
+	if instanceRenderSkippable(ctx, params, &mi) {
+		return ctrl.Result{}, nil
 	}
 
 	// Track digests and outcome across phases for deferred status commit.
@@ -1282,4 +1285,38 @@ func renderAndConvertInstance(
 	}
 	converted, err := convert(result)
 	return result, converted, err
+}
+
+// reportResume logs and emits the Resumed event when mi was suspended until
+// this reconcile.
+func reportResume(ctx context.Context, recorder events.EventRecorder, mi *releasesv1alpha1.ModuleInstance) {
+	if ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition); ready != nil && ready.Reason == status.SuspendedReason {
+		logf.FromContext(ctx).Info("Reconciliation resumed")
+		recorder.Eventf(mi, nil, corev1.EventTypeNormal, status.ResumedReason, "Resume", "Reconciliation resumed")
+	}
+}
+
+// instanceRenderSkippable reports whether this reconcile of mi may skip its
+// render because the render input key computed from the spec, the cluster
+// Platform and the running versions matches status.lastAppliedInputs, under
+// the conditions of renderSkip.maySkip. It logs the skip.
+func instanceRenderSkippable(ctx context.Context, params *ModuleInstanceParams, mi *releasesv1alpha1.ModuleInstance) bool {
+	if params.DriftRenderInterval <= 0 || mi.Status.LastAppliedInputs == nil {
+		return false
+	}
+	identity, skew := platformKeyParts(ctx, params.Client)
+	key := status.RenderInputKey{
+		Source:          status.ModuleSourceDigest(mi.Spec.Module.Path, mi.Spec.Module.Version),
+		Config:          status.ConfigDigest(mi.Spec.Values),
+		PackageIdentity: identity,
+		SkewPolicy:      skew,
+		OperatorVersion: params.OperatorVersion,
+		LibraryVersion:  params.LibraryVersion,
+	}
+	skip := renderSkip{interval: params.DriftRenderInterval, now: time.Now()}
+	if !skip.maySkip(mi.Status.Conditions, mi.Generation, mi.Status.ObservedGeneration, mi.Status.LastAppliedInputs, key) {
+		return false
+	}
+	logRenderSkip(ctx, mi.Status.LastAppliedInputs, params.DriftRenderInterval)
+	return true
 }

@@ -1,11 +1,17 @@
 package reconcile
 
 import (
+	"context"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
@@ -51,4 +57,64 @@ func noOpInputs(interval time.Duration, key *status.RenderInputKey) *status.Rend
 		return nil
 	}
 	return key
+}
+
+// platformKeyParts reads the platform parts of the pre-render key from the
+// cluster Platform: status.packageIdentity, the pin-set field a render
+// consumes, and the resolved spec.skewPolicy in its API spelling. It reads
+// the CR rather than the platform store because the CR survives an operator
+// restart: an unchanged object can skip while the store is still empty. A
+// missing Platform or any read error returns empty parts, which make the key
+// incomplete, so the reconcile renders.
+func platformKeyParts(ctx context.Context, c client.Reader) (identity, skew string) {
+	var plat releasesv1alpha1.Platform
+	if err := c.Get(ctx, client.ObjectKey{Name: platformstore.SingletonName}, &plat); err != nil {
+		if !apierrors.IsNotFound(err) {
+			logf.FromContext(ctx).V(1).Info("Reading the Platform for the render input key failed; rendering", "error", err.Error())
+		}
+		return "", ""
+	}
+	return plat.Status.PackageIdentity, platformstore.SkewPolicyName(platformstore.ResolveSkewPolicy(&plat))
+}
+
+// renderSkip decides whether a reconcile may skip its render.
+type renderSkip struct {
+	// interval is the drift render interval; zero or less never skips.
+	interval time.Duration
+	now      time.Time
+}
+
+// maySkip reports whether a reconcile may skip its render: only when the
+// skip is enabled, the last confirming render (recorded) is younger than the
+// interval, the object is Ready with reason ReconciliationSucceeded, it has
+// observed its generation, and the pre-render key is complete and matches
+// the recorded one. The checks run cheapest first. Each guards against a
+// skip hiding something a render would find: a stale render (the interval),
+// a failed or refused attempt (Ready), a spec edit outside the key (the
+// generation), and an input change (the key).
+func (s renderSkip) maySkip(
+	conditions []metav1.Condition,
+	generation, observedGeneration int64,
+	recorded *releasesv1alpha1.RenderInputs,
+	key status.RenderInputKey,
+) bool {
+	if s.interval <= 0 || recorded == nil || s.now.Sub(recorded.RenderedAt.Time) >= s.interval {
+		return false
+	}
+	ready := apimeta.FindStatusCondition(conditions, status.ReadyCondition)
+	if ready == nil || ready.Status != metav1.ConditionTrue || ready.Reason != status.ReconciliationSucceededReason {
+		return false
+	}
+	if generation != observedGeneration {
+		return false
+	}
+	return key.Complete() && key.Digest() == recorded.Digest
+}
+
+// logRenderSkip records a skipped render: one line, with the time from which
+// a reconcile renders again whatever its inputs.
+func logRenderSkip(ctx context.Context, recorded *releasesv1alpha1.RenderInputs, interval time.Duration) {
+	logf.FromContext(ctx).Info("Render inputs unchanged, skipping render",
+		"renderedAt", recorded.RenderedAt.Time,
+		"rendersAgainAfter", recorded.RenderedAt.Add(interval))
 }

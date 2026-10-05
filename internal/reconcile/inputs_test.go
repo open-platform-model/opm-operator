@@ -57,3 +57,60 @@ func TestNoOpInputs(t *testing.T) {
 	assert.Nil(t, noOpInputs(0, &k), "a disabled skip records nothing on a NoOp")
 	assert.Same(t, &k, noOpInputs(time.Minute, &k))
 }
+
+func TestMaySkip(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	interval := 30 * time.Minute
+	key := completeKey()
+	readyOK := []metav1.Condition{{Type: status.ReadyCondition, Status: metav1.ConditionTrue, Reason: status.ReconciliationSucceededReason}}
+
+	type input struct {
+		interval   time.Duration
+		conditions []metav1.Condition
+		gen, obs   int64
+		recorded   *releasesv1alpha1.RenderInputs
+		key        status.RenderInputKey
+	}
+	base := func() input {
+		return input{
+			interval:   interval,
+			conditions: readyOK,
+			gen:        3, obs: 3,
+			recorded: &releasesv1alpha1.RenderInputs{Digest: key.Digest(), RenderedAt: metav1.NewTime(now.Add(-5 * time.Minute))},
+			key:      key,
+		}
+	}
+	cases := []struct {
+		name   string
+		mutate func(*input)
+		want   bool
+	}{
+		{"all conditions hold", func(*input) {}, true},
+		{"skip disabled", func(in *input) { in.interval = 0 }, false},
+		{"nothing recorded", func(in *input) { in.recorded = nil }, false},
+		{"render older than the interval", func(in *input) {
+			in.recorded.RenderedAt = metav1.NewTime(now.Add(-31 * time.Minute))
+		}, false},
+		{"render exactly one interval ago", func(in *input) {
+			in.recorded.RenderedAt = metav1.NewTime(now.Add(-interval))
+		}, false},
+		{"not ready", func(in *input) {
+			in.conditions = []metav1.Condition{{Type: status.ReadyCondition, Status: metav1.ConditionFalse, Reason: status.ApplyFailedReason}}
+		}, false},
+		{"ready for another reason", func(in *input) {
+			in.conditions = []metav1.Condition{{Type: status.ReadyCondition, Status: metav1.ConditionTrue, Reason: "Other"}}
+		}, false},
+		{"no Ready condition", func(in *input) { in.conditions = nil }, false},
+		{"generation not observed", func(in *input) { in.gen = 4 }, false},
+		{"key changed", func(in *input) { in.key.PackageIdentity = "gen-2" }, false},
+		{"key incomplete", func(in *input) { in.key.LibraryVersion = "" }, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := base()
+			tc.mutate(&in)
+			s := renderSkip{interval: in.interval, now: now}
+			assert.Equal(t, tc.want, s.maySkip(in.conditions, in.gen, in.obs, in.recorded, in.key))
+		})
+	}
+}

@@ -109,25 +109,28 @@ The `status.conditions` MUST report:
 - `Ready=False` with reason `ResolutionFailed` when the module cannot be resolved
   into a usable, trustworthy input for rendering. This covers:
   - The module cannot be acquired from the registry.
+  - A registry fetch fails during values compile, instance synthesis or the
+    render build.
   - The acquired module's declared identity (module path or version in its
     metadata) disagrees with the coordinate it was fetched by.
   - The acquired artifact is not a module or is structurally invalid.
   - The module demands contracts that the generated platform does not
     provide.
 - `Ready=False` with reason `RenderFailed` when synthesis, CUE evaluation or
-  rendering fails for a cause that is not a resolution-class failure.
-- `Stalled=True` when the failure is not transient. An acquisition failure that
-  carries no typed terminal cause is transient: it MUST NOT set `Stalled=True`
-  and retries on the exponential backoff capped at 5 minutes (see
-  `reconcile-backoff`, "Acquisition failures without a typed terminal cause are
-  transient").
+  rendering fails for a cause that is neither a resolution-class failure nor a
+  registry fetch failure.
+- `Stalled=True` when the failure is not transient. A typed registry fetch
+  failure in any phase is transient: it MUST NOT set `Stalled=True` and retries
+  on the exponential backoff capped at 5 minutes (see `reconcile-backoff`,
+  "Registry fetch failures are transient wherever they occur"). An acquisition
+  failure that is not a registry fetch failure stalls.
 
 #### Scenario: Success reported
 - **WHEN** the module resolves, renders, and applies successfully
 - **THEN** `status.conditions` reports `Ready=True`
 
 #### Scenario: Resolution failure reported
-- **WHEN** the module cannot be acquired from the registry and the failure carries no typed terminal cause
+- **WHEN** the module cannot be acquired from the registry because the fetch failed (the registry is unreachable, does not hold the module, or refuses the credentials)
 - **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed`, no `Stalled` condition, and the instance retries on the exponential backoff
 
 #### Scenario: Identity mismatch reported as resolution failure
@@ -139,8 +142,12 @@ The `status.conditions` MUST report:
 - **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and `Stalled=True`, and a Warning event carries the unresolved-demands message
 
 #### Scenario: Render failure reported
-- **WHEN** synthesis, CUE evaluation or rendering fails for a cause that is not a resolution-class failure
+- **WHEN** synthesis, CUE evaluation or rendering fails for a cause that is neither a resolution-class failure nor a registry fetch failure
 - **THEN** `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True` when user input must change to resolve the failure
+
+#### Scenario: Registry failure after acquisition reported as transient resolution failure
+- **WHEN** instance synthesis or the render build fails because a registry fetch failed
+- **THEN** `status.conditions` reports `Ready=False` with reason `ResolutionFailed`, no `Stalled` condition, and the instance retries on the exponential backoff
 
 ### Requirement: End-to-end release scenarios
 
@@ -152,7 +159,7 @@ The synthesis flow MUST behave predictably across the common user-facing scenari
 
 #### Scenario: Module not found in registry
 - **WHEN** a user creates a `ModuleRelease` CR with a `spec.module.path` that does not exist in the registry
-- **THEN** acquisition fails without a typed terminal cause, `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and no `Stalled` condition, and the controller retries on the exponential backoff capped at 5 minutes until the path resolves or the CR changes
+- **THEN** acquisition fails with a registry fetch failure of kind not found, `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and no `Stalled` condition, and the controller retries on the exponential backoff capped at 5 minutes until the path resolves or the CR changes
 
 #### Scenario: Invalid values
 - **WHEN** a user creates a `ModuleRelease` CR with values that do not satisfy `#config`

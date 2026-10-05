@@ -15,6 +15,7 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/render"
+	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
@@ -310,6 +311,18 @@ func dirExists(dir string) bool {
 	return err == nil
 }
 
+// recordingFetcher extracts as instanceFileFetcher does and records each
+// extract dir it was handed.
+type recordingFetcher struct {
+	instanceFileFetcher
+	dirs chan string
+}
+
+func (f recordingFetcher) Fetch(ctx context.Context, url, digest, dir string, opts opmsource.FetchOptions) error {
+	f.dirs <- dir
+	return f.instanceFileFetcher.Fetch(ctx, url, digest, dir, opts)
+}
+
 func TestRenderTimeout_ModulePackage(t *testing.T) {
 	t.Run("a render past its deadline keeps its files until it returns", func(t *testing.T) {
 		pool := render.NewSlots(1)
@@ -349,6 +362,51 @@ func TestRenderTimeout_ModulePackage(t *testing.T) {
 
 		stage.finish(t, pool)
 		waitFor(t, func() bool { return !dirExists(packageDir) }, "the package dir is removed once the render returns")
+	})
+
+	t.Run("a retry while the render still runs starts no second render and removes its files", func(t *testing.T) {
+		pool := render.NewSlots(2)
+		stage := newStuckStage()
+		params := timeoutPackageParams(t, pool, ctxPackageRenderer(func(ctx context.Context, _ string) (string, *render.RenderResult, error) {
+			defer close(stage.returned)
+			stage.block(ctx)
+			return "", nil, ctx.Err()
+		}))
+		fetcher := recordingFetcher{dirs: make(chan string, 2)}
+		params.Fetcher = fetcher
+
+		if _, err := ReconcileModulePackage(context.Background(), params, loopTestRequest); err != nil {
+			t.Fatalf("first reconcile: %v", err)
+		}
+		firstDir := <-fetcher.dirs
+		res, err := ReconcileModulePackage(context.Background(), params, loopTestRequest)
+		if err != nil {
+			t.Fatalf("second reconcile: %v", err)
+		}
+		secondDir := <-fetcher.dirs
+		if res != (ctrl.Result{RequeueAfter: 10 * time.Second}) {
+			t.Fatalf("result = %+v, want RequeueAfter 10s, the second step of the backoff", res)
+		}
+		if calls := stage.calls.Load(); calls != 1 {
+			t.Fatalf("renderer called %d times, want 1: the retry must not render beside the stuck render", calls)
+		}
+		if held := pool.Held(); held != 1 {
+			t.Fatalf("Held() = %d, want 1: a hung object holds at most one slot", held)
+		}
+		if dirExists(secondDir) {
+			t.Fatalf("the retry's extract dir %s is left behind although no render took it", secondDir)
+		}
+		if !dirExists(firstDir) {
+			t.Fatalf("the running render's extract dir %s is gone while it still runs", firstDir)
+		}
+		got := storedPackage(t, params)
+		expectTimedOutConditions(t, got.Status.Conditions, "is still running; no new render was started")
+		if got.Status.FailureCounters == nil || got.Status.FailureCounters.Reconcile != 2 {
+			t.Fatalf("failureCounters = %+v, want reconcile 2", got.Status.FailureCounters)
+		}
+
+		stage.finish(t, pool)
+		waitFor(t, func() bool { return !dirExists(firstDir) }, "the running render's dir is removed once it returns")
 	})
 
 	t.Run("a panicking body still removes its files", func(t *testing.T) {

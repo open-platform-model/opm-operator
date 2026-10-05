@@ -70,8 +70,10 @@ func TestRun_TimeoutKeepsSlotUntilBodyReturns(t *testing.T) {
 	eventually(t, func() bool { return s.Held() == 0 }, "the slot is freed once the body returns")
 }
 
-// (b) A body that returns after its deadline is a timeout, even when it
-// ignores the context.
+// (b) A body that is still running at its deadline is a timeout, even when
+// it returns moments later. Run leaves through the abandon path here; the
+// branch that classifies a return already received after the deadline is
+// covered directly by TestReturned.
 func TestRun_ReturnAfterDeadlineIsTimeout(t *testing.T) {
 	s := NewSlots(1)
 	err := s.Run(context.Background(), "mi/ns/a", 10*time.Millisecond, func(ctx context.Context) {
@@ -301,4 +303,56 @@ func TestRun_NilPoolWithTimeout(t *testing.T) {
 func TestRun_SentinelsAreDistinct(t *testing.T) {
 	assert.False(t, errors.Is(ErrRenderStillRunning, ErrRenderTimedOut))
 	assert.False(t, errors.Is(fmt.Errorf("x: %w", ErrRenderTimedOut), ErrRenderStillRunning))
+}
+
+// returned classifies a render Run received from done. The late-return
+// branch cannot be reached reliably through Run's select, so it is tested
+// here directly.
+func TestReturned(t *testing.T) {
+	expired := func(parent context.Context) context.Context {
+		ctx, cancel := context.WithTimeout(parent, time.Nanosecond)
+		t.Cleanup(cancel)
+		<-ctx.Done()
+		return ctx
+	}
+	cancelled := func() context.Context {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx
+	}
+
+	t.Run("returned after the deadline with a live parent is a timeout", func(t *testing.T) {
+		parent := context.Background()
+		assert.ErrorIs(t, returned(parent, expired(parent), renderReturn{}), ErrRenderTimedOut)
+	})
+	t.Run("returned in time is nil", func(t *testing.T) {
+		parent := context.Background()
+		renderCtx, cancel := context.WithTimeout(parent, time.Minute)
+		defer cancel()
+		assert.NoError(t, returned(parent, renderCtx, renderReturn{}))
+	})
+	t.Run("a cancelled parent is nil", func(t *testing.T) {
+		parent := cancelled()
+		renderCtx, cancel := context.WithTimeout(parent, time.Minute)
+		defer cancel()
+		assert.NoError(t, returned(parent, renderCtx, renderReturn{}))
+	})
+	t.Run("a cancelled parent past the deadline is nil", func(t *testing.T) {
+		parent, cancel := context.WithCancel(context.Background())
+		renderCtx := expired(parent)
+		cancel()
+		assert.NoError(t, returned(parent, renderCtx, renderReturn{}))
+	})
+	t.Run("a render context cancelled but not expired is nil", func(t *testing.T) {
+		parent := context.Background()
+		renderCtx, cancel := context.WithTimeout(parent, time.Minute)
+		cancel()
+		assert.NoError(t, returned(parent, renderCtx, renderReturn{}))
+	})
+	t.Run("a panic is raised again with its value even past the deadline", func(t *testing.T) {
+		parent := context.Background()
+		assert.PanicsWithValue(t, "boom", func() {
+			_ = returned(parent, expired(parent), renderReturn{panicked: true, value: "boom"})
+		})
+	})
 }

@@ -125,7 +125,12 @@ func (r *KernelModuleRenderer) RenderModule(
 		return nil, fmt.Errorf("reading the instance's contract demand: %w", err)
 	}
 
-	return resultFromRender(out, rec.Identity, contracts)
+	result, err := resultFromRender(out, rec.Identity, contracts)
+	if err != nil {
+		return nil, err
+	}
+	result.ModuleVersion = declaredModuleVersion(inst)
+	return result, nil
 }
 
 // synthesize acquires the module and synthesizes the source-carrying

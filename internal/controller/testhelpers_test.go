@@ -77,6 +77,10 @@ func (s *stubRenderer) lastResult() *render.RenderResult {
 // carries.
 const stubContract = "opmodel.dev/catalogs/opm/resources/config-maps@v1beta1"
 
+// stubModuleVersion is the module version the stub render result reports, as
+// a module declares it in metadata.version.
+const stubModuleVersion = "0.1.0"
+
 // stubRenderResult builds a ConfigMap render result named "test-module" in the
 // given namespace, with data.message from values (default "hello").
 func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *render.RenderResult {
@@ -129,6 +133,7 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 		Resources:         []*core.Resource{resource},
 		InventoryEntries:  []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 		RequiredContracts: []string{stubContract},
+		ModuleVersion:     stubModuleVersion,
 	}
 }
 

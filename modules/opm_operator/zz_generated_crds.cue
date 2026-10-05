@@ -345,7 +345,21 @@ package opm_operator
 								lastAppliedConfigDigest: type: "string"
 								lastAppliedRenderDigest: type: "string"
 								lastAppliedSourceDigest: type: "string"
-								lastAttemptedAction: type:     "string"
+								lastAppliedVersion: {
+									description: """
+	lastAppliedVersion is the version of the module the operator last
+	applied, in plain text, as the module declares it in metadata.version
+	(bare SemVer, for example 0.1.0). It is set with the other last-applied
+	fields when an apply succeeds, and rewritten by a reconcile that renders
+	and finds nothing to change. It is empty when the module's version could
+	not be read.
+
+	Written by the operator only. While spec.owner is cli it is not updated
+	and may name the version of an earlier operator apply.
+	"""
+									type: "string"
+								}
+								lastAttemptedAction: type: "string"
 								lastAttemptedAt: {
 									format: "date-time"
 									type:   "string"
@@ -766,7 +780,18 @@ package opm_operator
 								lastAppliedConfigDigest: type: "string"
 								lastAppliedRenderDigest: type: "string"
 								lastAppliedSourceDigest: type: "string"
-								lastAttemptedAction: type:     "string"
+								lastAppliedVersion: {
+									description: """
+	lastAppliedVersion is the version of the module the operator last
+	applied, in plain text, as the module declares it in metadata.version
+	(bare SemVer, for example 0.1.0). It is set with the other last-applied
+	fields when an apply succeeds, and rewritten by a reconcile that renders
+	and finds nothing to change. It is empty when the module's version could
+	not be read.
+	"""
+									type: "string"
+								}
+								lastAttemptedAction: type: "string"
 								lastAttemptedAt: {
 									format: "date-time"
 									type:   "string"

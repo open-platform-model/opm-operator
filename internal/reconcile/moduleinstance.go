@@ -94,11 +94,13 @@ func commitNoOpStatus(
 	patcher *patch.SerialPatcher,
 	mi *releasesv1alpha1.ModuleInstance,
 	phases phaseOutcomes,
+	renderedVersion *string,
 	reconcileStart time.Time,
 ) {
 	status.MarkReady(mi, "Reconciliation succeeded")
 	updateFailureCounters(&mi.Status, NoOp, phases)
 	mi.Status.NextRetryAt = nil
+	recordNoOpVersion(&mi.Status.LastAppliedVersion, renderedVersion)
 	if patchErr := patcher.Patch(ctx, mi,
 		patch.WithOwnedConditions{
 			Conditions: []string{
@@ -250,11 +252,18 @@ func ReconcileModuleInstance(
 		// the zero outcome (NoOp) would otherwise report a success. A panic
 		// is caught before this flag and the NoOp branch are read.
 		skipCommit bool
+
+		// renderedVersion is the module version this attempt's render
+		// reported, nil until a render result is in hand. A NoOp writes it
+		// to lastAppliedVersion only when it is set, so a reconcile that did
+		// not render never touches the field.
+		renderedVersion *string
 	)
 
 	// Deferred status commit — patches status on every reconcile attempt,
 	// including NoOp. On NoOp, the patch is bounded to drift condition,
-	// failure counter deltas, and clearing nextRetryAt; lastAttempted/history/
+	// failure counter deltas, clearing nextRetryAt, requiredContracts and,
+	// when this attempt rendered, lastAppliedVersion; lastAttempted/history/
 	// inventory are not touched (they describe meaningful outcomes).
 	// Storm-safe: GenerationChangedPredicate on the controller's event filter
 	// prevents status-only patches from triggering watch-driven reconciles.
@@ -273,7 +282,7 @@ func ReconcileModuleInstance(
 			return
 		}
 		if outcome == NoOp {
-			commitNoOpStatus(ctx, patcher, &mi, phases, reconcileStart)
+			commitNoOpStatus(ctx, patcher, &mi, phases, renderedVersion, reconcileStart)
 			return
 		}
 
@@ -290,6 +299,7 @@ func ReconcileModuleInstance(
 		if reconciled {
 			mi.Status.LastAppliedAt = &now
 			mi.Status.LastAppliedSourceDigest = digests.Source
+			mi.Status.LastAppliedVersion = appliedVersion(renderedVersion)
 			mi.Status.LastAppliedConfigDigest = digests.Config
 			mi.Status.LastAppliedRenderDigest = digests.Render
 
@@ -390,6 +400,7 @@ func ReconcileModuleInstance(
 	}
 	digests.Render = converted.digest
 	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
+	renderedVersion = &renderResult.ModuleVersion
 
 	// Phase 4: Plan actions — no-op detection, drift detection, compute stale set.
 	//

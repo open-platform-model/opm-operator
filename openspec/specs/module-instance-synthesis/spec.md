@@ -162,8 +162,8 @@ The synthesis flow MUST behave predictably across the common user-facing scenari
 - **THEN** acquisition fails with a registry fetch failure of kind not found, `status.conditions` reports `Ready=False` with reason `ResolutionFailed` and no `Stalled` condition, and the controller retries on the exponential backoff capped at 5 minutes until the path resolves or the CR changes
 
 #### Scenario: Invalid values
-- **WHEN** a user creates a `ModuleRelease` CR with values that do not satisfy `#config`
-- **THEN** the controller synthesizes the package and CUE resolves the module, value validation fails in `ParseModuleRelease`, and `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True`
+- **WHEN** a user creates a `ModuleRelease` CR with values that conflict with `#config`
+- **THEN** the controller acquires the module, the values are refused against the module's `#config` with an error naming their positions in `spec.values`, and `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True`
 
 #### Scenario: Version upgrade
 - **WHEN** a user updates `spec.module.version` on an existing `ModuleRelease` CR

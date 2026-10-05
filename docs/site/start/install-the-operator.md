@@ -5,18 +5,26 @@ type: how-to
 weight: 16
 ---
 
-The OPM operator is a controller that runs in the namespace `opm-operator-system`. It renders and applies every ModuleInstance whose `spec.owner` is absent or `operator`, such as the ones you create with kubectl or through GitOps, and every ModulePackage. The one exception is the instance that deploys the operator itself, once the install deploys the operator as a ModuleInstance: the operator never reconciles that instance, whatever its owner, so re-running the install can always repair the operator. Install it when the cluster should keep instances as declared without anyone running `opm`. A cluster where only the CLI deploys needs only the operator's resource definitions, which `opm operator install --crds-only` installs.
+The OPM operator is a controller that runs in the namespace `opm-operator-system`. It renders and applies every ModuleInstance whose `spec.owner` is absent or `operator`, such as the ones you create with kubectl or through GitOps, and every ModulePackage. Install it when the cluster should keep instances as declared without anyone running `opm`. A cluster where only the CLI deploys needs only the operator's resource definitions, which `opm operator install --crds-only` installs.
 
-There are two ways to install the operator, and both apply the manifest a release publishes, `install.yaml`. `opm operator install` applies the copy built into the CLI, and `kubectl apply` reads it from the GitHub release.
+The operator is itself an OPM module, `opmodel.dev/modules/opm_operator`, published to the registry on a version train of its own. A module version is not an operator version: each module version deploys one operator release. `opm operator install` pulls that module and deploys it as the ModuleInstance `opm-operator` in `opm-operator-system`, owned by the CLI. The operator never reconciles that instance, whatever its owner. So re-running the install repairs the operator, as long as the instance stays owned by the CLI. If its `spec.owner` is set to anything other than `cli`, the install refuses and prints the `kubectl patch` that sets it back. Without the CLI, `kubectl apply` installs the same objects from the `install.yaml` that each module release attaches.
 
 ## Before you begin
 
-- `kubectl` access with cluster-admin rights. The manifest creates the namespace `opm-operator-system`, four resource definitions under `opmodel.dev` (`moduleinstances`, `modulepackages`, `platforms` and `transformerregistrations`), and ClusterRoles and ClusterRoleBindings.
-- To install with `opm`: the CLI, configured with `opm config init`. See [Install the CLI](/docs/start/install-the-cli/). The CLI looks up the newest catalog release in the registry before it changes anything on the cluster.
-- Network access from the cluster to `ghcr.io`. The operator resolves core, the catalogs and modules from `ghcr.io/open-platform-model`, and it exits at startup when it cannot resolve core.
+- `kubectl` access with cluster-admin rights. The module renders the namespace `opm-operator-system`, four resource definitions under `opmodel.dev` (`moduleinstances`, `modulepackages`, `platforms` and `transformerregistrations`), and ClusterRoles and ClusterRoleBindings.
+- To install with `opm`: the CLI, configured with `opm config init`. See [Install the CLI](/docs/start/install-the-cli/). The CLI pulls the operator module and the OPM modules it depends on from its configured registry, `ghcr.io/open-platform-model` by default, and looks up the newest catalog release there before it changes anything on the cluster. The module also depends on the Kubernetes schemas `cue.dev/x/k8s.io`, which the default configuration pulls from `registry.cue.works`, so the host that runs `opm` must reach both registries.
+- Network access from the cluster to `ghcr.io`. The nodes pull the controller image from it, and the operator resolves core, the catalogs and modules from `ghcr.io/open-platform-model`. It exits at startup when it cannot resolve core.
+- For an air-gapped cluster: a registry mirror that holds the operator module and every module it depends on, and an image mirror the nodes can pull from. Step 5 sets both.
 - To use ModulePackages: Flux's source-controller, installed before the operator. A ModulePackage loads its instance from a Flux OCIRepository, GitRepository or Bucket, and the operator looks for those resource definitions only when it starts. ModuleInstances need no Flux.
 
 ## Steps
+
+> [!IMPORTANT]
+> **An operator installed from an operator release manifest**
+>
+> Each operator release, tagged `v1.0.0-beta.N` and earlier, attaches an `install.yaml` built from the operator's own configuration, not from the module. Earlier opm releases applied that manifest, and so did `kubectl apply`. The first module install on such a cluster migrates it, with no flag. It takes over the objects it can prove came from the manifest of an operator release published before that opm release. A cluster installed from a later operator release's manifest cannot be proven, and the install refuses. It deletes and recreates the controller Deployment, because the module's Deployment selector differs and a selector cannot change. It deletes the three old role bindings named `*-rolebinding`, which the module's bindings replace. The output names every object it took over, recreated or deleted, and older objects it leaves in place.
+>
+> Arguments patched onto the old Deployment, such as `--registry`, are not carried over. Pass them as values to that first install (steps 4 and 5). The controller stops for at least half a minute while its new pod starts; the workloads it manages keep running. The install refuses, and changes nothing, when an object it would take over or delete does not match an earlier manifest. After the migration, an opm release that still installs from a manifest cannot reinstall the operator on that cluster.
 
 1. Install the operator.
 
@@ -26,39 +34,41 @@ There are two ways to install the operator, and both apply the manifest a releas
    opm operator install
    ```
 
-   The output should look similar to this, shortened:
-
-   <!-- x-release-please-start-version -->
+   The output should look similar to this, shortened. The CLI names the module version it installed and the operator version that module deploys:
 
    ```text
-   INFO installing opm-operator
+   INFO operator module opmodel.dev/modules/opm_operator 0.Y.Z (pinned; deploys opm-operator v1.0.0-beta.N)
    ...
-   ✔ opm-operator v1.0.0-beta.8 installed (embedded, 19 resource(s) applied)
+   ✔ opm-operator v1.0.0-beta.N installed from module 0.Y.Z
    ```
 
-   <!-- x-release-please-end -->
+   Each opm release pins one module version, which the install uses by default. To install another, add `--version` with a module version: `0.2.0` pins that release, and `v0` takes the newest release of major 0. `--version` does not take an operator release tag such as `v1.0.0-beta.N`.
 
-   `opm operator install` server-side applies the operator release built into the CLI. It waits until the resource definitions are established and the controller has rolled out, then creates the cluster Platform (step 3). Each opm release carries one operator release, which the output names. To install another release, add `--version <tag>`: the CLI downloads that release's `install.yaml` from GitHub and reports it as `fetched`. `--timeout` bounds the whole wait, 5 minutes by default. The command is safe to run again, and it first waits out objects that an earlier uninstall left terminating.
+   The install first runs every check that can refuse it, and a refused install changes nothing on the cluster. Among them, it refuses a module whose operator has a higher major or minor version than the CLI, and values the module does not accept. It also refuses any object the module renders that already exists and is not managed by OPM. Then it applies the resource definitions and waits until the API server serves them. Then it applies the whole render as the instance, records every object it applied in the instance's inventory, and waits until the controller has rolled out. Last, it creates the cluster Platform (step 3). `--timeout` bounds every wait together, 5 minutes by default. The install first waits out objects that an earlier uninstall left terminating. `--crds-only` applies only the resource definitions of the same render, so it also needs the registry, and it creates no instance and no Platform.
 
-   <!-- x-release-please-start-version -->
+   To upgrade the operator, run `opm operator install` again: with a newer opm release, or with `--version`. The install applies what changed and deletes the objects the new module version no longer renders, except the resource definitions and the namespace. Re-running it with the same version and values changes nothing.
 
-   Without the CLI, apply the `install.yaml` asset of a release. Pick a tag from the [operator releases](https://github.com/open-platform-model/opm-operator/releases); this page uses v1.0.0-beta.8:
+   Without the CLI, apply the `install.yaml` of a module release. Pick a tag `opm_operator-vX.Y.Z` from the [operator releases](https://github.com/open-platform-model/opm-operator/releases); this page uses `opm_operator-v0.1.0`. Never apply the `install.yaml` of an operator release, tagged `v1.0.0-beta.N`: it is not the module's render, and a later module install has to migrate it.
+
+   On a cluster that already runs an operator installed from an operator release manifest, do not use kubectl. The module's Deployment selector differs from the old one, and a selector cannot change, so `kubectl apply` fails on the Deployment after it has applied the other objects. Use `opm operator install` for that first move.
+
+   To apply the module release's manifest:
 
    ```sh
-   kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/v1.0.0-beta.8/install.yaml
+   kubectl apply --server-side -f https://github.com/open-platform-model/opm-operator/releases/download/opm_operator-v0.1.0/install.yaml
    ```
 
-   The manifest pins the controller image by digest, `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.8@sha256:...`. To check the image's signature, run:
+   The manifest is the module rendered with its default values for the instance `opm-operator` in `opm-operator-system`. It pins the controller image by tag and digest, `ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.N@sha256:...`. To check the image's signature, run this with the digest the manifest names:
 
    ```sh
-   cosign verify ghcr.io/open-platform-model/opm-operator:v1.0.0-beta.8 \
+   cosign verify ghcr.io/open-platform-model/opm-operator@sha256:<digest> \
      --certificate-identity-regexp='^https://github.com/open-platform-model/opm-operator/\.github/workflows/release\.yml@refs/heads/main$' \
      --certificate-oidc-issuer=https://token.actions.githubusercontent.com
    ```
 
-   <!-- x-release-please-end -->
+   A kubectl install writes no instance record, so `opm operator uninstall` refuses on it. Running `opm operator install` later records the running operator as its instance.
 
-   Do not use the `releases/latest/download/install.yaml` link. Every v1.0.0 operator release is marked Pre-release, GitHub's Latest link skips Pre-releases, and so that link serves the retired v0.7.5 manifest.
+   Do not use the `releases/latest/download/install.yaml` link. The repository publishes two release trains, and the module's releases are never marked Latest. Every v1.0.0 operator release is marked Pre-release, which GitHub's Latest link skips, so that link serves the retired v0.7.5 manifest.
 
 2. Wait for the controller to roll out.
 
@@ -76,7 +86,7 @@ There are two ways to install the operator, and both apply the manifest a releas
 
 3. Create the cluster Platform.
 
-   The operator renders against the cluster's Platform, a cluster-wide resource that pins one build of each catalog. Until the operator has generated the Platform, every ModuleInstance and ModulePackage waits with `Ready=False` and reason `PlatformNotReady`.
+   The operator renders against the cluster's Platform, a cluster-wide resource that pins one build of each catalog. Until the operator has generated the Platform, every ModuleInstance and ModulePackage waits with `Ready=False` and reason `PlatformNotReady`. The operator's own instance does not depend on it: the install renders the operator module against the module's own catalog pins, never against the cluster Platform.
 
    If you installed with `opm operator install`, it has already created the Platform `cluster`, subscribed to the newest release of `opmodel.dev/catalogs/opm@v4`. It leaves an existing Platform untouched, and with `--skip-platform` it creates none.
 
@@ -134,29 +144,41 @@ There are two ways to install the operator, and both apply the manifest a releas
 
    A module that renders cluster-scoped objects needs a ClusterRole bound with a ClusterRoleBinding instead. Bind `cluster-admin` only on a test cluster: the operator can then apply anything a module renders.
 
-   To use one ServiceAccount name in every namespace instead of naming it on each instance, add the manager flag `--default-service-account`:
+   To use one ServiceAccount name in every namespace instead of naming it on each instance, set the module value `defaultServiceAccount`. Write it to a values file, `operator-values.cue`:
 
-   ```sh
-   kubectl -n opm-operator-system patch deployment opm-operator-controller-manager --type=json \
-     -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--default-service-account=opm-applier"}]'
+   ```cue
+   values: defaultServiceAccount: "opm-applier"
    ```
 
-   `spec.serviceAccountName` still wins where it is set. The ServiceAccount must exist in every namespace that holds an instance, or that instance stalls with reason `ImpersonationFailed`.
+   Then install with it:
+
+   ```sh
+   opm operator install -f operator-values.cue
+   ```
+
+   The module renders the value as the controller's `--default-service-account` argument. The install records the values on the operator's instance, and a later install keeps every recorded value it does not change, so you pass each value once. `--reset-values` starts again from the module's defaults. `spec.serviceAccountName` still wins where it is set. The ServiceAccount must exist in every namespace that holds an instance, or that instance stalls with reason `ImpersonationFailed`.
+
+   The module's other values are `registry` (step 5), `image.repository`, `replicas`, `resources` for the controller container, and `extraArgs` for further controller arguments. The [module's README](https://github.com/open-platform-model/opm-operator/tree/main/modules/opm_operator#values-config) lists their defaults. The install refuses a value the module does not accept and names it.
 
 5. Point the operator at your module registry.
 
-   The operator resolves core, the catalogs and modules through a CUE registry mapping. By default it maps `opmodel.dev` and `testing.opmodel.dev` to `ghcr.io/open-platform-model`, and every other path to `registry.cue.works`. If your modules are published somewhere else, set the manager flag `--registry` in CUE registry syntax. The flag replaces the default, so keep the `opmodel.dev` entry:
+   The operator resolves core, the catalogs and modules through a CUE registry mapping. By default it maps `opmodel.dev` and `testing.opmodel.dev` to `ghcr.io/open-platform-model`, and every other path to `registry.cue.works`. If your modules are published somewhere else, set the module value `registry` in CUE registry syntax. It replaces the default, so keep the `opmodel.dev` entry:
 
-   ```sh
-   kubectl -n opm-operator-system patch deployment opm-operator-controller-manager --type=json \
-     -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--registry=example.com=registry.example.com,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works"}]'
+   ```cue
+   values: registry: "example.com=registry.example.com,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works"
    ```
 
-   Running `opm operator install` again drops the flags you added: it force-applies the shipped manifest, which restores the manager's original arguments. Add `--default-service-account` and `--registry` again after every install or upgrade.
+   Install with the file as in step 4. The install layers it over the recorded values, so a `defaultServiceAccount` set earlier stays.
+
+   On an air-gapped cluster, three things read from a registry, and each needs your mirror:
+
+   - The CLI pulls the operator module and its dependencies through its own registry mapping: the global `--registry` flag, the `OPM_REGISTRY` environment variable or the CLI's config file. Point it at a mirror that holds every module the operator module depends on, for example `OPM_REGISTRY=mirror.example.com/cue opm operator install`.
+   - The operator resolves modules through the `registry` value above. Set it to the same mirror, as the cluster reaches it.
+   - The nodes pull the controller image by its digest. Mirror the image with its digest unchanged, then either set the module value `image.repository` to the mirror's repository, or configure the nodes' container runtime to pull `ghcr.io` through the mirror. The tag and digest are not values; they stay the module's.
 
 6. Grant users access to ModuleInstances.
 
-   People who create and edit operator-managed instances need rights on ModuleInstances only; the operator applies the workloads. The manifest ships three ClusterRoles to bind:
+   People who create and edit operator-managed instances need rights on ModuleInstances only; the operator applies the workloads. The module renders three ClusterRoles to bind:
 
    - `opm-operator-moduleinstance-admin-role`: every verb on ModuleInstances.
    - `opm-operator-moduleinstance-editor-role`: create, delete, get, list, patch, update and watch.
@@ -169,11 +191,11 @@ There are two ways to install the operator, and both apply the manifest a releas
      --clusterrole=opm-operator-moduleinstance-editor-role --group=shop-team
    ```
 
-   For people who use the `opm` CLI, `opm operator install --rbac --user <name>` (or `--group <name>`) also creates the ClusterRole `opm-cli-user` and binds it cluster-wide. It grants every verb on ModuleInstances, get, patch and update on their status, and get and list on Platforms. `--user` and `--group` need `--rbac`, and only one of them can be given.
+   For people who use the `opm` CLI, `opm operator install --rbac --user <name>` (or `--group <name>`) also creates the ClusterRole `opm-cli-user` and binds it cluster-wide. It grants every verb on ModuleInstances, get, patch and update on their status, and get and list on Platforms. `--user` and `--group` need `--rbac`, and only one of them can be given. The role is not part of the operator's instance.
 
 7. Grant read-only access to the platform.
 
-   People who only look, in a terminal or a dashboard, may also need to read the Platform, the ModulePackages and the TransformerRegistrations. The manifest ships one viewer ClusterRole for each, granting get, list and watch on the kind and get on its status:
+   People who only look, in a terminal or a dashboard, may also need to read the Platform, the ModulePackages and the TransformerRegistrations. The module renders one viewer ClusterRole for each, granting get, list and watch on the kind and get on its status:
 
    - `opm-operator-platform-viewer-role`: Platforms. The kind is cluster-scoped, so bind it with a ClusterRoleBinding.
    - `opm-operator-modulepackage-viewer-role`: ModulePackages. Bind it with a RoleBinding to grant one namespace, or a ClusterRoleBinding to grant all of them.
@@ -209,6 +231,18 @@ cluster   kubernetes   True    Generated   v1.0.0-beta.8
 
 `Generated` means the operator generated the platform from the subscribed catalogs and built it. `OPERATOR` is the version of the running operator. `READY` `False` with reason `BuildFailed` usually means a subscribed catalog version did not resolve: it is not published, or the cluster cannot reach the registry. The condition's message names the cause. See [Operator conditions](/docs/diagnostics/operator-conditions/).
 
+If you installed with `opm`, the operator's own instance is owned by the CLI:
+
+```sh
+kubectl -n opm-operator-system get moduleinstance opm-operator -o jsonpath='{.spec.owner}{"\n"}'
+```
+
+The output should be:
+
+```text
+cli
+```
+
 To read the controller's log:
 
 ```sh
@@ -239,4 +273,4 @@ kubectl -n opm-operator-system rollout restart deployment/opm-operator-controlle
 - [Operator Reference](/docs/reference/operator/)
 - [Platforms and catalogs](/docs/concepts/platforms-and-catalogs/)
 - [Who owns an instance](/docs/concepts/who-owns-an-instance/)
-- [Delete an instance safely](/docs/operating/delete-an-instance-safely/). To remove the operator, run `opm operator uninstall`. It keeps the resource definitions and the namespace, and refuses while any ModuleInstance still carries the operator's cleanup finalizer.
+- [Delete an instance safely](/docs/operating/delete-an-instance-safely/). To remove the operator, run `opm operator uninstall`. It deletes the objects the operator's instance records, then the instance, and keeps the resource definitions and the namespace. It refuses while any ModuleInstance still carries the operator's cleanup finalizer; `--remove-finalizers` strips that finalizer and proceeds, leaving those instances' resources unmanaged. On a cluster with no operator instance, it deletes nothing and names `opm operator install`.

@@ -44,6 +44,15 @@ is expected and the e2e check is not required. After the merge,
 An operator accepts the claim only when its library accepts a bare SemVer in
 `spec.version` (library v1.0.0-beta.2 or later); earlier ones refuse it
 `CatalogUnresolved`.
+The `backup` catalog's core pin (`v2.0.0-beta.1`) is also what the operator's
+old-catalog acceptance spec relies on. The library derives a catalog's
+provider set from the `provides` field core computes since core
+`v2.0.0-beta.3`, and falls back to a deprecated fold over `#transformers` for a
+catalog pinned to an older core. `backup_fixture_test.go` accepts the claim
+once on this catalog as published (the fold) and once on a copy pinned to
+`v2.0.0-beta.3` (the field). Moving this catalog to core `v2.0.0-beta.3` or
+later fails the old-catalog spec on purpose. When the library removes the
+fold, that spec is deleted or rewritten.
 
 `backup_provider` is not a pattern for a real provider. Its claim authors
 `catalog`, `version` and `provides` as literals, which 0015:D11:R1 rules out:

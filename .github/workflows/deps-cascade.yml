@@ -45,7 +45,7 @@ jobs:
       contents: read
       pull-requests: read
       statuses: write
-    uses: open-platform-model/.github/.github/workflows/cascade-receive.yml@6938f8e0247e019cb0c2db13fff5b7b558a6b67d # .github main
+    uses: open-platform-model/.github/.github/workflows/cascade-receive.yml@0f9c6ac2c9b752a79f4874f637ef9955bcf00c13 # .github main
     with:
       dry-run: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
       gates-only: ${{ inputs.gates_only == true }}
@@ -73,7 +73,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Publish
-        uses: open-platform-model/.github/.github/actions/cascade-publish@6938f8e0247e019cb0c2db13fff5b7b558a6b67d # .github main
+        uses: open-platform-model/.github/.github/actions/cascade-publish@0f9c6ac2c9b752a79f4874f637ef9955bcf00c13 # .github main
         with:
           dry-run: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
           gates-only: ${{ inputs.gates_only == true }}

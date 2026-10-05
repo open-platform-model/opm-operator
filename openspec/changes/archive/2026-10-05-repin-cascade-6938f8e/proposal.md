@@ -9,7 +9,7 @@
 - Add `.tasks/cascade/wiring-check.yaml` with this repo's values. `publish-workflows` names every workflow that publishes (`release.yml`, `publish-fixtures.yml`, `docs.yml`, `image-pr.yml`, `test-e2e.yml`, `module-image.yml`, `module-deps.yml`), and `extra-references` declares the `module-deps.yml` resolver checkout.
 - `deps-cascade.yml` `publish`: the `if:` gains `inputs.gates_only != true`, and the `cascade-publish` step passes `gates-only: ${{ inputs.gates_only == true }}`.
 - `lint.yml`: "Verify the cascade wiring" runs `bash .tasks/cascade/wiring-check.sh --pin-on-main` with `GH_TOKEN`, after only SHA-pinned actions.
-- Doc fixes from the `harden-release-workflows` review: the `module-image.yml` header, the `AGENTS.md` `module-image-pr` note (the key is in the Environment; only the org-secret deletion is pending), and the `CODEOWNERS` header (GitHub requests the review; the ruleset decides whether it is required).
+- Doc follow-ups to `harden-release-workflows` (opm-operator PR 225; the wording is chosen in this change, not taken from a review): the `module-image.yml` header, the `AGENTS.md` `module-image-pr` note (the key is in the Environment; only the org-secret deletion is pending), and the `CODEOWNERS` header (GitHub requests the review; the ruleset decides whether it is required).
 
 ## Capabilities
 
@@ -21,4 +21,6 @@
 
 CI and docs only (`ci`/`docs` commits; no operator or module release). All receivers are dry-run (`CASCADE_DRY_RUN=true`), so the publish edits do not run live until the Phase 4 canary.
 
-The diff from `2376ffa` touches `cascade-publish` (the required `gates-only` input), so the `.github` README's canary rule applies: the supervisor decided all five receivers move together while every one is dry-run, and in Phase 4 one canary goes live first.
+The diff from `2376ffa` touches `cascade-publish` (the required `gates-only` input), so the canary rule in the `.github` README (step 2 of moving the pin) and workspace `RELEASING.md` applies: the other receivers stay on the old pin until one canary's first live publish succeeds. No live publish has run yet. This change, the last of five, moves every receiver to `6938f8e` while all are dry-run, under a supervisor decision; the first live publish then happens in one repo only (Phase 4). That exception is not yet recorded by the owner: before this merges, the owner either amends the README and `RELEASING.md` to allow it or signs it off on the pull request.
+
+The doc follow-ups ride in this pin change although the README says a pin PR changes nothing else. They are comment and doc text only, nothing releases from them, and they keep `AGENTS.md` and `CODEOWNERS` true to what this change makes the check do.

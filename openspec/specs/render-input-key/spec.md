@@ -146,3 +146,15 @@ Because the operator and library versions are key parts, the first reconcile of 
 
 - **WHEN** the operator restarts, the platform store is still empty, and an instance's key matches and was recorded 10 minutes ago
 - **THEN** the instance is not rendered and stays `Ready=True`, without passing through `PlatformNotReady`
+
+#### Scenario: The library inventory digests apply once and then converge
+
+- **WHEN** an instance or package whose `status.inventory.digest` and `lastAppliedRenderDigest` were written in the earlier operator's encoding, with a key recorded by operator `v1.0.0-test`, is reconciled by operator `v1.0.1-test` that computes them with `opm/k8s/inventory`
+- **THEN** the reconcile renders once and applies once, and the stored digests become the library's digests of the same entries and render
+- **AND** the next reconcile under `v1.0.1-test` skips the render, and a render after the interval ends `NoOp` without a second apply
+
+#### Scenario: A key recorded by the same version keeps the old digests until the interval
+
+- **WHEN** an instance holds digests in the earlier encoding and a key recorded by the running operator version
+- **THEN** the reconcile skips its render, because the key holds no digest
+- **AND** the first render after the interval applies once and records the new digests

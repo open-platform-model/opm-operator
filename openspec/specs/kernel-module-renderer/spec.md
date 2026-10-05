@@ -19,7 +19,7 @@ Values SHALL reach synthesis as a stack of values sources, each carrying an orig
 #### Scenario: Renders resources from a generated platform
 
 - **WHEN** `RenderModule` is called for a resolvable module while a generated platform is recorded
-- **THEN** the result carries the rendered resources and inventory entries, and any warnings the render reported
+- **THEN** the result carries the rendered resources and any warnings the render reported, and no inventory entries: the reconciler builds those from its one export of the resources
 
 #### Scenario: Values are applied when supplied
 
@@ -43,7 +43,7 @@ Values SHALL reach synthesis as a stack of values sources, each carrying an orig
 
 ### Requirement: Adapt compiled output to operator resources
 
-The renderer SHALL adapt the single-build render's compiled objects — the kernel's own compiled-output type, declared beside the render verb — to the library's Kubernetes object resources (`opm/k8s/object`) and to inventory entries exactly as before, after first refusing a render whose compiled objects share one Kubernetes apply identity (apiVersion, kind, namespace and name). The refusal SHALL use the library's duplicate-identity check and SHALL carry its error unchanged, naming each shared identity once and every component and transformer that produced it; when it fires, the renderer SHALL build no resource, no inventory entry and no digest, so nothing of that render can reach apply (0015:D15: a second registration in one module is refused before apply naming both carrying components, and 0015:D12 gives both the same instance-derived name).
+The renderer SHALL adapt the single-build render's compiled objects — the kernel's own compiled-output type, declared beside the render verb — to the library's Kubernetes object resources (`opm/k8s/object`) exactly as before, after first refusing a render whose compiled objects share one Kubernetes apply identity (apiVersion, kind, namespace and name). The refusal SHALL use the library's duplicate-identity check and SHALL carry its error unchanged, naming each shared identity once and every component and transformer that produced it; when it fires, the renderer SHALL build no resource, so nothing of that render can reach apply (0015:D15: a second registration in one module is refused before apply naming both carrying components, and 0015:D12 gives both the same instance-derived name).
 
 The render SHALL report no message strings. The renderer SHALL compose the result's warnings itself from the render's advisory diagnostic rows: the unhandled-trait table, and the resolved-versions rows marked newer. Each composed warning SHALL name the same facts as before — for skew, the OPM-namespace path, the version the module requires and the version the platform carries; for an unhandled trait, the component and the trait.
 
@@ -51,7 +51,7 @@ The render SHALL report no message strings. The renderer SHALL compose the resul
 
 - **WHEN** a library `Compiled` with a value and provenance is adapted
 - **THEN** the resulting library `object.Resource` carries the same value, instance, component, and transformer
-- **AND** an inventory entry can be built from it via its `ToUnstructured` conversion
+- **AND** the renderer does not export it: the result carries no inventory entry, and the reconciler's one `object.Export` is the only export of the resource
 
 #### Scenario: One compiled-output type
 
@@ -66,12 +66,12 @@ The render SHALL report no message strings. The renderer SHALL compose the resul
 #### Scenario: Two registrations in one module are refused before apply
 
 - **WHEN** a render's compiled objects include two `TransformerRegistration` values with the same name, produced by two components
-- **THEN** adaptation fails with the library's duplicate-identity error naming that identity and both components with their transformers, and the render result carries no resource and no inventory entry
+- **THEN** adaptation fails with the library's duplicate-identity error naming that identity and both components with their transformers, and there is no render result, so no resource reaches conversion
 
 #### Scenario: Distinct identities adapt as before
 
 - **WHEN** every compiled object has a distinct apiVersion, kind, namespace and name
-- **THEN** adaptation succeeds and produces one resource and one inventory entry per object
+- **THEN** adaptation succeeds and produces one resource per object
 
 ### Requirement: The render reports the module's declared version
 

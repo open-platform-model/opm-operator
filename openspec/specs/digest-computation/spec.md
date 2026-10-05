@@ -19,21 +19,6 @@ The `internal/status` package MUST provide a function that computes a determinis
 - **WHEN** a value field changes
 - **THEN** the computed digest differs
 
-### Requirement: Render digest computation
-The `internal/status` package MUST provide a function that computes a deterministic SHA-256 digest of the rendered resource set from the library's single export of it (`object.Export` in `opm/k8s/object`), so the digest and the objects applied come from one CUE export per resource. It MUST sort the exported objects by group, kind, namespace and name and hash each object's exported JSON in that order. Its bytes MUST equal those of the digest the operator computed before it read the library's export, pinned by a golden test, so an upgrade alone never makes an applied instance look changed.
-
-#### Scenario: Order-independent
-- **WHEN** the same resources are provided in different order
-- **THEN** the computed digest is identical (resources are sorted before hashing)
-
-#### Scenario: Content sensitivity
-- **WHEN** a resource's name or spec changes
-- **THEN** the computed digest differs
-
-#### Scenario: Golden bytes
-- **WHEN** the digest test runs over its fixed resource set
-- **THEN** the digest equals the literal recorded before the move to the library's export
-
 ### Requirement: DigestSet type
 The `internal/status` package MUST define a `DigestSet` struct with fields `Source`, `Config`, `Render`, and `Inventory`.
 
@@ -65,3 +50,22 @@ The `internal/status` package MUST provide an `IsNoOp` function that compares tw
 - **WHEN** the digest test runs
 - **THEN** `ModuleSourceDigest` over a fixed coordinate equals the recorded literal digest
 - **AND** the test's comment names the CLI peer that must move in lockstep
+
+### Requirement: The render digest is the library's
+The render digest the reconcilers record (`lastAttemptedRenderDigest`, `lastAppliedRenderDigest` and history entries) MUST be `RenderDigest` from the library's `opm/k8s/inventory` over the render's one `object.Export`. It MUST be computed from the exported JSON after the rendered CUE values are dropped. The `internal/status` package MUST NOT declare a render digest of its own. A failure to compute it MUST be reported as a render failure (`RenderFailed`) with the step "computing render digest". Source: 0012:D6:R2/R3.
+
+#### Scenario: Order-independent
+- **WHEN** the same resources are rendered in a different order
+- **THEN** the recorded render digest is identical
+
+#### Scenario: Content sensitivity
+- **WHEN** a resource's name, spec or any label other than the managed-by label changes
+- **THEN** the recorded render digest differs
+
+#### Scenario: The runtime name does not count
+- **WHEN** two renders differ only in the value of the `app.kubernetes.io/managed-by` label (`opm-controller` and `opm-cli`)
+- **THEN** their render digests are equal
+
+#### Scenario: The stored render digest changes once on upgrade
+- **WHEN** an instance whose `lastAppliedRenderDigest` was written by an earlier operator renders the same objects under this operator
+- **THEN** the new render digest differs from the stored value, and the reconcile is not a no-op

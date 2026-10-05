@@ -9,7 +9,7 @@ The `gomod` entry of `.github/dependabot.yml` SHALL ignore the dependencies `cue
 
 #### Scenario: CUE arrives with a library release
 - **WHEN** a library release that requires a newer `cuelang.org/go` is pinned by the cascade's library bump
-- **THEN** that bump pull request moves `cuelang.org/go` in `go.mod` and `go.sum` to at least the version the library requires, and the cascade reports the move as a warning
+- **THEN** that bump pull request moves `cuelang.org/go` in `go.mod` and `go.sum` to at least the version the library requires, and the cascade reports the move as a warning (`.tasks/cascade/cascade.sh`, Phase C, `warn_deps`)
 
 #### Scenario: Other third-party modules still update
 - **WHEN** a newer `github.com/fluxcd/pkg/runtime` is published

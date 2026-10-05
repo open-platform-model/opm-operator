@@ -66,11 +66,11 @@ r := &controller.TransformerRegistrationReconciler{
 	Store:    store,
 }
 // claim: the unstructured backup_provider render, created as-is
-// provider: ModuleInstance default/backup-provider with status.inventory owning the claim
+// provider: ModuleInstance default/<instance> with status.inventory owning the claim
 _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: claim.GetName()}})
 ```
 
-The claim is cluster-scoped and both specs use the same rendered name (`default.backup-provider`) and catalog. Each spec therefore removes its claim (finalizer stripped, bounded wait until gone) and its provider instance in `DeferCleanup`, so the second spec is not refused `DuplicateClaim` by the first one's leftover.
+The claim is cluster-scoped and named after the rendering instance (0015:D12). Each spec renders `backup_provider` as its own instance (`backup-provider-fold`, `backup-provider-field`, in `default`), so the two claims and provider instances have distinct names. Both claims still name the same catalog, so each spec also removes its claim (finalizer stripped, bounded wait until gone) and its provider instance in `DeferCleanup`, and the second spec is not refused `DuplicateClaim` by the first one's leftover.
 
 ## Research & Decisions
 

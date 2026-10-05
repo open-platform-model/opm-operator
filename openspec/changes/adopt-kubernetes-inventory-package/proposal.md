@@ -33,7 +33,7 @@ BREAKING CHANGE: the operator now computes status.inventory.digest, status.lastA
 ## Release notes (user-visible changes)
 
 - One extra apply per operator-managed object after the upgrade (above).
-- One CUE export per rendered resource instead of two. The memory effect is a library-side simulation (design.md, Risks), not a measured operator figure.
+- One CUE export per rendered resource instead of two. In a library-side simulation of a cert-manager render, that lowers the peak heap of the conversion by about 20 MiB per render (design.md, Risks); it is not a measured operator figure.
 
 ## Classification
 

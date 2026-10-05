@@ -122,6 +122,16 @@ A further case pins the documented boundary: with the old digests and a key reco
 - **Mixed frontends.** Until the cli's adoption ships, the cli and the operator digest one render differently. They already do today, so nothing regresses.
 - **A dev image without a version bump keeps its key.** Such an image applies the digest change only after the drift interval (D4's boundary case). Release images always bump `version.Version`.
 - **Memory.** The re-measurement is a library-side simulation (the probe mirrors the operator's path and does not import it). It shows the direction of the change, not an operator RSS figure.
+  Measured 2026-10-05 with a scratch copy of the memory probe, built against library `v1.0.0-beta.6` (the operator's pin), cert-manager (42 objects) on the two-catalog platform, `RUNS=5`, medians in MiB. "Two exports" mirrors `277ca18` (the renderer's export for the entries, then `object.Export`); "one export" mirrors this change (`object.Export` only, the entries from it). Both drop the rendered values after the export.
+
+  | case | exports | render peak heap | conversion peak heap | peak RSS (VmHWM) |
+  | --- | --- | --- | --- | --- |
+  | `r1-nil` | two | 296.2 | 316.9 | 374.3 |
+  | `r1-nil` | one | 293.4 | 297.3 | 353.2 |
+  | `r2-nil` | two | 493.5 | 546.8 | 611.9 |
+  | `r2-nil` | one | 446.1 | 502.8 | 567.4 |
+
+  One export lowers the conversion peak by about 20 MiB per render and peak RSS by about 21 MiB for one render and 44 MiB for two concurrent renders. The idle and post-apply retained heap does not move (96 and 98 MiB): the gain is in the slot's peak, not in what the operator holds between renders.
 
 ## Open Questions
 

@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines the deterministic SHA-256 digests the `internal/status` package computes over an instance's inputs and its render, which the reconciler records in status to detect a no-op reconcile.
+Defines the deterministic SHA-256 digests the reconciler records in status to detect a no-op reconcile: the source and config digests and `IsNoOp`, which the `internal/status` package computes, and the render digest, which is the library's (`opm/k8s/inventory`).
 
 ## Requirements
 

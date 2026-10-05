@@ -1,6 +1,6 @@
 ## Purpose
 
-Bridges the controller's inventory tracking to the shared inventory shapes: identity comparison and entry construction from rendered resources. The label keys and resource types it reads come from the library's `opm/k8s/labels` and `opm/k8s/object`.
+The boundary between the API's inventory entry (`v1alpha1.InventoryEntry`, the shape `status.inventory` stores) and the library's `opm/k8s/inventory`, which owns the entry, the stale set and the inventory digest. The operator converts between the two entry types and builds its entries from its one export of a render.
 
 ## Requirements
 

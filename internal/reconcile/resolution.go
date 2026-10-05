@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	oerrors "github.com/open-platform-model/library/opm/errors"
-	"github.com/open-platform-model/library/opm/helper/objectset"
+	"github.com/open-platform-model/library/opm/k8s/object"
 
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -70,10 +70,10 @@ func isSkewRefusal(err error) bool {
 
 // isDuplicateIdentities reports whether err is the adapter's refusal of a
 // render whose objects share one Kubernetes apply identity
-// (*objectset.DuplicateIdentitiesError, 0015:D15). The render adapter
+// (*object.DuplicateIdentitiesError, 0015:D15). The render adapter
 // returns it bare, and errors.AsType still finds it through a wrap.
 func isDuplicateIdentities(err error) bool {
-	_, ok := errors.AsType[*objectset.DuplicateIdentitiesError](err)
+	_, ok := errors.AsType[*object.DuplicateIdentitiesError](err)
 	return ok
 }
 

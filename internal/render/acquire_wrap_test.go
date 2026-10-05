@@ -2,6 +2,7 @@ package render
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,8 +19,11 @@ import (
 
 // These tests drive the production wrap sites without a registry: each
 // failure surfaces from acquisition, so the renderer must mark it with
-// ErrAcquire and keep its message prefix. Dropping the mark at either site
-// reverts the reconcile outcome to a stall, so these are the guard.
+// ErrAcquire and keep its message prefix. The mark decides the Ready reason
+// of a stalled failure (ResolutionFailed); whether the failure retries is
+// decided by the library's typed fetch failure alone, so none of these
+// author-side failures may carry an *oerrors.FetchError.
+// fetch_classification_test.go pins the registry-failure side.
 
 func newPackageRenderer() *KernelPackageRenderer {
 	return &KernelPackageRenderer{
@@ -39,6 +43,8 @@ func TestKernelPackageRenderer_LoadFailureIsMarked(t *testing.T) {
 	_, result, err := newPackageRenderer().Render(context.Background(), dir)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrAcquire)
+	_, isFetch := errors.AsType[*oerrors.FetchError](err)
+	assert.False(t, isFetch, "a syntax error must not classify as a registry fetch failure: %v", err)
 	assert.True(t, strings.HasPrefix(err.Error(), "loading package: "), "message: %s", err)
 	assert.Nil(t, result)
 }
@@ -77,6 +83,8 @@ func TestKernelModuleRenderer_AcquireFailureIsMarked(t *testing.T) {
 		"opmodel.dev/test", "not-a-version", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrAcquire)
+	_, isFetch := errors.AsType[*oerrors.FetchError](err)
+	assert.False(t, isFetch, "an unparsable version must not classify as a registry fetch failure: %v", err)
 	assert.True(t, strings.HasPrefix(err.Error(), "acquiring module: "), "message: %s", err)
 	assert.Nil(t, result)
 }

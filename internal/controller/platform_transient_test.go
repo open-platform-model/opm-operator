@@ -23,6 +23,12 @@ import (
 	"net"
 	"net/url"
 	"testing"
+
+	"cuelang.org/go/mod/modfile"
+	"cuelang.org/go/mod/module"
+
+	oerrors "github.com/open-platform-model/library/opm/errors"
+	"github.com/open-platform-model/library/opm/helper/platformmodule"
 )
 
 // timeoutError is a net.Error whose Timeout() is true, modelling a dial/read
@@ -86,5 +92,31 @@ func TestIsTransientFailure(t *testing.T) {
 				t.Errorf("isTransientFailure(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// urlErrorSource is a module-file source whose every fetch fails with a
+// *url.Error, the shape of an unreachable registry.
+type urlErrorSource struct{}
+
+func (urlErrorSource) ModFile(context.Context, module.Version) (*modfile.File, error) {
+	return nil, &url.Error{Op: "Get", URL: "https://registry.invalid/v2/", Err: errors.New("connection refused")}
+}
+
+// The Platform's closure walk classifies a registry failure itself
+// (0021:D8:R12): the error failReconcile receives holds a *FetchError, so the
+// Platform needs no network-error probe of its own.
+func TestIsTransientFailure_ClosureClassifiesFetchFailure(t *testing.T) {
+	_, err := platformmodule.Closure(context.Background(), urlErrorSource{},
+		[]platformmodule.Dep{{Path: "testing.opmodel.dev/catalogs/example@v0", Version: "v0.1.0"}})
+	if err == nil {
+		t.Fatal("Closure succeeded against a failing source")
+	}
+	fe, ok := errors.AsType[*oerrors.FetchError](err)
+	if !ok {
+		t.Fatalf("want a *FetchError in the chain, got %T: %v", err, err)
+	}
+	if fe.Kind != oerrors.FetchUnreachable {
+		t.Errorf("kind = %s, want unreachable: %v", fe.Kind, err)
 	}
 }

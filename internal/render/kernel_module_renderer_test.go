@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/open-platform-model/library/opm/helper/objectset"
+	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
@@ -57,7 +57,7 @@ func TestResultFromRender_RefusesTwoRegistrationsUnderOneName(t *testing.T) {
 	res, err := resultFromRender(out, platformstore.PackageIdentity{}, nil)
 
 	assert.Nil(t, res, "a refused render must produce no partial result")
-	dupErr, ok := errors.AsType[*objectset.DuplicateIdentitiesError](err)
+	dupErr, ok := errors.AsType[*object.DuplicateIdentitiesError](err)
 	require.True(t, ok, "the library error is returned bare, got: %v", err)
 	require.Len(t, dupErr.Duplicates, 1)
 
@@ -119,7 +119,7 @@ func TestResultFromRender_NamesOnlyTheSharedIdentity(t *testing.T) {
 	res, err := resultFromRender(out, platformstore.PackageIdentity{}, nil)
 
 	assert.Nil(t, res)
-	dupErr, ok := errors.AsType[*objectset.DuplicateIdentitiesError](err)
+	dupErr, ok := errors.AsType[*object.DuplicateIdentitiesError](err)
 	require.True(t, ok, "the library error is returned bare, got: %v", err)
 	require.Len(t, dupErr.Duplicates, 1)
 	assert.Equal(t, "Deployment", dupErr.Duplicates[0].Identity.Kind)

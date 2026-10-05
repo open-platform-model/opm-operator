@@ -16,5 +16,5 @@ func CatalogVersion() string {
 	if v := os.Getenv("OPM_TEST_CATALOG_VERSION"); v != "" {
 		return v
 	}
-	return "4.4.4"
+	return "4.6.0"
 }

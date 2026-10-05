@@ -19,4 +19,4 @@ spec:
       # (`opm operator install` resolves the catalog version live), so bump
       # it as `test(fixtures)`: no operator release. The mirrored CLI seed
       # is shipped and bumps as `fix(deps)`.
-      version: "4.4.4"
+      version: "4.6.0"

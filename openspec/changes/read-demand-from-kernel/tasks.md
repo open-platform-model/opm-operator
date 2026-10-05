@@ -15,5 +15,6 @@ Sections per design.md § Sections. Run every test with a private absolute `TMPD
 
 The values pre-validate stays (design.md D3), so this section changes no code.
 
-- [ ] 2.1 `task dev:e2e` on Kind under `flock` on the session's `kind-opm-dev.lock`, with `LOCAL_REGISTRY` set as `.github/workflows/test-e2e.yml` sets it, so the registry-backed specs run. Verify: green, with none of the registry-backed specs skipped.
-- [ ] 2.2 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green; `openspec validate read-demand-from-kernel --strict` passes.
+- [x] 2.1 `task dev:e2e` on Kind under `flock` on the session's `kind-opm-dev.lock`, with `LOCAL_REGISTRY` set as `.github/workflows/test-e2e.yml` sets it, so the registry-backed specs run. Verify: green, with none of the registry-backed specs skipped. Ran: 14 of 16 passed. The two skips are the always-skipped TODO placeholders in `test/e2e/concurrent_test.go`.
+- [x] 2.2 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green; `openspec validate read-demand-from-kernel --strict` passes.
+- [x] 2.3 Tick 2.1 and 2.2, then commit `chore(openspec): record the verification of read-demand-from-kernel`.

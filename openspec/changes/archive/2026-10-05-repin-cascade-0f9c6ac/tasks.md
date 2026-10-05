@@ -7,5 +7,5 @@
 
 ## 2. Verify and archive
 
-- [ ] 2.1 `openspec validate repin-cascade-0f9c6ac --strict` passes and the verify skill reports no CRITICAL finding.
-- [ ] 2.2 `openspec archive repin-cascade-0f9c6ac -y`; `openspec validate --all --strict` passes. Commit `chore(openspec): archive repin-cascade-0f9c6ac`.
+- [x] 2.1 `openspec validate repin-cascade-0f9c6ac --strict` passes and the verify skill reports no CRITICAL finding.
+- [x] 2.2 `openspec archive repin-cascade-0f9c6ac -y`; `openspec validate --all --strict` passes. Commit `chore(openspec): archive repin-cascade-0f9c6ac`.

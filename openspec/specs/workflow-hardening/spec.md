@@ -87,11 +87,15 @@ Every workflow step that installs a tool SHALL name an exact version, never a fl
 - **THEN** it downloads the pinned release assets (`KIND_VERSION`, and `FLUX_VERSION` from `.tasks/flux.yaml`), checks each against its in-tree sha256 (`KIND_SHA256`, `FLUX_CLI_SHA256_LINUX_AMD64`), and pipes no install script into `bash`
 
 ### Requirement: Code owners on the release machinery
-`.github/CODEOWNERS` SHALL name code owners for `/.github/`, `/.tasks/`, `/Taskfile*.yml`, `/release-please-config.json`, `/.release-please-manifest.json`, `/.cascade-frozen`, `/hack/` (scripts that run in jobs holding write tokens or the release App key, `hack/operator-module/` included), `/.opm-cli-version` (the opm binary the publishing jobs install), and `/.opm-docs-version` and `/docs-kit.cue` (the signed docs publish).
+`.github/CODEOWNERS` SHALL name the owner (`@emil-jacero`) as the only code owner for `/.github/`, `/.tasks/`, `/Taskfile*.yml`, `/release-please-config.json`, `/.release-please-manifest.json`, `/.cascade-frozen`, `/hack/` (scripts that run in jobs holding write tokens or the release App key, `hack/operator-module/` included), `/.opm-cli-version` (the opm binary the publishing jobs install), and `/.opm-docs-version` and `/docs-kit.cue` (the signed docs publish).
 
 #### Scenario: Workflow edit needs a code owner
 - **WHEN** a pull request edits a file under `.github/workflows/`
 - **THEN** GitHub requests review from the code owners listed for `/.github/`
+
+#### Scenario: One code owner per path
+- **WHEN** `.github/CODEOWNERS` is read
+- **THEN** every path line names `@emil-jacero` and no other owner
 
 ### Requirement: Operator module bot PRs commit plain files only
 The `publish` jobs of `module-image.yml` and `module-deps.yml` SHALL refuse a handed-over change tarball holding any member that is not a plain file or a directory, before extracting it. `hack/operator-module/bot-pr.sh` SHALL refuse a changed path that is a symlink or a hard link, and a staged change whose mode is anything but `100644` (an executable bit, a symlink or a gitlink), before it commits or pushes.

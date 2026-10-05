@@ -52,6 +52,11 @@ tasks:
     cmds:
       - hack/operator-module/test-release-check.sh
 
+  publish:test:
+    desc: Offline test of the operator module's publish script (hack/operator-module/publish.sh) against stub opm and crane; asserts the GHCR reference CUE resolves for the module path
+    cmds:
+      - hack/operator-module/test-publish.sh
+
   image:test:
     desc: Offline test of the operator module's image PR script (hack/operator-module/image.sh) over fixture CHANGELOGs and CRDs (hack/testdata/operator-module-image)
     cmds:

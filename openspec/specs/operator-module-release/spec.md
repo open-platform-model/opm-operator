@@ -127,7 +127,7 @@ The last check exists because a module release must render exactly the CRDs the 
 
 ### Requirement: The module publishes its tagged source once
 
-When release-please creates a module release, the module publish job SHALL check out the module's release tag, install the opm CLI named by `.opm-cli-version`, run the module release check, and publish `modules/opm_operator` with `opm module publish <dir> --version <version>`. The job SHALL run only when the module package created a release. It SHALL never run for an operator-only release. Re-running the job for the same release SHALL succeed without pushing when the registry already holds that version with the content this tag produces. It SHALL fail when the registry holds that version with other content. The job SHALL NOT rely on the registry to refuse an overwrite.
+When release-please creates a module release, the module publish job SHALL check out the module's release tag, install the opm CLI named by `.opm-cli-version`, run the module release check, and publish `modules/opm_operator` with `opm module publish <dir> --version <version>`. The job SHALL run only when the module package created a release. It SHALL never run for an operator-only release. Re-running the job for the same release SHALL succeed without pushing when the registry already holds that version with the content this tag produces. It SHALL fail when the registry holds that version with other content. The job SHALL NOT rely on the registry to refuse an overwrite. Every registry reference the job probes or reads back SHALL be the one `cue mod resolve` gives the module path in `cue.mod/module.cue` under the registry mapping the publish uses, never a hand-spelled repository: CUE keeps the full module path under the mapped prefix, so `opmodel.dev/modules/opm_operator` under `opmodel.dev=ghcr.io/open-platform-model` lands at `ghcr.io/open-platform-model/opmodel.dev/modules/opm_operator`. An offline test SHALL assert those references.
 
 #### Scenario: First publish
 
@@ -138,6 +138,11 @@ When release-please creates a module release, the module publish job SHALL check
 
 - **WHEN** the publish job is re-run after its publish succeeded and a later step of that job failed
 - **THEN** the publish step reports the version as already present with the same content and pushes nothing
+
+#### Scenario: Read back where CUE published
+
+- **WHEN** the job publishes `v0.2.0` under the mapping `opmodel.dev=ghcr.io/open-platform-model`
+- **THEN** it reads the digest back from `ghcr.io/open-platform-model/opmodel.dev/modules/opm_operator:v0.2.0`, and the reuse comparison reads the job-local copy from `localhost:5000/opmodel.dev/modules/opm_operator:v0.2.0`
 
 #### Scenario: Version held by other content
 
@@ -180,7 +185,7 @@ The module publish job SHALL render the published module version from the regist
 
 ### Requirement: Module releases are drafts until every asset is attached
 
-The module package SHALL set `draft: true` and `force-tag-creation: true`. Every upload to a module release SHALL first confirm that exactly one release carries the tag and that it is a draft. A final module publish job SHALL depend on the publish job and SHALL confirm `install.yaml` is attached before it publishes the draft. A module release is not a prerelease, and it SHALL be published with GitHub's "latest" mark withheld (`make_latest=false`), so it never becomes the repository's latest release (0021:D11:R12). Recovery before publication is "Re-run failed jobs". After publication it is the next module version; a published tag is never moved.
+The module package SHALL set `draft: true` and `force-tag-creation: true`. Every upload to a module release SHALL first confirm that exactly one release carries the tag and that it is a draft. A final module publish job SHALL depend on the publish job and SHALL confirm `install.yaml` is attached before it publishes the draft. A module release is not a prerelease, and it SHALL be published with GitHub's "latest" mark withheld (`make_latest=false`), so it never becomes the repository's latest release (0021:D11:R12). Recovery before publication is "Re-run failed jobs", or the recovery dispatch when the failure lies in a script at the tag. After publication it is the next module version; a published tag is never moved.
 
 #### Scenario: Asset missing
 
@@ -197,13 +202,42 @@ The module package SHALL set `draft: true` and `force-tag-creation: true`. Every
 - **WHEN** the final job runs for a module release that is already published
 - **THEN** it succeeds without changing anything
 
+### Requirement: A stranded module draft is recovered by dispatch
+
+The release workflow SHALL accept a `workflow_dispatch` with the input `module_tag`, for a module release whose run left its draft unpublished. The dispatch SHALL refuse, before any registry login, unless it runs in `open-platform-model/opm-operator` on `main`, `module_tag` matches `^opm_operator-v[0-9]+\.[0-9]+\.[0-9]+$`, the tag exists and is reachable from `main`, and exactly one release carries it as a draft. It SHALL run only the module jobs, never release-please, the identity advance or an operator job. They SHALL check the tag's tree out and run `main`'s release scripts (`hack/operator-module/` and `.github/scripts/`) against it, so a script fixed after the tag is the one that runs; the release gate and the opm CLI stay the tag's. Each module job SHALL gate on its predecessor's result explicitly, never on the implicit success check, which would skip it behind the skipped release-please. In order: the publish, which reuses a version GHCR already holds only when it equals what the tag's tree publishes, and publishes the tag's tree when GHCR does not hold the version yet (a draft stranded before its first publish); the install manifest rendered from the published version and attached to the draft; then the draft's publication with `make_latest=false`. The dispatch SHALL run in a concurrency group of its own per tag, so it never replaces or is replaced by a pending push run. A push-triggered release SHALL run the tag's own scripts and start the module jobs only when release-please succeeded and created a module release, as before. Recovery never moves, deletes or re-creates a tag and never edits a release by hand.
+
+#### Scenario: Recover after a broken read-back
+
+- **WHEN** `opm_operator-v0.1.0` was published to GHCR but the run failed reading it back, and the release is a draft without `install.yaml`
+- **THEN** a dispatch with `module_tag=opm_operator-v0.1.0` on `main` reuses the held `v0.1.0` after comparing it with the tag's tree, attaches `install.yaml`, and publishes the release with `make_latest=false`
+
+#### Scenario: Stranded before its first publish
+
+- **WHEN** a module release's run failed before it published, and GHCR does not hold the version
+- **THEN** the dispatch publishes the tag's tree, attaches `install.yaml`, and publishes the release with `make_latest=false`
+
+#### Scenario: Held version differs from the tag
+
+- **WHEN** the dispatch finds GHCR holding the version with a digest the tag's tree does not publish
+- **THEN** the publish fails, the release stays a draft, and the fix is the next module version
+
+#### Scenario: Release already published
+
+- **WHEN** the dispatch names a module tag whose release is published
+- **THEN** it fails before any module job runs
+
+#### Scenario: Not a module tag, or not main
+
+- **WHEN** the dispatch names `v1.0.0-beta.7`, a module tag not reachable from `main`, or runs on a branch other than `main`
+- **THEN** it fails before any module job runs
+
 ### Requirement: Only this repository's module release publishes under the module path
 
-No workflow, task or script in this repository other than the module publish job SHALL publish to `opmodel.dev/modules/opm_operator` or to its GHCR repository `ghcr.io/open-platform-model/modules/opm_operator`. The module publish job SHALL refuse to run unless the repository is `open-platform-model/opm-operator` and the checked-out ref is a module release tag. Local and test flows SHALL publish the module only to a registry that maps `opmodel.dev` away from GHCR.
+No workflow, task or script in this repository other than the module publish job (on a release or its recovery dispatch) SHALL publish to `opmodel.dev/modules/opm_operator` or to its GHCR repository `ghcr.io/open-platform-model/opmodel.dev/modules/opm_operator`. The module publish job SHALL refuse to run unless the repository is `open-platform-model/opm-operator` and the checked-out ref is a module release tag. Local and test flows SHALL publish the module only to a registry that maps `opmodel.dev` away from GHCR.
 
 #### Scenario: Search for publishers
 
-- **WHEN** `.github/workflows/`, `.github/scripts/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for a publish of the module directory or of `ghcr.io/open-platform-model/modules/opm_operator`
+- **WHEN** `.github/workflows/`, `.github/scripts/`, `Taskfile.yml`, `.tasks/` and `hack/` are searched for a publish of the module directory or of `ghcr.io/open-platform-model/opmodel.dev/modules/opm_operator`
 - **THEN** the only match is the module publish job and the task it calls
 
 #### Scenario: Fork or dispatch on another ref

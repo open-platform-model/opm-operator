@@ -768,10 +768,8 @@ func applyAndPruneModulePackage(
 		outcome = AppliedAndPruned
 	}
 
-	reader := managerReader(params.APIReader, params.Client)
-	if sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount); sa != "" {
-		reader = applyClient
-	}
+	sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
+	reader := appliedReader(sa, applyClient, params.APIReader, params.Client)
 	return &applyPruneResult{outcome: outcome, entries: converted.entries, healthReader: reader}, nil
 }
 
@@ -1062,7 +1060,7 @@ func buildModulePackageApplyClient(
 		return params.ResourceManager, params.Client, nil
 	}
 	log := logf.FromContext(ctx)
-	log.Info("Building impersonated client",
+	log.V(1).Info("Building impersonated client",
 		"serviceAccount", effectiveSA,
 		"serviceAccountSource", source)
 	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), pkg.Namespace, effectiveSA)

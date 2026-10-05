@@ -647,20 +647,10 @@ func ReconcileModuleInstance(
 	// Judge health after the apply and prune returned, through the identity
 	// that applied. The deferred commit is about to write lastAppliedAt as
 	// now, so the health requeue counts from now: it is the floor.
-	v := judgeHealth(ctx, appliedHealthReader(params, effectiveSA, applyClient), newEntries)
+	v := judgeHealth(ctx, appliedReader(effectiveSA, applyClient, params.APIReader, params.Client), newEntries)
 	applyHealth(&mi, v)
 	now := metav1.Now()
 	return ctrl.Result{RequeueAfter: healthRequeue(v, &now, now.Time)}, nil
-}
-
-// appliedHealthReader is the reader of a successful apply's health
-// judgement: the impersonated client that applied, or the manager's uncached
-// reader when the manager applied as itself.
-func appliedHealthReader(params *ModuleInstanceParams, effectiveSA string, applyClient client.Client) client.Reader {
-	if effectiveSA != "" {
-		return applyClient
-	}
-	return managerReader(params.APIReader, params.Client)
 }
 
 // judgeInstanceHealth judges entries through the reader of the identity that
@@ -1312,7 +1302,7 @@ func buildApplyClient(
 		return params.ResourceManager, params.Client, nil
 	}
 	log := logf.FromContext(ctx)
-	log.Info("Building impersonated client",
+	log.V(1).Info("Building impersonated client",
 		"serviceAccount", effectiveSA,
 		"serviceAccountSource", source)
 	impClient, err := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mi.Namespace, effectiveSA)

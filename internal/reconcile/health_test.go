@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -311,30 +313,88 @@ func TestPackageRequeue(t *testing.T) {
 }
 
 // TestHealthJudgesOnlyThroughTheLibrary keeps every readiness rule in the
-// library's opm/k8s/health (kubernetes-tier-adoption): health.go may fetch
-// objects and hand them over, but it reads no field of them.
+// library's opm/k8s/health (kubernetes-tier-adoption): the package may fetch
+// objects and hand them over, but no file of it reads a field of an
+// unstructured object, and health.go names no status field.
 func TestHealthJudgesOnlyThroughTheLibrary(t *testing.T) {
-	f, err := parser.ParseFile(token.NewFileSet(), "health.go", nil, 0)
+	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.SelectorExpr:
-			if id, ok := x.X.(*ast.Ident); ok && id.Name == "unstructured" && strings.HasPrefix(x.Sel.Name, "Nested") {
-				t.Errorf("health.go calls unstructured.%s; judge readiness only through opm/k8s/health", x.Sel.Name)
-			}
-		case *ast.BasicLit:
-			if x.Kind == token.STRING && x.Value == `"status"` {
-				t.Errorf("health.go reads a status field; judge readiness only through opm/k8s/health")
-			}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
 		}
-		return true
-	})
+		f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		require.NoError(t, err)
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.SelectorExpr:
+				if id, ok := x.X.(*ast.Ident); ok && id.Name == "unstructured" && strings.HasPrefix(x.Sel.Name, "Nested") {
+					t.Errorf("%s calls unstructured.%s; judge readiness only through opm/k8s/health", name, x.Sel.Name)
+				}
+			case *ast.BasicLit:
+				if name == "health.go" && x.Kind == token.STRING && x.Value == `"status"` {
+					t.Errorf("health.go reads a status field; judge readiness only through opm/k8s/health")
+				}
+			}
+			return true
+		})
+	}
 }
 
 // An instance the manager applied as itself is read through the manager's
 // uncached API reader, never its cached client.
 func TestManagerReader(t *testing.T) {
 	apiReader := &healthReader{}
-	assert.Same(t, apiReader, managerReader(apiReader, nil))
-	assert.Nil(t, managerReader(nil, nil))
+	c := fake.NewClientBuilder().Build()
+	assert.Same(t, apiReader, managerReader(apiReader, c))
+	assert.Same(t, c, managerReader(nil, c), "a test that wires no API reader gets its client")
+}
+
+// A successful apply's health is read as the identity that applied: the
+// impersonated client when a ServiceAccount applies, the manager's uncached
+// reader otherwise.
+func TestAppliedReader(t *testing.T) {
+	applyClient := fake.NewClientBuilder().Build()
+	managerClient := fake.NewClientBuilder().Build()
+	apiReader := &healthReader{}
+	assert.Same(t, applyClient, appliedReader("deployer", applyClient, apiReader, managerClient))
+	assert.Same(t, apiReader, appliedReader("", applyClient, apiReader, managerClient))
+	assert.Same(t, managerClient, appliedReader("", applyClient, nil, managerClient))
+}
+
+// A skip or NoOp judges through the identity that applies the object: with
+// an effective ServiceAccount the impersonated client is built, and its
+// failure is HealthUnknown even though the manager could read every object;
+// without one the manager's API reader judges.
+func TestJudgeInstanceAndPackageHealth_ReaderIdentity(t *testing.T) {
+	ctx := context.Background()
+	entries := []releasesv1alpha1.InventoryEntry{entry("ConfigMap", "settings")}
+	manager := &healthReader{objs: map[string]map[string]any{"ConfigMap apps/settings": configMap("settings")}}
+	noSA := fake.NewClientBuilder().WithScheme(saTestScheme(t)).Build()
+	const wantUnknown = "0/1 objects ready: building the health reader: serviceAccount apps/deployer not found"
+
+	mi := &releasesv1alpha1.ModuleInstance{ObjectMeta: metav1.ObjectMeta{Name: "mi", Namespace: "apps"}}
+	pkg := &releasesv1alpha1.ModulePackage{ObjectMeta: metav1.ObjectMeta{Name: "pkg", Namespace: "apps"}}
+
+	t.Run("ModuleInstance as the manager", func(t *testing.T) {
+		v := judgeInstanceHealth(ctx, &ModuleInstanceParams{APIReader: manager, Client: noSA}, mi, entries)
+		assert.Equal(t, status.RolledOutReason, v.reason)
+	})
+	t.Run("ModuleInstance as the ServiceAccount", func(t *testing.T) {
+		params := &ModuleInstanceParams{APIReader: noSA, Client: noSA, DefaultServiceAccount: "deployer"}
+		v := judgeInstanceHealth(ctx, params, mi, entries)
+		assert.Equal(t, status.HealthUnknownReason, v.reason)
+		assert.Equal(t, wantUnknown+`: serviceaccounts "deployer" not found`, v.message)
+	})
+	t.Run("ModulePackage as the manager", func(t *testing.T) {
+		v := judgePackageHealth(ctx, &ModulePackageParams{APIReader: manager, Client: noSA}, pkg, entries)
+		assert.Equal(t, status.RolledOutReason, v.reason)
+	})
+	t.Run("ModulePackage as the ServiceAccount", func(t *testing.T) {
+		withSA := pkg.DeepCopy()
+		withSA.Spec.ServiceAccountName = "deployer"
+		v := judgePackageHealth(ctx, &ModulePackageParams{APIReader: noSA, Client: noSA}, withSA, entries)
+		assert.Equal(t, status.HealthUnknownReason, v.reason)
+		assert.Equal(t, wantUnknown+`: serviceaccounts "deployer" not found`, v.message)
+	})
 }

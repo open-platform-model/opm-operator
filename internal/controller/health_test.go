@@ -470,6 +470,33 @@ var _ = Describe("ModulePackage Healthy condition", func() {
 		Expect(healthy(lost).Reason).To(Equal(status.NotRolledOutReason))
 		Expect(apimeta.FindStatusCondition(lost.Status.Conditions, status.ReconcilingCondition)).To(BeNil())
 	})
+
+	It("re-judges on a NoOp", func() {
+		ctx := context.Background()
+		nn, r, renderer, _ := appliedPackage(ctx, "health-noop-pkg", deploymentRenderResult())
+		// The skip is disabled, so every reconcile renders and ends NoOp.
+		r.DriftRenderInterval = 0
+		setDeploymentStatus(ctx, true, false)
+		res, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res.RequeueAfter).To(Equal(time.Minute), "rolled out keeps spec.interval")
+		rolled := get(ctx, nn)
+		Expect(healthy(rolled).Reason).To(Equal(status.RolledOutReason))
+
+		By("an available replica is lost")
+		setDeploymentStatus(ctx, false, false)
+		renders := renderer.calls.Load()
+		res, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(renderer.calls.Load()).To(Equal(renders+1), "the reconcile rendered")
+		after := get(ctx, nn)
+		Expect(after.Status.History).To(Equal(rolled.Status.History), "the render ended NoOp")
+		h := healthy(after)
+		Expect(h.Status).To(Equal(metav1.ConditionFalse))
+		Expect(h.Reason).To(Equal(status.NotRolledOutReason))
+		Expect(res.RequeueAfter).To(BeNumerically("<", time.Minute))
+	})
 })
 
 // Readers of Ready keep reading Ready: a TransformerRegistration activates on

@@ -252,6 +252,16 @@ func managerReader(apiReader client.Reader, c client.Client) client.Reader {
 	return c
 }
 
+// appliedReader is the reader of a successful apply's health judgement: the
+// impersonated client that applied when effectiveSA is set, the manager's
+// uncached reader when the manager applied as itself.
+func appliedReader(effectiveSA string, applyClient client.Client, apiReader client.Reader, c client.Client) client.Reader {
+	if effectiveSA != "" {
+		return applyClient
+	}
+	return managerReader(apiReader, c)
+}
+
 // inventoryEntries returns the entries of inv, nil for no inventory.
 func inventoryEntries(inv *releasesv1alpha1.Inventory) []releasesv1alpha1.InventoryEntry {
 	if inv == nil {

@@ -6,5 +6,5 @@ The operator SHALL judge the readiness of an object in `status.inventory` only w
 
 #### Scenario: No local evaluator
 
-- **WHEN** `internal/reconcile/health.go` is parsed by its package's unit test
-- **THEN** it calls no `unstructured.Nested*` accessor and holds no `"status"` string literal, so every verdict comes from `health.Evaluate`, `health.IsHealthy`, `health.Aggregate` and `health.ProgressDeadlineExceeded`
+- **WHEN** the non-test files of `internal/reconcile` are parsed by the package's unit test
+- **THEN** none calls an `unstructured.Nested*` accessor and `health.go` holds no `"status"` string literal, so every verdict comes from `health.Evaluate`, `health.IsHealthy`, `health.Aggregate` and `health.ProgressDeadlineExceeded`

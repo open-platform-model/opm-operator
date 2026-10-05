@@ -214,7 +214,7 @@ LastAppliedInputs *RenderInputs `json:"lastAppliedInputs,omitempty"`
 
 **Decision**: `--drift-render-interval` defaults to `30m`. `0` disables the skip and the `NoOp` record. A negative value exits at startup with the same message shape as `--max-concurrent-renders`; the check is a small function in `cmd` with a table test. The flag is not added to `config/manager/manager.yaml`: the default applies.
 
-**Rationale**: An idle ModulePackage renders every 30 minutes instead of every 5, and an operator restart renders only objects whose last confirming render is older than 30 minutes or whose inputs moved. A drift report or an out-of-key change (decision 4, (2)) waits at most that long after a reconcile triggers. Thirty minutes is the writer's choice; it is one flag default, set in `cmd/main.go`, and the change does not depend on its value.
+**Rationale**: An idle ModulePackage renders every 30 minutes instead of every 5, and an operator restart renders only objects whose last confirming render is older than 30 minutes or whose inputs moved. A drift report or an out-of-key change (decision 4, (2)) waits at most that long after a reconcile triggers. Thirty minutes is this change's choice under the owner's g3 decision (a flag with a default); it is one constant in `cmd/main.go`, and the change does not depend on its value.
 
 ### 9. Order against neighbouring changes
 

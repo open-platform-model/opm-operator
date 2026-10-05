@@ -60,11 +60,12 @@ func noOpInputs(interval time.Duration, key *status.RenderInputKey) *status.Rend
 }
 
 // platformKeyParts reads the platform parts of the pre-render key from the
-// cluster Platform: its pin set ([platformstore.PinSet]), and the resolved spec.skewPolicy in its API spelling. It reads
-// the CR rather than the platform store because the CR survives an operator
-// restart: an unchanged object can skip while the store is still empty. A
-// missing Platform or any read error returns empty parts, which make the key
-// incomplete, so the reconcile renders.
+// cluster Platform: its pin set ([platformstore.PinSet]), and the resolved
+// spec.skewPolicy in its API spelling. It reads the CR rather than the
+// platform store because the CR survives an operator restart: an unchanged
+// object can skip while the store is still empty. A missing Platform or any
+// read error returns empty parts, which make the key incomplete, so the
+// reconcile renders.
 func platformKeyParts(ctx context.Context, c client.Reader) (identity, skew string) {
 	var plat releasesv1alpha1.Platform
 	if err := c.Get(ctx, client.ObjectKey{Name: platformstore.SingletonName}, &plat); err != nil {
@@ -93,7 +94,7 @@ type renderSkip struct {
 // interval), a failed or refused attempt (Ready), a spec edit outside the key
 // (the generation), and an input change (the key). A renderedAt in the future
 // (a clock that was ahead, or a hand-written status) counts as expired, so
-// the interval stays an upper bound on how long drift goes unchecked.
+// the interval stays an upper bound on how long a skip lasts.
 func (s renderSkip) maySkip(
 	conditions []metav1.Condition,
 	generation, observedGeneration int64,

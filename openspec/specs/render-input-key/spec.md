@@ -1,7 +1,7 @@
 # render-input-key Specification
 
 ## Purpose
-Name every input a render consumes in one digest, the render input key, record it on ModuleInstance and ModulePackage status after a render that confirmed the cluster, and let a reconcile whose inputs have not changed skip its render, so an idle object costs no render, lease or fetch. The drift render interval bounds how long a skip can last, so drift detection still runs at least once per interval per object.
+Name every input a render consumes in one digest, the render input key, record it on ModuleInstance and ModulePackage status after a render that confirmed the cluster, and let a reconcile whose inputs have not changed skip its render, so an idle object costs no render, lease or fetch. The drift render interval bounds how long a skip can last, so drift detection runs at most once per interval, on the first reconcile after it.
 
 ## Requirements
 

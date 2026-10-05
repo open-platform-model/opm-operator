@@ -453,8 +453,8 @@ func validateDriftRenderInterval(d time.Duration) error {
 
 // defaultRenderTimeout is the default of --render-timeout, two orders of
 // magnitude above any render measured so far (enhancement 0019 measured
-// about two seconds for a 129-component module), so it cuts off only a
-// render that is waiting on I/O.
+// about two seconds for a 129-component module), so only a render stuck on
+// I/O reaches it.
 const defaultRenderTimeout = 10 * time.Minute
 
 // registerRenderTimeoutFlag registers --render-timeout on fs.
@@ -462,10 +462,11 @@ func registerRenderTimeoutFlag(fs *flag.FlagSet, p *time.Duration) {
 	fs.DurationVar(p, "render-timeout", defaultRenderTimeout,
 		"Longest one ModuleInstance or ModulePackage render may run once it holds a render slot "+
 			"(platform lease, acquisition, synthesis, the render build and the export for apply); "+
-			"the wait for a slot is not counted. A render past it reports Ready=False with reason "+
-			"RenderTimedOut and retries on the backoff. Its slot stays held until the render "+
-			"returns, at the next stage, so --max-concurrent-renders still bounds memory. "+
-			"0 disables the deadline.")
+			"the wait for a slot is not counted. At the deadline the failure is recorded on the object "+
+			"(Ready=False, reason RenderTimedOut) and retried on the backoff. The render itself stops "+
+			"at its next stage only when its current I/O honours cancellation (a dependency fetch "+
+			"inside CUE's loader does not), and its slot stays held until it returns, so "+
+			"--max-concurrent-renders still bounds memory. 0 disables the deadline.")
 }
 
 // validateRenderTimeout refuses a negative --render-timeout; zero disables

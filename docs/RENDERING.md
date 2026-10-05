@@ -95,8 +95,8 @@ not counted, so a render queued behind others is never reported as timed
 out. `0` disables the deadline, and the render then runs on the reconcile's
 own context as it did before the flag existed. A negative value is refused at
 startup. The default is two orders of magnitude above any render measured in
-enhancement 0019, so it cuts off only a render that is waiting on I/O, such as
-a registry that stopped answering.
+enhancement 0019, so only a render stuck on I/O, such as a registry that
+stopped answering, reaches it.
 
 The deadline covers the render only. The status patch, events, apply and
 prune use the reconcile's own context, so a timed-out render is still
@@ -106,10 +106,15 @@ recorded on the object: `Ready=False` and `Reconciling=True` with reason
 success. A render that returns after its deadline is a timeout even when it
 succeeded, and its result is discarded.
 
-The library checks the context between the stages of a render (library
-v1.0.0-beta.6), so a render stops at the next stage after its deadline. A
-stage already running inside CUE runs to its end first. The reconcile does
-not wait for that: it records the timeout at the deadline. The render keeps
+The timeout records the failure on the object at the deadline; it does not
+stop the render there. The library checks the context between the stages of
+a render (library v1.0.0-beta.6), so the render itself stops at the next
+stage only when the stage it is in honours cancellation. A stage already
+running inside CUE runs to its end first, and a dependency fetch inside
+CUE's loader takes no context: a registry that hangs while a dependency is
+fetched holds the render, and its slot, until the fetch returns (see the
+last paragraph of this section). The reconcile does not wait for any of
+that. The render keeps
 its slot until it really returns, because the slot is the memory bound: an
 abandoned stage still holds its build, and a second large render started
 beside it could take the pod past its memory limit. While that render still
@@ -121,11 +126,12 @@ running. So one stuck object holds at most one slot, whatever
 The operator logs `Render timed out` with the timeout when a reconcile stops
 waiting, and `Abandoned render returned` with the elapsed time when the
 render finally returns, so a slot held for a long time shows in the log. A
-panic in an abandoned render is logged with its stack as
-`Abandoned render panicked` and goes no further. A stage that never returns holds its slot
+panic in an abandoned render is logged with its stack as `Abandoned render
+panicked` and goes no further. A stage that never returns holds its slot
 until the pod restarts: the timeout makes it visible on the object but cannot
 reclaim its memory. At the default of `1` slot that delays every other render
 of both kinds.
+
 ## Skipping unchanged renders: `--drift-render-interval`
 
 Most renders find nothing to do: a ModulePackage renders on every

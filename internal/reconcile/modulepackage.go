@@ -537,9 +537,9 @@ func renderExtractedPackage(
 // it once the render is done with it, which may be after this function
 // returns when the render timed out. A render that did not finish within
 // RenderTimeout is a non-stalled RenderTimedOut on the bounded backoff,
-// classified before anything else; PlatformNotReady is a non-stalled wait; a registry fetch failure
-// the library typed (IsTransientFailure), in the package load or the render
-// build, retries on the bounded backoff as a non-stalled ResolutionFailed;
+// classified before anything else; PlatformNotReady is a non-stalled wait; a
+// registry fetch failure the library typed (IsTransientFailure), in the
+// package load or the render build, retries on the bounded backoff as a non-stalled ResolutionFailed;
 // every other failure stalls on StalledRecheckInterval with the reason of
 // renderErrorReason. An author defect in the package (a CUE syntax error,
 // values that conflict with #config, non-concrete values) stalls, because no

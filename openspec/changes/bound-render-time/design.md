@@ -133,10 +133,11 @@ const defaultRenderTimeout = 10 * time.Minute
 flag.DurationVar(&renderTimeout, "render-timeout", defaultRenderTimeout,
 	"Longest one ModuleInstance or ModulePackage render may run once it holds a render slot "+
 		"(platform lease, acquisition, synthesis, the render build and the export for apply); "+
-		"the wait for a slot is not counted. A render past it reports Ready=False with reason "+
-		"RenderTimedOut and retries on the backoff. Its slot stays held until the render "+
-		"returns, at the next stage, so --max-concurrent-renders still bounds memory. "+
-		"0 disables the deadline.")
+		"the wait for a slot is not counted. At the deadline the failure is recorded on the object "+
+		"(Ready=False, reason RenderTimedOut) and retried on the backoff. The render itself stops "+
+		"at its next stage only when its current I/O honours cancellation (a dependency fetch "+
+		"inside CUE's loader does not), and its slot stays held until it returns, so "+
+		"--max-concurrent-renders still bounds memory. 0 disables the deadline.")
 ```
 
 `validateRenderTimeout` refuses a negative value, as `validateDriftRenderInterval` does, and the startup log line gains `renderTimeout`. The reconciler structs and the params structs get a `RenderTimeout time.Duration` field. Zero, the value tests get when they leave it unset, keeps today's synchronous path.
@@ -190,6 +191,8 @@ The default of 10 minutes is far above any render measured so far: enhancement 0
 
 - [A stage that never returns holds a slot forever] → It did so before this change too. Now the object reports `RenderTimedOut` on every retry and the log shows the abandoned render. A pod restart reclaims the slot. The docs say so.
 - [Retries of an object whose earlier render was abandoned] → They do not render and take no slot: they report `RenderTimedOut` (the previous render is still running) on the backoff until it returns. So one stuck object holds at most one slot, as before this change. Other objects that wait for a slot held by an abandoned render wait in `Acquire` with no deadline, so they are never reported as a timeout while they are only queued. That wait is the memory bound.
+- [A hung dependency fetch is not cancelled] → The library checks the context between stages and its top-level registry fetch takes it, but CUE's loader fetches transitive module dependencies without a context (cuelang.org/go v0.17.1, `cue/load`). A registry that hangs during that fetch keeps the render, and its slot, until the fetch returns; at the default of one slot every other render waits too. Accepted: the timeout records the failure on the object at the deadline and the log shows the abandoned render. A response or idle timeout on the library's registry transport would close it, and is out of scope here.
+- [A retried ModulePackage fetches its artifact before it learns the earlier render still runs] → Accepted: the fetch and extract are redone on each backoff step and the directory is removed when `Run` reports the earlier render still running. A check before the fetch would add a second entry point to the slot pool for a case that only arises while a render hangs.
 - [A late panic is only logged] → After the reconcile has returned, nothing can record it on the object. The next attempt renders again, and a panic that repeats arrives before the deadline and is recorded as `ReconcilePanic`.
 - [A success just past the deadline is discarded] → One extra render on the backoff. The rule stays deterministic and easy to test.
 - [Other open operator changes edit the same render blocks, for example the move of the required-contracts reading to the render diagnostics] → Whichever merges second is brought up to date with the other. The edits are in different statements of the same functions.

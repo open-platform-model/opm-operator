@@ -2,7 +2,7 @@
 
 The ModuleInstance and ModulePackage reconcilers share one pool of render slots, sized by `--max-concurrent-renders` (default 1, opm-operator#192). Nothing on the render path has a timeout. A render that hangs, for example on registry I/O during acquisition or synthesis, keeps its slot until it returns. At the default of one slot that stops every other render of both kinds, and the stuck object shows only `Reconciling=True` with no reason. `docs/RENDERING.md` names this gap today ("Nothing on the render path has a timeout").
 
-Library v1.0.0-beta.6 (library#205) checks the context between the stages of every kernel verb (acquire, synthesis, render), so a cancelled render context now stops a render at its next stage boundary. A deadline is therefore effective, which it was not before. A stage that is already running inside CUE still runs to its end.
+Library v1.0.0-beta.6 (library#205) checks the context between the stages of every kernel verb (acquire, synthesis, render), so a cancelled render context now stops a render at its next stage boundary. A deadline is therefore effective, which it was not before. A stage that is already running inside CUE still runs to its end, and a dependency fetch inside CUE's loader takes no context, so a registry that hangs there holds the render until the fetch returns.
 
 The slot is a memory bound. One render of a cert-manager-sized module peaks near 2 GiB of heap. If the slot were given back when the deadline fires while the stage keeps running, a second large render could start beside it and the pod could exceed its 4 GiB limit. So the timeout must stop waiting for the render. It must not free the slot before the render's memory is free.
 

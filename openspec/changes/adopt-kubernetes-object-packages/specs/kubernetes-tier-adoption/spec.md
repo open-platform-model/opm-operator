@@ -11,19 +11,24 @@ The operator SHALL take the Kubernetes resource wrapper over the kernel's compil
 
 #### Scenario: Lint refuses the old path
 
-- **WHEN** a Go file in the repository imports `github.com/open-platform-model/opm-operator/pkg/core`
-- **THEN** `task dev:lint` fails with a message naming the library packages to use instead
+- **WHEN** a package exists at `github.com/open-platform-model/opm-operator/pkg/core` and a Go file in the repository imports it
+- **THEN** `task dev:lint` fails on the rule `no-local-kubernetes-tier-copy`, with a message naming the library packages to use instead
 
-### Requirement: A rendered resource is exported from CUE once
+### Requirement: The reconciler converts a render with one export
 
-The reconciler SHALL convert a render's resources with one call to the library's `object.Export`, which exports each resource from CUE once, and SHALL take both the render digest and the unstructured objects it applies from that one result, inside the render slot. A failure of the export SHALL be reported with the reason and message the reconciler reported before: a value that will not export is a render failure named "computing render digest", and exported JSON that will not decode to an object is an apply failure named "converting resources" with the resource.
+The reconciler SHALL convert a render's resources with one call to the library's `object.Export`, which exports each resource from CUE once, and SHALL take both the render digest and the unstructured objects it applies from that one result, inside the render slot. A failure of the export SHALL be reported with the reason and message the reconciler reported before: a value that will not export is a render failure named "computing render digest", and exported JSON that will not decode to an object is an apply failure named "converting resources" with the resource. The renderer's own export of each resource for its inventory entries remains until the inventory adoption change replaces it.
 
 #### Scenario: Digest and apply objects from one export
 
 - **WHEN** a render of N resources is converted for apply
-- **THEN** the library's export runs once over the N resources, and the render digest and the N apply objects both come from its result
+- **THEN** the render digest equals `RenderDigest` over `object.Export` of the same resources, and the N apply objects are that export's `Exported.Object` values in input order
 
 #### Scenario: Export failure keeps its reason
 
 - **WHEN** one rendered value fails to export
 - **THEN** the conversion fails with reason `RenderFailed` and a message that begins "computing render digest", and the rendered resources are dropped
+
+#### Scenario: Decode failure keeps its reason
+
+- **WHEN** one rendered value exports to JSON that does not decode to an object
+- **THEN** the conversion fails with reason `ApplyFailed` and a message that begins "converting resources", and the rendered resources are dropped

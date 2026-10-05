@@ -25,7 +25,7 @@ What library `v1.0.0-beta.6` returns (re-checked against the tag):
 
 `oerrors.Classify` wraps a recognised failure in `*FetchError{Kind, Coordinate, Status, Err}` whose `Error()` is the cause's message unchanged. It returns the error unchanged when it recognises nothing (a syntax error, a conflict, an import no module provides, a missing package under the main module's own path), when the chain holds `context.Canceled`, or when it already holds a `*FetchError`. `errors.Is(err, ErrTransient)` holds only for `FetchUnreachable` (no HTTP answer, deadline included) and a 5xx status.
 
-The schema `OCILoader` also classifies, but no reconcile meets its error. The schema `Cache` never retries (owner decision i4) and memoizes the error, so a memoized `*FetchError` reaching a reconcile loop would retry on the backoff with no chance of recovery. Today `cmd/main.go` `verifyCoreSchema` primes the Cache at startup and exits on failure, so the path is closed; a later change that loads the schema lazily must stall that error, not retry it.
+The schema `OCILoader` also classifies, but no reconcile meets its error. The schema `Cache` never retries by design and memoizes the error, so a memoized `*FetchError` reaching a reconcile loop would retry on the backoff with no chance of recovery. Today `cmd/main.go` `verifyCoreSchema` primes the Cache at startup and exits on failure, so the path is closed; a later change that loads the schema lazily must stall that error, not retry it.
 
 Reconcile phase impact: Render classification only (and the Platform's requeue interval). Source, Apply, Prune and Inventory are untouched. Status: the Stalled condition and, in one case, the Ready reason of a failing object change; `nextRetryAt` and `failureCounters.reconcile` follow the existing transient and stalled paths.
 
@@ -37,19 +37,19 @@ Reconcile phase impact: Render classification only (and the Platform's requeue i
 - A failure the library does not classify as a registry fetch stalls on the 30-minute recheck, closing the ModulePackage author-defect retry gap.
 - The typed terminal causes stall, as today.
 - One predicate for both reconcile loops and the Platform; no message text read anywhere.
-- The operator builds on library `v1.0.0-beta.6` without the deprecated `opm/helper/objectset`.
 
 **Non-Goals:**
 
 - New reason constants, API or CRD changes, changed status or event messages.
-- A fast retry tier for `ErrTransient` versus a slow one for not-found. The owner's a3 intent is that a fetch failure must not stall for 30 minutes; a typo'd version retrying on the 5-minute cap is the cost a3 already accepted.
-- A render timeout (a later change, op-render-timeout). It decides there whether its own deadline counts as transient.
+- The library bump to `v1.0.0-beta.6` and the `opm/helper/objectset` to `opm/k8s/object` swap: opm-operator#248 carried both, and the core `v2.0.0-beta.4` note with them.
+- A fast retry tier for `ErrTransient` versus a slow one for not-found. A fetch failure must not stall for 30 minutes, because a late publish or a fixed credential recovers on the next attempt; a typo'd version retrying on the 5-minute cap is the accepted cost.
+- A render timeout (a later change). That change decides whether its own deadline counts as transient.
 - Retrying the Flux artifact fetch differently (already `FetchFailed`, transient).
-- The cli (cli-d1 is its own change).
+- The cli (it moves to the typed failures in its own change).
 
 ## Research & Decisions
 
-Explored: the wave-2 plan research for op-d1, re-checked against opm-operator `origin/main` at bcfa722 and library `v1.0.0-beta.6` (`opm/errors/fetch.go`, `classify.go`, and every `Classify(` call site).
+Explored: opm-operator `main` (re-checked after opm-operator#248 merged) and library `v1.0.0-beta.6` (`opm/errors/fetch.go`, `classify.go`, and every `Classify(` call site).
 
 ### D1. One exported predicate, `reconcile.IsTransientFailure`
 
@@ -75,7 +75,7 @@ func IsTransientFailure(err error) bool {
 
 `isTerminalCause` is today's `isTerminalAcquireCause` renamed, because it now applies to every phase: `ErrWrongKind`, `ErrInvalidPackage`, `ErrMissingRequiredField`, and `isTypedResolutionError` (`IdentityError`, `*UnresolvedDemandsError`, `*UnmatchedComponentsError`).
 
-**Rationale.** (a) would stall a not-found module, a 401 or a 429 for 30 minutes, which is the defect a3 fixed; the owner's a3 policy retries every fetch failure. (c) keeps the phase as the retry key, which is what let author defects retry and render-phase blips stall. A raw `context.DeadlineExceeded` is not in the shared predicate: no owner decision asks the reconcile loops to retry it, the reconcile context carries no deadline today, and the library already maps a deadline at a fetch site to `FetchUnreachable`. A render deadline belongs to op-render-timeout, which decides its own class. The Platform keeps it on the short recheck at its own call site (D4), because `platformmodule.Closure` returns `ctx.Err()` raw and the old probe treated it as transient. `context.Canceled` is not transient: the library leaves it plain on purpose, it means the caller is stopping, and a manager shutdown re-lists every object on start. The predicate is exported because `internal/controller` calls it; it lives in `internal/reconcile/resolution.go` beside the reason mapping.
+**Rationale.** (a) would stall a not-found module, a 401 or a 429 for 30 minutes, which is the defect the retry-transient-acquire-failures change fixed for acquisition: every fetch failure retries. (c) keeps the phase as the retry key, which is what let author defects retry and render-phase blips stall. A raw `context.DeadlineExceeded` is not in the shared predicate: nothing asks the reconcile loops to retry it, the reconcile context carries no deadline today, and the library already maps a deadline at a fetch site to `FetchUnreachable`. A render deadline belongs to a later render-timeout change, which decides its own class. The Platform keeps it on the short recheck at its own call site (D4), because `platformmodule.Closure` returns `ctx.Err()` raw and the old probe treated it as transient. `context.Canceled` is not transient: the library leaves it plain on purpose, it means the caller is stopping, and a manager shutdown re-lists every object on start. The predicate is exported because `internal/controller` calls it; it lives in `internal/reconcile/resolution.go` beside the reason mapping.
 
 ### D2. `render.ErrAcquire` stays, as the reason marker only
 
@@ -97,17 +97,11 @@ func IsTransientFailure(err error) bool {
 
 **Decision.** Drop the `net.Error` and `*url.Error` checks. A failure `IsTransientFailure` accepts (a `*FetchError` of any kind), or a raw `DeadlineExceeded`, rechecks after 1 minute; everything else after 30. The shared predicate picks the Platform's requeue interval only: the condition (`BuildFailed`/`GenerateFailed`, `Stalled=True`) is unchanged, so "one rule" holds for the retry decision, not for the condition.
 
-**Rationale.** One rule in the operator. A not-found pin now rechecks every minute; that is the owner's a3 policy applied to the Platform, and a Platform reconcile is one closure walk, cheap at that rate. Section 1's spike confirms that an unreachable registry reaches `failReconcile` as a `*FetchError`; if it does not, the spike's finding goes here and the probe keeps its typed `net.Error` row.
-
-### D5. Library bump and import swap ride section 1
-
-**Decision.** `go get github.com/open-platform-model/library@v1.0.0-beta.6`, `go mod tidy`, and replace `opm/helper/objectset` with `opm/k8s/object` (`object.Duplicates`, `*object.DuplicateIdentitiesError`) in the four files that import it. Section 1 lands with no classification change, so `main` stays releasable if the series stops there.
-
-**Rationale.** The classification sections need `*FetchError`. The cascade PR opm-operator#248 moves the same pin but keeps the deprecated import; this change carries identical library lines in `go.mod` and `go.sum`, so the two merge in either order. The bump also moves the generated platform's core pin to `opmodel.dev/core@v2.0.0-beta.4` (`schema.DefaultSchemaModule`, owner decision j3) and brings the library's changed values-conflict attribution on a package load; the proposal's release note 5 names both. The library keeps `opm/helper/objectset` as a deprecated copy and states the new home behaves identically, so the swap changes no message.
+**Rationale.** One rule in the operator. A not-found pin now rechecks every minute; that is the every-fetch-failure-retries rule applied to the Platform, and a Platform reconcile is one closure walk, cheap at that rate. Section 1's spike confirms that an unreachable registry reaches `failReconcile` as a `*FetchError`; if it does not, the spike's finding goes here and the probe keeps its typed `net.Error` row.
 
 ## Sections
 
-1. Library `v1.0.0-beta.6`, the `opm/k8s/object` swap, and a spike: registry-free renderer tests that pin what the library returns at the operator's wrap sites (no behaviour change).
+1. A spike: registry-free renderer tests that pin what the library returns at the operator's wrap sites (no behaviour change).
 2. The typed predicate in both loops and the Platform, with unit tables and the stubs that model a registry failure moved onto `*FetchError`.
 3. Envtest and integration coverage on both kinds, and the e2e run.
 4. Docs.
@@ -116,13 +110,13 @@ func IsTransientFailure(err error) bool {
 
 - **A library site that forgets `Classify` stalls a registry blip** (30 minutes, not forever). Mitigation: the section 1 spike tests pin the classification at each operator wrap site, so a library regression fails here on the next bump.
 - **The library's text fallback misclassifies an author defect as a fetch failure**, which would retry a defect. The library limits the fallback to registry-fetch phrasing; the syntax-error regression test in section 2 runs the real loader.
-- **Not-found retries every 5 minutes (instances, packages) or every minute (Platform).** Accepted by a3. The registry sees one request per object per interval.
-- **A render deadline would read as a fetch failure.** The library classifies a deadline inside a fetch as `FetchUnreachable`. op-render-timeout must check its own `ctx.Err()` before calling `IsTransientFailure`, or its timeout reports as a transient `ResolutionFailed`.
-- **Same-file overlap.** op-render-timeout and op-i3g2 edit `kernel_module_renderer.go` and `kernel_package_renderer.go`; they start after this change merges.
+- **Not-found retries every 5 minutes (instances, packages) or every minute (Platform).** Accepted: a late publish recovers without an edit. The registry sees one request per object per interval.
+- **A render deadline would read as a fetch failure.** The library classifies a deadline inside a fetch as `FetchUnreachable`. A later render-timeout change must check its own `ctx.Err()` before calling `IsTransientFailure`, or its timeout reports as a transient `ResolutionFailed`.
+- **Same-file overlap.** Planned render-timeout and package-renderer changes edit `kernel_module_renderer.go` and `kernel_package_renderer.go`; they start after this change merges.
 
 ## Migration Plan
 
-None for users: no API change, and this change's classification code changes no message. The core pin move (release note 5) can surface a new render failure in a module with mis-keyed attachment maps; the fix is in the module. The release notes in the proposal list the condition changes a dashboard or alert keyed on `Stalled` will see.
+None for users: no API change, and this change changes no message. The release notes in the proposal list the condition changes a dashboard or alert keyed on `Stalled` will see.
 
 ## Open Questions
 

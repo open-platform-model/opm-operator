@@ -13,7 +13,7 @@ Before rendering, a ModuleInstance or ModulePackage reconcile SHALL compute the 
 
 A skipped reconcile SHALL NOT take a render slot, lease the platform, fetch the source artifact, render, run drift detection, apply, prune or emit an event. It is not a reconcile attempt: it records no outcome, no history and no `lastAttempted*`, and it SHALL NOT move `renderedAt`. It SHALL judge health over `status.inventory` (`instance-health`), and its only status patch SHALL be a changed `Healthy` condition. A skipped ModuleInstance reconcile SHALL return without a requeue unless health asks for one; a skipped ModulePackage reconcile SHALL requeue after `spec.interval`, as a `NoOp` does, or sooner when health asks for it.
 
-Rationale: a render is the most expensive step of a reconcile, and when every input that shapes it is unchanged it can only reproduce what the last apply wrote; drift is still caught by the render that the drift render interval forces. The health read is the one cluster read a skip makes, because a requeue that waits for a rollout must be able to observe it without rendering.
+Rationale: a render is the most expensive step of a reconcile, and when every input that shapes it is unchanged it can only reproduce what the last apply wrote; drift is still caught by the render that the drift render interval forces. The `Healthy` condition is the only status a skip writes; it reads the inventory objects and, under impersonation, the ServiceAccount, because a requeue that waits for a rollout must be able to observe it without rendering.
 
 #### Scenario: Unchanged inputs skip the render
 

@@ -176,7 +176,7 @@ tasks:
       - bash .tasks/opm-docs.sh pin-check
 
   cascade:wiring:check:
-    desc: Check the release-cascade caller workflows (Phase 3 wiring contract 10.1)
+    desc: Check the release-cascade caller workflows against .tasks/cascade/wiring-check.yaml (offline)
     cmds:
       - bash .tasks/cascade/wiring-check.sh
 

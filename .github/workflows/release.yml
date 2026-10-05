@@ -508,7 +508,7 @@ jobs:
       contents: read
     steps:
       - name: Notify downstream
-        uses: open-platform-model/.github/.github/actions/cascade-notify@2376ffae4bfc665f327d51581350dea694c01504 # .github main
+        uses: open-platform-model/.github/.github/actions/cascade-notify@6938f8e0247e019cb0c2db13fff5b7b558a6b67d # .github main
         with:
           tag: ${{ needs.release-please.outputs.tag_name }}
           client-id: ${{ vars.CASCADE_APP_CLIENT_ID }}

@@ -42,11 +42,15 @@ jobs:
         with:
           version: ${{ env.CUE_VERSION }}
 
-      # The key-holding cascade jobs keep their contract shape, and every
-      # .github reference carries one pinned SHA (Phase 3 wiring contract
-      # (version 3.1) 10.1). Uses the runner's mikefarah yq.
+      # The key-holding cascade jobs keep their contract shape, every .github
+      # reference carries one pinned SHA on .github main, and this copy of the
+      # check is the file at that SHA (.github README, "The wiring check").
+      # Only SHA-pinned actions may come before this step. Uses the runner's
+      # mikefarah yq.
       - name: Verify the cascade wiring
-        run: task cascade:wiring:check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .tasks/cascade/wiring-check.sh --pin-on-main
 
       # The operator's release PRs only: the operator module's release PR
       # ships none of go.mod or the fixtures, and its own pins are checked by

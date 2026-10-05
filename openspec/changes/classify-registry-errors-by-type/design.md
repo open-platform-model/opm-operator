@@ -87,7 +87,7 @@ func IsTransientFailure(err error) bool {
 
 ### D3. Where the predicate runs
 
-**Decision.** `classifyRenderError` and `renderModulePackage` call `IsTransientFailure(err)` where they call `isTransientAcquireFailure(err)` today, after the `ErrPlatformNotReady` branch. The transient branch is unchanged: `ResolutionFailed`, no `Stalled`, Warning event, `FailedTransient` (ModulePackage: `modulePackageBackoff(pkg)`). The stalled branch is unchanged: `renderFailureReason` / `renderErrorReason`. The Platform's `failReconcile` calls `opmreconcile.IsTransientFailure(classifyErr) || errors.Is(classifyErr, context.DeadlineExceeded)`; its local `isTransientFailure` and the `net` and `net/url` imports go.
+**Decision.** `classifyRenderError` and `renderModulePackage` call `IsTransientFailure(err)` where they call `isTransientAcquireFailure(err)` today, after the `ErrPlatformNotReady` branch. The transient branch is unchanged: `ResolutionFailed`, no `Stalled`, Warning event, `FailedTransient` (ModulePackage: `modulePackageBackoff(pkg)`). The stalled branch is unchanged: `renderFailureReason` / `renderErrorReason`. The Platform's local `isTransientFailure`, which `failReconcile` calls, becomes `opmreconcile.IsTransientFailure(err) || errors.Is(err, context.DeadlineExceeded)`; its `net.Error` and `*url.Error` checks and the `net` and `net/url` imports go.
 
 **Rationale.** The classifiers see every renderer error, so one call site per loop covers acquisition, values compile, synthesis, render and package load: no per-call wrapping is needed. A transient failure reads `ResolutionFailed` in every phase, because it is a failure to resolve an input, not a defect in the render.
 

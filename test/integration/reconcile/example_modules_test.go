@@ -24,12 +24,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -63,7 +63,7 @@ var _ = Describe("Example module rendering", func() {
 			Kernel:      k,
 			Store:       store,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		}
 
 		values := &releasesv1alpha1.RawValues{}

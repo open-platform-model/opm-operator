@@ -5,6 +5,7 @@ linters:
   default: none
   enable:
     - copyloopvar
+    - depguard
     - dupl
     - errcheck
     - ginkgolinter
@@ -24,6 +25,18 @@ linters:
     - unused
     - logcheck
   settings:
+    depguard:
+      rules:
+        # The library's Kubernetes tier owns the object and label decisions;
+        # the operator keeps no copy of them (0012:D3:R6). This refuses the
+        # path the operator's own copy lived under.
+        no-local-kubernetes-tier-copy:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: github.com/open-platform-model/opm-operator/pkg/core
+              desc: the operator keeps no copy of the library's Kubernetes tier; import github.com/open-platform-model/library/opm/k8s/object or github.com/open-platform-model/library/opm/k8s/labels
     custom:
       logcheck:
         type: "module"

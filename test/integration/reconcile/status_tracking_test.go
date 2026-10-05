@@ -29,12 +29,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+	"github.com/open-platform-model/library/opm/k8s/object"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // immutableConfigMapRenderResult builds a render result of a single immutable
@@ -60,15 +62,15 @@ func immutableConfigMapRenderResult(namespace, name, message string) *render.Ren
 		message: %q
 	}
 }`, name, namespace,
-		core.LabelManagedBy, core.LabelManagedByControllerValue,
-		core.LabelModuleInstanceNamespace, namespace,
-		core.LabelModuleInstanceUUID, stubInstanceUUID,
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceNamespace, namespace,
+		labels.ModuleInstanceUUID, stubInstanceUUID,
 		message))
 	if cm.Err() != nil {
 		panic(fmt.Sprintf("compiling immutable stub ConfigMap: %v", cm.Err()))
 	}
 
-	resource := &core.Resource{
+	resource := &object.Resource{
 		Value:       cm,
 		Instance:    name,
 		Component:   name,
@@ -80,7 +82,7 @@ func immutableConfigMapRenderResult(namespace, name, message string) *render.Ren
 	}
 
 	return &render.RenderResult{
-		Resources:        []*core.Resource{resource},
+		Resources:        []*object.Resource{resource},
 		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 	}
 }

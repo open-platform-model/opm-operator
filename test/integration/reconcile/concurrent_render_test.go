@@ -38,6 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -46,7 +48,6 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -108,16 +109,16 @@ func namedConfigMapResult(name, namespace string) *render.RenderResult {
 	}
 	data: instance: %q
 }`, name, namespace,
-		core.LabelManagedBy, core.LabelManagedByControllerValue,
-		core.LabelModuleInstanceNamespace, namespace,
-		core.LabelModuleInstanceUUID, "00000000-0000-0000-0000-0000000"+name[len(name)-5:],
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceNamespace, namespace,
+		labels.ModuleInstanceUUID, "00000000-0000-0000-0000-0000000"+name[len(name)-5:],
 		name))
 	Expect(cm.Err()).NotTo(HaveOccurred())
-	resource := &core.Resource{Value: cm, Instance: name, Component: "hello", Transformer: "kubernetes#simple"}
+	resource := &object.Resource{Value: cm, Instance: name, Component: "hello", Transformer: "kubernetes#simple"}
 	u, err := resource.ToUnstructured()
 	Expect(err).NotTo(HaveOccurred())
 	return &render.RenderResult{
-		Resources:        []*core.Resource{resource},
+		Resources:        []*object.Resource{resource},
 		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 	}
 }
@@ -261,7 +262,7 @@ var _ = Describe("Concurrent kernel renders (manager-driven, registry-backed)", 
 			Kernel:      k,
 			Store:       store,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		}
 		reconciler := &opmcontroller.ModuleInstanceReconciler{
 			Client:               mgr.GetClient(),

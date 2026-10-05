@@ -29,9 +29,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 const testOwnerUUID = "00000000-0000-0000-0000-0000000000aa"
@@ -41,8 +42,8 @@ const testOwnerUUID = "00000000-0000-0000-0000-0000000000aa"
 // testOwnerUUID.
 func ownedLabels() map[string]string {
 	return map[string]string{
-		core.LabelManagedBy:          core.LabelManagedByControllerValue,
-		core.LabelModuleInstanceUUID: testOwnerUUID,
+		labels.ManagedBy:          labels.ManagedByController,
+		labels.ModuleInstanceUUID: testOwnerUUID,
 	}
 }
 
@@ -305,8 +306,8 @@ var _ = Describe("Prune", func() {
 					Name:      "prune-cross-mr-cm",
 					Namespace: "default",
 					Labels: map[string]string{
-						core.LabelManagedBy:          core.LabelManagedByControllerValue,
-						core.LabelModuleInstanceUUID: otherUUID,
+						labels.ManagedBy:          labels.ManagedByController,
+						labels.ModuleInstanceUUID: otherUUID,
 					},
 				},
 				Data: map[string]string{"key": "cross"},
@@ -379,7 +380,7 @@ var _ = Describe("Prune", func() {
 					Name:      "prune-legacy-cm",
 					Namespace: "default",
 					Labels: map[string]string{
-						core.LabelManagedBy: core.LabelManagedByLegacyValue,
+						labels.ManagedBy: labels.ManagedByLegacy,
 					},
 				},
 				Data: map[string]string{"key": "legacy"},
@@ -407,8 +408,8 @@ var _ = Describe("Prune", func() {
 					Name:      "prune-cli-handoff-cm",
 					Namespace: "default",
 					Labels: map[string]string{
-						core.LabelManagedBy:          core.LabelManagedByValue,
-						core.LabelModuleInstanceUUID: testOwnerUUID,
+						labels.ManagedBy:          labels.ManagedByCLI,
+						labels.ModuleInstanceUUID: testOwnerUUID,
 					},
 				},
 				Data: map[string]string{"key": "cli-handoff"},

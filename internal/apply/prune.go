@@ -12,8 +12,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // PruneResult carries counts of prune outcomes.
@@ -96,15 +97,15 @@ func Prune(
 		}
 
 		liveLabels := live.GetLabels()
-		if !core.IsOPMManagedBy(liveLabels[core.LabelManagedBy]) {
+		if !labels.IsOPMManagedBy(liveLabels[labels.ManagedBy]) {
 			log.Info("Skipping prune: live resource is not OPM-managed",
 				"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name,
-				"managedBy", liveLabels[core.LabelManagedBy])
+				"managedBy", liveLabels[labels.ManagedBy])
 			result.Skipped++
 			continue
 		}
 
-		liveUUID := liveLabels[core.LabelModuleInstanceUUID]
+		liveUUID := liveLabels[labels.ModuleInstanceUUID]
 		if ownerUUID != "" && liveUUID != "" && liveUUID != ownerUUID {
 			log.Info("Skipping prune: live resource instance UUID does not match owner",
 				"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name,

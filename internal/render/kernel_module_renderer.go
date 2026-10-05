@@ -15,7 +15,6 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/moduleacquire"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // ErrPlatformNotReady is returned by the renderers when the platform store
@@ -236,10 +235,7 @@ func resultFromRender(
 		return nil, &object.DuplicateIdentitiesError{Duplicates: dups}
 	}
 
-	resources := make([]*core.Resource, 0, len(out.Compiled))
-	for _, c := range out.Compiled {
-		resources = append(resources, core.ResourceFromCompiled(c))
-	}
+	resources := object.Resources(out.Compiled)
 
 	entries, err := buildInventoryEntries(resources)
 	if err != nil {

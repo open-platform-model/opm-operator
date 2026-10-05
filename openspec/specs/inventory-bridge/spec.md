@@ -1,6 +1,6 @@
 ## Purpose
 
-Bridges the controller's inventory tracking to the CLI's shared inventory shapes: identity comparison, entry construction from rendered resources, and the CLI packages the controller carries as local copies.
+Bridges the controller's inventory tracking to the shared inventory shapes: identity comparison and entry construction from rendered resources. The label keys and resource types it reads come from the library's `opm/k8s/labels` and `opm/k8s/object`.
 
 ## Requirements
 
@@ -53,30 +53,9 @@ The `internal/inventory` package MUST expose a `NewEntryFromResource` function t
 - **WHEN** an unstructured resource with GVK `apps/v1/Deployment`, namespace `default`, name `nginx`, and label `component.opmodel.dev/name=web` is provided
 - **THEN** the returned entry has Group=`apps`, Kind=`Deployment`, Version=`v1`, Namespace=`default`, Name=`nginx`, Component=`web`
 
-### Requirement: Component label constant
-The controller MUST define a `LabelComponentName` constant with value `component.opmodel.dev/name`, used by `NewEntryFromResource` to extract the component name from resource labels.
-
-### Requirement: CLI packages copied to `pkg/`
-The controller MUST contain the locally copied CLI package `core` under `pkg/`, with its internal import paths rewritten from `github.com/opmodel/cli/pkg/` to `github.com/open-platform-model/opm-operator/pkg/`. No other copied CLI package SHALL be present under `pkg/`: a copy that nothing in the controller imports MUST be deleted rather than kept in step with the CLI.
-
-#### Scenario: Copied packages compile under the renamed module
-- **WHEN** `go build ./pkg/...` is run from the module root
-- **THEN** the package compiles without errors
-
-#### Scenario: No stale reference to the old module path
-- **WHEN** `go.mod` is inspected and all Go files under `pkg/` are searched
-- **THEN** there is no `require` entry for `github.com/opmodel/cli` and no import path beginning with `github.com/open-platform-model/poc-controller/`
-
-#### Scenario: Only imported copies are present
-- **WHEN** the packages under `pkg/` are listed
-- **THEN** every one of them is imported by at least one file outside `pkg/`
-
-### Requirement: Process file remains in pkg/render (revised)
-The `process_modulerelease.go` file MUST remain in `pkg/render/` with its original function name (`ProcessModuleRelease`). Relocation to `pkg/module` was infeasible due to import cycles (`render → module` already exists; adding `module → render` creates a cycle). Bundle processing was excluded — not yet implemented in OPM.
-
-#### Scenario: ProcessModuleRelease available in render package
-- **WHEN** `pkg/render/` is inspected
-- **THEN** it contains `ProcessModuleRelease` in `process_modulerelease.go`
-
 ### Requirement: Inventory type alias preserved
 The existing `type Current = releasesv1alpha1.Inventory` alias in `internal/inventory` MUST be preserved as a semantic marker used by other internal packages.
+
+#### Scenario: Alias names the API inventory type
+- **WHEN** `internal/inventory` is inspected
+- **THEN** it declares `Current` as an alias of the API's `Inventory` type, not a distinct type

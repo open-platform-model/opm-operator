@@ -32,12 +32,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+	"github.com/open-platform-model/library/opm/k8s/object"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 const (
@@ -60,7 +62,7 @@ const (
 func claimResource(
 	claimName, providerName, version string,
 	provides ...string,
-) (*core.Resource, releasesv1alpha1.InventoryEntry) {
+) (*object.Resource, releasesv1alpha1.InventoryEntry) {
 	quoted := make([]string, 0, len(provides))
 	for _, fqn := range provides {
 		quoted = append(quoted, fmt.Sprintf("%q", fqn))
@@ -88,15 +90,15 @@ func claimResource(
 		}
 	}
 }`, claimName,
-		core.LabelManagedBy, core.LabelManagedByControllerValue,
-		core.LabelModuleInstanceNamespace, namespace,
-		core.LabelModuleInstanceUUID, stubInstanceUUID,
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceNamespace, namespace,
+		labels.ModuleInstanceUUID, stubInstanceUUID,
 		version, strings.Join(quoted, ", "), namespace, providerName))
 	if claim.Err() != nil {
 		panic(fmt.Sprintf("compiling stub claim: %v", claim.Err()))
 	}
 
-	resource := &core.Resource{
+	resource := &object.Resource{
 		Value:       claim,
 		Instance:    providerName,
 		Component:   "registration",
@@ -115,7 +117,7 @@ func providerRenderResult(claimName, providerName string, provides ...string) *r
 	claim, claimEntry := claimResource(claimName, providerName, upgradedVersion, provides...)
 	sidecar, sidecarEntry := configMapResource(providerName+"-cm", upgradedPayload)
 	return &render.RenderResult{
-		Resources:        []*core.Resource{claim, sidecar},
+		Resources:        []*object.Resource{claim, sidecar},
 		InventoryEntries: []releasesv1alpha1.InventoryEntry{claimEntry, sidecarEntry},
 	}
 }

@@ -41,13 +41,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
+
 	"github.com/open-platform-model/library/opm/helper/platformmodule"
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/controller"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -89,7 +90,7 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 			Kernel:      k,
 			Store:       store,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		}
 
 		provider := fixtures.Must(GinkgoT(), "backup_provider")
@@ -138,7 +139,7 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 			Kernel:      k,
 			Store:       store,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		}
 
 		consumer := fixtures.Must(GinkgoT(), "backup_consumer")
@@ -157,7 +158,7 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 			Kernel:      k,
 			Store:       store,
 			Registry:    registry,
-			RuntimeName: core.LabelManagedByControllerValue,
+			RuntimeName: labels.ManagedByController,
 		}
 
 		consumer := fixtures.Must(GinkgoT(), "backup_consumer")
@@ -263,7 +264,7 @@ func renderBackupClaim(
 		Kernel:      k,
 		Store:       store,
 		Registry:    registry,
-		RuntimeName: core.LabelManagedByControllerValue,
+		RuntimeName: labels.ManagedByController,
 	}
 	provider := fixtures.Must(GinkgoT(), "backup_provider")
 	res, err := r.RenderModule(ctx, instance, namespace, provider.ModulePath, provider.Tag(), nil)

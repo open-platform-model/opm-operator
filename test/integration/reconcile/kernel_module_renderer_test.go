@@ -25,12 +25,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/open-platform-model/library/opm/k8s/labels"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
@@ -73,7 +73,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Kernel:      kernel.New(),
 				Store:       platformstore.NewStore(),
 				Registry:    "opmodel.dev=localhost:5000+insecure",
-				RuntimeName: core.LabelManagedByControllerValue,
+				RuntimeName: labels.ManagedByController,
 			}
 
 			res, err := renderer.RenderModule(ctx,
@@ -109,7 +109,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Kernel:      k,
 				Store:       store,
 				Registry:    registry,
-				RuntimeName: core.LabelManagedByControllerValue,
+				RuntimeName: labels.ManagedByController,
 			}
 
 			values := &releasesv1alpha1.RawValues{}
@@ -138,7 +138,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			// Every rendered resource carries instance/component/transformer
 			// provenance copied from the kernel's Compiled output, plus the
 			// runtime-identity labels that lock the Go/CUE contract between
-			// core.LabelManagedByControllerValue and the catalog's #runtimeName.
+			// labels.ManagedByController and the catalog's #runtimeName.
 			for _, r := range res.Resources {
 				Expect(r.Instance).NotTo(BeEmpty(), "resource %s missing instance provenance", r)
 				Expect(r.Component).NotTo(BeEmpty(), "resource %s missing component provenance", r)
@@ -146,11 +146,11 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 
 				u, err := r.ToUnstructured()
 				Expect(err).NotTo(HaveOccurred())
-				labels := u.GetLabels()
-				Expect(labels).NotTo(BeNil(), "rendered resource %s must carry labels", u.GetName())
-				Expect(labels[core.LabelManagedBy]).To(Equal(core.LabelManagedByControllerValue),
+				got := u.GetLabels()
+				Expect(got).NotTo(BeNil(), "rendered resource %s must carry labels", u.GetName())
+				Expect(got[labels.ManagedBy]).To(Equal(labels.ManagedByController),
 					"managed-by must be opm-controller (Go/CUE contract)")
-				Expect(labels[core.LabelModuleInstanceUUID]).NotTo(BeEmpty(),
+				Expect(got[labels.ModuleInstanceUUID]).NotTo(BeEmpty(),
 					"module-instance uuid must be non-empty (catalog ownership labels must continue to flow)")
 			}
 
@@ -164,7 +164,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Kernel:      k,
 				Store:       store,
 				Registry:    registry,
-				RuntimeName: core.LabelManagedByControllerValue,
+				RuntimeName: labels.ManagedByController,
 			}
 
 			consumed, ok := store.Generated()
@@ -219,7 +219,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 					Kernel:      k,
 					Store:       store,
 					Registry:    registry,
-					RuntimeName: core.LabelManagedByControllerValue,
+					RuntimeName: labels.ManagedByController,
 				}
 
 				f := fixtures.Must(GinkgoT(), fixtureName)
@@ -248,7 +248,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Kernel:      k,
 				Store:       store,
 				Registry:    registry,
-				RuntimeName: core.LabelManagedByControllerValue,
+				RuntimeName: labels.ManagedByController,
 			}
 
 			hello := fixtures.Must(GinkgoT(), "hello")
@@ -267,7 +267,7 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				Kernel:      k,
 				Store:       store,
 				Registry:    registry,
-				RuntimeName: core.LabelManagedByControllerValue,
+				RuntimeName: labels.ManagedByController,
 			}
 
 			// The fixture's #config.message is a string; an integer violates

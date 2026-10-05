@@ -7,9 +7,11 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
+
+	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // DigestSet holds the four reconcile digests tracked in ModuleInstance.status.
@@ -71,54 +73,56 @@ func ConfigDigest(values *releasesv1alpha1.RawValues) string {
 	return fmt.Sprintf("sha256:%x", sum)
 }
 
-// RenderDigest computes a deterministic SHA-256 digest of the rendered resource set.
-// Sorts resources by GVK + namespace + name (same order as inventory.ComputeDigest
-// for consistency), serializes each via core.Resource.MarshalJSON(),
-// and hashes the concatenation.
+// RenderDigest computes a deterministic SHA-256 digest of a rendered set from
+// its single export (object.Export). It sorts the objects by group, kind,
+// namespace and name, the order inventory.ComputeDigest uses, and hashes each
+// object's exported JSON in that order. The group is the apiVersion up to its
+// last "/", so an apiVersion that does not parse still sorts as it always did.
+// The bytes are pinned by TestRenderDigest_GoldenBytes: a change to them makes
+// every applied instance look changed once.
 // Format: "sha256:<hex>"
-func RenderDigest(resources []*core.Resource) (string, error) {
-	digest, _, err := RenderDigestJSON(resources)
-	return digest, err
-}
-
-// RenderDigestJSON computes the same digest as RenderDigest and also returns
-// each resource's JSON, in the input order. Every resource is exported from
-// CUE once, so a caller that needs both the digest and the JSON (to convert
-// the resources for apply) pays for one export, not two.
-func RenderDigestJSON(resources []*core.Resource) (string, [][]byte, error) {
-	encoded := make([][]byte, len(resources))
-	for i, r := range resources {
-		b, err := r.MarshalJSON()
-		if err != nil {
-			return "", nil, fmt.Errorf("render digest: %w", err)
-		}
-		encoded[i] = b
-	}
-
-	order := make([]int, len(resources))
+func RenderDigest(exported []object.Exported) string {
+	order := make([]int, len(exported))
 	for i := range order {
 		order[i] = i
 	}
+	type sortKey struct{ group, kind, namespace, name string }
+	keyOf := func(e object.Exported) sortKey {
+		u := e.Object
+		return sortKey{
+			group:     apiGroup(u.GetAPIVersion()),
+			kind:      u.GetKind(),
+			namespace: u.GetNamespace(),
+			name:      u.GetName(),
+		}
+	}
 	sort.SliceStable(order, func(a, b int) bool {
-		ri, rj := resources[order[a]], resources[order[b]]
-		gi, gj := ri.GVK(), rj.GVK()
-		if gi.Group != gj.Group {
-			return gi.Group < gj.Group
+		ki, kj := keyOf(exported[order[a]]), keyOf(exported[order[b]])
+		if ki.group != kj.group {
+			return ki.group < kj.group
 		}
-		if gi.Kind != gj.Kind {
-			return gi.Kind < gj.Kind
+		if ki.kind != kj.kind {
+			return ki.kind < kj.kind
 		}
-		if ri.Namespace() != rj.Namespace() {
-			return ri.Namespace() < rj.Namespace()
+		if ki.namespace != kj.namespace {
+			return ki.namespace < kj.namespace
 		}
-		return ri.Name() < rj.Name()
+		return ki.name < kj.name
 	})
 
 	h := sha256.New()
 	for _, i := range order {
-		h.Write(encoded[i])
+		h.Write(exported[i].JSON)
 	}
-	return fmt.Sprintf("sha256:%x", h.Sum(nil)), encoded, nil
+	return fmt.Sprintf("sha256:%x", h.Sum(nil))
+}
+
+// apiGroup returns the group of "group/version", or "" for a core "version".
+func apiGroup(apiVersion string) string {
+	if idx := strings.LastIndex(apiVersion, "/"); idx >= 0 {
+		return apiVersion[:idx]
+	}
+	return ""
 }
 
 // IsNoOp returns true if all four digests in current match lastApplied.

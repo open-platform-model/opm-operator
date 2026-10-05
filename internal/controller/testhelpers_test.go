@@ -26,11 +26,12 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 
 	oerrors "github.com/open-platform-model/library/opm/errors"
+	"github.com/open-platform-model/library/opm/k8s/labels"
+	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
-	"github.com/open-platform-model/opm-operator/pkg/core"
 )
 
 // stubRenderer is a test ModuleRenderer that returns a pre-built result or
@@ -127,14 +128,14 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 		message: %q
 	}
 }`, namespace,
-		core.LabelManagedBy, core.LabelManagedByControllerValue,
-		core.LabelModuleInstanceNamespace, namespace,
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceNamespace, namespace,
 		message))
 	if cm.Err() != nil {
 		panic(fmt.Sprintf("compiling stub ConfigMap: %v", cm.Err()))
 	}
 
-	resource := &core.Resource{
+	resource := &object.Resource{
 		Value:       cm,
 		Instance:    "test-module",
 		Component:   "hello",
@@ -147,7 +148,7 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 	}
 
 	return &render.RenderResult{
-		Resources:         []*core.Resource{resource},
+		Resources:         []*object.Resource{resource},
 		InventoryEntries:  []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 		RequiredContracts: []string{stubContract},
 		ModuleVersion:     stubModuleVersion,

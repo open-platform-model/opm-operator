@@ -137,6 +137,21 @@ func TestMarkReconcilePanic(t *testing.T) {
 	assert.False(t, conditions.Has(obj, StalledCondition), "a panic is not stalled")
 }
 
+func TestMarkRenderTimedOut(t *testing.T) {
+	obj := newModuleInstance()
+	MarkReady(obj, "Reconciliation succeeded")
+	conditions.MarkStalled(obj, RenderFailedReason, "a stall left behind")
+
+	MarkRenderTimedOut(obj, "render did not finish within %s", "10m0s")
+
+	assert.True(t, conditions.IsFalse(obj, ReadyCondition))
+	assert.Equal(t, RenderTimedOutReason, conditions.GetReason(obj, ReadyCondition))
+	assert.Equal(t, "render did not finish within 10m0s", conditions.GetMessage(obj, ReadyCondition))
+	assert.True(t, conditions.IsTrue(obj, ReconcilingCondition))
+	assert.Equal(t, RenderTimedOutReason, conditions.GetReason(obj, ReconcilingCondition))
+	assert.False(t, conditions.Has(obj, StalledCondition), "a render timeout is not stalled")
+}
+
 func TestMarkModuleResolved(t *testing.T) {
 	obj := newModuleInstance()
 	MarkModuleResolved(obj, "opmodel.dev/modules/hello@v0@v0.1.0")
@@ -171,6 +186,8 @@ func TestReasonConstants(t *testing.T) {
 		PruneFailedReason,
 		ReconciliationSucceededReason,
 		SelfManagementRefusedReason,
+		ReconcilePanicReason,
+		RenderTimedOutReason,
 	}
 	for _, r := range reasons {
 		assert.NotEmpty(t, r, "reason constant should not be empty")

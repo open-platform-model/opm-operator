@@ -59,6 +59,11 @@ type ModulePackageParams struct {
 	// ModuleInstance reconciler; every call to Renderer holds one slot until
 	// its result is exported for apply. Nil leaves renders unbounded.
 	RenderSlots *render.Slots
+	// RenderTimeout is the manager's --render-timeout: the longest one render
+	// may run once it holds its slot. A render past it is reported as
+	// RenderTimedOut and keeps its slot until it returns. Zero disables the
+	// deadline and keeps the render on the reconcile's goroutine.
+	RenderTimeout time.Duration
 
 	// DefaultServiceAccount is the fallback SA name used when a ModulePackage has
 	// an empty spec.serviceAccountName. Empty disables the default and
@@ -311,17 +316,11 @@ func ReconcileModulePackage(
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
-	defer func() { _ = os.RemoveAll(extractDir) }()
 
-	// Phase 3: navigate to spec.path.
-	packageDir, fail := navigateModulePackagePath(&pkg, extractDir, params.EventRecorder)
-	if fail != nil {
-		applyFail(fail)
-		return ctrl.Result{RequeueAfter: retryAfter}, nil
-	}
-
-	// Phase 4+5: load CUE, detect kind, render.
-	converted, fail, waitErr := renderModulePackage(ctx, params, &pkg, packageDir, interval)
+	// Phase 3: navigate to spec.path. Phase 4+5: load CUE, detect kind,
+	// render. extractDir is handed over here: the render may outlive this
+	// reconcile, so it removes the directory when it is done with it.
+	converted, fail, waitErr := renderExtractedPackage(ctx, params, &pkg, extractDir, interval)
 	if waitErr != nil {
 		skipCommit = true
 		return ctrl.Result{}, waitErr
@@ -515,8 +514,30 @@ func navigateModulePackagePath(
 	return "", &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
 }
 
+// renderExtractedPackage navigates to spec.path inside extractDir and
+// renders the package there. It owns extractDir: it removes it when the
+// navigation fails, and renderModulePackage removes it otherwise.
+func renderExtractedPackage(
+	ctx context.Context,
+	params *ModulePackageParams,
+	pkg *releasesv1alpha1.ModulePackage,
+	extractDir string,
+	interval time.Duration,
+) (*convertedRender, *phaseFail, error) {
+	packageDir, fail := navigateModulePackagePath(pkg, extractDir, params.EventRecorder)
+	if fail != nil {
+		_ = os.RemoveAll(extractDir)
+		return nil, fail, nil
+	}
+	return renderModulePackage(ctx, params, pkg, extractDir, packageDir, interval)
+}
+
 // renderModulePackage renders the package at packageDir and classifies a
-// failure: PlatformNotReady is a non-stalled wait; a registry fetch failure
+// failure. It owns extractDir, the artifact packageDir lies in, and removes
+// it once the render is done with it, which may be after this function
+// returns when the render timed out. A render that did not finish within
+// RenderTimeout is a non-stalled RenderTimedOut on the bounded backoff,
+// classified before anything else; PlatformNotReady is a non-stalled wait; a registry fetch failure
 // the library typed (IsTransientFailure), in the package load or the render
 // build, retries on the bounded backoff as a non-stalled ResolutionFailed;
 // every other failure stalls on StalledRecheckInterval with the reason of
@@ -527,7 +548,7 @@ func renderModulePackage(
 	ctx context.Context,
 	params *ModulePackageParams,
 	pkg *releasesv1alpha1.ModulePackage,
-	packageDir string,
+	extractDir, packageDir string,
 	interval time.Duration,
 ) (*convertedRender, *phaseFail, error) {
 	// The render holds one slot of the process-wide pool until its result is
@@ -539,12 +560,29 @@ func renderModulePackage(
 		converted *convertedRender
 		err       error
 	)
-	if waitErr := params.RenderSlots.Run(ctx, renderKey("ModulePackage", pkg.Namespace, pkg.Name), 0, func(renderCtx context.Context) {
+	convert := params.convertFn()
+	waitErr := params.RenderSlots.Run(ctx, renderKey("ModulePackage", pkg.Namespace, pkg.Name), params.RenderTimeout, func(renderCtx context.Context) {
+		// First, so the directory goes on a panic too.
+		defer func() { _ = os.RemoveAll(extractDir) }()
 		kind, result, err = params.Renderer.Render(renderCtx, packageDir)
 		if err == nil && kind == render.KindModuleInstance {
-			converted, err = params.convertFn()(result)
+			converted, err = convert(result)
 		}
-	}); waitErr != nil {
+	})
+	if waitErr != nil && !errors.Is(waitErr, render.ErrRenderTimedOut) {
+		// The body was never called, so it did not take the directory.
+		_ = os.RemoveAll(extractDir)
+	}
+	if waitErr != nil {
+		// A render timeout is classified before anything else, and the
+		// closure's variables are never read: the render may still be
+		// writing them.
+		if msg, ok := renderTimeoutMessage(waitErr, params.RenderTimeout); ok {
+			logf.FromContext(ctx).Info("Render timed out", "timeout", params.RenderTimeout.String(), "reason", waitErr.Error())
+			status.MarkRenderTimedOut(pkg, "%s", msg)
+			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.RenderTimedOutReason, "Render", "%s", msg)
+			return nil, &phaseFail{FailedTransient, msg, modulePackageBackoff(pkg)}, nil
+		}
 		// The context ended while waiting for a slot (manager shutdown).
 		// Nothing was rendered: the caller returns this error as is and
 		// commits nothing, and no classifier sees it.

@@ -57,6 +57,11 @@ type ModuleInstanceParams struct {
 	// ModulePackage reconciler; every call to Renderer holds one slot until
 	// its result is exported for apply. Nil leaves renders unbounded.
 	RenderSlots *render.Slots
+	// RenderTimeout is the manager's --render-timeout: the longest one render
+	// may run once it holds its slot. A render past it is reported as
+	// RenderTimedOut and keeps its slot until it returns. Zero disables the
+	// deadline and keeps the render on the reconcile's goroutine.
+	RenderTimeout time.Duration
 	// DefaultServiceAccount is the fallback SA name used when a
 	// ModuleInstance has an empty spec.serviceAccountName. Empty disables
 	// the default and preserves the controller-client fallback.
@@ -391,9 +396,24 @@ func ReconcileModuleInstance(
 		err          error
 		convErr      *conversionError
 	)
-	if waitErr := params.RenderSlots.Run(ctx, renderKey("ModuleInstance", mi.Namespace, mi.Name), 0, func(renderCtx context.Context) {
-		renderResult, converted, err = renderAndConvertInstance(renderCtx, params.Renderer, params.convertFn(), &mi)
+	// The render may outlive this reconcile when it times out, so it reads a
+	// copy of its inputs: the deferred status patch rewrites mi.
+	inputs := instanceInputsOf(&mi)
+	convert := params.convertFn()
+	if waitErr := params.RenderSlots.Run(ctx, renderKey("ModuleInstance", mi.Namespace, mi.Name), params.RenderTimeout, func(renderCtx context.Context) {
+		renderResult, converted, err = renderAndConvertInstance(renderCtx, params.Renderer, convert, inputs)
 	}); waitErr != nil {
+		// A render timeout is classified before anything else, and the
+		// closure's variables are never read: the render may still be
+		// writing them.
+		if msg, ok := renderTimeoutMessage(waitErr, params.RenderTimeout); ok {
+			log.Info("Render timed out", "timeout", params.RenderTimeout.String(), "reason", waitErr.Error())
+			params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeWarning, status.RenderTimedOutReason, "Render", "%s", msg)
+			status.MarkRenderTimedOut(&mi, "%s", msg)
+			outcome, errMsg = FailedTransient, msg
+			retryAfter = retryIntervalFor(outcome, reconcileFailureCount(mi.Status.FailureCounters))
+			return ctrl.Result{RequeueAfter: retryAfter}, nil
+		}
 		// The context ended while waiting for a slot (manager shutdown).
 		// Nothing was rendered, so commit nothing and classify nothing.
 		skipCommit = true
@@ -1268,21 +1288,40 @@ func extractInstanceUUID(resources []*unstructured.Unstructured) string {
 	return ""
 }
 
-// renderAndConvertInstance renders mi and exports the result for apply with
-// convert. It runs inside the reconcile's render slot. On a conversion
-// failure it still returns the render result, whose plain data the caller
-// reports, and a *conversionError.
+// instanceInputs is what a ModuleInstance render reads, copied from the
+// object before the render starts, so a render that outlives its reconcile
+// never reads an object the status patch is rewriting.
+type instanceInputs struct {
+	name, namespace string
+	path, version   string
+	values          *releasesv1alpha1.RawValues
+}
+
+func instanceInputsOf(mi *releasesv1alpha1.ModuleInstance) instanceInputs {
+	return instanceInputs{
+		name:      mi.Name,
+		namespace: mi.Namespace,
+		path:      mi.Spec.Module.Path,
+		version:   mi.Spec.Module.Version,
+		values:    mi.Spec.Values.DeepCopy(),
+	}
+}
+
+// renderAndConvertInstance renders the instance described by in and exports
+// the result for apply with convert. It runs inside the reconcile's render
+// slot. On a conversion failure it still returns the render result, whose
+// plain data the caller reports, and a *conversionError.
 func renderAndConvertInstance(
 	ctx context.Context,
 	renderer render.ModuleRenderer,
 	convert func(*render.RenderResult) (*convertedRender, error),
-	mi *releasesv1alpha1.ModuleInstance,
+	in instanceInputs,
 ) (*render.RenderResult, *convertedRender, error) {
 	result, err := renderer.RenderModule(
 		ctx,
-		mi.Name, mi.Namespace,
-		mi.Spec.Module.Path, mi.Spec.Module.Version,
-		mi.Spec.Values,
+		in.name, in.namespace,
+		in.path, in.version,
+		in.values,
 	)
 	if err != nil {
 		return nil, nil, err

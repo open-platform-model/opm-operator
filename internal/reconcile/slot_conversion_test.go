@@ -97,7 +97,8 @@ func TestSlotConversion_ModulePackage(t *testing.T) {
 		convert:     recordingConvert(pool, &held, convertRender),
 	}
 
-	converted, fail, err := renderModulePackage(context.Background(), params, operatorPackage(nil), t.TempDir(), DefaultModulePackageInterval)
+	dir := t.TempDir()
+	converted, fail, err := renderModulePackage(context.Background(), params, operatorPackage(nil), dir, dir, DefaultModulePackageInterval)
 	if err != nil || fail != nil {
 		t.Fatalf("renderModulePackage: fail=%+v err=%v", fail, err)
 	}

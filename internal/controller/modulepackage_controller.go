@@ -88,6 +88,12 @@ type ModulePackageReconciler struct {
 	// unbounded (tests that need no bound).
 	RenderSlots *render.Slots
 
+	// RenderTimeout is the manager's --render-timeout: the longest one render
+	// may run once it holds a slot of RenderSlots. A render past it reports
+	// RenderTimedOut and keeps its slot until it returns. Zero disables the
+	// deadline.
+	RenderTimeout time.Duration
+
 	// OperatorVersion and LibraryVersion are the running operator's
 	// version.Full() and version.Library(), parts of the render input key.
 	// Empty makes every key incomplete: nothing is recorded or skipped.
@@ -127,6 +133,7 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Fetcher:               r.Fetcher,
 		Renderer:              r.Renderer,
 		RenderSlots:           r.RenderSlots,
+		RenderTimeout:         r.RenderTimeout,
 		DefaultServiceAccount: r.DefaultServiceAccount,
 		Warnings:              &r.warnings,
 		OperatorVersion:       r.OperatorVersion,

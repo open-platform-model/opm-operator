@@ -167,3 +167,71 @@ func TestIsNoOp_EmptyLastApplied(t *testing.T) {
 	}
 	assert.False(t, IsNoOp(current, DigestSet{}), "empty last applied = first reconcile, not a no-op")
 }
+
+// --- RenderInputKey tests ---
+
+func fullKey() RenderInputKey {
+	return RenderInputKey{
+		Source:          "sha256:src",
+		Config:          "sha256:cfg",
+		PackageIdentity: "gen-3",
+		SkewPolicy:      "Warn",
+		OperatorVersion: "v1.0.0-beta.9",
+		LibraryVersion:  "v1.0.0-beta.4",
+	}
+}
+
+func TestRenderInputKey_EachPartChangesTheDigest(t *testing.T) {
+	base := fullKey().Digest()
+	mutations := map[string]func(*RenderInputKey){
+		"source":   func(k *RenderInputKey) { k.Source = "sha256:other" },
+		"config":   func(k *RenderInputKey) { k.Config = "sha256:other" },
+		"identity": func(k *RenderInputKey) { k.PackageIdentity = "gen-4" },
+		"skew":     func(k *RenderInputKey) { k.SkewPolicy = "Refuse" },
+		"operator": func(k *RenderInputKey) { k.OperatorVersion = "v1.0.0-beta.10" },
+		"library":  func(k *RenderInputKey) { k.LibraryVersion = "v1.0.0-beta.5" },
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			k := fullKey()
+			mutate(&k)
+			assert.NotEqual(t, base, k.Digest())
+		})
+	}
+}
+
+func TestRenderInputKey_SamePartsSameDigest(t *testing.T) {
+	assert.Equal(t, fullKey().Digest(), fullKey().Digest())
+}
+
+func TestRenderInputKey_PartBoundariesAreUnambiguous(t *testing.T) {
+	a, b := fullKey(), fullKey()
+	a.SkewPolicy, a.OperatorVersion = "ab", "c"
+	b.SkewPolicy, b.OperatorVersion = "a", "bc"
+	assert.NotEqual(t, a.Digest(), b.Digest())
+}
+
+func TestRenderInputKey_CompleteNeedsEveryPart(t *testing.T) {
+	assert.True(t, fullKey().Complete())
+	clears := map[string]func(*RenderInputKey){
+		"source":   func(k *RenderInputKey) { k.Source = "" },
+		"config":   func(k *RenderInputKey) { k.Config = "" },
+		"identity": func(k *RenderInputKey) { k.PackageIdentity = "" },
+		"skew":     func(k *RenderInputKey) { k.SkewPolicy = "" },
+		"operator": func(k *RenderInputKey) { k.OperatorVersion = "" },
+		"library":  func(k *RenderInputKey) { k.LibraryVersion = "" },
+	}
+	for name, clear := range clears {
+		t.Run(name, func(t *testing.T) {
+			k := fullKey()
+			clear(&k)
+			assert.False(t, k.Complete())
+		})
+	}
+}
+
+// TestRenderInputKey_GoldenDigest pins the encoding: a change here changes
+// every recorded key, which is allowed only together with a new encoding tag.
+func TestRenderInputKey_GoldenDigest(t *testing.T) {
+	assert.Equal(t, "sha256:548bd49f63a4c8cb9ee0a71469dec1e100fa8d1b2eb06fb28171b7aa72424cb9", fullKey().Digest())
+}

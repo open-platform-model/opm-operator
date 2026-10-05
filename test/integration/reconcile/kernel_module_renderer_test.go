@@ -130,6 +130,8 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 				"the render reports the version the module declares, as bare SemVer")
 			Expect(res.PlatformIdentity).To(Equal(store.Identity().String()),
 				"the render reports the identity of the package it built against (0015:D13)")
+			Expect(res.SkewPolicy).To(Equal(releasesv1alpha1.SkewPolicyWarn),
+				"the render reports the default skew policy of the record it leased")
 			Expect(store.Leased()).To(BeEmpty(), "the render releases its lease on return")
 			Expect(configMapMessage(res)).To(Equal("kernel hello"), "the supplied values reach the rendered object")
 

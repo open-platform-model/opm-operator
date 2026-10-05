@@ -66,6 +66,13 @@ type RenderResult struct {
 	// duration, so this is the exact registry state the render consumed, even
 	// when a newer package was generated while it ran.
 	PlatformIdentity string
+
+	// SkewPolicy is the catalog skew policy of the platform record this
+	// render leased, spelled as Platform.spec.skewPolicy spells it ("Warn" or
+	// "Refuse"). Together with PlatformIdentity it names the platform the
+	// render actually used; the reconciler records both in the render input
+	// key.
+	SkewPolicy string
 }
 
 // buildInventoryEntries converts rendered resources to inventory entries.

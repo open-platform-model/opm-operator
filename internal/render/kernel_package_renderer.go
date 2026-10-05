@@ -97,6 +97,7 @@ func (r *KernelPackageRenderer) Render(
 		return KindModuleInstance, nil, err
 	}
 	result.ModuleVersion = declaredModuleVersion(inst)
+	result.SkewPolicy = platformstore.SkewPolicyName(rec.Skew)
 	return KindModuleInstance, result, nil
 }
 

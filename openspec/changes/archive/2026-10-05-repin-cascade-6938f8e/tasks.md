@@ -11,6 +11,3 @@ Gates for the one section: `GH_TOKEN=$(gh auth token) bash .tasks/cascade/wiring
 - [x] 1.7 Negative checks: an appended line in the copy fails with `differs from`; a `run:` step above the wiring step fails; `cache: true` in `test-e2e.yml` fails.
 - [x] 1.8 Gates green; commit `ci(deps): pin the cascade to .github 6938f8e`.
 
-## 2. Archive
-
-- [ ] 2.1 `openspec verify`, archive in this branch, open the PR.

@@ -1,0 +1,16 @@
+# Changes here need a code owner's review (main ruleset).
+/.github/                       @emil-jacero @orvis98
+/.tasks/                        @emil-jacero @orvis98
+/Taskfile*.yml                  @emil-jacero @orvis98
+/release-please-config.json     @emil-jacero @orvis98
+/.release-please-manifest.json  @emil-jacero @orvis98
+/.cascade-frozen                @emil-jacero @orvis98
+# hack/fixtures.sh, hack/render-config.sh and hack/operator-module/ run in jobs
+# that hold write tokens or the release App key.
+/hack/                          @emil-jacero @orvis98
+# .opm-cli-version picks the opm binary the fixture and example publish jobs
+# (packages: write) install; .opm-docs-version and docs-kit.cue drive the
+# signed docs publish (id-token: write) that the site trusts.
+/.opm-cli-version               @emil-jacero @orvis98
+/.opm-docs-version              @emil-jacero @orvis98
+/docs-kit.cue                   @emil-jacero @orvis98

@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   # The operator module's release check runs cue; kept equal to test.yml's.
   CUE_VERSION: 'v0.17.1'
@@ -32,7 +35,7 @@ jobs:
       - name: Install Task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          version: 3.x
+          version: 3.54.0 # exact, never a floating 3.x
 
       - name: Setup CUE
         uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0

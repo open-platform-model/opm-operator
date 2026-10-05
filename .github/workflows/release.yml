@@ -15,9 +15,8 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  pull-requests: write
+# Every job declares its own grant (workflow-hardening spec).
+permissions: {}
 
 # One release run at a time. Draft releases defeat release-please's duplicate
 # guard (GitHub accepts several drafts for one tag), and two image jobs could
@@ -43,6 +42,10 @@ env:
   CUE_VERSION: 'v0.17.1'
 
 jobs:
+  # Reads the release App key, so it runs in the main-only Environment
+  # release (as do module-identity-advance here and the publish jobs of
+  # module-image.yml and module-deps.yml). Both steps act as the App, so the
+  # job token gets no grant.
   release-please:
     name: Release Please
     # Never on the recovery dispatch: every operator job needs this one, so
@@ -54,6 +57,8 @@ jobs:
     # action's root outputs are the operator's; its any-package output would also be
     # true for a module-only release, so no job reads it. The module's outputs
     # are prefixed with its path and re-exported here under plain names.
+    environment: release
+    permissions: {}
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -97,6 +102,8 @@ jobs:
     name: Advance the operator module's identity version
     needs: release-please
     runs-on: ubuntu-latest
+    # It reads the release App key.
+    environment: release
     permissions:
       contents: read
     env:
@@ -127,6 +134,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # This job later holds the release App key: never restore the
+          # Actions cache, which a main-ref run of untrusted code could write.
+          cache: false
 
       - name: Install opm
         if: steps.module-branch.outputs.exists == 'true'
@@ -193,7 +203,7 @@ jobs:
       - name: Install Task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          version: 3.x
+          version: 3.54.0 # exact, never a floating 3.x
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -240,6 +250,8 @@ jobs:
             type=raw,value=${{ needs.release-please.outputs.tag_name }}
             type=raw,value=latest
 
+      # No Actions cache: a main-ref run of untrusted code could have written
+      # it, and this image is signed and attested.
       - name: Build and push image
         id: build
         if: steps.probe.outputs.state == 'absent'
@@ -250,8 +262,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Resolve the release image digest
         id: digest
@@ -379,7 +389,7 @@ jobs:
       - name: Install Task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          version: 3.x
+          version: 3.54.0 # exact, never a floating 3.x
 
       - name: Log in to GHCR
         # cue mod publish authenticates to ghcr via the docker config credentials.
@@ -389,6 +399,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A publishing job never restores the Actions cache, which a
+          # main-ref run of untrusted code could have written.
+          cache: false
 
       - name: Install opm
         # Fixtures publish through the cli's gated pipeline, so a fixture that
@@ -659,11 +672,13 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A publishing job never restores the Actions cache.
+          cache: false
 
       - name: Install Task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          version: 3.x
+          version: 3.54.0 # exact, never a floating 3.x
 
       - name: Install opm and crane
         run: |
@@ -737,6 +752,8 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A publishing job never restores the Actions cache.
+          cache: false
 
       - name: Install opm
         run: |
@@ -814,5 +831,5 @@ jobs:
     uses: ./.github/workflows/module-image.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
-    secrets:
-      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    # No secrets: module-image.yml's publish job declares environment:
+    # release and reads the release App key from that Environment itself.

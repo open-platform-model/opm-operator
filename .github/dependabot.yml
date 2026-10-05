@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Wait a week before proposing a new action release, so a compromised
+    # upstream release is usually caught and pulled before it reaches a PR.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "ci"
     ignore:

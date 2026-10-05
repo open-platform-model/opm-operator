@@ -12,7 +12,8 @@ name: Operator module image PR
 # hack/operator-module/image.sh with no App token and hands the changed module
 # file on as an artifact; publish mints the release App token and only runs
 # hack/operator-module/bot-pr.sh, which pushes the branch and opens the PR. A
-# PR opened with the App's token runs its CI on its own.
+# PR opened with the App's token runs its CI on its own. publish runs in the
+# main-only Environment release, the only place the key lives.
 
 on:
   workflow_dispatch:
@@ -26,9 +27,8 @@ on:
       tag:
         required: true
         type: string
-    secrets:
-      RELEASE_APP_PRIVATE_KEY:
-        required: true
+    # No secrets: the publish job reads the release App key from the
+    # main-only Environment release, which a caller cannot pass.
 
 permissions: {}
 
@@ -113,6 +113,8 @@ jobs:
     if: needs.compute.outputs.changed == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # It reads the release App key.
+    environment: release
     permissions:
       contents: read
     concurrency:
@@ -151,6 +153,10 @@ jobs:
           bad=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -vE '^modules/opm_operator/' | head -n5 || true)
           bad+=$(tar -tf "${RUNNER_TEMP}/change/module.tar" | grep -E '(^|/)\.\.(/|$)' | head -n5 || true)
           [ -z "${bad}" ] || { echo "::error::the handed-over change holds paths outside modules/opm_operator/: ${bad}"; exit 1; }
+          # Plain files and directories only: a symlink or hard link member
+          # would point the commit at another file, such as .git/config.
+          bad=$(tar -tvf "${RUNNER_TEMP}/change/module.tar" | grep -v '^[-d]' | head -n5 || true)
+          [ -z "${bad}" ] || { echo "::error::the handed-over change holds a link or special file: ${bad}"; exit 1; }
           tar -xf "${RUNNER_TEMP}/change/module.tar" --no-same-owner
           id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
           BOT_NAME="${APP_SLUG}[bot]" BOT_EMAIL="${id}+${APP_SLUG}[bot]@users.noreply.github.com" \

@@ -3,7 +3,8 @@
 # scratch bare origin and a stub gh. Cases: create the branch and the PR; a
 # second run with the same change pushes nothing; a bot-only branch is rebuilt
 # from main with a lease; a branch with a human commit is extended, never
-# rewritten; a change outside modules/opm_operator/ is refused. Needs git; no
+# rewritten; a change outside modules/opm_operator/ is refused; a symlink, a
+# hard link and a mode change under the module are refused. Needs git; no
 # network. Prints PASS/FAIL per case, exits 1 on any FAIL.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -110,5 +111,33 @@ elif ! grep -qF "refusing a change outside modules/opm_operator/: README.md" "$T
 else
   pass outside
 fi
+
+# refused NAME MESSAGE: bot-pr fails in clone NAME, names MESSAGE, and pushes nothing.
+refused() {
+  local before
+  before=$(tip)
+  if botpr "$1" "fix(deps): x"; then
+    fail "$1" "exit 0" "$1"
+  elif ! grep -qF "$2" "$TMP/$1.log" || [ "$(tip)" != "$before" ]; then
+    fail "$1" "not refused with '$2', or the branch moved" "$1"
+  else
+    pass "$1"
+  fi
+}
+
+# a symlink under the module would commit another file's content
+work symlink 1.0.0-beta.5
+ln -s ../../.git/config "$TMP/symlink/modules/opm_operator/leak"
+refused symlink "refusing a symlink: modules/opm_operator/leak"
+
+# so would a hard link
+work hardlink 1.0.0-beta.5
+ln "$TMP/hardlink/README.md" "$TMP/hardlink/modules/opm_operator/leak"
+refused hardlink "refusing a hard link: modules/opm_operator/leak"
+
+# a mode change is refused
+work mode 1.0.0-beta.5
+chmod +x "$TMP/mode/$F"
+refused mode "refusing a mode change 100644 -> 100755"
 
 exit "$FAILED"

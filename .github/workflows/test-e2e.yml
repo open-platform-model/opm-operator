@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   # opmodel.dev resolves to ghcr.io/open-platform-model, matching how
@@ -13,17 +16,42 @@ env:
   OPM_REGISTRY: 'testing.opmodel.dev=ghcr.io/open-platform-model,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
   # CUE CLI used to publish the example modules. Matches release.yml.
   CUE_VERSION: 'v0.17.1'
+  # Heads without a pre-release publish (a fork, or a cascade, release or
+  # Dependabot head) resolve the fixtures from a job-local registry seeded
+  # from this tree, and everything else from GHCR, the same split test.yml
+  # uses. The host seeds through localhost:5000; the controller in kind
+  # reaches the same registry as opm-registry:5000 (task registry:connect).
+  SEED_CUE_REGISTRY: 'testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
+  KIND_LOCAL_REGISTRY: 'testing.opmodel.dev=opm-registry:5000+insecure,opmodel.dev=ghcr.io/open-platform-model,registry.cue.works'
   # Hard-fail gating for the live-Flux e2e specs: with this marker set, a
   # missing flux CLI / source-controller fails the suite instead of skipping.
   OPM_E2E_FLUX: '1'
 
 jobs:
-  test-e2e:
-    name: Run on Ubuntu
+  # The only job here that holds packages: write. It publishes the fixtures
+  # under a per-commit pre-release tag and runs nothing else, and it runs only
+  # on a push to main or a same-repo PR whose head is not deps/cascade,
+  # release-please--*, module/* (the operator module's bot heads) or
+  # dependabot/*: code on those heads has had no human
+  # review yet (a Dependabot head can carry a new upstream action release), and
+  # fork PRs get a read-only token. The test job below never holds a write
+  # grant, so the kind suite, the go mod tidy and the cluster it starts never
+  # see one.
+  publish-fixtures:
+    name: Publish e2e fixtures
+    if: >-
+      github.event_name == 'push'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && github.head_ref != 'deps/cascade'
+          && !startsWith(github.head_ref, 'release-please--')
+          && !startsWith(github.head_ref, 'module/')
+          && !startsWith(github.head_ref, 'dependabot/'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # cue mod publish of pre-release example modules to GHCR
+      packages: write # opm module publish of the pre-release fixtures to GHCR
+    outputs:
+      prerelease: ${{ steps.publish.outputs.prerelease }}
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,6 +60,8 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # A publishing job never restores the Actions cache.
+          cache: false
 
       - name: Setup CUE
         uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0
@@ -41,11 +71,79 @@ jobs:
       - name: Install Task
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
-          version: 3.x
+          version: 3.54.0 # exact, never a floating 3.x
 
-      - name: Install the latest version of kind
+      - name: Install opm
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          v=$(tr -d '[:space:]' < .opm-cli-version)
+          [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
+          go install "github.com/open-platform-model/cli/cmd/opm@${v}"
+
+      - name: Prepare GHCR credentials
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          # An explicit docker config.json (inline auth, no cred helper), read by
+          # opm module publish.
+          mkdir -p "$RUNNER_TEMP/ghcr"
+          auth=$(printf '%s' "${ACTOR}:${TOKEN}" | base64 -w0)
+          printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$auth" > "$RUNNER_TEMP/ghcr/config.json"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/ghcr" >> "$GITHUB_ENV"
+
+      - name: Publish example modules to GHCR (pre-release tags)
+        id: publish
+        run: |
+          # Per-commit SemVer pre-release segment: e2e.g<short-sha>. The leading
+          # `g` keeps the identifier alphanumeric so an all-digit short SHA can
+          # never form an invalid (leading-zero) numeric pre-release identifier.
+          # The tag (e.g. v0.1.0-e2e.gabc1234) sorts below the real v0.1.0 cut
+          # on release and never collides with it. Publishing is idempotent.
+          PRERELEASE="e2e.g${GITHUB_SHA::7}"
+          task examples:publish PRERELEASE="$PRERELEASE"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+  test-e2e:
+    name: Run on Ubuntu
+    needs: publish-fixtures
+    # Runs when publish-fixtures succeeded or was skipped (a fork, or a
+    # cascade, release or Dependabot head); a failed publish fails the run there.
+    if: ${{ !cancelled() && needs.publish-fixtures.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # the read-only GHCR credential the controller mounts
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # No Actions cache anywhere in this workflow, so the wiring check's
+          # per-workflow no-cache rule can list it with its publish job.
+          cache: false
+
+      - name: Setup CUE
+        uses: cue-lang/setup-cue@b0e30e540a2dae47304ebf16586a5b2db023b61c # v2.0.0
+        with:
+          version: ${{ env.CUE_VERSION }}
+
+      - name: Install Task
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.54.0 # exact, never a floating 3.x
+
+      - name: Install kind (pinned)
+        env:
+          # Bump both together; the digest is the release's kind-linux-amd64.sha256sum.
+          KIND_VERSION: v0.33.0
+          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+        run: |
+          curl -fsSLo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  ./kind" | sha256sum -c -
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -55,41 +153,35 @@ jobs:
       - name: Install Flux CLI (pinned)
         run: |
           # Same pin as the e2e source-controller install (.tasks/flux.yaml,
-          # single FLUX_VERSION variable); the flux CLI refuses to install a
-          # toolkit distribution newer than itself, so CLI and distribution
-          # must move together. The suite installs source-controller itself
-          # (task flux:install) once the kind cluster exists.
-          FLUX_VERSION=$(grep -oP 'FLUX_VERSION:\s*v\K[0-9.]+' .tasks/flux.yaml)
+          # FLUX_VERSION, with the CLI tarball digest beside it); the flux CLI
+          # refuses to install a toolkit distribution newer than itself, so CLI
+          # and distribution must move together. The suite installs
+          # source-controller itself (task flux:install) once the kind cluster
+          # exists. The release tarball is checked against the in-tree digest
+          # before anything from it runs.
+          FLUX_VERSION=$(grep -oP '^\s*FLUX_VERSION:\s*v\K[0-9.]+' .tasks/flux.yaml)
+          FLUX_SHA256=$(grep -oP '^\s*FLUX_CLI_SHA256_LINUX_AMD64:\s*\K[0-9a-f]{64}' .tasks/flux.yaml)
           [ -n "$FLUX_VERSION" ] || { echo "FLUX_VERSION pin not found in .tasks/flux.yaml" >&2; exit 1; }
-          # install.sh reads the version from the FLUX_VERSION env var; its
-          # positional argument is the install DIRECTORY, not the version.
-          curl -s https://fluxcd.io/install.sh | sudo FLUX_VERSION="$FLUX_VERSION" bash
+          [ -n "$FLUX_SHA256" ] || { echo "FLUX_CLI_SHA256_LINUX_AMD64 not found in .tasks/flux.yaml" >&2; exit 1; }
+          tgz="flux_${FLUX_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$tgz" "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/${tgz}"
+          echo "${FLUX_SHA256}  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP" flux
+          sudo install -m 0755 "$RUNNER_TEMP/flux" /usr/local/bin/flux
           echo "flux2 distribution pin: v$FLUX_VERSION"
           echo "flux CLI: $(flux version --client)"
 
-      # Same-repo PRs (and pushes) can write packages with GITHUB_TOKEN; fork PRs
-      # get a read-only token and cannot publish. Gate the publish/credential
-      # steps accordingly — when skipped, the podinfo example spec self-skips
-      # (no resolvable module), keeping fork CI green.
-      - name: Determine publish capability
-        id: cap
+      - name: Prepare read-only GHCR credentials
+        if: needs.publish-fixtures.result == 'success'
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || \
-             [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            echo "can_publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "can_publish=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Fork PR: skipping GHCR module publish; the podinfo example e2e spec will be skipped."
-          fi
-
-      - name: Prepare GHCR credentials
-        if: steps.cap.outputs.can_publish == 'true'
-        run: |
-          # Write an explicit docker config.json (inline auth, no cred helper) so
-          # both `cue mod publish` and the in-cluster controller authenticate to
-          # ghcr.io. The controller mounts this exact file (OPERATOR_DOCKER_CONFIG).
+          # An explicit docker config.json (inline auth, no cred helper) holding
+          # this job's packages: read token. The controller mounts this exact
+          # file (OPERATOR_DOCKER_CONFIG).
           mkdir -p "$RUNNER_TEMP/ghcr"
-          auth=$(printf '%s' "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" | base64 -w0)
+          auth=$(printf '%s' "${ACTOR}:${TOKEN}" | base64 -w0)
           printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$auth" > "$RUNNER_TEMP/ghcr/config.json"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/ghcr" >> "$GITHUB_ENV"
           echo "OPERATOR_DOCKER_CONFIG=$RUNNER_TEMP/ghcr/config.json" >> "$GITHUB_ENV"
@@ -101,20 +193,24 @@ jobs:
             || { echo "::error file=.opm-cli-version::not a cli tag: '$v'"; exit 1; }
           go install "github.com/open-platform-model/cli/cmd/opm@${v}"
 
-      - name: Publish example modules to GHCR (pre-release tags)
-        if: steps.cap.outputs.can_publish == 'true'
+      # Without the published pre-release (a fork, deps/cascade,
+      # release-please--* or dependabot/*), seed a job-local registry from
+      # this tree and point the controller at it (LOCAL_REGISTRY), as
+      # `task dev:e2e:local` does. The podinfo and redis specs then run in
+      # full on every head, and no GHCR credential reaches this job's cluster.
+      - name: Seed a job-local fixture registry
+        if: needs.publish-fixtures.result != 'success'
         run: |
-          # Per-commit SemVer pre-release segment: e2e.g<short-sha>. The leading
-          # `g` keeps the identifier alphanumeric so an all-digit short SHA can
-          # never form an invalid (leading-zero) numeric pre-release identifier.
-          # The tag (e.g. v0.1.0-e2e.gabc1234) sorts below the real v0.1.0 cut
-          # on release and never collides with it. Publishing is idempotent.
-          PRERELEASE="e2e.g${GITHUB_SHA::7}"
-          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_ENV"
-          task examples:publish PRERELEASE="$PRERELEASE"
+          task registry:start
+          task examples:seed CUE_REGISTRY="$SEED_CUE_REGISTRY"
+          task kind:setup
+          task registry:connect
+          echo "LOCAL_REGISTRY=$KIND_LOCAL_REGISTRY" >> "$GITHUB_ENV"
 
       - name: Pin example fixtures to the published pre-release
-        if: steps.cap.outputs.can_publish == 'true'
+        if: needs.publish-fixtures.result == 'success'
+        env:
+          PRERELEASE: ${{ needs.publish-fixtures.outputs.prerelease }}
         run: task examples:pin PRERELEASE="$PRERELEASE"
 
       - name: Running Test e2e

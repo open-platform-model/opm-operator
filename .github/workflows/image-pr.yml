@@ -14,6 +14,15 @@ env:
 jobs:
   image-pr:
     name: Build and push PR image
+    # Code on the cascade, release-please, operator module bot (module/deps,
+    # module/operator-image) and Dependabot heads has had no human review yet
+    # (a Dependabot head can carry a new upstream action release), so it never
+    # builds under packages: write and id-token: write.
+    if: >-
+      github.head_ref != 'deps/cascade'
+      && !startsWith(github.head_ref, 'release-please--')
+      && !startsWith(github.head_ref, 'module/')
+      && !startsWith(github.head_ref, 'dependabot/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,8 +64,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
           sbom: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2

@@ -36,6 +36,8 @@ Reconcile phase impact: Render only. Source, Apply, Prune and Inventory are unto
 **Decision**: `resultFromRender(out, identity)` reads `out.Diagnostics.RequiredContracts` itself; the `contracts` parameter goes. It MUST normalise a nil slice to an empty, non-nil one, so a status write never alternates between absent and empty even if the library's own normalisation changed. The doc comment on `RenderResult.RequiredContracts` (`internal/render/module.go:44-53`) says the list is the kernel's, computed in the render build from the instance alone and not narrowed by the platform.
 **Rationale**: Both renderers already go through `resultFromRender`; reading the field there is the single place, and it makes "both renderers fill it the same way" true by construction.
 
+The API doc of `ModuleInstanceStatus.RequiredContracts` (`api/v1alpha1/moduleinstance_types.go`, "read off the synthesized instance's components") stays unchanged on purpose. It is still true of the kernel's list, which is read off the same components inside the render build, and any edit there regenerates the CRD and the operator module's `zz_generated_crds.cue`, which cuts a module release from a refactor.
+
 ```go
 return &RenderResult{
 	// ...
@@ -60,8 +62,10 @@ return &RenderResult{
 | --- | --- | --- |
 | `{"message": 42}` | `validating values against the module's #config: #config.message: 2 errors in empty disjunction:; #config.message: conflicting values 42 and "hello from opm" (module.cue:30:21, spec.values:1:1, spec.values:1:13); #config.message: conflicting values 42 and string (module.cue:30:11, spec.values:1:1, spec.values:1:13)` | `synthesizing release: Kernel.SynthesizeInstance: instance "<name>": ` + the same findings with `#module.#config.message` and the same positions |
 | `{"bogus": 1}` | `validating values against the module's #config: field not allowed (spec.values:1:2)` | `synthesizing release: Kernel.SynthesizeInstance: instance "<name>": field not allowed (spec.values:1:2)` |
-| `{}`, `message: string` required and read by a component | `... #config.message: incomplete value string (module.cue:30:11)` | `synthesizing release: Kernel.SynthesizeInstance: instance "<name>": not fully concrete: components.hello.spec.configMaps.hello.data.message: incomplete value string (configmap.cue:71:18, module_instance.cue:103:12)` |
-| `{"message": "x"}`, `count: int` required, read by nothing | `... #config.count: incomplete value int (module.cue:31:9)` | synthesis succeeds |
+| `{"count": 1}`, `message: string` required and read by a component | `... #config.message: incomplete value string (module.cue:NN:NN)` | `synthesizing release: Kernel.SynthesizeInstance: instance "<name>": not fully concrete: components.<component>.spec.configMaps.<name>.data.message: incomplete value string (configmap.cue:71:18, module_instance.cue:103:12)` |
+| `{"message": "x"}`, `count: int` required, read by nothing | `... #config.count: incomplete value int (module.cue:NN:NN)` | synthesis succeeds |
+
+Rows 3 and 4 were measured on a scratch copy of `hello`. The change pins them through the operator on a published fixture, `required_values` (`testing.opmodel.dev/modules/operator/required_values@v0`), whose `#config` has `message: string` (read by its one component) and `count: int` (read by nothing), neither with a default. It is a CUE module root of its own, as synthesis requires for an acquired module, sits on the testing domain like every fixture (never `opmodel.dev/*`), carries an `identity/` package, and its core and catalog pins move with `task deps:cascade` like the other fixtures. The tests drive it through `KernelModuleRenderer.RenderModule`, so they pin what the operator reports, not only what the library does.
 
 Every refused row reports `RenderFailed` and `Stalled=True` before and after: neither error carries a typed resolution cause or `render.ErrAcquire`, so `renderFailureReason` (`internal/reconcile/resolution.go:120`) returns `RenderFailed`.
 **Decision**: Delete the `ValidateConfigDetailed` call and its wrapper. Wrap a `SynthesizeInstance` failure in an error type whose `Error()` is `synthesizing release: ` + the library frame + `cueFindings` of the CUE error in the chain, and whose `Unwrap` returns the library error, so `IsTransientFailure` and every `errors.Is`/`AsType` still reach the typed cause:
@@ -74,9 +78,13 @@ func (e *synthesisError) Unwrap() error { return e.err }
 
 // describe keeps the library's frame (the text before the first CUE error in
 // the chain) and replaces the CUE error's one-line summary with every finding
-// and its positions. An error with no CUE error in its chain, or whose message
-// does not end with the CUE error's own, reads as err.Error().
+// and its positions. A registry fetch failure, an error with no CUE error in
+// its chain, or one whose message does not end with the CUE error's own,
+// reads as err.Error().
 func describe(err error) string {
+	if _, ok := errors.AsType[*oerrors.FetchError](err); ok {
+		return err.Error()
+	}
 	ce, ok := errors.AsType[cueerrors.Error](err)
 	if !ok {
 		return err.Error()
@@ -90,7 +98,9 @@ func describe(err error) string {
 }
 ```
 
-A failure with no CUE error in its chain (a missing-input sentinel, a registry fetch failure) reads exactly as today. The section that lands this pins the measured rows first against the current code and then against the new code.
+A registry fetch failure reads exactly as today. Its chain does hold a CUE error: synthesis loads through the library's loader, which wraps `oerrors.Classify(instances[0].Err)`, a `cue/load` error list, in a `*oerrors.FetchError` whose message is that list's own, so without the explicit check `describe` would rewrite a transient fetch failure into the findings form. A failure with no CUE error in its chain (a missing-input sentinel, a context deadline) also reads unchanged.
+
+`cueFindings` lists at most ten findings and then `; and N more`. The pre-validate's findings were bounded by the size of `spec.values`; a synthesis failure is not. The whole-instance concreteness check can list one finding for every incomplete field of every component, and neither the condition message (CRD `maxLength` 32768) nor the history entry is truncated, so an unbounded list could get the status patch itself rejected. Ten findings with their positions keep the message to a few kilobytes, as CUE's own one-line `(and N more errors)` summary kept it bounded before. The section that lands this pins the measured rows first against the current code and then against the new code.
 **Rationale**: The owner decision is that the operator deletes its pre-validate once the library attributes values errors itself. The positions are the part of the old message a user acts on, and keeping them costs one helper the renderer already has. The frame changes because the error now comes from a different call; the alternative of keeping the old frame would need the operator to recognise a values error by content, which the library does not type.
 
 ### D4. Release notes 2 and 3 are accepted, not worked around
@@ -102,7 +112,7 @@ A failure with no CUE error in its chain (a missing-input sentinel, a registry f
 ## Sections
 
 1. Demand from the kernel (D1, D2): delete the walk; the demand pins pass unchanged.
-2. Values check is synthesis's (D3, D4): pin the current wording and reason, delete the pre-validate, move the pins to the new wording, docs.
+2. Values check is synthesis's (D3, D4): add the `required_values` fixture, pin the current wording, reasons and outcomes, delete the pre-validate, move the pins to the new outcome, docs.
 
 Each section ends green and leaves `main` releasable on its own; either can merge without the other.
 
@@ -111,7 +121,8 @@ Each section ends green and leaves `main` releasable on its own; either can merg
 - [The kernel's list differs from the walk on a fixture] → The integration table in `test/integration/reconcile/kernel_module_renderer_test.go` pins the exact FQN sets the walk produced for `hello`, `hello_web` and the other fixtures, and `backup_fixture_test.go:144` pins a trait demand; section 1 runs them with the registry forced (`OPM_TEST_REGISTRY_FORCE=1`) so a skip cannot pass for green. The library's own parity test compares its list with this walk.
 - [A component without `#resources` now fails the render] → Already live: library `v1.0.0-beta.6`'s build fails closed before the operator's walk could run. Nothing in this change alters it.
 - [The `describe` frame recovery depends on the library framing its error with `%w` prefixes] → It falls back to the full library message when the suffix does not match, so the worst case is the old one-line summary, never a lost error. A unit test pins both branches.
-- [Merge conflict with the render-timeout change] → Same file, different functions; whichever merges second merges `main`.
+- [Merge conflict with the render-timeout change] → The shared file is `docs/site/diagnostics/operator-conditions.md`, where it adds a `RenderTimedOut` row beside the rows this change edits; whichever merges second merges `main`. A timeout during synthesis reads `synthesizing release: context deadline exceeded`, and `synthesisError.Unwrap` keeps `errors.Is(err, context.DeadlineExceeded)` true, so its classification is unaffected.
+- [A new fixture to keep current] → `required_values` follows the fixture rules (identity package, testing domain, `task deps:cascade` moves its pins); `.tasks/cascade/test.sh`'s S2 golden list names its identity file.
 
 ## Migration Plan
 

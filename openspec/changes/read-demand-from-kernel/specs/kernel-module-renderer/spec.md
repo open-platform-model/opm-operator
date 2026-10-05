@@ -6,7 +6,7 @@
 
 Values SHALL reach synthesis as a stack of values sources, each carrying an origin that identifies where the operator read it from, so a values error names that origin rather than an anonymous filename. No acquisition or synthesis call SHALL pass a per-call registry or load-options argument: the registry mapping is the one the shared Kernel was constructed with.
 
-The renderer SHALL NOT check the values against the module's `#config` itself: the kernel's instance synthesis is the one check. A synthesis failure SHALL be reported with every CUE finding it carries, each followed by its source positions, under the frame `synthesizing release: `, and SHALL keep the library's error in its chain so a typed cause (a registry fetch failure among them) is still found by type.
+The renderer SHALL NOT check the values against the module's `#config` itself: the kernel's instance synthesis is the one check. A synthesis failure SHALL be reported under the frame `synthesizing release: ` with the CUE findings it carries, each followed by its source positions, at most ten of them followed by `; and N more` when there are more. A synthesis failure whose chain holds the library's typed registry fetch failure SHALL read `synthesizing release: ` followed by the library's message unchanged. Either way the library's error SHALL stay in the chain, so a typed cause is still found by type.
 
 #### Scenario: Renders resources from a generated platform
 
@@ -36,10 +36,31 @@ The renderer SHALL NOT check the values against the module's `#config` itself: t
 - **WHEN** a ModuleInstance's `spec.values` violate the module's `#config`
 - **THEN** `status.conditions` reports `Ready=False` with reason `RenderFailed` and `Stalled=True`, and the condition message is the renderer's error unchanged
 
+#### Scenario: A registry fetch failure during synthesis reads unchanged
+
+- **WHEN** synthesis fails with the library's typed registry fetch failure, even one whose cause is a CUE error list
+- **THEN** the error reads `synthesizing release: ` followed by the library's message unchanged, and the typed fetch failure is still found by type
+
 #### Scenario: A synthesis failure without CUE findings reads unchanged
 
-- **WHEN** synthesis fails with an error whose chain holds no CUE error, such as a registry fetch failure
-- **THEN** the error reads `synthesizing release: ` followed by the library's message unchanged, and its typed cause is still found by type
+- **WHEN** synthesis fails with an error whose chain holds no CUE error, such as a context deadline
+- **THEN** the error reads `synthesizing release: ` followed by the library's message unchanged, and `errors.Is` still finds the cause
+
+#### Scenario: A long list of findings is capped
+
+- **WHEN** synthesis fails with more than ten CUE findings
+- **THEN** the error lists the first ten with their positions followed by `; and N more`, where N is the number left out
+
+#### Scenario: A required value left unset is reported where a component reads it
+
+- **WHEN** a module's `#config` declares a required field with no default that a component reads, and the supplied values leave it unset
+- **THEN** the render fails from synthesis with a `not fully concrete` error naming the component path that reads the value
+- **AND** the ModuleInstance reports `Ready=False` with reason `RenderFailed` and `Stalled=True`
+
+#### Scenario: A required value that nothing reads does not refuse the render
+
+- **WHEN** a module's `#config` declares a required field with no default that no component reads, and the supplied values leave it unset
+- **THEN** the render succeeds
 
 ## ADDED Requirements
 

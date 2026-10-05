@@ -20,8 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"sort"
 	"time"
@@ -64,11 +62,12 @@ const platformSingletonName = platformstore.SingletonName
 // including the core pin (its verified release, schema.DefaultSchemaVersion).
 const PlatformModulePath = "opmodel.dev/platforms/cluster@v0"
 
-// transientRecheckInterval is the fast retry cadence for clearly-transient
-// build failures (network/timeout). Kept conservative (a minute, not
-// seconds) so a transient registry blip self-heals quickly without hammering
-// the singleton's registry; non-transient and unclassifiable failures fall
-// back to the long reconcile.StalledRecheckInterval.
+// transientRecheckInterval is the fast retry cadence for a transient build
+// failure: a registry fetch failure the library typed, or an expired
+// deadline (isTransientFailure). Kept conservative (a minute, not seconds)
+// so a registry blip self-heals quickly without hammering the singleton's
+// registry; every other failure falls back to the long
+// reconcile.StalledRecheckInterval.
 const transientRecheckInterval = time.Minute
 
 // PlatformReconciler reconciles the singleton Platform CR into a platform CUE
@@ -432,8 +431,8 @@ func (r *PlatformReconciler) modFiles() (platformmodule.ModFileSource, error) {
 // a volume), so no failure is terminal: it sets Ready=False with reason and
 // msg, records observedGeneration (so a stalled Platform reflects the
 // generation it observed rather than reading as un-reconciled), and requeues
-// on a bounded interval: short for clearly-transient causes (classified
-// best-effort from classifyErr), the long stalled recheck otherwise. The
+// on a bounded interval: short when classifyErr is transient by type
+// (isTransientFailure), the long stalled recheck otherwise. The
 // warning event is emitted only when the failure is newly entered or its
 // reason or message changes, so periodic rechecks of an unchanged failure do
 // not spam events. The store is left untouched, preserving any last-good
@@ -468,22 +467,17 @@ func (r *PlatformReconciler) failReconcile(
 	return ctrl.Result{RequeueAfter: interval}, r.patchStatus(ctx, patcher, plat)
 }
 
-// isTransientFailure reports whether err (or any error it wraps) is a
-// clearly-transient network/timeout failure worth a fast retry. It is
-// best-effort: unrecognized causes return false so the caller falls back to the
-// long recheck interval, making a misclassification never worse than a slow
-// recheck.
+// isTransientFailure reports whether a Platform build failure is worth the
+// short recheck: the classification the ModuleInstance and ModulePackage
+// reconcilers use (opmreconcile.IsTransientFailure, the library's typed
+// registry fetch failure of any kind), plus an expired deadline, because
+// platformmodule.Closure returns ctx.Err() raw. Every registry path the
+// Platform reaches passes through the library's classification, so no
+// network-error probe is needed here. It reads types only: an unrecognized
+// cause returns false and falls back to the long recheck. It picks the
+// interval only; the condition is Stalled=True either way.
 func isTransientFailure(err error) bool {
-	if err == nil {
-		return false
-	}
-	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
-		return true
-	}
-	if _, ok := errors.AsType[*url.Error](err); ok {
-		return true
-	}
-	return errors.Is(err, context.DeadlineExceeded)
+	return opmreconcile.IsTransientFailure(err) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // patchStatus commits the Platform status via the serial patcher, declaring

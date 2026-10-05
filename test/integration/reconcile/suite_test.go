@@ -218,12 +218,18 @@ func identityMismatchRenderer() *stubRenderer {
 	}
 }
 
-// acquireFailureRenderer returns a stub whose error is an acquisition failure
-// with no typed terminal cause (a registry outage), which the reconcile loop
-// classifies as a transient ResolutionFailed on the bounded backoff.
+// acquireFailureRenderer returns a stub whose error is a registry outage at
+// module acquisition as the library returns it: the typed *oerrors.FetchError
+// (unreachable, 0021:D8:R12) under the acquisition mark. The reconcile loop
+// classifies it as a transient ResolutionFailed retried on the bounded
+// backoff.
 func acquireFailureRenderer() *stubRenderer {
 	return &stubRenderer{
-		err: acquireErr(errors.New("fetching opmodel.dev/test@v0.1.0: dial tcp registry.example:443: connection refused")),
+		err: acquireErr(&oerrors.FetchError{
+			Kind:       oerrors.FetchUnreachable,
+			Coordinate: "opmodel.dev/test@v0.1.0",
+			Err:        errors.New("fetching opmodel.dev/test@v0.1.0: dial tcp registry.example:443: connection refused"),
+		}),
 	}
 }
 

@@ -41,6 +41,14 @@ func (timeoutError) Temporary() bool { return true }
 
 var _ net.Error = timeoutError{}
 
+// registryRefused is the *url.Error an unreachable registry returns.
+func registryRefused() error {
+	return &url.Error{Op: "Get", URL: "https://registry.invalid/v2/", Err: errors.New("connection refused")}
+}
+
+// The Platform rechecks quickly for the library's typed registry fetch
+// failure (any kind) and an expired deadline, and slowly for everything
+// else, including a raw network error the library did not classify.
 func TestIsTransientFailure(t *testing.T) {
 	tests := []struct {
 		name string
@@ -53,13 +61,15 @@ func TestIsTransientFailure(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "net.Error with Timeout is transient",
-			err:  timeoutError{},
+			name: "typed fetch failure over a url.Error is transient",
+			err: fmt.Errorf("resolving dependency testing.opmodel.dev/catalogs/example@v0.1.0: %w",
+				&oerrors.FetchError{Kind: oerrors.FetchUnreachable, Err: registryRefused()}),
 			want: true,
 		},
 		{
-			name: "url.Error (registry unreachable) is transient",
-			err:  &url.Error{Op: "Get", URL: "https://registry.invalid/v2/", Err: errors.New("connection refused")},
+			name: "typed not-found fetch failure is transient",
+			err: fmt.Errorf("resolving dependency testing.opmodel.dev/catalogs/does-not-exist@v9.9.9: %w",
+				&oerrors.FetchError{Kind: oerrors.FetchNotFound, Err: errors.New("module not found")}),
 			want: true,
 		},
 		{
@@ -68,13 +78,17 @@ func TestIsTransientFailure(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "transient cause wrapped in a closure error is transient",
-			err: fmt.Errorf("resolving dependency testing.opmodel.dev/catalogs/example@v0.1.0: %w",
-				&url.Error{Op: "Get", URL: "https://registry.invalid/v2/", Err: errors.New("connection refused")}),
-			want: true,
+			name: "raw url.Error the library did not classify is not transient",
+			err:  registryRefused(),
+			want: false,
 		},
 		{
-			name: "semantic closure error (module not found) is not transient",
+			name: "raw timing-out net.Error is not transient",
+			err:  timeoutError{},
+			want: false,
+		},
+		{
+			name: "module not found as text is not transient",
 			err: fmt.Errorf("resolving dependency testing.opmodel.dev/catalogs/does-not-exist@v9.9.9: %w",
 				errors.New("module not found")),
 			want: false,
@@ -100,12 +114,12 @@ func TestIsTransientFailure(t *testing.T) {
 type urlErrorSource struct{}
 
 func (urlErrorSource) ModFile(context.Context, module.Version) (*modfile.File, error) {
-	return nil, &url.Error{Op: "Get", URL: "https://registry.invalid/v2/", Err: errors.New("connection refused")}
+	return nil, registryRefused()
 }
 
 // The Platform's closure walk classifies a registry failure itself
 // (0021:D8:R12): the error failReconcile receives holds a *FetchError, so the
-// Platform needs no network-error probe of its own.
+// Platform needs no network-error probe of its own and rechecks it quickly.
 func TestIsTransientFailure_ClosureClassifiesFetchFailure(t *testing.T) {
 	_, err := platformmodule.Closure(context.Background(), urlErrorSource{},
 		[]platformmodule.Dep{{Path: "testing.opmodel.dev/catalogs/example@v0", Version: "v0.1.0"}})
@@ -118,5 +132,8 @@ func TestIsTransientFailure_ClosureClassifiesFetchFailure(t *testing.T) {
 	}
 	if fe.Kind != oerrors.FetchUnreachable {
 		t.Errorf("kind = %s, want unreachable: %v", fe.Kind, err)
+	}
+	if !isTransientFailure(err) {
+		t.Errorf("isTransientFailure(%v) = false, want true", err)
 	}
 }

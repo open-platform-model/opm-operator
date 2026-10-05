@@ -459,8 +459,11 @@ var _ = Describe("ModulePackage Controller", func() {
 
 		It("retries a package load failure on the backoff instead of stalling", func() {
 			ctx := context.Background()
+			// The library's typed registry fetch failure (0021:D8:R12) under
+			// the package load mark: a CUE dependency the registry did not serve.
 			renderer := &stubPackageRenderer{err: fmt.Errorf("loading package: %w: %w",
-				errors.New("cannot find module providing package opmodel.dev/test/module: registry unavailable"),
+				&oerrors.FetchError{Kind: oerrors.FetchUnreachable,
+					Err: errors.New("cannot find module providing package opmodel.dev/test/module: registry unavailable")},
 				render.ErrAcquire)}
 
 			result, got, src := reconcileFailing(ctx, "acquire-transient-pkg", renderer)

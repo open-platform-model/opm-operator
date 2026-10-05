@@ -18,7 +18,7 @@ import (
 // causes of the kernel's fail-closed render gate, carried on
 // *kernel.RenderError and joined together when both apply; errors.AsType
 // traverses the join. Both render-error classifiers consult it through
-// renderFailureReason, and isTerminalAcquireCause treats it as terminal.
+// renderFailureReason, and isTerminalCause treats it as terminal.
 //
 // IdentityError cannot occur on the ModulePackage path — packages load from
 // a Flux artifact and never acquire from the registry — but the helper is
@@ -34,14 +34,13 @@ func isTypedResolutionError(err error) bool {
 	return ok
 }
 
-// isTerminalAcquireCause reports whether err carries a typed cause that
-// retrying cannot fix: a wrong artifact kind, a structurally invalid package
-// or a missing required field (the loader's shape gate), or a typed
-// resolution failure (an identity mismatch, unresolved platform demands,
-// unmatched components). Unresolved demands cannot sit under an acquisition
-// failure today, but keeping them here means a later wrap cannot make them
-// retry.
-func isTerminalAcquireCause(err error) bool {
+// isTerminalCause reports whether err carries a typed cause that retrying
+// cannot fix, in any phase of the render: a wrong artifact kind, a
+// structurally invalid package or a missing required field (the loader's
+// shape gate), or a typed resolution failure (an identity mismatch,
+// unresolved platform demands, unmatched components). A registry fetch
+// failure joined to one of these does not make the failure retry.
+func isTerminalCause(err error) bool {
 	if errors.Is(err, oerrors.ErrWrongKind) ||
 		errors.Is(err, oerrors.ErrInvalidPackage) ||
 		errors.Is(err, oerrors.ErrMissingRequiredField) {
@@ -50,14 +49,30 @@ func isTerminalAcquireCause(err error) bool {
 	return isTypedResolutionError(err)
 }
 
-// isTransientAcquireFailure reports an acquisition failure (render.ErrAcquire)
-// with no typed terminal cause: a registry outage, a CUE dependency that would
-// not resolve, or, until the library types its fetch and load errors, a
-// not-found or a package that fails to load. Both reconcile loops retry it on
-// the bounded backoff as a non-stalled ResolutionFailed; it is classified by
-// type alone, never by message text.
-func isTransientAcquireFailure(err error) bool {
-	return errors.Is(err, render.ErrAcquire) && !isTerminalAcquireCause(err)
+// IsTransientFailure reports a failure a later attempt may get past with
+// nothing changed: a registry fetch or dependency resolution failure the
+// library typed (*oerrors.FetchError, any Kind: unreachable, not found,
+// unauthorized or other, 0021:D8:R12), with no typed terminal cause in the
+// chain. It holds in every phase of a render (module acquisition, values
+// compile, instance synthesis, the render build, the package load), because
+// the library classifies at each site where a registry interaction leaves
+// it. Every fetch failure retries, not only ErrTransient: owner decision a3
+// (2026-10-02/03 walkthrough) set that a fetch failure must not stall for 30
+// minutes. Anything the library left unclassified (a CUE syntax error, a
+// values conflict, an unparsable version) is an author defect and is not
+// transient. A raw context.DeadlineExceeded is not either: the reconcile
+// context carries no deadline, and the library already classifies a deadline
+// at a fetch site. It reads types only, never message text.
+//
+// Both reconcile loops retry a transient failure on the bounded backoff as a
+// non-stalled ResolutionFailed, and the Platform reconciler picks its short
+// recheck interval with it.
+func IsTransientFailure(err error) bool {
+	if err == nil || isTerminalCause(err) {
+		return false
+	}
+	_, ok := errors.AsType[*oerrors.FetchError](err)
+	return ok
 }
 
 // isSkewRefusal reports whether err is a render refused before evaluation by
@@ -87,16 +102,18 @@ func isDuplicateIdentities(err error) bool {
 //     platform problem.
 //  3. ResolutionFailed — unresolved demands, unmatched components, identity
 //     mismatches and every acquisition failure (render.ErrAcquire). The
-//     callers retry an acquisition failure without a typed terminal cause
-//     before reaching here (isTransientAcquireFailure), so under this reason
-//     it is the stalled case.
+//     callers route a transient failure (IsTransientFailure) before reaching
+//     here, so under this reason a stalled acquisition failure reads
+//     ResolutionFailed: a typed terminal cause, or a module acquisition or
+//     package load the library did not classify as a registry fetch.
 //  4. RenderFailed — a transform failure, an over-subscribed provider
 //     contract (*oerrors.TransformError,
 //     *oerrors.OverSubscribedContractsError) and every other refusal or
 //     evaluation error. The pre-evaluation refusals that indicate an operator
 //     defect (a missing Source, an uncovered OPM path) fall through to here
 //     with the kernel's message verbatim. A failed instance synthesis lands
-//     here too.
+//     here too, unless it is a registry fetch failure (transient, routed
+//     before here).
 //
 // There is no string fallback: a render error is classified by its type or
 // sentinel, never by its message text.

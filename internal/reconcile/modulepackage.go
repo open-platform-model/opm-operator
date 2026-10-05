@@ -515,6 +515,14 @@ func navigateModulePackagePath(
 	return "", &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}
 }
 
+// renderModulePackage renders the package at packageDir and classifies a
+// failure: PlatformNotReady is a non-stalled wait; a registry fetch failure
+// the library typed (IsTransientFailure), in the package load or the render
+// build, retries on the bounded backoff as a non-stalled ResolutionFailed;
+// every other failure stalls on StalledRecheckInterval with the reason of
+// renderErrorReason. An author defect in the package (a CUE syntax error,
+// values that conflict with #config, non-concrete values) stalls, because no
+// retry fixes it; a new artifact revision re-triggers the reconcile.
 func renderModulePackage(
 	ctx context.Context,
 	params *ModulePackageParams,
@@ -559,11 +567,13 @@ func renderModulePackage(
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.PlatformNotReadyReason, "Render", "%s", err)
 			return nil, &phaseFail{FailedTransient, err.Error(), interval}, nil
 		}
-		// A package load that failed without a typed terminal cause (a CUE
-		// dependency the registry did not serve) retries on the bounded
-		// backoff as a non-stalled ResolutionFailed, the same shared
-		// classification the ModuleInstance loop uses.
-		if isTransientAcquireFailure(err) {
+		// A registry fetch failure the library typed (a CUE dependency the
+		// registry did not serve), in the package load or the render build,
+		// retries on the bounded backoff as a non-stalled ResolutionFailed,
+		// the same shared classification the ModuleInstance loop uses. A
+		// package load failure the library did not classify is an author
+		// defect and stalls below.
+		if IsTransientFailure(err) {
 			status.MarkNotReady(pkg, status.ResolutionFailedReason, "%s", err)
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.ResolutionFailedReason, "Render", "%s", err)
 			return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}, nil

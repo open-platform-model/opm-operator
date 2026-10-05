@@ -19,6 +19,9 @@ package reconcile_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
+
+	"cuelang.org/go/mod/modfile"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,6 +31,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/pkg/core"
+	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
 
 // These tests exercise KernelPackageRenderer — the ModulePackage CR render path —
@@ -134,7 +138,27 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 				}
 
 				Expect(res.InventoryEntries).To(HaveLen(len(res.Resources)))
+
+				Expect(res.ModuleVersion).To(Equal(pinnedModuleVersion(fixtureDir, pkg)),
+					"the render reports the version of the module the package's instance imports")
 			})
 		}
 	})
 })
+
+// pinnedModuleVersion returns, as bare SemVer, the version of the module
+// fixture named pkg that the package at fixtureDir pins in its
+// cue.mod/module.cue. The package renders the pinned build, which need not be
+// the module fixture's current version, so the pin is read rather than the
+// module fixture's identity. Only the module path comes from test/fixtures.
+func pinnedModuleVersion(fixtureDir, pkg string) string {
+	GinkgoHelper()
+	modulePath := fixtures.Must(GinkgoT(), pkg).ModulePath
+	data, err := os.ReadFile(filepath.Join(fixtureDir, "cue.mod", "module.cue"))
+	Expect(err).NotTo(HaveOccurred())
+	mf, err := modfile.Parse(data, "module.cue")
+	Expect(err).NotTo(HaveOccurred())
+	dep, ok := mf.Deps[modulePath]
+	Expect(ok).To(BeTrue(), "the %s package must pin %s", pkg, modulePath)
+	return strings.TrimPrefix(dep.Version, "v")
+}

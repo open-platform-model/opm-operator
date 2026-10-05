@@ -96,6 +96,7 @@ func (r *KernelPackageRenderer) Render(
 	if err != nil {
 		return KindModuleInstance, nil, err
 	}
+	result.ModuleVersion = declaredModuleVersion(inst)
 	return KindModuleInstance, result, nil
 }
 

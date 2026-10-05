@@ -52,6 +52,13 @@ type RenderResult struct {
 	// property of the instance alone and does not move when the platform does.
 	RequiredContracts []string
 
+	// ModuleVersion is the version the rendered instance's source module
+	// declares in metadata.version, as the module spells it (bare SemVer),
+	// read off the instance the same way on both render paths. Empty when it
+	// cannot be read as a concrete string; that never fails the render. The
+	// reconciler records it on status.lastAppliedVersion.
+	ModuleVersion string
+
 	// PlatformIdentity is the identity of the generated platform package this
 	// render built against, in its string form (0015:D13, D17):
 	// the Platform CR generation plus a digest of the active claims' catalog

@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
@@ -39,6 +40,7 @@ import (
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
+	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
 // overlapProbe records how many renders, of either kind, are in flight at
@@ -147,6 +149,21 @@ type countingPackageRenderer struct {
 func (r *countingPackageRenderer) Render(ctx context.Context, dir string) (string, *render.RenderResult, error) {
 	r.calls.Add(1)
 	return r.inner.Render(ctx, dir)
+}
+
+// stuckModuleRenderer stands for a CUE stage that keeps running after its
+// render context is done: it blocks past the deadline until release is
+// closed.
+type stuckModuleRenderer struct {
+	release chan struct{}
+}
+
+func (r *stuckModuleRenderer) RenderModule(
+	ctx context.Context, _, _, _, _ string, _ *releasesv1alpha1.RawValues,
+) (*render.RenderResult, error) {
+	<-ctx.Done()
+	<-r.release
+	return nil, ctx.Err()
 }
 
 type panickingModuleRenderer struct{}
@@ -405,5 +422,69 @@ var _ = Describe("Render slots", func() {
 			_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 		}()
 		expectSlotFree(pool)
+	})
+
+	It("keeps a timed-out render's slot from the other kind until the render returns", func() {
+		ctx := context.Background()
+		miNS := newRenderTestNamespace(ctx, "slots-timeout-mi")
+		mpNS := newRenderTestNamespace(ctx, "slots-timeout-mp")
+		miNN := createRenderTestInstance(ctx, miNS, "slots-timeout-mi")
+		mpNN := createRenderTestPackage(ctx, mpNS, "slots-timeout-mp")
+
+		pool := render.NewSlots(1)
+		stuck := &stuckModuleRenderer{release: make(chan struct{})}
+		released := false
+		defer func() {
+			if !released {
+				close(stuck.release)
+			}
+		}()
+		mi := newMIReconciler(k8sClient, stuck, pool)
+		mi.RenderTimeout = 50 * time.Millisecond
+		pkgRenderer := &countingPackageRenderer{inner: &stubPackageRenderer{result: stubRenderResult(mpNS, nil)}}
+		mp := newMPReconciler(k8sClient, &stubFetcher{pathInArtifact: renderTestPath}, pkgRenderer, pool)
+		// A render that finishes within its timeout is unaffected by it.
+		mp.RenderTimeout = time.Minute
+		addFinalizer(ctx, mi, miNN)
+		addFinalizer(ctx, mp, mpNN)
+
+		result, err := mi.Reconcile(ctx, reconcile.Request{NamespacedName: miNN})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(5*time.Second), "a timeout retries on the bounded backoff")
+		var gotMI releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, miNN, &gotMI)).To(Succeed())
+		ready := apimeta.FindStatusCondition(gotMI.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(Equal(status.RenderTimedOutReason))
+		Expect(apimeta.FindStatusCondition(gotMI.Status.Conditions, status.StalledCondition)).To(BeNil())
+		Expect(pool.Held()).To(Equal(1), "the timed-out render keeps its slot")
+
+		mpErr := make(chan error, 1)
+		go func() {
+			defer GinkgoRecover()
+			_, err := mp.Reconcile(ctx, reconcile.Request{NamespacedName: mpNN})
+			mpErr <- err
+		}()
+		Consistently(func() int32 { return pkgRenderer.calls.Load() }, 300*time.Millisecond, 20*time.Millisecond).
+			Should(BeZero(), "the package does not render while the stuck render holds the only slot")
+
+		close(stuck.release)
+		released = true
+		Eventually(mpErr, 30*time.Second).Should(Receive(BeNil()))
+		Expect(pkgRenderer.calls.Load()).To(Equal(int32(1)))
+		var gotMP releasesv1alpha1.ModulePackage
+		Expect(k8sClient.Get(ctx, mpNN, &gotMP)).To(Succeed())
+		expectReady(mpNN, gotMP.Status.Conditions)
+		expectSlotFree(pool)
+
+		// Recovery: the next render of the instance finishes in time.
+		mi.Renderer = &stubRenderer{}
+		_, err = mi.Reconcile(ctx, reconcile.Request{NamespacedName: miNN})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, miNN, &gotMI)).To(Succeed())
+		expectReady(miNN, gotMI.Status.Conditions)
+		Expect(gotMI.Status.NextRetryAt).To(BeNil())
+		Expect(gotMI.Status.FailureCounters).NotTo(BeNil())
+		Expect(gotMI.Status.FailureCounters.Reconcile).To(BeZero(), "a success resets the reconcile counter")
 	})
 })

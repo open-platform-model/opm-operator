@@ -21,7 +21,7 @@ func TestSlots_BoundsHoldersUnderContention(t *testing.T) {
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Go(func() {
-			err := s.Run(context.Background(), func() {
+			err := s.Run(context.Background(), "", 0, func(context.Context) {
 				cur := inFlight.Add(1)
 				for {
 					prev := maxSeen.Load()
@@ -87,7 +87,7 @@ func TestSlots_AcquireOnFullPoolReturnsContextError(t *testing.T) {
 	}
 
 	ran := false
-	err = s.Run(ctx, func() { ran = true })
+	err = s.Run(ctx, "", 0, func(context.Context) { ran = true })
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.False(t, ran, "Run does not call fn when the wait is cut short")
 }
@@ -105,7 +105,7 @@ func TestSlots_NilNeverBlocks(t *testing.T) {
 		release()
 	}
 	ran := false
-	require.NoError(t, s.Run(context.Background(), func() { ran = true }))
+	require.NoError(t, s.Run(context.Background(), "", 0, func(context.Context) { ran = true }))
 	assert.True(t, ran)
 }
 
@@ -116,7 +116,7 @@ func TestSlots_PanicInRunFreesSlot(t *testing.T) {
 
 	func() {
 		defer func() { assert.NotNil(t, recover()) }()
-		_ = s.Run(context.Background(), func() { panic("render blew up") })
+		_ = s.Run(context.Background(), "", 0, func(context.Context) { panic("render blew up") })
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -142,13 +142,13 @@ func TestSlots_Held(t *testing.T) {
 	assert.Equal(t, 0, s.Held(), "a fresh pool holds none")
 
 	var inside int
-	require.NoError(t, s.Run(context.Background(), func() { inside = s.Held() }))
+	require.NoError(t, s.Run(context.Background(), "", 0, func(context.Context) { inside = s.Held() }))
 	assert.Equal(t, 1, inside, "Run holds one slot while fn runs")
 	assert.Equal(t, 0, s.Held(), "Run gives the slot back")
 
 	func() {
 		defer func() { assert.NotNil(t, recover(), "fn panicked") }()
-		_ = s.Run(context.Background(), func() { panic("boom") })
+		_ = s.Run(context.Background(), "", 0, func(context.Context) { panic("boom") })
 	}()
 	assert.Equal(t, 0, s.Held(), "a panicking fn gives the slot back")
 }

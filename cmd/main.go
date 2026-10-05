@@ -83,6 +83,7 @@ func main() {
 	var defaultServiceAccount string
 	var maxConcurrentRenders int
 	var driftRenderInterval time.Duration
+	var renderTimeout time.Duration
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -139,6 +140,7 @@ func main() {
 			"drift detection and patches no status, so drift is re-evaluated at most once per interval per "+
 			"unchanged object. The interval schedules no reconcile of its own. 0 disables the skip: every "+
 			"reconcile renders.")
+	registerRenderTimeoutFlag(flag.CommandLine, &renderTimeout)
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -157,6 +159,10 @@ func main() {
 		setupLog.Error(err, "Invalid flag value", "value", driftRenderInterval.String())
 		os.Exit(1)
 	}
+	if err := validateRenderTimeout(renderTimeout); err != nil {
+		setupLog.Error(err, "Invalid flag value", "value", renderTimeout.String())
+		os.Exit(1)
+	}
 
 	// The operator and library versions are parts of every render input key,
 	// so an upgrade of either renders every object once. Read once here and
@@ -164,7 +170,7 @@ func main() {
 	operatorVersion := opmversion.Full()
 	libraryVersion := opmversion.Library()
 	setupLog.Info("Starting opm-operator", "version", operatorVersion, "libraryVersion", libraryVersion,
-		"driftRenderInterval", driftRenderInterval.String())
+		"driftRenderInterval", driftRenderInterval.String(), "renderTimeout", renderTimeout.String())
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -338,6 +344,7 @@ func main() {
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
 		RenderSlots:           renderSlots,
+		RenderTimeout:         renderTimeout,
 		OperatorVersion:       operatorVersion,
 		LibraryVersion:        libraryVersion,
 		DriftRenderInterval:   driftRenderInterval,
@@ -362,6 +369,7 @@ func main() {
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
 		RenderSlots:           renderSlots,
+		RenderTimeout:         renderTimeout,
 		OperatorVersion:       operatorVersion,
 		LibraryVersion:        libraryVersion,
 		DriftRenderInterval:   driftRenderInterval,
@@ -439,6 +447,33 @@ func resolveRegistry(flagValue string) (registry, src string) {
 func validateDriftRenderInterval(d time.Duration) error {
 	if d < 0 {
 		return fmt.Errorf("--drift-render-interval must not be negative (0 disables the render skip), got %s", d)
+	}
+	return nil
+}
+
+// defaultRenderTimeout is the default of --render-timeout, two orders of
+// magnitude above any render measured so far (enhancement 0019 measured
+// about two seconds for a 129-component module), so only a render stuck on
+// I/O reaches it.
+const defaultRenderTimeout = 10 * time.Minute
+
+// registerRenderTimeoutFlag registers --render-timeout on fs.
+func registerRenderTimeoutFlag(fs *flag.FlagSet, p *time.Duration) {
+	fs.DurationVar(p, "render-timeout", defaultRenderTimeout,
+		"Longest one ModuleInstance or ModulePackage render may run once it holds a render slot "+
+			"(platform lease, acquisition, synthesis, the render build and the export for apply); "+
+			"the wait for a slot is not counted. At the deadline the failure is recorded on the object "+
+			"(Ready=False, reason RenderTimedOut) and retried on the backoff. The render itself stops "+
+			"at its next stage only when its current I/O honours cancellation (a dependency fetch "+
+			"inside CUE's loader does not), and its slot stays held until it returns, so "+
+			"--max-concurrent-renders still bounds memory. 0 disables the deadline.")
+}
+
+// validateRenderTimeout refuses a negative --render-timeout; zero disables
+// the deadline and is valid.
+func validateRenderTimeout(d time.Duration) error {
+	if d < 0 {
+		return fmt.Errorf("--render-timeout must not be negative (0 disables the deadline), got %s", d)
 	}
 	return nil
 }

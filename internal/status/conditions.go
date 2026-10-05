@@ -70,6 +70,11 @@ const (
 	// ModuleInstance or ModulePackage panicked and the attempt was recorded as
 	// a failure before the panic propagated to the controller runtime.
 	ReconcilePanicReason = "ReconcilePanic"
+	// RenderTimedOutReason: Ready=False, Reconciling=True, not stalled, a
+	// ModuleInstance or ModulePackage render did not finish within the
+	// manager's --render-timeout, or an earlier one that did not is still
+	// running. Retried on the bounded backoff.
+	RenderTimedOutReason = "RenderTimedOut"
 
 	// Platform-specific reasons (0019:D6: the reconciler generates
 	// and builds the platform module).
@@ -309,6 +314,15 @@ func MarkNotReady(obj conditions.Setter, reason, messageFormat string, messageAr
 func MarkReconcilePanic(obj conditions.Setter, messageFormat string, messageArgs ...any) {
 	conditions.MarkReconciling(obj, ReconcilePanicReason, messageFormat, messageArgs...)
 	conditions.MarkFalse(obj, ReadyCondition, ReconcilePanicReason, messageFormat, messageArgs...)
+}
+
+// MarkRenderTimedOut records a render that did not finish within its
+// timeout: Reconciling=True, Stalled removed and Ready=False, all with reason
+// RenderTimedOut. Not stalled, because the attempt retries on the backoff
+// and a slow registry may answer on the next one.
+func MarkRenderTimedOut(obj conditions.Setter, messageFormat string, messageArgs ...any) {
+	conditions.MarkReconciling(obj, RenderTimedOutReason, messageFormat, messageArgs...)
+	conditions.MarkFalse(obj, ReadyCondition, RenderTimedOutReason, messageFormat, messageArgs...)
 }
 
 // MarkDrifted sets Drifted=True with a message indicating the number of drifted resources.

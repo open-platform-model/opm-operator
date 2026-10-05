@@ -57,10 +57,6 @@ platform lease, so it renders against the newest platform when its turn
 comes. The Platform controller is always serial and takes no slot. Raise the
 flag when reconcile latency across many workloads matters.
 
-Nothing on the render path has a timeout, so a render stuck on registry I/O
-holds its slot until it returns. At the default of `1` that delays every
-other render of both kinds, not only of its own.
-
 The shipped manager Deployment (`config/manager/manager.yaml`) sets the
 container's memory limit to `4Gi` and the Go soft memory limit
 `GOMEMLIMIT=3276MiB`, about 80% of it, so the runtime collects harder as the
@@ -89,6 +85,52 @@ rendering ordinary modules (10 to 25 components) at four concurrent renders
 wants about 1 GB and is comfortable at 2 GB. A 129-component fleet at eight
 concurrent renders wants 12 GB. Where memory is the tighter budget, fewer
 workers is the right trade; throughput falls close to linearly down to two.
+
+## `--render-timeout`
+
+The flag (default `10m`) is the longest one render may run once it holds its
+slot: the renderer call (platform lease, acquisition, synthesis and the
+render build) and the export of the result for apply. The wait for a slot is
+not counted, so a render queued behind others is never reported as timed
+out. `0` disables the deadline, and the render then runs on the reconcile's
+own context as it did before the flag existed. A negative value is refused at
+startup. The default is two orders of magnitude above any render measured in
+enhancement 0019, so only a render stuck on I/O, such as a registry that
+stopped answering, reaches it.
+
+The deadline covers the render only. The status patch, events, apply and
+prune use the reconcile's own context, so a timed-out render is still
+recorded on the object: `Ready=False` and `Reconciling=True` with reason
+`RenderTimedOut`, not stalled, retried on the backoff (5s doubling to a
+5-minute cap). The inventory and the last-applied digests keep the last
+success. A render that returns after its deadline is a timeout even when it
+succeeded, and its result is discarded.
+
+The timeout records the failure on the object at the deadline; it does not
+stop the render there. The library checks the context between the stages of
+a render (library v1.0.0-beta.6), so the render itself stops at the next
+stage only when the stage it is in honours cancellation. A stage already
+running inside CUE runs to its end first, and a dependency fetch inside
+CUE's loader takes no context: a registry that hangs while a dependency is
+fetched holds the render, and its slot, until the fetch returns (see the
+last paragraph of this section). The reconcile does not wait for any of
+that. The render keeps
+its slot until it really returns, because the slot is the memory bound: an
+abandoned stage still holds its build, and a second large render started
+beside it could take the pod past its memory limit. While that render still
+runs, a retry of the same object starts no second render and takes no slot:
+it reports `RenderTimedOut` with a message that the previous render is still
+running. So one stuck object holds at most one slot, whatever
+`--max-concurrent-renders` is.
+
+The operator logs `Render timed out` with the timeout when a reconcile stops
+waiting, and `Abandoned render returned` with the elapsed time when the
+render finally returns, so a slot held for a long time shows in the log. A
+panic in an abandoned render is logged with its stack as `Abandoned render
+panicked` and goes no further. A stage that never returns holds its slot
+until the pod restarts: the timeout makes it visible on the object but cannot
+reclaim its memory. At the default of `1` slot that delays every other render
+of both kinds.
 
 ## Skipping unchanged renders: `--drift-render-interval`
 
@@ -293,4 +335,5 @@ with reason `BuildFailed`, and the message names the field the read failed on.
 | `SkewRefused` | catalog skew under `Refuse` | bump the platform pin or downgrade the module |
 | `DuplicateIdentities` | two rendered objects share one `apiVersion`, `kind`, `namespace` and `name`, so the last apply would silently overwrite the first | remove or rename one of the components the message names |
 | `RenderFailed` | a transformer failed, the instance could not be synthesized, or any other evaluation error after the module was acquired (a registry fetch failure after acquisition is `ResolutionFailed`, not this). Over-subscription also reaches here as a fallback, for a package recorded before the contract gate existed; the gate refuses it at the Platform now, and the gate and the render read one provider count, so a fresh package cannot reach a render over-subscribed | fix the module or the platform |
+| `RenderTimedOut` | the render ran longer than `--render-timeout` (default `10m`), usually waiting on the registry, or a module far larger than the timeout allows; or an earlier render of the object timed out and is still running | automatic retry on the backoff (5 minute cap); check that the registry is reachable, then raise `--render-timeout` if the module is simply slow; the render's slot stays held until it returns, so other renders may wait meanwhile |
 | `ReconcilePanic` | the reconcile panicked anywhere after the status commit is set up (render, export for apply, shrink judgment, drift detection, apply, prune): an operator bug or an input the operator could not handle. The attempt is recorded as a failure (`Reconciling=True`, not stalled) before the panic propagates, and the inventory and last-applied digests keep the last success | automatic retry on controller-runtime's rate limiter, so `nextRetryAt` stays empty; read the operator log for the stack, then upgrade the operator or report the bug |

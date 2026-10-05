@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"flag"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -37,4 +38,33 @@ var _ = Describe("validateDriftRenderInterval", func() {
 		Entry("zero disables the skip", time.Duration(0), false),
 		Entry("negative", -time.Minute, true),
 	)
+})
+
+var _ = Describe("validateRenderTimeout", func() {
+	DescribeTable("accepts zero and positive timeouts, refuses negative ones",
+		func(d time.Duration, wantErr bool) {
+			err := validateRenderTimeout(d)
+			if wantErr {
+				Expect(err).To(MatchError(ContainSubstring("--render-timeout")))
+				return
+			}
+			Expect(err).NotTo(HaveOccurred())
+		},
+		Entry("the default", defaultRenderTimeout, false),
+		Entry("zero disables the deadline", time.Duration(0), false),
+		Entry("negative", -time.Second, true),
+	)
+})
+
+var _ = Describe("--render-timeout", func() {
+	It("defaults to ten minutes", func() {
+		Expect(defaultRenderTimeout).To(Equal(10 * time.Minute))
+
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		var d time.Duration
+		registerRenderTimeoutFlag(fs, &d)
+		Expect(fs.Lookup("render-timeout").DefValue).To(Equal("10m0s"))
+		Expect(fs.Parse(nil)).To(Succeed())
+		Expect(d).To(Equal(10 * time.Minute))
+	})
 })

@@ -484,7 +484,7 @@ func TestRenderModulePackage_AcquireFailure(t *testing.T) {
 			rec := events.NewFakeRecorder(2)
 			params := &ModulePackageParams{EventRecorder: rec, Renderer: failingPackageRenderer{err: tt.err}}
 
-			result, fail, err := renderModulePackage(context.Background(), params, pkg, "/pkg", time.Hour)
+			result, fail, err := renderModulePackage(context.Background(), params, pkg, t.TempDir(), "/pkg", time.Hour)
 			if result != nil || fail == nil || err != nil {
 				t.Fatalf("renderModulePackage() = (%v, %v, %v), want a failure", result, fail, err)
 			}

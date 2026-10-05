@@ -117,9 +117,9 @@ func (urlErrorSource) ModFile(context.Context, module.Version) (*modfile.File, e
 	return nil, registryRefused()
 }
 
-// The Platform's closure walk classifies a registry failure itself
-// (0021:D8:R12): the error failReconcile receives holds a *FetchError, so the
-// Platform needs no network-error probe of its own and rechecks it quickly.
+// The Platform's closure walk classifies a registry failure itself: the
+// error failReconcile receives holds a *FetchError, so the Platform needs no
+// network-error probe of its own and rechecks it quickly.
 func TestIsTransientFailure_ClosureClassifiesFetchFailure(t *testing.T) {
 	_, err := platformmodule.Closure(context.Background(), urlErrorSource{},
 		[]platformmodule.Dep{{Path: "testing.opmodel.dev/catalogs/example@v0", Version: "v0.1.0"}})

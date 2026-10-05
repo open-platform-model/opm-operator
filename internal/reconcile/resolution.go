@@ -56,9 +56,9 @@ func isTerminalCause(err error) bool {
 // chain. It holds in every phase of a render (module acquisition, values
 // compile, instance synthesis, the render build, the package load), because
 // the library classifies at each site where a registry interaction leaves
-// it. Every fetch failure retries, not only ErrTransient: owner decision a3
-// (2026-10-02/03 walkthrough) set that a fetch failure must not stall for 30
-// minutes. Anything the library left unclassified (a CUE syntax error, a
+// it. Every fetch failure retries, not only ErrTransient: a not-found or a
+// refused credential must not wait out the 30-minute stall, because a late
+// publish or a fixed secret recovers on the next attempt. Anything the library left unclassified (a CUE syntax error, a
 // values conflict, an unparsable version) is an author defect and is not
 // transient. A raw context.DeadlineExceeded is not either: the reconcile
 // context carries no deadline, and the library already classifies a deadline

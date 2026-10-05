@@ -90,7 +90,7 @@ func acquireErr(cause error) error {
 	return fmt.Errorf("acquiring module: %w: %w", cause, render.ErrAcquire)
 }
 
-// fetchErr is the library's typed registry fetch failure (0021:D8:R12) of
+// fetchErr is the library's typed registry fetch failure of
 // the given kind and HTTP status, the shape oerrors.Classify returns.
 func fetchErr(kind oerrors.FetchKind, httpStatus int) error {
 	return &oerrors.FetchError{Kind: kind, Status: httpStatus,
@@ -210,6 +210,15 @@ func TestClassifyRenderError(t *testing.T) {
 		{
 			name:        "unclassified acquire failure stalls",
 			err:         acquireErr(errors.New(`invalid version "not-a-version"`)),
+			wantOutcome: FailedStalled,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			// The library leaves a cancellation plain, so it is not a fetch
+			// failure. It only happens while the manager stops, and the
+			// object is listed again on start.
+			name:        "cancellation during acquisition stalls",
+			err:         acquireErr(context.Canceled),
 			wantOutcome: FailedStalled,
 			wantReason:  status.ResolutionFailedReason,
 		},

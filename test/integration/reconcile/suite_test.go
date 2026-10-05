@@ -220,7 +220,7 @@ func identityMismatchRenderer() *stubRenderer {
 
 // acquireFailureRenderer returns a stub whose error is a registry outage at
 // module acquisition as the library returns it: the typed *oerrors.FetchError
-// (unreachable, 0021:D8:R12) under the acquisition mark. The reconcile loop
+// (unreachable) under the acquisition mark. The reconcile loop
 // classifies it as a transient ResolutionFailed retried on the bounded
 // backoff.
 func acquireFailureRenderer() *stubRenderer {

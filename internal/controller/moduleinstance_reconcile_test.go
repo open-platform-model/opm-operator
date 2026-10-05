@@ -2223,7 +2223,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 		It("retries a registry failure during render on the backoff", func() {
 			ctx := context.Background()
 			// A registry fetch failure after acquisition, as the library
-			// returns it from the render build (0021:D8:R12).
+			// returns it from the render build.
 			renderer := &stubRenderer{err: fmt.Errorf("rendering module instance: %w", &oerrors.FetchError{
 				Kind: oerrors.FetchUnreachable,
 				Err:  errors.New(`cannot fetch opmodel.dev/catalogs/opm@v4.6.0: dial tcp registry.example:443: connection refused`),

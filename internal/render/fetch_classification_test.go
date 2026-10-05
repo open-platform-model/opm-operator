@@ -20,7 +20,7 @@ import (
 )
 
 // These tests pin what library v1.0.0-beta.6 returns at the operator's two
-// acquisition wrap sites when a registry fetch fails (0021:D8:R12). The
+// acquisition wrap sites when a registry fetch fails. The
 // reconcile loops decide retry by the library's *oerrors.FetchError alone,
 // so a library change that drops the classification at one of these sites
 // fails here, on the bump, rather than as a 30-minute stall in a cluster.
@@ -79,7 +79,7 @@ func TestKernelModuleRenderer_AcquireFetchUnreachable(t *testing.T) {
 
 // A registry that does not hold the module gives a not-found *FetchError at
 // module acquisition, which is not ErrTransient (the operator still retries
-// it on the backoff, by the owner's a3 policy).
+// it on the backoff: a late publish recovers on the next attempt).
 func TestKernelModuleRenderer_AcquireFetchNotFound(t *testing.T) {
 	isolateCUECache(t)
 

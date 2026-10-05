@@ -33,6 +33,10 @@ The `internal/inventory` package MUST provide the conversions between `v1alpha1.
 - **WHEN** `internal/inventory` is inspected
 - **THEN** it declares no stale-set, identity-comparison or digest function
 
+#### Scenario: The exported surface is closed
+- **WHEN** the package's tests run
+- **THEN** a test parses its non-test files and requires its exported names to be exactly `Current`, `FromEntries`, `FromEntry`, `ToEntries` and `ToEntry`, so any further export fails the tests
+
 ### Requirement: The stale set is the library's component-blind stale set
 The ModuleInstance and ModulePackage reconcilers MUST compute the stale set with `inventory.StaleSet` from `opm/k8s/inventory`, over the previous inventory's entries and the entries of the current render. An entry is stale only when no current entry has the same Group, Kind, Namespace and Name. Version and Component never count, so a component rename or an API version change leaves nothing stale. Stale entries keep the previous inventory's order. Source: 0012:D7:R1.
 

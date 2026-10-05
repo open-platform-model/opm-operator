@@ -8,129 +8,49 @@ Line numbers are at `eeba6f5` (opm-operator#250, after #249, #251 and #252); re-
 
 `buildInventoryEntries` (`internal/render/module.go:79`) exports each resource a second time through `ToUnstructured`, inside `resultFromRender`. That second export is the inventory change's to remove (it builds entries from the exported objects); this change only renames its types.
 
-**Apply.** `apply.Apply` (`internal/apply/apply.go:64-77`) runs `rm.ApplyAllStaged(ctx, resources, opts)` under `applyWithDiscoveryRetry`. Both reconcilers call it (`moduleinstance.go:558`, `modulepackage.go:686`). `ApplyAllStaged` (ssa v0.77.0 `manager_apply.go:337-420`) splits the set into cluster definitions (CRD, Namespace, ClusterRole), class definitions (kind suffix `Class`), custom-stage kinds (the operator sets none) and the rest; it waits with `WaitForSet` after the first two. Each stage goes through `ApplyAll`, which first calls `sort.Sort(SortableUnstructureds(objects))` on the slice it is given (`:207`, in place), then dry-runs and applies object by object (default concurrency 1).
+**Apply.** `apply.Apply` (`internal/apply/apply.go:64-77`) runs `rm.ApplyAllStaged(ctx, resources, opts)` under `applyWithDiscoveryRetry`, with one whole-set dry-run per Flux stage. This change leaves it exactly as it is: the apply order does not change.
 
-Library `object.Stages(items, gvkOf)` (`opm/k8s/object/stages.go`) returns a sorted copy cut into stages: one `ClusterDefinitions` stage holding every CRD and core Namespace (weights -100 and 0), then one stage per distinct `object.Weight`, ascending; no empty stage, input not reordered. Each stage's `Items` is a capacity-limited subslice, so an in-place sort of one stage cannot reach another. Its doc comment states the operator rule this change implements. The library's `flux_order_test.go` records every pair the two tables order oppositely.
+The other half of the adoption, applying in the library's kind-class order (0012:D4:R3, 0012:D5:R1), follows in a later change. Library `v1.0.0-beta.6`'s weight table disagrees with Flux v0.77.0's on several kinds (the library's `opm/k8s/object/flux_order_test.go` lists them): it applies webhook configurations before custom resources, which breaks a first install of a module whose webhook has `failurePolicy: Fail` (cert-manager), and it places LimitRange, ResourceQuota, PriorityClass, RuntimeClass, the other class kinds, StorageClass, PodDisruptionBudget and CronJob differently. A library change first aligns its table with Flux wherever Flux defines an order. The operator then keeps `ApplyAllStaged` and pins the rule "an engine's staging may refine the library order and never contradict it" with a test that Flux's staged order never contradicts the library's.
 
-Reconcile phase impact: Apply (order and stage calls), Render (types only), Status (digest computed from the one export, bytes unchanged), Prune (label import only). Source and Inventory are untouched.
+Reconcile phase impact: Render (types only), Status (digest computed from the one export, bytes unchanged), Prune (label import only). Source, Apply and Inventory are untouched.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
 - No copy of the library's object or label decisions in the operator, and a lint rule that refuses importing one back (0012:D3:R6).
-- The operator submits objects in the library's order, and Flux can only refine it (0012:D4:R3, 0012:D5:R1).
-- No change to the render digest, the inventory, any condition, reason or message.
+- No change to the apply order, the render digest, the inventory, any condition, reason or message.
 
 **Non-Goals:**
 
+- Apply order (0012:D4:R3): follows after the library weight change described in Context.
 - Delete and prune order (moves with the deletion protocol).
 - `opm/k8s/inventory`, `opm/k8s/ownership`, `opm/k8s/health` adoption.
-- Changing the library weight table. Where the operator now applies a kind later than Flux did, that is the library's order; changing it is a library change.
 
 ## Research & Decisions
 
-### D1. One `ApplyAll` per library stage
-
-**Context**: 0012:D4:R3 and 0012:D5:R1 (library ADR-011) have the operator order an instance's objects by the library's weights and hand them to Flux, whose own staging may refine that order within a stage and never contradict it. Flux's `ApplyAll` re-sorts every call with its own table, so a library pre-sort followed by one `ApplyAllStaged` is overwritten inside each Flux stage: the literal reading ships a no-op and still applies Deployments before PersistentVolumeClaims.
-**Explored**: (A) pre-sort and call `ApplyAllStaged` (no effect inside a stage); (B) `ApplyAllStaged` with `CustomStageKinds` (gives one extra stage, not one per weight); (C) one `ApplyAll` per `object.Stages` stage; (D) call `rm.Apply` per object in library order (drops Flux's set-level dry-run and change set).
-**Decision**: (C). `Apply` builds `stages := object.Stages(resources, gvkOf)` and, for each stage in order, calls `rm.ApplyAll(ctx, stage.Items, opts)`, appends its entries to one `ChangeSet`, and after the `ClusterDefinitions` stage calls `rm.WaitForSetWithContext(ctx, cs.ToObjMetadataSet(), WaitOptions{Interval: opts.WaitInterval, Timeout: opts.WaitTimeout})`, so a cancelled reconcile or a reconcile deadline ends the wait instead of sitting through the 60s `WaitTimeout` (`WaitForSet` waits under `context.Background()`, ssa `manager_wait.go:82`). A failure returns the change set so far and the error, as `ApplyAllStaged` does.
-**Rationale**: Flux stays the engine: dry-run, drift skip, force recreate, field manager and change-set accounting are unchanged. Inside one call every object has the same library weight (or is a cluster definition), so Flux's sort can order them among themselves and never invert the library order. This is "an engine's staging may refine and never contradict" made literal: a pre-sort alone would not hold, because Flux re-sorts every call.
-
-```go
-func applyStaged(ctx context.Context, rm *fluxssa.ResourceManager,
-	resources []*unstructured.Unstructured, opts fluxssa.ApplyOptions) (*fluxssa.ChangeSet, error) {
-	changeSet := fluxssa.NewChangeSet()
-	for _, stage := range object.Stages(resources, (*unstructured.Unstructured).GroupVersionKind) {
-		cs, err := rm.ApplyAll(ctx, stage.Items, opts)
-		if cs != nil {
-			changeSet.Append(cs.Entries)
-		}
-		if err != nil {
-			return changeSet, err
-		}
-		if stage.ClusterDefinitions {
-			if err := rm.WaitForSetWithContext(ctx, cs.ToObjMetadataSet(), fluxssa.WaitOptions{
-				Interval: opts.WaitInterval, Timeout: opts.WaitTimeout}); err != nil {
-				return changeSet, err
-			}
-		}
-	}
-	return changeSet, nil
-}
-```
-
-### D2. Waits: the cluster-definition stage only
-
-**Context**: `ApplyAllStaged` also waited for ClusterRoles (in its first stage) and for class kinds (its second stage). Under the library order a ClusterRole has weight 5 and most class kinds the default weight, so they land in later stages.
-**Explored**: (A) wait after every stage that holds a kind Flux waited for; (B) wait only after the `ClusterDefinitions` stage, as the library's `Stage` contract describes.
-**Decision**: (B).
-**Rationale**: A ClusterRole and the built-in class kinds carry no status that kstatus waits on: `WaitForSet` reports them `Current` as soon as they exist, so those waits were immediate. Waiting after a later stage would add a poll round trip for nothing. CRDs (until `Established`) and Namespaces are what the following stages need.
-
-### D3. The discovery retry wraps the whole staged sequence
-
-**Context**: A CRD can be `Established` before discovery serves its kind. Today the retry re-runs `ApplyAllStaged`.
-**Decision**: The `stagedApply` closure runs `applyStaged` (D1); `applyWithDiscoveryRetry` and `pendingCRDKind` are unchanged. A retry re-applies the earlier stages, which Flux skips as unchanged, and the action ledger keeps the first attempt's created and configured counts (`ssa-apply`, "Apply result counts across a discovery retry").
-**Rationale**: Same semantics as today, with no second retry mechanism.
-
-### D4. The input slice is not reordered
-
-**Context**: `ApplyAll` sorts its argument in place. `applyList` is also read by drift detection and status after apply.
-**Decision**: `Apply` passes only the stage slices `object.Stages` returns, which belong to its sorted copy. A test asserts the caller's slice order is unchanged after `Apply`.
-
-### D5. Partial apply on a failure in a later stage
-
-**Context**: `ApplyAll` dry-runs its whole call before applying any object of it. With one call per weight, a dry-run failure in a later stage (an invalid Deployment) now surfaces after the earlier stages (ConfigMaps, Services) are applied. Under `ApplyAllStaged` the same set failed with only the cluster and class definitions applied.
-**Decision**: Accepted, with two consequences stated in the migration note:
-
-- *First install.* The inventory is written only after a successful apply (`moduleinstance.go:332-341`). A dry-run failure in a later stage leaves the earlier stages (ConfigMaps, Secrets, Services, Deployments) applied and recorded nowhere. If the instance is deleted before any apply succeeds, deletion and prune (`moduleinstance.go:967-988`) work from an empty inventory, so those objects are left behind. Before this change only the cluster and class definitions, or the objects of a call that failed part-way through its apply, could be left so; a dry-run failure could not.
-- *Upgrade.* A dry-run failure at a high weight leaves the lower-weight objects of the new version applied: a partial rollout where `ApplyAllStaged` refused the whole remainder at dry-run.
-
-The reconcile reports `ApplyFailed` exactly as before and retries; the objects applied earlier are the instance's own objects, applied again by the next attempt. Nothing is pruned on a failed apply. The alternative, a pre-flight that dry-runs every object whose kind is already served before the first stage, would restore the whole-set refusal at the cost of one more dry-run per object; it is listed under Open Questions.
-**Rationale**: `ApplyAll` already applies object by object after its dry-run, so a failure part-way through a call (a webhook refusal, a conflict) already left earlier objects applied. The library order is what 0012:D4:R3 asks for; a whole-set dry-run before any apply is not something Flux's staged apply promised either, since it applies definitions first.
-
-### D6. API calls per object do not change
-
-**Context**: A review of the plan asked whether splitting the apply multiplies dry-run round trips on a large module.
-**Decision**: Measure, do not assume. An integration test builds a `ResourceManager` whose apply client is wrapped with `controller-runtime`'s `interceptor` and whose `StatusPoller` uses the plain client, so `WaitForSet`'s timing-dependent polling Gets are not counted. It counts Patch calls (dry-run and real) and Gets of the applied objects' keys for a set of about forty built-in objects across eight weights, with no CRD or custom resource in the counted set (a CRD can trigger the discovery retry, which re-runs every stage; the order spec covers CRDs). It runs on `ApplyAllStaged` (recorded on the unchanged code) and on `applyStaged`. The numbers go into this section.
-
-Measured on 40 objects (a Namespace and 39 namespaced objects across eight library weights), as [Gets of applied keys, dry-run Patches, apply Patches]:
-
-| | first apply | second, unchanged apply |
-| --- | --- | --- |
-| `ApplyAllStaged` (before) | 40, 40, 40 | 40, 40, 0 |
-| `applyStaged` (after) | 40, 40, 40 | 40, 40, 0 |
-
-`test/integration/apply/calls_test.go` asserts these numbers.
-**Rationale**: `ApplyAll` issues one Get and one dry-run Patch per object, plus one apply Patch per changed object, whichever call it is in; the only extra cost expected is the per-call setup (no API traffic). The measurement confirms it.
-
-### D7. Digest bytes and conversion messages stay the same
+### D1. Digest bytes and conversion messages stay the same
 
 **Context**: `lastAppliedRenderDigest` gates no-op detection; a changed digest makes every instance re-apply once after the upgrade, and the cli compares digests for handoff.
 **Decision**: `status.RenderDigest` becomes a function over `[]object.Exported`: it sorts by the exported object's group, kind, namespace and name (the order `RenderDigestJSON` used, read then from the CUE value) and hashes each `JSON` in that order. The key reads `GetKind`, `GetNamespace` and `GetName`, and the group by the old split of `GetAPIVersion` at its last `/`, not through `GroupVersionKind()`, which returns an empty GVK (kind included) for an apiVersion it cannot parse. A golden test, written and green on the unchanged code first, pins the digest of a fixed resource set to a literal. `convertRender` maps an `*object.ExportError` back to today's reasons and messages: `ExportMarshal` is `RenderFailedReason`, "computing render digest: render digest: <cause>"; `ExportDecode` is `ApplyFailedReason`, "converting resources: converting <resource> to unstructured: <cause>".
 One intended change: a value that exports to JSON `null` used to become an `Unstructured` with a nil `Object` and fail later; `object.Export` now fails it at `ExportDecode` with the cause "the exported JSON is not an object", under the same reason and message prefix.
 **Rationale**: The digest reads the same bytes in the same order; only where the sort key comes from changes, and the exported object holds the same apiVersion, kind, namespace and name as the CUE value. Keeping the messages keeps the conditions users see unchanged.
 
-### D8. Lint refuses the old path
+### D2. Lint refuses the old path
 
 **Decision**: `.golangci.yml` enables `depguard` with one rule, `no-local-kubernetes-tier-copy`, `list-mode: lax`, over all files, denying `github.com/open-platform-model/opm-operator/pkg/core` with a description naming `opm/k8s/object` and `opm/k8s/labels`.
 **Rationale**: 0012:D3:R6 asks the frontend's own checks to refuse a reintroduced copy. The package path is what a copy would be reintroduced under; a copy under a new path is left to review.
 
 ## Risks / Trade-offs
 
-- **Library order differs from Flux's for some kinds** (proposal, "Migration note", which lists every reversal). Three are visible: a Pod that names a PriorityClass or RuntimeClass from the same apply is refused until the class exists and its controller retries; Pods admitted before a LimitRange or ResourceQuota of the same apply miss its defaults and its admission check until they are recreated; webhook configurations with `failurePolicy: Fail` now precede the custom resources they intercept, so a first install can fail dry-run until the webhook serves. The order is the library's (0012:D4:R3, 0012:D5:R1, library ADR-011); moving those kinds is a library weight change, which then reaches both frontends.
-- **Two tables remain.** A Flux upgrade can change Flux's table; under D1 that can only reorder objects of one library weight. The library's `flux_order_test.go` records the disagreements against ssa v0.77.0.
-- **D5** widens the partial-apply window: objects left behind on a first install deleted before any successful apply, and a partial rollout on an upgrade.
+- **Go API removal.** An importer of `pkg/core` outside this repository breaks at compile time; none is known, and the migration note names the replacements.
+- **Digest bytes.** A changed digest would re-apply every instance once after the upgrade; the golden test recorded on the old code pins them.
 
 ## Open Questions
 
-- Accept the library order for the reversed kinds, or change the library weights first (one library issue, reaching both frontends): webhook configurations ahead of custom resources; PriorityClass, RuntimeClass, the other class kinds, LimitRange and ResourceQuota after the workloads.
-- D5: accept the partial apply on a later-stage dry-run failure, or add a pre-flight dry-run of every object whose kind is already served.
-- The mechanism is one Flux `ApplyAll` per library stage, not one pre-sorted handoff to Flux, because `ApplyAll` re-sorts in place (ssa v0.77.0 `manager_apply.go:207`).
 - Release: an operator `feat!` release makes the `module/operator-image` PR `fix(deps)!`, a breaking (0.x minor) `opm_operator` module release (AGENTS.md, "This repository releases two units").
 
 ## Sections
 
 1. Library object and label packages replace `pkg/core` (types, conversion through `object.Export`, digest, tests, lint). No behaviour change.
-2. Apply in library order (D1-D6), with the order and call-count tests and the doc updates.
-3. Verification: e2e on Kind under the lock with `LOCAL_REGISTRY`, the docs bundle, OpenSpec validation.
+2. Verification: e2e on Kind under the lock with `LOCAL_REGISTRY`, the docs bundle, OpenSpec validation.

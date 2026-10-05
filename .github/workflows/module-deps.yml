@@ -72,7 +72,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: open-platform-model/.github
-          ref: 6938f8e0247e019cb0c2db13fff5b7b558a6b67d # .github main
+          ref: 0f9c6ac2c9b752a79f4874f637ef9955bcf00c13 # .github main
           path: org-github
           persist-credentials: false
 

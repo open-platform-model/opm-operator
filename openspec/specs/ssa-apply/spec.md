@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `internal/apply` package applies rendered resources to the cluster with Server-Side Apply as the `opm-controller` field manager, in Flux's `ApplyAllStaged` stages, and reports how many resources it created, updated and left unchanged.
+The `internal/apply` package applies rendered resources to the cluster with Server-Side Apply as the `opm-controller` field manager, in the library's kind-class stages (`object.Stages`), one Flux `ApplyAll` call per stage, and reports how many resources it created, updated and left unchanged.
 
 ## Requirements
 

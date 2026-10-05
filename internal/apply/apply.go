@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fluxcd/cli-utils/pkg/object"
+	fluxobject "github.com/fluxcd/cli-utils/pkg/object"
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/open-platform-model/library/opm/k8s/object"
 )
 
 // ApplyResult carries counts of apply outcomes.
@@ -41,11 +43,18 @@ var (
 // returns the change set of the objects applied up to a failure.
 type stagedApply func(ctx context.Context) (*fluxssa.ChangeSet, error)
 
-// Apply applies the given resources to the cluster using Server-Side Apply.
-// Staging is handled by Flux's ApplyAllStaged: it applies cluster definitions
-// (CRDs, Namespaces, ClusterRoles) and waits for them to become ready, then
-// applies class definitions and waits for them, then any custom-stage kinds,
-// then everything else.
+// Apply applies the given resources to the cluster using Server-Side Apply,
+// in the library's kind-class order (0012:D4). It cuts the set into the
+// library's stages (object.Stages): the cluster definitions, every
+// CustomResourceDefinition and Namespace, first, then one stage per library
+// weight in ascending order. Each stage goes to Flux in its own ApplyAll
+// call, which dry-runs the stage and then applies it. Flux sorts every call
+// with its own kind table, so one stage per call lets Flux order only objects
+// of one library stage: it refines the library order and never inverts it.
+// After the cluster-definition stage Apply waits for those objects to become
+// ready (a CRD until Established) before it applies the next stage. A failure
+// in a stage leaves the earlier stages applied. Apply never reorders the
+// slice it is given.
 //
 // A CRD is ready once it reports Established, but API discovery can serve its
 // kind a moment later, so a custom resource in the same set can fail with a
@@ -73,8 +82,42 @@ func Apply(
 	opts.Force = force
 
 	return applyWithDiscoveryRetry(ctx, func(ctx context.Context) (*fluxssa.ChangeSet, error) {
-		return rm.ApplyAllStaged(ctx, resources, opts)
+		return applyStaged(ctx, rm, resources, opts)
 	}, resources)
+}
+
+// applyStaged submits each library stage of resources in its own ApplyAll
+// call, in stage order, and waits under ctx for the cluster-definition stage
+// before it goes on. It returns the change set of the stages applied up to a
+// failure. ApplyAll sorts the slice it is given in place; each stage's Items
+// is a capacity-limited slice of a sorted copy, so neither the caller's slice
+// nor another stage is touched.
+func applyStaged(
+	ctx context.Context,
+	rm *fluxssa.ResourceManager,
+	resources []*unstructured.Unstructured,
+	opts fluxssa.ApplyOptions,
+) (*fluxssa.ChangeSet, error) {
+	changeSet := fluxssa.NewChangeSet()
+	for _, stage := range object.Stages(resources, (*unstructured.Unstructured).GroupVersionKind) {
+		cs, err := rm.ApplyAll(ctx, stage.Items, opts)
+		if cs != nil {
+			changeSet.Append(cs.Entries)
+		}
+		if err != nil {
+			return changeSet, err
+		}
+		if !stage.ClusterDefinitions {
+			continue
+		}
+		if err := rm.WaitForSetWithContext(ctx, cs.ToObjMetadataSet(), fluxssa.WaitOptions{
+			Interval: opts.WaitInterval,
+			Timeout:  opts.WaitTimeout,
+		}); err != nil {
+			return changeSet, err
+		}
+	}
+	return changeSet, nil
 }
 
 // applyWithDiscoveryRetry runs apply until it succeeds, fails with an error
@@ -175,7 +218,7 @@ func crdKinds(resources []*unstructured.Unstructured) map[schema.GroupKind]struc
 // actionLedger remembers, per object, the first created or configured action
 // any attempt reported for it, so a retry that sees the object unchanged
 // still counts what this call did to it.
-type actionLedger map[object.ObjMetadata]fluxssa.Action
+type actionLedger map[fluxobject.ObjMetadata]fluxssa.Action
 
 // record notes the created and configured actions in cs. A nil cs is fine.
 func (l actionLedger) record(cs *fluxssa.ChangeSet) {

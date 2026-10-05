@@ -24,6 +24,8 @@ Key policy decisions:
 
 - **Staged apply ordering**: CRDs and Namespaces are applied first (stage 1), followed by all other resources (stage 2). This uses Flux `ssa.ResourceManager` staged apply logic to avoid race conditions where a custom resource is applied before its CRD is registered.
 
+  *Amended:* the operator now applies in the library's kind-class order (0012:D4, library ADR-011). `internal/apply` cuts the set with the library's `object.Stages`: CRDs and Namespaces first, waited for, then one stage per library weight in ascending order. Each stage goes to Flux in its own `ApplyAll` call, so Flux's own kind sort orders only objects within one stage and never inverts the library order. Flux `ssa.ResourceManager` stays the apply engine.
+
 - **Immutable field handling**: if SSA encounters an immutable field change (e.g., StatefulSet `volumeClaimTemplates`), the controller marks the reconcile as stalled. It does not automatically delete and recreate the resource, because that would destroy attached PersistentVolumeClaims.
 
 ## Consequences

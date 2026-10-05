@@ -93,6 +93,15 @@ The reconcile reports `ApplyFailed` exactly as before and retries; the objects a
 
 **Context**: A review of the plan asked whether splitting the apply multiplies dry-run round trips on a large module.
 **Decision**: Measure, do not assume. An integration test builds a `ResourceManager` whose apply client is wrapped with `controller-runtime`'s `interceptor` and whose `StatusPoller` uses the plain client, so `WaitForSet`'s timing-dependent polling Gets are not counted. It counts Patch calls (dry-run and real) and Gets of the applied objects' keys for a set of about forty built-in objects across eight weights, with no CRD or custom resource in the counted set (a CRD can trigger the discovery retry, which re-runs every stage; the order spec covers CRDs). It runs on `ApplyAllStaged` (recorded on the unchanged code) and on `applyStaged`. The numbers go into this section.
+
+Measured on 40 objects (a Namespace and 39 namespaced objects across eight library weights), as [Gets of applied keys, dry-run Patches, apply Patches]:
+
+| | first apply | second, unchanged apply |
+| --- | --- | --- |
+| `ApplyAllStaged` (before) | 40, 40, 40 | 40, 40, 0 |
+| `applyStaged` (after) | 40, 40, 40 | 40, 40, 0 |
+
+`test/integration/apply/calls_test.go` asserts these numbers.
 **Rationale**: `ApplyAll` issues one Get and one dry-run Patch per object, plus one apply Patch per changed object, whichever call it is in; the only extra cost expected is the per-call setup (no API traffic). The measurement confirms it.
 
 ### D7. Digest bytes and conversion messages stay the same

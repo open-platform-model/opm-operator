@@ -320,6 +320,45 @@ var _ = Describe("Apply", func() {
 		})
 	})
 
+	// Spec reference: openspec/specs/ssa-apply/spec.md
+	//   "Scenario: Library order holds where Flux's order differs"
+	//   "Scenario: The caller's slice keeps its order"
+	Context("When the library order and Flux's order disagree", func() {
+		It("applies in the library's kind-class order and leaves the caller's slice alone", func() {
+			const ns = "apply-library-order"
+			crd := newTestCRD("order.example.com", "Sprocket", "sprockets")
+			sprocket := newTestCustomResource("order.example.com", "Sprocket", "sprocket")
+			DeferCleanup(deleteCRDsAndWait, crd)
+
+			// Submitted in reverse library order.
+			set := []*unstructured.Unstructured{
+				sprocket,
+				newStatefulSet(ns, "sts"),
+				newDeployment(ns, "deploy"),
+				newPVC(ns, "pvc"),
+				newObject("v1", "ConfigMap", ns, "cm", map[string]any{"data": map[string]any{"k": "v"}}),
+				newObject("v1", "Namespace", "", ns, nil),
+				crd,
+			}
+			given := append([]*unstructured.Unstructured(nil), set...)
+
+			rec := &callRecorder{}
+			_, err := apply.Apply(ctx, recordingResourceManager(rec), set, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(rec.order()).To(Equal([]string{
+				"CustomResourceDefinition/sprockets.order.example.com",
+				"Namespace/" + ns,
+				"ConfigMap/cm",
+				"PersistentVolumeClaim/pvc",
+				"Deployment/deploy",
+				"StatefulSet/sts",
+				"Sprocket/sprocket",
+			}))
+			Expect(set).To(Equal(given), "Apply must not reorder the caller's slice")
+		})
+	})
+
 	Context("When discovery serves a new CRD's kind late", func() {
 		It("applies the custom resource once discovery serves its kind", func() {
 			const lag = time.Second

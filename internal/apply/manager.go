@@ -16,9 +16,10 @@ const (
 // NewResourceManager constructs a Flux SSA ResourceManager with the opm-controller
 // field manager. The owner string is used for SSA ownership labels.
 //
-// A StatusPoller is wired in because Apply waits with WaitForSetWithContext
-// after the cluster-definition stage (CRDs and Namespaces); a nil poller there
-// nil-derefs on the first module whose render contains any such resource.
+// A StatusPoller is wired in because fluxssa.ApplyAllStaged internally calls
+// WaitForSet after applying cluster-scoped resources (CRDs, ClusterRoles,
+// Namespaces); a nil poller there nil-derefs on the first module whose render
+// contains any such resource.
 func NewResourceManager(c client.Client, owner string) *fluxssa.ResourceManager {
 	poller := polling.NewStatusPoller(c, c.RESTMapper(), polling.Options{})
 	return fluxssa.NewResourceManager(c, poller, fluxssa.Owner{

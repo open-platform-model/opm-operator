@@ -9,7 +9,7 @@ The operator SHALL write a `Healthy` condition on a ModuleInstance and on a Modu
 - `False` with reason `NotRolledOut`: no Deployment is stalled, and at least one object is not healthy or does not exist;
 - `Unknown` with reason `HealthUnknown`: no object is known to be unhealthy, and an object could not be read, the reader could not be built, or the inventory is empty.
 
-When more than one applies, `ProgressDeadlineExceeded` wins over `NotRolledOut`, which wins over `HealthUnknown`. `RolledOut` holds only when none of the others applies. The message SHALL begin with the ready count and the total `health.Aggregate` returns. For `ProgressDeadlineExceeded` and `NotRolledOut` it SHALL name, in inventory order, up to five objects that are not healthy, each with its kind, namespace, name and status (`Missing` for an object that does not exist), followed by how many more there are. For a read failure it SHALL name the first error. Two judgements of the same cluster state SHALL produce the same message.
+When more than one applies, `ProgressDeadlineExceeded` wins over `NotRolledOut`, which wins over `HealthUnknown`. `RolledOut` holds only when none of the others applies. The message SHALL begin with the ready count and the total `health.Aggregate` returns. For `ProgressDeadlineExceeded` and `NotRolledOut` it SHALL name up to five objects that are not healthy, each with its kind, namespace, name and status (`Missing` for an object that does not exist), followed by how many more there are. For `ProgressDeadlineExceeded` the stalled Deployments come first, in inventory order, then the other objects that are not healthy, in inventory order; for `NotRolledOut` every named object is in inventory order. For a read failure it SHALL name the error of the first unreadable object in inventory order. A read refused because the object's kind is no longer served (the API server has no mapping for it) counts as a missing object, not an unreadable one, because such an object cannot exist. Two judgements of the same cluster state SHALL produce the same message.
 
 `Ready` SHALL keep its meaning: the render was applied. No reason, status or timing of `Ready` depends on `Healthy`. `spec.dependsOn` SHALL keep waiting on `Ready`, and a TransformerRegistration SHALL keep activating on its provider's `Ready`.
 
@@ -27,12 +27,17 @@ When more than one applies, `ProgressDeadlineExceeded` wins over `NotRolledOut`,
 #### Scenario: A stalled Deployment
 
 - **WHEN** the Deployment has observed its generation and reports `Progressing` with reason `ProgressDeadlineExceeded`, and another object is not ready
-- **THEN** `Healthy` is `False` with reason `ProgressDeadlineExceeded`, and the message names the stalled Deployment
+- **THEN** `Healthy` is `False` with reason `ProgressDeadlineExceeded`, and the message names the stalled Deployment first, whatever its place in the inventory
 
 #### Scenario: A missing object
 
 - **WHEN** an inventory object does not exist on the cluster
 - **THEN** `Healthy` is `False` with reason `NotRolledOut`, and the message names the object with status `Missing`
+
+#### Scenario: A kind that is no longer served
+
+- **WHEN** an inventory object's kind has no mapping on the API server, because its CustomResourceDefinition was deleted
+- **THEN** the object counts as `Missing`, and `Healthy` is `False` with reason `NotRolledOut`
 
 #### Scenario: An unreadable object
 
@@ -46,8 +51,9 @@ When more than one applies, `ProgressDeadlineExceeded` wins over `NotRolledOut`,
 
 #### Scenario: Ready and its readers are unchanged
 
-- **WHEN** an instance is applied and `Healthy` is `False`
-- **THEN** `Ready` is `True`, a ModulePackage whose `spec.dependsOn` names the instance's package proceeds, and a TransformerRegistration the instance provides activates as before
+- **WHEN** a ModulePackage is `Ready=True` and `Healthy=False`
+- **THEN** a ModulePackage whose `spec.dependsOn` names it proceeds
+- **AND** a TransformerRegistration provided by a `Ready=True`, `Healthy=False` ModuleInstance activates as before
 
 ### Requirement: Health is judged only after a successful outcome
 

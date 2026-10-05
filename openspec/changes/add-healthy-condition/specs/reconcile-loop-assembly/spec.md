@@ -6,9 +6,10 @@ attempt, including `NoOp`. On meaningful outcomes (`Applied`, `AppliedAndPruned`
 `FailedTransient`, `FailedStalled`), the patch updates conditions,
 `lastAttempted*`, `lastApplied*` (on success), `inventory` (on success),
 history, failure counters, and `nextRetryAt`. On `NoOp`, the patch is bounded
-to: drift condition (`Drifted`), failure counter deltas (incl. drift counter),
-`nextRetryAt` clearing, `requiredContracts`, and `lastAppliedVersion` and
-`lastAppliedInputs` when the attempt rendered. `lastAttempted*`, `inventory`,
+to: drift condition (`Drifted`), the `Healthy` condition (`instance-health`),
+failure counter deltas (incl. drift counter), `nextRetryAt` clearing,
+`requiredContracts`, and `lastAppliedVersion` and `lastAppliedInputs` when the
+attempt rendered. `lastAttempted*`, `inventory`,
 and history MUST NOT be modified on `NoOp` — those fields describe meaningful
 reconcile outcomes.
 
@@ -18,9 +19,9 @@ and MUST NOT patch anything but the `Healthy` condition, which it patches only
 when the judgement changed it: every other condition it read is already final,
 and nothing else it could record has moved.
 
-On a successful outcome and on `NoOp`, the patch also carries the `Healthy`
-condition the reconcile judged (`instance-health`). A failed attempt leaves
-`Healthy` as it was.
+On a successful outcome the patch also carries the `Healthy` condition the
+reconcile judged (`instance-health`). A failed attempt leaves `Healthy` as it
+was.
 
 `requiredContracts` is in the `NoOp` set deliberately, and it is the one field
 there that does not describe an outcome. It describes what the instance

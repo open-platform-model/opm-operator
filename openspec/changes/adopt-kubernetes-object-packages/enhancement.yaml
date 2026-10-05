@@ -1,0 +1,13 @@
+# Enhancement declaration, read by `task enhancements:delivery:log` at archive time.
+# See enhancements/schema.cue #ChangeDeclaration.
+#
+# Under-claimed on purpose. This is the operator half of the library's
+# Kubernetes object and label packages and of apply in the library's
+# kind-class order. 0012:D3:R6 (no frontend copy), 0012:D4:R3 and 0012:D5:R1
+# (both frontends submit in the library's order) hold only once the cli has
+# adopted the same packages, and the operator's delete order is still its own
+# until it moves onto the library's deletion protocol.
+implements:
+  - enhancement: "0012"
+    decisions: []
+    resolves: []

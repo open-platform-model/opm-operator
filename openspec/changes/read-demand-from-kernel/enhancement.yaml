@@ -1,0 +1,10 @@
+# Enhancement declaration, read by `task enhancements:delivery:log` at archive time.
+# See enhancements/schema.cue #ChangeDeclaration.
+#
+# Under-claimed on purpose. 0013:D24 is the kernel reporting every contract a
+# render required, synthesised components included (R1). The kernel computes
+# the list; no synthesised component exists yet for R1 to count. This change
+# moves the operator from its own walk onto the kernel's list, which delivers
+# no decision by itself.
+implements:
+  - enhancement: "0013"

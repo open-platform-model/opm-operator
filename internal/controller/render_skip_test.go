@@ -213,6 +213,19 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 			reconcileOnce(ctx, newReconciler(renderer, interval), nn)
 
 			Expect(renderer.calls.Load()).To(Equal(calls + 1))
+			// The stub render reports it leased gen-1, so the recorded key
+			// names gen-1, never the gen-2 read before the render.
+			after := get(ctx, nn)
+			leased := status.RenderInputKey{
+				Source:          after.Status.LastAppliedSourceDigest,
+				Config:          after.Status.LastAppliedConfigDigest,
+				PackageIdentity: stubPlatformIdentity,
+				SkewPolicy:      stubSkewPolicy,
+				OperatorVersion: testOperatorVersion,
+				LibraryVersion:  testLibraryVersion,
+			}
+			Expect(after.Status.LastAppliedInputs.Digest).To(Equal(leased.Digest()),
+				"the recorded identity is the one the render leased")
 		})
 
 		It("renders once the last confirming render is older than the interval, and moves renderedAt", func() {

@@ -91,7 +91,7 @@ Source: owner decision g3 of the kernel-plan walkthrough (2026-10-02).
 
 #### Scenario: A spec edit outside the key renders
 
-- **WHEN** only `spec.serviceAccountName` changes, so `metadata.generation` moves and the key does not
+- **WHEN** only a field outside the key changes (`spec.prune`, `spec.serviceAccountName`, `spec.rollout`), so `metadata.generation` moves and the key does not
 - **THEN** the reconcile renders and the commit writes `status.observedGeneration`
 
 #### Scenario: A new revision with the same digest renders once

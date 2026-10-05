@@ -408,11 +408,12 @@ func ReconcileModuleInstance(
 		// re-enqueues promptly when the platform is generated, but that edge
 		// is missed when the controller restarts into an already-Ready
 		// Platform (the regeneration emits no status event), leaving the
-		// bounded backoff as the real recovery path. An acquisition failure
-		// without a typed terminal cause (a registry outage) joins it on the
+		// bounded backoff as the real recovery path. A registry fetch failure
+		// the library typed, in any phase of the render, joins it on the
 		// bounded backoff: nothing else re-triggers the instance, and the
-		// registry may answer a minute later. Genuinely stalled
-		// render/resolution errors keep the long recheck.
+		// registry may answer a minute later. Stalled render/resolution
+		// errors, an acquisition failure the library did not classify among
+		// them, keep the long recheck.
 		retryAfter = retryIntervalFor(outcome, reconcileFailureCount(mi.Status.FailureCounters))
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
@@ -1164,12 +1165,15 @@ func pruneStaleResources(
 // (mapPlatformToModuleInstances) re-enqueues it promptly when the platform is
 // generated; the bounded backoff is the safety net.
 //
-// An acquisition failure (render.ErrAcquire) with no typed terminal cause is
-// transient too (isTransientAcquireFailure): Ready=False/ResolutionFailed, not
-// Stalled, retried on the bounded backoff. All other errors are terminal
+// A registry fetch failure the library typed (IsTransientFailure), in any
+// phase (module acquisition, values compile, synthesis, the render build),
+// with no typed terminal cause is transient too: Ready=False/ResolutionFailed,
+// not Stalled, retried on the bounded backoff. All other errors are terminal
 // render/resolution stalls, classified by their typed cause
-// (renderFailureReason): ResolutionFailed, SkewRefused, DuplicateIdentities
-// or RenderFailed. No error is classified by its message text.
+// (renderFailureReason): ResolutionFailed (which includes an acquisition
+// failure the library did not classify, such as an unparsable version),
+// SkewRefused, DuplicateIdentities or RenderFailed. No error is classified by
+// its message text.
 func classifyRenderError(
 	mi *releasesv1alpha1.ModuleInstance,
 	recorder events.EventRecorder,
@@ -1180,7 +1184,7 @@ func classifyRenderError(
 		status.MarkNotReady(mi, status.PlatformNotReadyReason, "%s", err)
 		return FailedTransient, err.Error()
 	}
-	if isTransientAcquireFailure(err) {
+	if IsTransientFailure(err) {
 		recorder.Eventf(mi, nil, corev1.EventTypeWarning, status.ResolutionFailedReason, "Render", "%s", err)
 		status.MarkNotReady(mi, status.ResolutionFailedReason, "%s", err)
 		return FailedTransient, err.Error()

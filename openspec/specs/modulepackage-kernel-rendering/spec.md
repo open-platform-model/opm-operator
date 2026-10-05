@@ -70,7 +70,7 @@ For a fetched package whose `kind` is anything other than `ModuleInstance`, the 
 
 ### Requirement: Unresolved platform demands classify as resolution failures
 
-The reconciler SHALL classify a refused render by its typed cause: unresolved platform demands and unmatched components SHALL be `ResolutionFailed`; a catalog-skew refusal SHALL be `SkewRefused` with a message naming the module path, the module's required build and the platform's build; a render whose compiled objects share one apply identity SHALL be `DuplicateIdentities` with the library's message naming each identity and every producing component and transformer (enhancement 0015 D15); a transform failure, an over-subscribed provider contract, or any other refusal SHALL be `RenderFailed`. Every classified refusal SHALL set `Ready=False` and `Stalled=True`, emit a Warning event and requeue on the stalled recheck interval; the ModuleInstance and ModulePackage classifiers SHALL route typed causes through one shared function so they cannot drift.
+The reconciler SHALL classify a refused render by its typed cause: unresolved platform demands and unmatched components SHALL be `ResolutionFailed`; a catalog-skew refusal SHALL be `SkewRefused` with a message naming the module path, the module's required build and the platform's build; a render whose compiled objects share one apply identity SHALL be `DuplicateIdentities` with the library's message naming each identity and every producing component and transformer (enhancement 0015 D15); a transform failure, an over-subscribed provider contract, or any other refusal SHALL be `RenderFailed`. Every classified refusal SHALL set `Ready=False` and `Stalled=True`, emit a Warning event and requeue on the stalled recheck interval; the ModuleInstance and ModulePackage classifiers SHALL route typed causes through one shared function so they cannot drift. A registry fetch failure (the library's typed `*oerrors.FetchError`) with no typed terminal cause is not a refusal: in any phase of the render it SHALL report `ResolutionFailed` without `Stalled` and retry on the bounded backoff, per the `reconcile-backoff` capability.
 
 #### Scenario: Skew refusal is distinct
 
@@ -94,5 +94,10 @@ The reconciler SHALL classify a refused render by its typed cause: unresolved pl
 
 #### Scenario: Ordinary evaluation error keeps RenderFailed
 
-- **WHEN** the render fails for a cause that is neither a resolution-class failure, a skew refusal nor a duplicate identity
+- **WHEN** the render fails for a cause that is neither a resolution-class failure, a registry fetch failure, a skew refusal nor a duplicate identity
 - **THEN** the ModulePackage reports `Ready=False` with reason `RenderFailed`
+
+#### Scenario: Registry fetch failure during the render retries
+
+- **WHEN** the render build fails with the library's typed registry fetch failure and no typed terminal cause
+- **THEN** the ModulePackage reports `Ready=False` with reason `ResolutionFailed` and no `Stalled` condition, and requeues on the bounded backoff

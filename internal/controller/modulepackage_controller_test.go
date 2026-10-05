@@ -459,11 +459,53 @@ var _ = Describe("ModulePackage Controller", func() {
 
 		It("retries a package load failure on the backoff instead of stalling", func() {
 			ctx := context.Background()
+			// The library's typed registry fetch failure under the package
+			// load mark: a CUE dependency the registry could not be reached for.
 			renderer := &stubPackageRenderer{err: fmt.Errorf("loading package: %w: %w",
-				errors.New("cannot find module providing package opmodel.dev/test/module: registry unavailable"),
+				&oerrors.FetchError{Kind: oerrors.FetchUnreachable,
+					Err: errors.New("cannot fetch testing.opmodel.dev/x@v0.1.0: cannot do HTTP request: dial tcp 127.0.0.1:1: connect: connection refused")},
 				render.ErrAcquire)}
 
 			result, got, src := reconcileFailing(ctx, "acquire-transient-pkg", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.ComputeBackoff(1)))
+			ready := apimeta.FindStatusCondition(got.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(status.ResolutionFailedReason))
+			Expect(apimeta.FindStatusCondition(got.Status.Conditions, status.StalledCondition)).To(BeNil())
+
+			Expect(k8sClient.Delete(ctx, &got)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, src)).To(Succeed())
+		})
+
+		It("stalls a package with a CUE syntax error", func() {
+			ctx := context.Background()
+			// An author defect: the library leaves it unclassified, so no
+			// *oerrors.FetchError sits under the package load mark.
+			renderer := &stubPackageRenderer{err: fmt.Errorf("loading package: %w: %w",
+				errors.New(`instance.cue:4:1: expected '}', found 'EOF'`),
+				render.ErrAcquire)}
+
+			result, got, src := reconcileFailing(ctx, "syntax-error-pkg", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
+			stalled := apimeta.FindStatusCondition(got.Status.Conditions, status.StalledCondition)
+			Expect(stalled).NotTo(BeNil())
+			Expect(stalled.Status).To(Equal(metav1.ConditionTrue))
+			Expect(stalled.Reason).To(Equal(status.ResolutionFailedReason))
+
+			Expect(k8sClient.Delete(ctx, &got)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, src)).To(Succeed())
+		})
+
+		It("retries a registry failure during render", func() {
+			ctx := context.Background()
+			renderer := &stubPackageRenderer{err: fmt.Errorf("rendering module instance: %w",
+				&oerrors.FetchError{Kind: oerrors.FetchNotFound,
+					Err: errors.New("cannot fetch opmodel.dev/catalogs/opm@v4.6.0: module not found")})}
+
+			result, got, src := reconcileFailing(ctx, "render-fetch-transient-pkg", renderer)
 
 			Expect(result.RequeueAfter).To(Equal(opmreconcile.ComputeBackoff(1)))
 			ready := apimeta.FindStatusCondition(got.Status.Conditions, status.ReadyCondition)

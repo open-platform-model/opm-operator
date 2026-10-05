@@ -90,10 +90,24 @@ func acquireErr(cause error) error {
 	return fmt.Errorf("acquiring module: %w: %w", cause, render.ErrAcquire)
 }
 
-// registryUnavailable is an untyped acquisition failure, the shape a
-// registry outage takes until the library types its fetch errors.
+// fetchErr is the library's typed registry fetch failure of
+// the given kind and HTTP status, the shape oerrors.Classify returns.
+func fetchErr(kind oerrors.FetchKind, httpStatus int) error {
+	return &oerrors.FetchError{Kind: kind, Status: httpStatus,
+		Err: errors.New(`fetching opmodel.dev/modules/demo@v1.0.0: registry answered`)}
+}
+
+// registryUnavailable is a registry outage as the library returns it: an
+// unreachable *oerrors.FetchError whose message is the cause's, unchanged.
 func registryUnavailable() error {
-	return errors.New(`fetching opmodel.dev/modules/demo@v1.0.0: Get "https://registry.example/v2/": dial tcp: connection refused`)
+	return &oerrors.FetchError{Kind: oerrors.FetchUnreachable,
+		Err: errors.New(`fetching opmodel.dev/modules/demo@v1.0.0: Get "https://registry.example/v2/": dial tcp: connection refused`)}
+}
+
+// syntaxError is an author defect in a package: cue/load reports it untyped
+// and the library leaves it unclassified.
+func syntaxError() error {
+	return errors.New(`instance.cue:4:1: expected '}', found 'EOF'`)
 }
 
 func TestClassifyRenderError(t *testing.T) {
@@ -176,9 +190,48 @@ func TestClassifyRenderError(t *testing.T) {
 			wantReason:  status.RenderFailedReason,
 		},
 		{
-			name:        "untyped acquire failure is transient",
+			name:        "registry failure under acquire is transient",
 			err:         acquireErr(registryUnavailable()),
 			wantOutcome: FailedTransient,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name:        "registry failure during synthesis is transient",
+			err:         fmt.Errorf("synthesizing release: %w", registryUnavailable()),
+			wantOutcome: FailedTransient,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name:        "registry failure during render is transient",
+			err:         fmt.Errorf("rendering module instance: %w", fetchErr(oerrors.FetchNotFound, 0)),
+			wantOutcome: FailedTransient,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name:        "unclassified acquire failure stalls",
+			err:         acquireErr(errors.New(`invalid version "not-a-version"`)),
+			wantOutcome: FailedStalled,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			// The library leaves a cancellation plain, so it is not a fetch
+			// failure. It only happens while the manager stops, and the
+			// object is listed again on start.
+			name:        "cancellation during acquisition stalls",
+			err:         acquireErr(context.Canceled),
+			wantOutcome: FailedStalled,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name:        "fetch-like text without the type stalls",
+			err:         acquireErr(errors.New(`loading package: resolving: fetching: dial tcp: connection refused: not found`)),
+			wantOutcome: FailedStalled,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name:        "registry failure joined to an identity mismatch stays stalled",
+			err:         acquireErr(errors.Join(registryUnavailable(), identityErr())),
+			wantOutcome: FailedStalled,
 			wantReason:  status.ResolutionFailedReason,
 		},
 		{
@@ -378,9 +431,10 @@ func (r failingPackageRenderer) Render(context.Context, string) (string, *render
 	return render.KindModuleInstance, nil, r.err
 }
 
-// A package load that fails without a typed terminal cause retries on the
-// bounded backoff; a typed terminal cause stalls on the long recheck. Both
-// report ResolutionFailed with the error message unchanged.
+// A package load or render that fails with the library's typed registry
+// fetch failure retries on the bounded backoff; an author defect in the
+// package (no *FetchError) and a typed terminal cause stall on the long
+// recheck. All report ResolutionFailed with the error message unchanged.
 func TestRenderModulePackage_AcquireFailure(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -390,13 +444,25 @@ func TestRenderModulePackage_AcquireFailure(t *testing.T) {
 		wantRetry   time.Duration
 	}{
 		{
-			name:        "untyped load failure is transient",
+			name:        "registry failure on load is transient",
 			err:         acquireErr(registryUnavailable()),
 			wantOutcome: FailedTransient,
 			wantRetry:   BackoffBaseDelay,
 		},
 		{
-			name:        "repeated untyped load failures cap at five minutes",
+			name:        "registry failure during render is transient",
+			err:         fmt.Errorf("rendering module instance: %w", registryUnavailable()),
+			wantOutcome: FailedTransient,
+			wantRetry:   BackoffBaseDelay,
+		},
+		{
+			name:        "syntax error in the package stalls",
+			err:         acquireErr(syntaxError()),
+			wantOutcome: FailedStalled,
+			wantRetry:   StalledRecheckInterval,
+		},
+		{
+			name:        "repeated registry failures cap at five minutes",
 			err:         acquireErr(registryUnavailable()),
 			failures:    10,
 			wantOutcome: FailedTransient,
@@ -443,6 +509,68 @@ func TestRenderModulePackage_AcquireFailure(t *testing.T) {
 			es := drainEvents(rec)
 			if len(es) != 1 || countEventsWithReason(es, status.ResolutionFailedReason) != 1 {
 				t.Errorf("events %v, want exactly one with reason %q", es, status.ResolutionFailedReason)
+			}
+		})
+	}
+}
+
+// IsTransientFailure retries every registry fetch failure the library typed,
+// in any phase, and nothing else: an unclassified failure, fetch-like text
+// without the type, a cancellation, a raw deadline and a typed terminal cause
+// are not transient.
+func TestIsTransientFailure(t *testing.T) {
+	kinds := []struct {
+		name string
+		err  error
+	}{
+		{"unreachable", fetchErr(oerrors.FetchUnreachable, 0)},
+		{"not found", fetchErr(oerrors.FetchNotFound, 0)},
+		{"unauthorized", fetchErr(oerrors.FetchUnauthorized, 401)},
+		{"other with 429", fetchErr(oerrors.FetchOther, 429)},
+		{"other with 503", fetchErr(oerrors.FetchOther, 503)},
+	}
+	type row struct {
+		name string
+		err  error
+		want bool
+	}
+	terminal := []struct {
+		name string
+		err  error
+	}{
+		{"identity mismatch", identityErr()},
+		{"invalid package", fmt.Errorf("loading %q: %w", "/pkg", oerrors.ErrInvalidPackage)},
+		{"missing required field", fmt.Errorf("loading %q: %w", "/pkg", oerrors.ErrMissingRequiredField)},
+		{"wrong kind", fmt.Errorf("loading %q: %w", "/pkg", oerrors.ErrWrongKind)},
+		{"unresolved demands", unresolvedDemands()},
+	}
+	tests := make([]row, 0, 1+3*len(kinds)+len(terminal)+5)
+	tests = append(tests, row{name: "nil", err: nil, want: false})
+	for _, k := range kinds {
+		tests = append(tests,
+			row{"acquire " + k.name, acquireErr(k.err), true},
+			row{"synthesis " + k.name, fmt.Errorf("synthesizing release: %w", k.err), true},
+			row{"render " + k.name, fmt.Errorf("rendering module instance: %w", k.err), true},
+		)
+	}
+	for _, c := range terminal {
+		tests = append(tests, row{
+			"fetch failure joined to " + c.name,
+			acquireErr(errors.Join(fetchErr(oerrors.FetchUnreachable, 0), c.err)),
+			false,
+		})
+	}
+	tests = append(tests,
+		row{"deadline wrapped", fmt.Errorf("rendering module instance: %w", context.DeadlineExceeded), false},
+		row{"cancellation wrapped", fmt.Errorf("rendering module instance: %w", context.Canceled), false},
+		row{"unclassified acquire failure", acquireErr(syntaxError()), false},
+		row{"connection refused as text", errors.New("dial tcp 127.0.0.1:5000: connect: connection refused"), false},
+		row{"not found as text", acquireErr(errors.New("module opmodel.dev/modules/demo@v1.0.0: module not found")), false},
+	)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsTransientFailure(tt.err); got != tt.want {
+				t.Errorf("IsTransientFailure(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
 	}

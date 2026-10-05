@@ -26,9 +26,11 @@ var ErrPlatformNotReady = errors.New("platform not ready: no generated platform 
 
 // ErrAcquire marks a failure to acquire module source: fetching a module from
 // the registry (ModuleInstance) or loading a package and resolving its CUE
-// dependencies (ModulePackage). The reconcile loops retry it on the bounded
-// backoff unless a typed terminal cause (an identity mismatch, a wrong kind,
-// a structurally invalid package, a missing required field) sits underneath.
+// dependencies (ModulePackage). It marks the phase, not the cause, and
+// decides only the Ready reason of a stalled failure: an acquisition failure
+// reads ResolutionFailed. Whether a failure retries is decided by the
+// library's typed registry fetch failure (*oerrors.FetchError, see
+// reconcile.IsTransientFailure), in this phase and every later one.
 // It never changes the message: errors.Is finds it beside the original error.
 var ErrAcquire = errors.New("acquiring module source")
 

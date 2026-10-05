@@ -2,8 +2,6 @@ package reconcile
 
 import "testing"
 
-func strPtr(s string) *string { return &s }
-
 func TestRecordNoOpVersion(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -12,9 +10,9 @@ func TestRecordNoOpVersion(t *testing.T) {
 		want     string
 	}{
 		{name: "no render leaves the field", field: "0.1.0", rendered: nil, want: "0.1.0"},
-		{name: "render corrects a stale version", field: "9.9.9", rendered: strPtr("0.1.0"), want: "0.1.0"},
-		{name: "render with no version clears the field", field: "0.1.0", rendered: strPtr(""), want: ""},
-		{name: "render fills an empty field", field: "", rendered: strPtr("0.1.0"), want: "0.1.0"},
+		{name: "render corrects a stale version", field: "9.9.9", rendered: new("0.1.0"), want: "0.1.0"},
+		{name: "render with no version clears the field", field: "0.1.0", rendered: new(""), want: ""},
+		{name: "render fills an empty field", field: "", rendered: new("0.1.0"), want: "0.1.0"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -34,8 +32,8 @@ func TestAppliedVersion(t *testing.T) {
 		want     string
 	}{
 		{name: "no render gives empty", rendered: nil, want: ""},
-		{name: "render with no version gives empty", rendered: strPtr(""), want: ""},
-		{name: "render gives its version", rendered: strPtr("0.1.0"), want: "0.1.0"},
+		{name: "render with no version gives empty", rendered: new(""), want: ""},
+		{name: "render gives its version", rendered: new("0.1.0"), want: "0.1.0"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

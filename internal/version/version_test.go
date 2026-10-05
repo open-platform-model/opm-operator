@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -124,5 +125,35 @@ func TestInstallPageNamesThisRelease(t *testing.T) {
 		if strings.TrimPrefix(f[1], "v") != Version {
 			t.Errorf("%s:%s: version %s inside a release-please block, want %s (the operator's Version)", installPage, f[0], f[1], Version)
 		}
+	}
+}
+
+func TestLibraryVersion(t *testing.T) {
+	lib := func(m *debug.Module) *debug.BuildInfo {
+		return &debug.BuildInfo{Deps: []*debug.Module{
+			{Path: "github.com/fluxcd/pkg/ssa", Version: "v0.50.0"},
+			m,
+		}}
+	}
+	cases := []struct {
+		name string
+		info *debug.BuildInfo
+		ok   bool
+		want string
+	}{
+		{"plain dependency", lib(&debug.Module{Path: libraryModule, Version: "v1.0.0-beta.4"}), true, "v1.0.0-beta.4"},
+		{"replaced by a version", lib(&debug.Module{Path: libraryModule, Version: "v1.0.0-beta.4",
+			Replace: &debug.Module{Path: "github.com/fork/library", Version: "v1.0.0-beta.5"}}), true, "v1.0.0-beta.5"},
+		{"replaced by a path", lib(&debug.Module{Path: libraryModule, Version: "v1.0.0-beta.4",
+			Replace: &debug.Module{Path: "../library"}}), true, "(devel) ../library"},
+		{"absent", lib(&debug.Module{Path: "github.com/other/module", Version: "v1.0.0"}), true, ""},
+		{"no build info", nil, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := libraryVersion(tc.info, tc.ok); got != tc.want {
+				t.Fatalf("libraryVersion = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

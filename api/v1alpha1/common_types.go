@@ -98,6 +98,20 @@ type SourceStatus struct {
 	ArtifactURL string `json:"artifactURL,omitempty"`
 }
 
+// RenderInputs records the inputs of the last render that left the cluster
+// holding its output.
+type RenderInputs struct {
+	// digest is a SHA-256 over the render's inputs: the module source, the
+	// values, the platform package identity, the catalog skew policy, and the
+	// operator and library versions.
+	// +required
+	Digest string `json:"digest"`
+
+	// renderedAt is when that render ran.
+	// +required
+	RenderedAt metav1.Time `json:"renderedAt"`
+}
+
 // FailureCounters tracks bounded reconcile failure counts by action.
 type FailureCounters struct {
 	// +optional

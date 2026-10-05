@@ -28,6 +28,7 @@ import (
 
 	"github.com/open-platform-model/library/opm/kernel"
 
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/pkg/core"
@@ -141,8 +142,30 @@ var _ = Describe("KernelPackageRenderer Integration", func() {
 
 				Expect(res.ModuleVersion).To(Equal(pinnedModuleVersion(fixtureDir, pkg)),
 					"the render reports the version of the module the package's instance imports")
+				Expect(res.PlatformIdentity).To(Equal(store.Identity().String()),
+					"the render reports the identity of the package it built against")
+				Expect(res.SkewPolicy).To(Equal(releasesv1alpha1.SkewPolicyWarn),
+					"the render reports the default skew policy of the record it leased")
 			})
 		}
+
+		// A platform pinning the same catalog build has no skew to refuse, so
+		// a render under Refuse succeeds and reports the policy it leased.
+		It("reports Refuse when it renders against a record whose skew policy is Refuse", func() {
+			refuse := generatedPlatformStoreAt(k, registry, testCatalogVersion(), kernel.SkewRefuse)
+			fixtureDir, err := filepath.Abs(filepath.Join("..", "..", "fixtures", "modulepackages", "hello"))
+			Expect(err).NotTo(HaveOccurred())
+
+			renderer := &render.KernelPackageRenderer{
+				Kernel:      k,
+				Store:       refuse,
+				RuntimeName: core.LabelManagedByControllerValue,
+			}
+			_, res, err := renderer.Render(ctx, fixtureDir)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.SkewPolicy).To(Equal(releasesv1alpha1.SkewPolicyRefuse))
+			Expect(res.PlatformIdentity).To(Equal(refuse.Identity().String()))
+		})
 	})
 })
 

@@ -19,7 +19,9 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -80,6 +82,7 @@ func main() {
 	var platformDir string
 	var defaultServiceAccount string
 	var maxConcurrentRenders int
+	var driftRenderInterval time.Duration
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -128,6 +131,14 @@ func main() {
 			"limit (enhancement 0019). Throughput saturates at about physical cores divided by 1.6 renders "+
 			"in flight. The default of 1 renders one object at a time across both kinds; the Platform "+
 			"controller is always serial.")
+	flag.DurationVar(&driftRenderInterval, "drift-render-interval", 30*time.Minute,
+		"Longest a ModuleInstance or ModulePackage reconcile skips its render after the last render that "+
+			"left the cluster holding its output, while the render's inputs are unchanged (module source, "+
+			"values, platform package identity, catalog skew policy, operator and library versions) and the "+
+			"object is Ready and has observed its generation. A skipped reconcile renders nothing, runs no "+
+			"drift detection and patches no status, so drift is re-evaluated at most once per interval per "+
+			"unchanged object. The interval schedules no reconcile of its own. 0 disables the skip: every "+
+			"reconcile renders.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -142,8 +153,18 @@ func main() {
 		setupLog.Error(nil, "Invalid flag value: --max-concurrent-renders must be at least 1", "value", maxConcurrentRenders)
 		os.Exit(1)
 	}
+	if err := validateDriftRenderInterval(driftRenderInterval); err != nil {
+		setupLog.Error(err, "Invalid flag value", "value", driftRenderInterval.String())
+		os.Exit(1)
+	}
 
-	setupLog.Info("Starting opm-operator", "version", opmversion.Full())
+	// The operator and library versions are parts of every render input key,
+	// so an upgrade of either renders every object once. Read once here and
+	// injected, so the reconcilers hold no process globals.
+	operatorVersion := opmversion.Full()
+	libraryVersion := opmversion.Library()
+	setupLog.Info("Starting opm-operator", "version", operatorVersion, "libraryVersion", libraryVersion,
+		"driftRenderInterval", driftRenderInterval.String())
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -317,6 +338,9 @@ func main() {
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
 		RenderSlots:           renderSlots,
+		OperatorVersion:       operatorVersion,
+		LibraryVersion:        libraryVersion,
+		DriftRenderInterval:   driftRenderInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleInstance")
 		os.Exit(1)
@@ -338,6 +362,9 @@ func main() {
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
 		RenderSlots:           renderSlots,
+		OperatorVersion:       operatorVersion,
+		LibraryVersion:        libraryVersion,
+		DriftRenderInterval:   driftRenderInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModulePackage")
 		os.Exit(1)
@@ -405,4 +432,13 @@ func resolveRegistry(flagValue string) (registry, src string) {
 		return env, registrySourceEnv
 	}
 	return defaultRegistry, registrySourceDefault
+}
+
+// validateDriftRenderInterval refuses a negative --drift-render-interval;
+// zero disables the render skip and is valid.
+func validateDriftRenderInterval(d time.Duration) error {
+	if d < 0 {
+		return fmt.Errorf("--drift-render-interval must not be negative (0 disables the render skip), got %s", d)
+	}
+	return nil
 }

@@ -2,7 +2,7 @@
 
 How a ModuleInstance or ModulePackage becomes Kubernetes objects since the
 operator moved onto the library's single-build render (enhancement 0019,
-change `operator-render-switch`), and the two knobs an administrator has.
+change `operator-render-switch`), and the three knobs an administrator has.
 
 ## One build per render
 
@@ -89,6 +89,94 @@ rendering ordinary modules (10 to 25 components) at four concurrent renders
 wants about 1 GB and is comfortable at 2 GB. A 129-component fleet at eight
 concurrent renders wants 12 GB. Where memory is the tighter budget, fewer
 workers is the right trade; throughput falls close to linearly down to two.
+
+## Skipping unchanged renders: `--drift-render-interval`
+
+Most renders find nothing to do: a ModulePackage renders on every
+`spec.interval`, and an operator restart lists every object. Before it
+renders, a ModuleInstance or ModulePackage reconcile computes a render input
+key, a SHA-256 over the six inputs the render is a function of:
+
+| Part | Read from |
+| --- | --- |
+| Source | ModuleInstance: `spec.module.path@spec.module.version`; ModulePackage: the resolved Flux artifact digest |
+| Config | ModuleInstance: `spec.values`; ModulePackage: empty input |
+| Platform package identity | `Platform.status.packageIdentity` of the `cluster` Platform |
+| Catalog skew policy | the Platform's `spec.skewPolicy`, resolved (`Warn` when unset) |
+| Operator version | the running binary, as published to `Platform.status.operatorVersion` |
+| Library version | the library version in the running binary's build info |
+
+A key with an empty part (no Platform, no `packageIdentity`, a binary with no
+build info) is incomplete and never matches. The reconcile skips its render
+only when all of these hold:
+
+- `--drift-render-interval` is greater than zero (default `30m`);
+- `status.lastAppliedInputs` is set and its `renderedAt` is less than the
+  interval ago, which bounds how long anything outside the key goes unseen
+  (a `renderedAt` in the future counts as expired, so the bound holds);
+- `Ready` is `True` with reason `ReconciliationSucceeded`, so a failed,
+  refused or suspended attempt always renders, and a revert to the last
+  applied inputs after a failed apply still runs drift detection;
+- `status.observedGeneration` equals `metadata.generation`, so a spec edit
+  the key does not cover (`prune`, `serviceAccountName`, `rollout`, a CLI
+  handback through `spec.owner`) always renders;
+- the key is complete and equals `status.lastAppliedInputs.digest`;
+- for a ModulePackage, the resolved source (ref, revision, digest, URL)
+  equals `status.source`. The key carries the digest, not the revision, so a
+  revision that moves without moving the digest renders once, ends `NoOp`
+  and records the new revision.
+
+A skipped reconcile takes no render slot, leases no platform, fetches no
+artifact, runs no drift detection, applies and prunes nothing, emits no event
+and patches no status; it logs `Render inputs unchanged, skipping render` with
+the time from which the object renders again. A skipped ModuleInstance does
+not requeue; a skipped ModulePackage requeues on its `spec.interval`.
+
+`status.lastAppliedInputs` is written on a successful apply and on a `NoOp`
+that rendered, from the platform identity and skew policy the render itself
+leased, never the ones read before it, so a recorded key never names inputs
+newer than the ones the cluster holds. A failed, refused or panicking attempt
+leaves it.
+
+The interval is the bound, not a schedule: it starts no reconcile of its own.
+While the inputs do not change, drift is re-evaluated at most once per
+interval per object, on the first reconcile after it. The interval also
+bounds the inputs the key does not name: the operator's `--registry`
+mapping, a module version republished with different content, and a
+Platform deleted and recreated at the same generation and claim set (its
+`packageIdentity`, `gen-<generation>[-claims]`, then reads the same). `0`
+disables the skip: every reconcile renders, and a `NoOp` does not move
+`renderedAt`, so it writes nothing it did not write before the skip existed.
+
+Two cases fail open, rendering more than needed and never skipping wrongly:
+
+- The identity comes from `Platform.status`, the skew policy from
+  `Platform.spec`. After a `spec.skewPolicy` edit whose regeneration fails,
+  the old package and identity stay while the pre-render skew already names
+  the new policy, so no key matches and every reconcile renders until the
+  platform builds again.
+- After an operator restart the platform store is empty until the Platform
+  is regenerated, but `status.packageIdentity` survives, so an unchanged
+  object skips instead of rendering into `PlatformNotReady`. An object whose
+  inputs did change renders, fails `PlatformNotReady` and recovers as before.
+
+Rules for later changes:
+
+- **An upgrade renders every object once.** The operator and library
+  versions are key parts, so the first reconcile after either changes
+  renders. A change to how the operator computes a stored digest
+  (`lastApplied*`, `status.inventory.digest`) ships with an operator release
+  or a library bump, and that render then finds the stored digests out of
+  date and applies once. The rule rests on every operator release changing
+  `version.Version`. Release images build without `.git`, so a development
+  image built from `main` without a version bump keeps its key: the e2e of
+  such a change runs the manager with `--drift-render-interval=0` or expects
+  the one-time apply to wait up to the interval.
+- **A per-reconcile check runs before the skip.** A check that must run on
+  every reconcile, such as a health condition that requeues until a rollout
+  converges, either runs before the skip or makes its own not-yet-converged
+  state a no-skip condition; placed after the render, it would not run within
+  the interval.
 
 ## `Platform.spec.skewPolicy`
 

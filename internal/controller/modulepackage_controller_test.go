@@ -258,6 +258,63 @@ var _ = Describe("ModulePackage Controller", func() {
 		})
 	})
 
+	Context("Last applied inputs", func() {
+		It("records the key on apply and rewrites it on a NoOp", func() {
+			ctx := context.Background()
+			name := "inputs-release"
+
+			src := newOCIRepo(name+"-src", namespace)
+			Expect(k8sClient.Create(ctx, src)).To(Succeed())
+			markOCIReady(src, "main@sha256:ccc", "sha256:ccc")
+			Expect(k8sClient.Status().Update(ctx, src)).To(Succeed())
+
+			createModulePackage(ctx, name, "releases/app", false, nil)
+
+			fetcher := &stubFetcher{pathInArtifact: "releases/app"}
+			renderer := &stubPackageRenderer{result: stubRenderResult(namespace, nil)}
+			r := buildReconciler(fetcher, renderer)
+			r.OperatorVersion, r.LibraryVersion = testOperatorVersion, testLibraryVersion
+			// No Platform exists, so the pre-render key is incomplete and no
+			// reconcile here skips its render.
+			r.DriftRenderInterval = 30 * time.Minute
+			nn := types.NamespacedName{Name: name, Namespace: namespace}
+			reconcileTwice(ctx, r, nn)
+
+			var got releasesv1alpha1.ModulePackage
+			Expect(k8sClient.Get(ctx, nn, &got)).To(Succeed())
+			Expect(got.Status.LastAppliedInputs).NotTo(BeNil(), "a successful apply records the key")
+			want := status.RenderInputKey{
+				Source:          "sha256:ccc",
+				Config:          status.ConfigDigest(nil),
+				PackageIdentity: stubPlatformIdentity,
+				SkewPolicy:      stubSkewPolicy,
+				OperatorVersion: testOperatorVersion,
+				LibraryVersion:  testLibraryVersion,
+			}
+			Expect(got.Status.LastAppliedInputs.Digest).To(Equal(want.Digest()))
+
+			got.Status.LastAppliedInputs = nil
+			Expect(k8sClient.Status().Update(ctx, &got)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nn, &got)).To(Succeed())
+			before := got.Status.DeepCopy()
+
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, nn, &got)).To(Succeed())
+			Expect(got.Status.LastAppliedInputs).NotTo(BeNil(), "a NoOp rewrites the key")
+			Expect(got.Status.LastAppliedInputs.Digest).To(Equal(want.Digest()))
+			Expect(got.Status.History).To(HaveLen(len(before.History)), "a NoOp records no history")
+			Expect(got.Status.LastAttemptedAt).To(Equal(before.LastAttemptedAt), "a NoOp is not an attempt")
+
+			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			})).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &got)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, src)).To(Succeed())
+		})
+	})
+
 	Context("Source not ready", func() {
 		It("sets Ready=False with SourceNotReady and requeues", func() {
 			ctx := context.Background()

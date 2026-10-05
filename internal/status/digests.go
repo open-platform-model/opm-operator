@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
+	"strconv"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/pkg/core"
@@ -130,4 +132,58 @@ func IsNoOp(current, lastApplied DigestSet) bool {
 		current.Config == lastApplied.Config &&
 		current.Render == lastApplied.Render &&
 		current.Inventory == lastApplied.Inventory
+}
+
+// renderInputsEncoding names the encoding RenderInputKey.Digest hashes. A
+// change to the parts or their order changes this tag, which changes every
+// digest and so costs one render per object, never a wrong skip.
+const renderInputsEncoding = "opm-render-inputs/v1"
+
+// RenderInputKey holds the inputs a render is a function of: what the
+// operator renders, with what values, against which platform package, under
+// which skew policy, by which operator and library. Its digest is recorded in
+// status.lastAppliedInputs and compared before the next render.
+type RenderInputKey struct {
+	// Source is ModuleSourceDigest for a ModuleInstance, the Flux artifact
+	// digest for a ModulePackage.
+	Source string
+	// Config is ConfigDigest(spec.values); ConfigDigest(nil) for a
+	// ModulePackage.
+	Config string
+	// PackageIdentity is the platform package identity in the string form
+	// Platform.status.packageIdentity carries.
+	PackageIdentity string
+	// SkewPolicy is the catalog skew policy as the API spells it ("Warn" or
+	// "Refuse").
+	SkewPolicy string
+	// OperatorVersion is the running operator's version.Full().
+	OperatorVersion string
+	// LibraryVersion is the running operator's version.Library().
+	LibraryVersion string
+}
+
+// parts returns the key's parts in their fixed encoding order.
+func (k RenderInputKey) parts() []string {
+	return []string{k.Source, k.Config, k.PackageIdentity, k.SkewPolicy, k.OperatorVersion, k.LibraryVersion}
+}
+
+// Complete reports whether every part is set. An incomplete key is never
+// recorded and never matches, so a missing part always means "render".
+func (k RenderInputKey) Complete() bool {
+	return !slices.Contains(k.parts(), "")
+}
+
+// Digest returns "sha256:<hex>" over the encoding tag and each part as
+// "<len>:<value>", in field order. The length prefixes make the encoding
+// unambiguous without escaping: no two different keys encode alike.
+func (k RenderInputKey) Digest() string {
+	h := sha256.New()
+	writePart := func(s string) {
+		h.Write([]byte(strconv.Itoa(len(s)) + ":" + s))
+	}
+	writePart(renderInputsEncoding)
+	for _, p := range k.parts() {
+		writePart(p)
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil))
 }

@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -83,6 +84,16 @@ type ModuleInstanceReconciler struct {
 	// unbounded (tests that need no bound).
 	RenderSlots *render.Slots
 
+	// OperatorVersion and LibraryVersion are the running operator's
+	// version.Full() and version.Library(), parts of the render input key.
+	// Empty makes every key incomplete: nothing is recorded or skipped.
+	OperatorVersion string
+	LibraryVersion  string
+
+	// DriftRenderInterval is the manager's --drift-render-interval. Zero
+	// disables the render skip and the record of the key on a NoOp.
+	DriftRenderInterval time.Duration
+
 	// warnings remembers each instance's last render warnings so RenderWarning
 	// events are emitted on transition only (0019:D18).
 	warnings opmreconcile.WarningTracker
@@ -114,6 +125,9 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		RenderSlots:           r.RenderSlots,
 		DefaultServiceAccount: r.DefaultServiceAccount,
 		Warnings:              &r.warnings,
+		OperatorVersion:       r.OperatorVersion,
+		LibraryVersion:        r.LibraryVersion,
+		DriftRenderInterval:   r.DriftRenderInterval,
 	}, req)
 }
 
@@ -207,7 +221,7 @@ func platformConsumedFieldsChanged() predicate.Predicate {
 				return true
 			}
 			return old.Status.ObservedGeneration != cur.Status.ObservedGeneration ||
-				old.Status.PackageIdentity != cur.Status.PackageIdentity ||
+				platformstore.PinSet(old) != platformstore.PinSet(cur) ||
 				!equality.Semantic.DeepEqual(old.Status.Registry, cur.Status.Registry) ||
 				skewPolicyOf(old) != skewPolicyOf(cur) ||
 				readyStatus(old) != readyStatus(cur) ||

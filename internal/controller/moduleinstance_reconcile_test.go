@@ -1312,6 +1312,179 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 		})
 	})
 
+	Context("Last applied inputs", func() {
+		newReconciler := func(renderer *stubRenderer, interval time.Duration) *ModuleInstanceReconciler {
+			return &ModuleInstanceReconciler{
+				Client:              k8sClient,
+				Scheme:              k8sClient.Scheme(),
+				ResourceManager:     apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:       events.NewFakeRecorder(10),
+				Renderer:            renderer,
+				OperatorVersion:     testOperatorVersion,
+				LibraryVersion:      testLibraryVersion,
+				DriftRenderInterval: interval,
+			}
+		}
+
+		// The reconcilers here run with no Platform, so the pre-render key is
+		// incomplete and no reconcile skips; they observe what is recorded.
+		appliedInstance := func(ctx context.Context, name string) types.NamespacedName {
+			createModuleInstance(ctx, name)
+			nn := types.NamespacedName{Name: name, Namespace: namespace}
+			r := newReconciler(&stubRenderer{}, 30*time.Minute)
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			return nn
+		}
+
+		changedRender := func(identity string) *render.RenderResult {
+			values := &releasesv1alpha1.RawValues{}
+			values.Raw = []byte(`{"message": "changed"}`)
+			res := stubRenderResult(namespace, values)
+			res.PlatformIdentity = identity
+			return res
+		}
+
+		clearRecorded := func(ctx context.Context, nn types.NamespacedName) {
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			mi.Status.LastAppliedInputs = nil
+			Expect(k8sClient.Status().Update(ctx, &mi)).To(Succeed())
+		}
+
+		cleanup := func(ctx context.Context, nn types.NamespacedName) {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			}))).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: namespace},
+			})).To(Succeed())
+		}
+
+		It("records the key and the render time on the first successful apply", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "inputs-applied-mi")
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			Expect(mi.Status.LastAppliedInputs).NotTo(BeNil())
+			Expect(mi.Status.LastAppliedInputs.Digest).To(HavePrefix("sha256:"))
+			Expect(mi.Status.LastAppliedInputs.RenderedAt.IsZero()).To(BeFalse())
+			want := status.RenderInputKey{
+				Source:          mi.Status.LastAppliedSourceDigest,
+				Config:          mi.Status.LastAppliedConfigDigest,
+				PackageIdentity: stubPlatformIdentity,
+				SkewPolicy:      stubSkewPolicy,
+				OperatorVersion: testOperatorVersion,
+				LibraryVersion:  testLibraryVersion,
+			}
+			Expect(mi.Status.LastAppliedInputs.Digest).To(Equal(want.Digest()),
+				"the key is built from the render's own platform report")
+
+			cleanup(ctx, nn)
+		})
+
+		It("keeps the key when an apply with changed values fails", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "inputs-failed-mi")
+
+			var before releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
+			Expect(before.Status.LastAppliedInputs).NotTo(BeNil())
+
+			Eventually(func() error {
+				var latest releasesv1alpha1.ModuleInstance
+				if err := k8sClient.Get(ctx, nn, &latest); err != nil {
+					return err
+				}
+				latest.Spec.Values.Raw = []byte(`{"message": "changed"}`)
+				return k8sClient.Update(ctx, &latest)
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+
+			realWithWatch, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
+			Expect(err).NotTo(HaveOccurred())
+			failingClient := interceptor.NewClient(realWithWatch, interceptor.Funcs{
+				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+					return fmt.Errorf("injected apply failure")
+				},
+			})
+			r := newReconciler(&stubRenderer{}, 30*time.Minute)
+			r.ResourceManager = apply.NewResourceManager(failingClient, "opm-controller")
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse), "the apply failed")
+			Expect(mi.Status.LastAppliedInputs).NotTo(BeNil())
+			Expect(mi.Status.LastAppliedInputs.Digest).To(Equal(before.Status.LastAppliedInputs.Digest))
+			Expect(mi.Status.LastAppliedInputs.RenderedAt.Equal(&before.Status.LastAppliedInputs.RenderedAt)).To(BeTrue())
+
+			cleanup(ctx, nn)
+		})
+
+		It("rewrites the key on a NoOp without touching the attempt record", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "inputs-noop-mi")
+			var applied releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &applied)).To(Succeed())
+			clearRecorded(ctx, nn)
+
+			var before releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
+			Expect(before.Status.LastAppliedInputs).To(BeNil())
+
+			_, err := newReconciler(&stubRenderer{}, 30*time.Minute).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			Expect(mi.Status.LastAppliedInputs).NotTo(BeNil())
+			Expect(mi.Status.LastAppliedInputs.Digest).To(Equal(applied.Status.LastAppliedInputs.Digest))
+			Expect(mi.Status.History).To(HaveLen(len(before.Status.History)), "a NoOp records no history")
+			Expect(mi.Status.LastAttemptedAt).To(Equal(before.Status.LastAttemptedAt), "a NoOp is not an attempt")
+
+			cleanup(ctx, nn)
+		})
+
+		It("leaves the field on a NoOp while the skip is disabled", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "inputs-noop-disabled-mi")
+			clearRecorded(ctx, nn)
+
+			_, err := newReconciler(&stubRenderer{}, 0).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			Expect(mi.Status.LastAppliedInputs).To(BeNil(), "with the skip disabled a NoOp records nothing")
+
+			cleanup(ctx, nn)
+		})
+
+		It("clears the key on an apply whose render reports no platform", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "inputs-cleared-mi")
+
+			_, err := newReconciler(&stubRenderer{result: changedRender("")}, 30*time.Minute).
+				Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue), "the apply succeeded")
+			Expect(mi.Status.LastAppliedInputs).To(BeNil(), "an incomplete key must not leave a stale one behind")
+
+			cleanup(ctx, nn)
+		})
+	})
+
 	Context("Finalizer registration", func() {
 		It("should add finalizer on first reconcile", func() {
 			ctx := context.Background()

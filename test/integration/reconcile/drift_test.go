@@ -301,3 +301,105 @@ var _ = Describe("Drift Detection", func() {
 		})
 	})
 })
+
+// Drift detection under the render skip (render-input-key): a reconcile that
+// skips its render sends no dry-run and leaves Drifted as it was; once the
+// last confirming render is older than the drift render interval, the next
+// reconcile renders and finds the drift.
+var _ = Describe("Drift Detection with the render skip", func() {
+	It("finds no drift while the render is skipped, and finds it once the interval has passed", func() {
+		const name = "drift-skip-mr"
+		plat := &releasesv1alpha1.Platform{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+			Spec:       releasesv1alpha1.PlatformSpec{Type: "kubernetes"},
+		}
+		Expect(k8sClient.Create(ctx, plat)).To(Succeed())
+		DeferCleanup(func(ctx context.Context) {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &releasesv1alpha1.Platform{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+			}))).To(Succeed())
+		})
+		Eventually(func(g Gomega) {
+			var current releasesv1alpha1.Platform
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "cluster"}, &current)).To(Succeed())
+			current.Status.PackageIdentity = "gen-1"
+			g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+		}).WithTimeout(5 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
+
+		createModuleInstance(name)
+		nn := types.NamespacedName{Name: name, Namespace: namespace}
+		DeferCleanup(func(ctx context.Context) {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			}))).To(Succeed())
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			}))).To(Succeed())
+		})
+
+		// The render reports the platform the Platform CR names, so the
+		// recorded key matches the pre-render key on the next reconcile.
+		values := &releasesv1alpha1.RawValues{}
+		values.Raw = []byte(`{"message": "hello"}`)
+		result := stubRenderResult(namespace, values)
+		result.PlatformIdentity = "gen-1"
+		result.SkewPolicy = releasesv1alpha1.SkewPolicyWarn
+
+		// Count every patch the resource manager sends: drift detection is a
+		// server-side apply dry-run, a patch.
+		realClient, err := client.NewWithWatch(cfg, client.Options{})
+		Expect(err).NotTo(HaveOccurred())
+		var patches int
+		counting := interceptor.NewClient(realClient, interceptor.Funcs{
+			Patch: func(
+				ctx context.Context, c client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption,
+			) error {
+				patches++
+				return c.Patch(ctx, obj, p, opts...)
+			},
+		})
+		params := reconcileParams()
+		params.Renderer = &stubRenderer{result: result}
+		params.ResourceManager = apply.NewResourceManager(counting, "opm-controller")
+		params.OperatorVersion = "v1.0.0-test"
+		params.LibraryVersion = "v1.0.0-test.library"
+		params.DriftRenderInterval = 30 * time.Minute
+
+		ensureFinalizer(params, nn)
+		_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		var mi releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		Expect(mi.Status.LastAppliedInputs).NotTo(BeNil(), "the apply records the key")
+
+		cm := &corev1.ConfigMap{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, cm)).To(Succeed())
+		cm.Data["message"] = "drifted-under-skip"
+		Expect(k8sClient.Update(ctx, cm)).To(Succeed())
+
+		By("reconciling within the interval: the render is skipped")
+		patches = 0
+		_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(patches).To(BeZero(), "a skipped reconcile sends no dry-run")
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		Expect(apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)).To(BeNil(),
+			"Drifted is left as it was")
+
+		By("reconciling after the interval: the render runs and finds the drift")
+		Eventually(func(g Gomega) {
+			var current releasesv1alpha1.ModuleInstance
+			g.Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			current.Status.LastAppliedInputs.RenderedAt = metav1.NewTime(time.Now().Add(-31 * time.Minute))
+			g.Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+		}).WithTimeout(5 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
+		_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(patches).To(BeNumerically(">", 0), "the render sent its dry-run")
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		drifted := apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)
+		Expect(drifted).NotTo(BeNil())
+		Expect(drifted.Status).To(Equal(metav1.ConditionTrue))
+		Expect(drifted.Reason).To(Equal(status.DriftDetectedReason))
+	})
+})

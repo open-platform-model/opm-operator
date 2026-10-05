@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/patch"
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,6 +68,19 @@ type ModulePackageParams struct {
 	// Warnings remembers each package's last render warnings so RenderWarning
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
+
+	// OperatorVersion and LibraryVersion are the running operator's
+	// version.Full() and version.Library(), parts of the render input key.
+	// They are injected so tests can set them; an empty one makes every key
+	// incomplete, so nothing is recorded and nothing is skipped.
+	OperatorVersion string
+	LibraryVersion  string
+
+	// DriftRenderInterval is the manager's --drift-render-interval: how long
+	// a reconcile whose render inputs are unchanged may skip its render after
+	// the render that recorded them. Zero disables the skip and the record
+	// of the key on a NoOp.
+	DriftRenderInterval time.Duration
 
 	// convert exports a render result for apply. Nil, as in production,
 	// means convertRender; tests in this package set it to observe the
@@ -169,10 +184,22 @@ func ReconcileModulePackage(
 		// is caught before this flag and the NoOp branch are read.
 		skipCommit bool
 
+		// renderSkipped is set when the render inputs are unchanged and the
+		// reconcile skips the render. A skip is not an attempt: every
+		// condition it read is already final and nothing it could record has
+		// moved, so the commit sends no patch (it would only write the
+		// transient Reconciling set below).
+		renderSkipped bool
+
 		// renderedVersion is the module version this attempt's render
 		// reported, nil until a render result is in hand. A NoOp writes it
 		// to lastAppliedVersion only when it is set.
 		renderedVersion *string
+
+		// renderedInputs is the render input key of this attempt's render,
+		// nil until a render result is in hand. A success or a NoOp records
+		// it as lastAppliedInputs; a failure or a panic does not.
+		renderedInputs *status.RenderInputKey
 	)
 
 	// A panic is recovered first: the outcome is still its zero value, NoOp,
@@ -185,7 +212,7 @@ func ReconcileModulePackage(
 			commitModulePackagePanicStatus(ctx, patcher, &pkg, r, digests, reconcileStart)
 			panic(r)
 		}
-		if skipCommit {
+		if skipCommit || renderSkipped {
 			return
 		}
 		now := metav1.Now()
@@ -196,6 +223,7 @@ func ReconcileModulePackage(
 			updateModulePackageFailureCounters(&pkg.Status, outcome, phases)
 			pkg.Status.NextRetryAt = nil
 			recordNoOpVersion(&pkg.Status.LastAppliedVersion, renderedVersion)
+			recordInputs(&pkg.Status.LastAppliedInputs, noOpInputs(params.DriftRenderInterval, renderedInputs), now)
 			if err := patchModulePackageStatus(ctx, patcher, &pkg); err != nil {
 				log.Error(err, "Failed to patch NoOp status")
 			}
@@ -216,6 +244,7 @@ func ReconcileModulePackage(
 			pkg.Status.LastAppliedVersion = appliedVersion(renderedVersion)
 			pkg.Status.LastAppliedConfigDigest = digests.Config
 			pkg.Status.LastAppliedRenderDigest = digests.Render
+			recordInputs(&pkg.Status.LastAppliedInputs, renderedInputs, now)
 
 			pkg.Status.Inventory = nextInventory(pkg.Status.Inventory, newEntries)
 			digests.Inventory = pkg.Status.Inventory.Digest
@@ -239,6 +268,9 @@ func ReconcileModulePackage(
 		}
 	}()
 
+	// The skip below reads the conditions as the last attempt left them, not
+	// the transient Reconciling this attempt sets now.
+	conditionsAtStart := slices.Clone(pkg.Status.Conditions)
 	status.MarkReconciling(&pkg, "Progressing", "Reconciliation in progress")
 
 	applyFail := func(fail *phaseFail) {
@@ -253,13 +285,25 @@ func ReconcileModulePackage(
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
-	pkg.Status.Source = &releasesv1alpha1.SourceStatus{
+	resolved := &releasesv1alpha1.SourceStatus{
 		Ref:              &pkg.Spec.SourceRef,
 		ArtifactRevision: artifactRef.Revision,
 		ArtifactDigest:   artifactRef.Digest,
 		ArtifactURL:      artifactRef.URL,
 	}
+	// The key carries the artifact digest, not the revision: a revision that
+	// moves without moving the digest must still render once, so the NoOp
+	// patch records it in status.source. Compared before the overwrite.
+	sourceRecorded := apiequality.Semantic.DeepEqual(pkg.Status.Source, resolved)
+	pkg.Status.Source = resolved
 	digests.Source = artifactRef.Digest
+
+	// Skip the render, and the artifact fetch before it, when the inputs are
+	// unchanged.
+	if sourceRecorded && packageRenderSkippable(ctx, params, &pkg, conditionsAtStart, digests.Source) {
+		renderSkipped = true
+		return ctrl.Result{RequeueAfter: interval}, nil
+	}
 
 	// Phase 2: fetch + extract artifact.
 	extractDir, fail := fetchModulePackageArtifact(ctx, params, &pkg, artifactRef, interval)
@@ -289,6 +333,8 @@ func ReconcileModulePackage(
 
 	computeModulePackageDigests(converted, &digests)
 	renderedVersion = &converted.result.ModuleVersion
+	key := renderedKey(digests.Source, digests.Config, converted.result, params.OperatorVersion, params.LibraryVersion)
+	renderedInputs = &key
 
 	lastApplied := status.DigestSet{
 		Source:    pkg.Status.LastAppliedSourceDigest,
@@ -317,6 +363,43 @@ func ReconcileModulePackage(
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
 	return ctrl.Result{RequeueAfter: interval}, nil
+}
+
+// packageRenderSkippable reports whether this reconcile of pkg may skip its
+// render because the render input key computed from the resolved artifact
+// digest, the cluster Platform and the running versions matches
+// status.lastAppliedInputs, under the conditions of renderSkip.maySkip. A
+// ModulePackage carries no values, so its config part is ConfigDigest(nil).
+// conditions are the package's conditions before this attempt marked itself
+// Reconciling.
+// It logs the skip.
+func packageRenderSkippable(
+	ctx context.Context,
+	params *ModulePackageParams,
+	pkg *releasesv1alpha1.ModulePackage,
+	conditions []metav1.Condition,
+	sourceDigest string,
+) bool {
+	if params.DriftRenderInterval <= 0 || pkg.Status.LastAppliedInputs == nil {
+		return false
+	}
+	key := func() status.RenderInputKey {
+		identity, skew := platformKeyParts(ctx, params.Client)
+		return status.RenderInputKey{
+			Source:          sourceDigest,
+			Config:          status.ConfigDigest(nil),
+			PackageIdentity: identity,
+			SkewPolicy:      skew,
+			OperatorVersion: params.OperatorVersion,
+			LibraryVersion:  params.LibraryVersion,
+		}
+	}
+	skip := renderSkip{interval: params.DriftRenderInterval, now: time.Now()}
+	if !skip.maySkip(conditions, pkg.Generation, pkg.Status.ObservedGeneration, pkg.Status.LastAppliedInputs, key) {
+		return false
+	}
+	logRenderSkip(ctx, pkg.Status.LastAppliedInputs, params.DriftRenderInterval)
+	return true
 }
 
 // commitModulePackagePanicStatus is the ModulePackage twin of

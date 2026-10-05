@@ -51,9 +51,9 @@ import (
 )
 
 // platformSingletonName is the only permitted name for the cluster-scoped
-// Platform singleton. The CRD enforces this via a CEL rule; the reconciler
-// guards on it again as defense-in-depth.
-const platformSingletonName = "cluster"
+// Platform singleton (platformstore.SingletonName). The CRD enforces this via
+// a CEL rule; the reconciler guards on it again as defense-in-depth.
+const platformSingletonName = platformstore.SingletonName
 
 // PlatformModulePath is the generated platform module's own identity: the
 // reserved, never-published platforms namespace (0019:D6). Fixed
@@ -292,7 +292,7 @@ func (r *PlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Identity: identity,
 		Dir:      dir,
 		Platform: p,
-		Skew:     skewPolicy(&plat),
+		Skew:     platformstore.ResolveSkewPolicy(&plat),
 	})
 	keep := append([]platformstore.PackageIdentity{identity}, r.Store.Leased()...)
 	if err := r.Layout.Prune(keep...); err != nil {
@@ -503,16 +503,6 @@ func (r *PlatformReconciler) patchStatus(ctx context.Context, patcher *patch.Ser
 			},
 		},
 	)
-}
-
-// skewPolicy resolves spec.skewPolicy to the kernel's policy: Refuse maps to
-// SkewRefuse, anything else (Warn, unset) to SkewWarn, the 0019:D18 default. The
-// CRD enum keeps other values out at admission.
-func skewPolicy(plat *releasesv1alpha1.Platform) kernel.SkewPolicy {
-	if plat.Spec.SkewPolicy != nil && *plat.Spec.SkewPolicy == releasesv1alpha1.SkewPolicyRefuse {
-		return kernel.SkewRefuse
-	}
-	return kernel.SkewWarn
 }
 
 // platformEntries maps the tuple to the generator's entries, in sorted path

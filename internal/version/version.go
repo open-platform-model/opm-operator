@@ -74,3 +74,39 @@ func Full() string {
 	}
 	return v
 }
+
+// libraryModule is the library's Go module path, the dependency Library
+// reports the version of.
+const libraryModule = "github.com/open-platform-model/library"
+
+// Library returns the version of the library the operator binary was built
+// with, read from the binary's build info: the dependency's module version,
+// or its replacement's when the dependency is replaced ("(devel) <path>" for
+// a replacement by a local path). It returns "" when the binary carries no
+// build info or no library dependency, as a go test binary does. The render
+// input key carries it, so a library bump re-renders every object once; an
+// empty value makes every key incomplete, which renders.
+func Library() string {
+	info, ok := debug.ReadBuildInfo()
+	return libraryVersion(info, ok)
+}
+
+// libraryVersion is Library's lookup over a given build info.
+func libraryVersion(info *debug.BuildInfo, ok bool) string {
+	if !ok || info == nil {
+		return ""
+	}
+	for _, dep := range info.Deps {
+		if dep == nil || dep.Path != libraryModule {
+			continue
+		}
+		if r := dep.Replace; r != nil {
+			if r.Version != "" {
+				return r.Version
+			}
+			return "(devel) " + r.Path
+		}
+		return dep.Version
+	}
+	return ""
+}

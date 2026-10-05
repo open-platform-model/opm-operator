@@ -33,7 +33,9 @@ that did not render leaves it as it was.
 
 `lastAppliedInputs` is in the `NoOp` set for the same reason: a `NoOp` that
 rendered proves the cluster holds what those inputs produce, so its key and
-render time are recorded, and the drift render interval counts from it.
+render time are recorded, and the drift render interval counts from it. It is
+written on a `NoOp` only while the drift render interval is greater than
+zero; with the skip disabled nothing reads it.
 
 Storm safety is provided by `WithEventFilter(predicate.GenerationChangedPredicate{})`
 on the controller. Status subresource patches do not bump

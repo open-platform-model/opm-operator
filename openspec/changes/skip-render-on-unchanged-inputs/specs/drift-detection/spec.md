@@ -6,6 +6,7 @@ Drift detection MUST run on every reconcile that renders, even when digest compa
 #### Scenario: Drift detected during no-op
 - **GIVEN** a ModuleRelease where source, config, and render digests are unchanged
 - **AND** a resource has been manually modified on the cluster
+- **AND** the reconcile renders (an input changed or the drift render interval passed)
 - **WHEN** the controller reconciles
 - **THEN** drift is detected and `Drifted=True` is set
 - **AND** apply is still skipped (no source/config/render changes)

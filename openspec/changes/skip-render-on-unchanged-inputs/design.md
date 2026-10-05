@@ -23,7 +23,7 @@ So the renders that find nothing to do are: every ModulePackage interval, every 
 
 Drift detection (`detectDrift`, SSA dry-run of the apply list) runs only in the ModuleInstance loop, on every reconcile that rendered. It reports `Drifted` and never re-applies. The ModulePackage loop runs no drift detection.
 
-Reconcile phase impact: a new pre-render check before Source fetch (ModulePackage) or Render (ModuleInstance). When it passes, Render, drift detection, Apply, Prune and the status commit do not run. When it does not, every phase runs as today, and the status commit additionally records `lastAppliedInputs` on a successful apply or a `NoOp`.
+Reconcile phase impact: a new pre-render check before the artifact fetch (ModulePackage, after source resolution) or Render (ModuleInstance). When it passes, Render, drift detection, Apply, Prune and the status commit do not run. When it does not, every phase runs as today, and the status commit additionally records `lastAppliedInputs` on a successful apply or a `NoOp`.
 
 ## Goals / Non-Goals
 
@@ -32,7 +32,7 @@ Reconcile phase impact: a new pre-render check before Source fetch (ModulePackag
 - A reconcile whose render inputs are unchanged since the last render that left the cluster holding their output does not render, unless that render is older than the drift render interval.
 - A skip never hides an input change, a failed attempt, or an unobserved spec edit.
 - An operator or library upgrade always renders once, so a change to how the operator computes its stored digests reaches every object.
-- `--drift-render-interval=0` is exactly today's behaviour.
+- `--drift-render-interval=0` renders on every reconcile and writes on a `NoOp` exactly what it wrote before this change; only a successful apply also records the key, in the status write it makes anyway.
 
 **Non-Goals:**
 
@@ -115,6 +115,7 @@ The singleton's name moves to `internal/platform` (`SingletonName = "cluster"`) 
 3. `Ready` is `True` with reason `ReconciliationSucceeded`.
 4. `status.observedGeneration == metadata.generation`.
 5. The pre-render key is complete and its digest equals `status.lastAppliedInputs.digest`.
+6. ModulePackage only: the source just resolved (ref, revision, digest, URL) equals `status.source`.
 
 ```go
 // internal/reconcile/inputs.go (sketch)
@@ -143,10 +144,11 @@ func (s renderSkip) maySkip(obj conditions.Getter, gen, observed int64,
 - (3) A failed or refused attempt leaves `Ready=False`, and `lastAppliedInputs` still names the last success. Without (3) a revert to the last applied inputs after a failed apply would skip, and a partly applied failed attempt would stay in the cluster unreported. With it, the reconcile renders, finds `NoOp` against the last applied digests, and drift detection reports what the failed attempt left, as today. A refused shrink (0015:D16) is `Ready=False` too, so its refusal is re-decided on every reconcile, as today. A suspended object is `Ready=False` with reason `Suspended`, so a resume renders.
 - (4) A spec edit that changes no key part (`serviceAccountName`, `prune`, `rollout`) renders, as today, so a field the key does not cover can never be skipped past, and the commit after it writes `observedGeneration`, which `kubectl wait` and the cli read. A CLI handback is a spec edit (`spec.owner`), so it always renders, whatever the cli wrote to the digests meanwhile.
 - (2) bounds how long anything outside the key can go unseen, and keeps drift detection running at most once per interval per object.
+- (6) The key carries the artifact digest, not the revision. A Flux revision that moves without moving the digest (a commit touching only ignored paths) would otherwise leave `status.source.artifactRevision` stale, against the requirement that `status.source` reflects the resolved artifact. With (6) that reconcile renders, finds `NoOp`, and the `NoOp` patch records the new source, as today. The comparison is made against the persisted `status.source` before Phase 1 overwrites it in memory.
 
 ### 5. What a skipped reconcile does and does not do
 
-**Decision**: A skip happens before the deferred status commit is armed (ModuleInstance) or makes it return without a patch (ModulePackage, whose source resolution runs after the defer is set up). Nothing is patched: every condition the skip read is already in its final state, and a patch would only write the transient `Reconciling` the loop sets at the start. No event is emitted (a ModulePackage `NoOp` emits one per interval today; a skipped interval does not). One `Info` log line, `Render inputs unchanged, skipping render`, with the time the next reconcile may render. The skipped-render counter increments. The ModuleInstance returns `ctrl.Result{}`; the ModulePackage returns `RequeueAfter: interval`. `lastAppliedVersion`, `requiredContracts`, `Drifted`, the inventory, history and failure counters are left as they are, because none of them can have moved without a key part moving.
+**Decision**: A skip happens before the deferred status commit is armed (ModuleInstance) or makes it return without a patch (ModulePackage, whose source resolution runs after the defer is set up). Nothing is patched: every condition the skip read is already in its final state, and a patch would only write the transient `Reconciling` the loop sets at the start. No event is emitted (a ModulePackage `NoOp` emits one per interval today; a skipped interval does not). One `Info` log line, `Render inputs unchanged, skipping render`, with the time the next reconcile may render. No metric is added: the log line shows that a skip happened, and a counter was not part of the decision. The ModuleInstance returns `ctrl.Result{}`; the ModulePackage returns `RequeueAfter: interval`. `lastAppliedVersion`, `requiredContracts`, `Drifted`, the inventory, history and failure counters are left as they are, because none of them can have moved without a key part moving.
 
 The ModuleInstance check sits after the suspend and resume checks and before `MarkReconciling`. The ModulePackage check sits after source resolution (Phase 1, which yields the artifact digest the key needs) and before the artifact fetch, so a skip also saves the download and extraction.
 
@@ -157,12 +159,13 @@ The ModuleInstance check sits after the suspend and resume checks and before `Ma
 **Decision**: The deferred commit writes `status.lastAppliedInputs` in two places, from one helper:
 
 - on a successful apply (`reconciled`), next to the other `lastApplied*` fields;
-- on a `NoOp` that rendered, next to `lastAppliedVersion` (a `NoOp` means the cluster holds what these inputs produce, so the key is re-proved and `renderedAt` moves).
+- on a `NoOp` that rendered, next to `lastAppliedVersion` (a `NoOp` means the cluster holds what these inputs produce, so the key is re-proved and `renderedAt` moves), but only while `DriftRenderInterval > 0`. With the skip disabled nothing reads the field, and moving `renderedAt` would turn every `NoOp`, which today patches nothing that changed, into a status write.
 
 Both build the key from the render's report (decision 2) and the params' versions. When that key is incomplete (a stub render with no identity, a binary with no library version), the field is cleared, so a stale key never survives a render whose inputs could not be named. A failed attempt, a refusal, a panic and a skip leave it. The `NoOp` patch set in `reconcile-loop-assembly` gains the field; `lastAttempted*`, inventory and history stay out of it.
 
 ```go
 // internal/reconcile/inputs.go (sketch)
+// The NoOp commit calls it only when DriftRenderInterval > 0.
 func recordInputs(field **releasesv1alpha1.RenderInputs, key *status.RenderInputKey, now metav1.Time) {
 	if key == nil { // this attempt did not render
 		return
@@ -201,7 +204,7 @@ LastAppliedInputs *RenderInputs `json:"lastAppliedInputs,omitempty"`
 
 **Context**: The owner set no number. The ModulePackage default interval is 5 minutes; drift detection is informational only; renders are the operator's memory peak.
 
-**Decision**: `--drift-render-interval` defaults to `30m`. `0` disables the skip. A negative value exits at startup with the same message shape as `--max-concurrent-renders`. The flag is not added to `config/manager/manager.yaml`: the default applies.
+**Decision**: `--drift-render-interval` defaults to `30m`. `0` disables the skip and the `NoOp` record. A negative value exits at startup with the same message shape as `--max-concurrent-renders`; the check is a small function in `cmd` with a table test. The flag is not added to `config/manager/manager.yaml`: the default applies.
 
 **Rationale**: An idle ModulePackage renders every 30 minutes instead of every 5, and an operator restart renders only objects whose last confirming render is older than 30 minutes or whose inputs moved. A drift report or an out-of-key change (decision 4, (2)) waits at most that long after a reconcile triggers. Thirty minutes is the writer's choice; it is one flag default, set in `cmd/main.go`, and the change does not depend on its value.
 
@@ -213,6 +216,10 @@ The defer blocks this edits are the ones #236 (recovered panic) and #242 (`lastA
 
 - [Drift on an unchanged object is re-evaluated at most every 30 minutes, and only when a reconcile is triggered] → Drift detection is informational; `0` restores per-reconcile rendering. ModuleInstances had no periodic re-render before this change either.
 - [A key part is left out by mistake and a needed render is skipped] → Condition (4) renders every spec edit whatever the key says, condition (3) renders after every failure, and the interval bounds anything else; the key's version tag lets a later change add a part at the cost of one render per object.
-- [Status write per confirming render] → A `NoOp` that rendered now always writes (`renderedAt` moves). At most one write per object per interval, since a skip writes nothing.
+- [Status write per confirming render] → With the skip on, a `NoOp` that rendered now always writes (`renderedAt` moves). At most one write per object per interval, since a skip writes nothing. With `0`, a `NoOp` does not record and writes nothing new.
+- [Identity from `Platform.status`, skew from `Platform.spec`] → After a `spec.skewPolicy` edit whose regeneration fails, the Platform keeps its old package and identity while the pre-render skew already names the new policy, so no key matches and every reconcile renders until the platform is fixed. It fails open (renders, never skips wrongly) and is documented in `docs/RENDERING.md`.
+- [Platform recreated at the same generation] → `packageIdentity` is `gen-<generation>[-claims]`, so a Platform deleted and recreated to the same generation and claim set before an instance reconciles names the same identity; that instance may skip the new platform's content for up to the interval. Documented in `docs/RENDERING.md` beside the other out-of-key cases the interval bounds.
+- [A dev image keeps its version] → Release images build without `.git`, so a development image built from `main` reports the same `version.Version` until a release bumps it. The upgrade rule holds for releases; a later change that moves stored digests runs its e2e with `--drift-render-interval=0` or expects the delay.
+- [A later per-reconcile check placed after the render] → A check that must run on every reconcile (a planned `Healthy` condition that requeues until a rollout converges) would never run within the interval if it sits after the skip. `docs/RENDERING.md` states the rule: such a check runs before the skip, or makes its own not-yet-converged state a no-skip condition.
 - [A Platform status write that fails leaves `packageIdentity` behind the store] → The pre-render key then matches the older identity and skips; the next successful status write re-enqueues the object. Before this change the render would have used the newer store record immediately. The window is one Platform reconcile.
 - [The cli's e2e drives the embedded operator] → The cli e2e flows are spec edits and handbacks, which always render (condition 4). Checked when the operator kind suite runs in the last section; a cli e2e run is left to the cli's own CI.

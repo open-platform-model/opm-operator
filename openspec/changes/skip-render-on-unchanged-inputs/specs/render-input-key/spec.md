@@ -32,7 +32,7 @@ Source: owner decision g3 of the kernel-plan walkthrough (2026-10-02): "Skip ren
 
 ### Requirement: The key of the last confirming render is recorded on status
 
-ModuleInstance and ModulePackage SHALL carry an optional `status.lastAppliedInputs` with the key's `digest` and the time `renderedAt` of the render that produced it. The reconcilers SHALL write it on an attempt whose apply (and prune, when enabled) succeeded, and on a `NoOp` that rendered, together with the other `lastApplied*` fields. The recorded key SHALL be built from the platform package identity and skew policy the render itself used (the platform record it leased), never from values read before the render. When that key is incomplete, the field SHALL be cleared.
+ModuleInstance and ModulePackage SHALL carry an optional `status.lastAppliedInputs` with the key's `digest` and the time `renderedAt` of the render that produced it. The reconcilers SHALL write it on an attempt whose apply (and prune, when enabled) succeeded, and, while the drift render interval is greater than zero, on a `NoOp` that rendered, together with the other `lastApplied*` fields. The recorded key SHALL be built from the platform package identity and skew policy the render itself used (the platform record it leased), never from values read before the render. When that key is incomplete, the field SHALL be cleared.
 
 An attempt that fails, is refused, panics, or skips its render SHALL leave the field as it was.
 
@@ -66,7 +66,8 @@ Before rendering, a ModuleInstance or ModulePackage reconcile SHALL compute the 
 - `status.lastAppliedInputs` is set and its `renderedAt` is less than the drift render interval ago;
 - `Ready` is `True` with reason `ReconciliationSucceeded`;
 - `status.observedGeneration` equals `metadata.generation`;
-- the key is complete and its digest equals `status.lastAppliedInputs.digest`.
+- the key is complete and its digest equals `status.lastAppliedInputs.digest`;
+- for a ModulePackage, the source just resolved (ref, artifact revision, digest and URL) equals `status.source`.
 
 A skipped reconcile SHALL NOT take a render slot, lease the platform, fetch the source artifact, render, run drift detection, apply, prune, emit an event or patch status. It is not a reconcile attempt: it records no outcome, no history and no `lastAttempted*`, and it SHALL NOT move `renderedAt`. A skipped ModuleInstance reconcile SHALL return without a requeue; a skipped ModulePackage reconcile SHALL requeue after `spec.interval`, as a `NoOp` does.
 
@@ -93,6 +94,11 @@ Source: owner decision g3 of the kernel-plan walkthrough (2026-10-02).
 - **WHEN** only `spec.serviceAccountName` changes, so `metadata.generation` moves and the key does not
 - **THEN** the reconcile renders and the commit writes `status.observedGeneration`
 
+#### Scenario: A new revision with the same digest renders once
+
+- **WHEN** a ModulePackage's Flux source moves to a new revision whose artifact digest is unchanged, within the drift render interval
+- **THEN** the package renders, the outcome is `NoOp`, and `status.source.artifactRevision` names the new revision
+
 #### Scenario: A skipped package keeps its interval
 
 - **WHEN** a ModulePackage whose artifact digest and other inputs are unchanged is requeued by its `spec.interval` within the drift render interval
@@ -101,7 +107,7 @@ Source: owner decision g3 of the kernel-plan walkthrough (2026-10-02).
 
 ### Requirement: The drift render interval bounds how long a render is skipped
 
-The manager SHALL take `--drift-render-interval` (a duration, default `30m`): the longest a reconcile with unchanged inputs skips its render after the last render that recorded the key. A reconcile triggered after that renders, so drift detection runs at most once per interval per object while the inputs do not change. The interval SHALL NOT schedule a reconcile of its own. `0` SHALL disable the skip, so every reconcile renders. A negative value SHALL make the manager exit at startup with an error naming the flag.
+The manager SHALL take `--drift-render-interval` (a duration, default `30m`): the longest a reconcile with unchanged inputs skips its render after the last render that recorded the key. A reconcile triggered after that renders, so drift detection runs at most once per interval per object while the inputs do not change. The interval SHALL NOT schedule a reconcile of its own. `0` SHALL disable the skip, so every reconcile renders, and a `NoOp` SHALL then leave `status.lastAppliedInputs` as it was. A negative value SHALL make the manager exit at startup with an error naming the flag.
 
 Source: owner decision g3 of the kernel-plan walkthrough (2026-10-02): "drift via throttled re-render (at most every N minutes)".
 
@@ -114,6 +120,7 @@ Source: owner decision g3 of the kernel-plan walkthrough (2026-10-02): "drift vi
 
 - **WHEN** the manager runs with `--drift-render-interval=0`
 - **THEN** every reconcile renders, whatever `status.lastAppliedInputs` holds
+- **AND** a reconcile that ends `NoOp` does not move `status.lastAppliedInputs.renderedAt`
 
 #### Scenario: A negative interval is refused
 
@@ -122,7 +129,7 @@ Source: owner decision g3 of the kernel-plan walkthrough (2026-10-02): "drift vi
 
 ### Requirement: An operator or library upgrade renders every object once
 
-Because the operator and library versions are key parts, the first reconcile of each object after either version changes SHALL render. A change to how the operator computes a stored digest (`lastApplied*` digests, `status.inventory.digest`) SHALL ship with an operator version change or a library version change, so that render finds the stored digests out of date and applies once. Starting the same operator and library again (a restart) SHALL NOT by itself make an object render while its key matches and the interval has not passed.
+Because the operator and library versions are key parts, the first reconcile of each object after either version changes SHALL render. The rule rests on every operator release changing `version.Version`; a development image built without a version bump keeps its key. A change to how the operator computes a stored digest (`lastApplied*` digests, `status.inventory.digest`) SHALL ship with an operator version change or a library version change, so that render finds the stored digests out of date and applies once. Starting the same operator and library again (a restart) SHALL NOT by itself make an object render while its key matches and the interval has not passed.
 
 #### Scenario: A newer operator renders and applies once
 

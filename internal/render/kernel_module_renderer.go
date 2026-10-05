@@ -8,7 +8,7 @@ import (
 
 	cueerrors "cuelang.org/go/cue/errors"
 
-	"github.com/open-platform-model/library/opm/helper/objectset"
+	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
 	"github.com/open-platform-model/library/opm/module"
 
@@ -233,8 +233,8 @@ func resultFromRender(
 	identity platformstore.PackageIdentity,
 	contracts []string,
 ) (*RenderResult, error) {
-	if dups := objectset.Duplicates(out.Compiled); len(dups) > 0 {
-		return nil, &objectset.DuplicateIdentitiesError{Duplicates: dups}
+	if dups := object.Duplicates(out.Compiled); len(dups) > 0 {
+		return nil, &object.DuplicateIdentitiesError{Duplicates: dups}
 	}
 
 	resources := make([]*core.Resource, 0, len(out.Compiled))

@@ -13,7 +13,7 @@ import (
 	"github.com/fluxcd/pkg/runtime/conditions"
 
 	oerrors "github.com/open-platform-model/library/opm/errors"
-	"github.com/open-platform-model/library/opm/helper/objectset"
+	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -61,13 +61,13 @@ func transformFailure() error {
 // duplicateIdentities mirrors the render adapter's refusal: the library's
 // error returned bare, carrying one shared identity and both producers.
 func duplicateIdentities() error {
-	return &objectset.DuplicateIdentitiesError{Duplicates: []objectset.Duplicate{{
-		Identity: objectset.Identity{
+	return &object.DuplicateIdentitiesError{Duplicates: []object.Duplicate{{
+		Identity: object.Identity{
 			APIVersion: "opmodel.dev/v1alpha1",
 			Kind:       "TransformerRegistration",
 			Name:       "web",
 		},
-		Producers: []objectset.Producer{
+		Producers: []object.Producer{
 			{Component: "registration", Transformer: "opmodel.dev/catalogs/opm/transformers/transformer-registration@v4"},
 			{Component: "registration-copy", Transformer: "opmodel.dev/catalogs/opm/transformers/transformer-registration@v4"},
 		},

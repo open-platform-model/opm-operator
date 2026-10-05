@@ -269,6 +269,21 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		By("confirming the governing Service was rendered")
 		_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "service", serviceName))
 		Expect(err).NotTo(HaveOccurred(), "podinfo Service should exist")
+
+		By("waiting for the ModuleInstance to report the rollout in its Healthy condition")
+		// The operator requeues a not-rolled-out instance at most 2 minutes
+		// apart, so the condition follows the pods within that.
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "podinfo",
+				"-o", "jsonpath={.status.conditions[?(@.type=='Healthy')].status}/{.status.conditions[?(@.type=='Healthy')].reason}"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).To(Equal("True/RolledOut"), "podinfo ModuleInstance not Healthy yet")
+		}, 4*time.Minute, 5*time.Second).Should(Succeed())
+
+		By("confirming kubectl prints a HEALTHY column")
+		out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "podinfo"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(ContainSubstring("HEALTHY"))
 	})
 
 	It("registers the cleanup finalizer on the ModuleInstance", func() {

@@ -9,7 +9,7 @@ metadata:
 spec:
   module:
     path: testing.opmodel.dev/modules/operator/hello@v0
-    version: v0.0.12
+    version: v0.0.13
   values:
     message: "hello from local dev"
   prune: true

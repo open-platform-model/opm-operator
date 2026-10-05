@@ -15,4 +15,4 @@ ModulePath: "testing.opmodel.dev/modules/operator/backup_consumer@v0"
 // re-pin in moduleinstance.yaml (this fixture has no modulepackage). A plain
 // literal: the kernel's loader gate requires a concrete value, and a defaulted
 // disjunction is not one.
-Version: "0.1.0"
+Version: "0.1.1"

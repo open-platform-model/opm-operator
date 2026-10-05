@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -2217,6 +2218,47 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(stalled.Reason).To(Equal(status.ResolutionFailedReason))
 
 			deleteInstance(ctx, "acquire-terminal-mr")
+		})
+
+		It("retries a registry failure during render on the backoff", func() {
+			ctx := context.Background()
+			// A registry fetch failure after acquisition, as the library
+			// returns it from the render build (0021:D8:R12).
+			renderer := &stubRenderer{err: fmt.Errorf("rendering module instance: %w", &oerrors.FetchError{
+				Kind: oerrors.FetchUnreachable,
+				Err:  errors.New(`cannot fetch opmodel.dev/catalogs/opm@v4.6.0: dial tcp registry.example:443: connection refused`),
+			})}
+
+			result, mi, es := reconcileFailing(ctx, "render-fetch-transient-mr", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.ComputeBackoff(1)))
+			ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(status.ResolutionFailedReason))
+			Expect(ready.Message).To(Equal(renderer.err.Error()), "the status message is the render error unchanged")
+			Expect(apimeta.FindStatusCondition(mi.Status.Conditions, status.StalledCondition)).To(BeNil())
+			Expect(es).To(ContainElement(SatisfyAll(
+				HavePrefix(corev1.EventTypeWarning+" "+status.ResolutionFailedReason),
+				ContainSubstring(renderer.err.Error()),
+			)))
+
+			deleteInstance(ctx, "render-fetch-transient-mr")
+		})
+
+		It("stalls an acquisition failure the library does not classify", func() {
+			ctx := context.Background()
+			renderer := &stubRenderer{err: acquireErr(errors.New(`invalid version "not-a-version"`))}
+
+			result, mi, _ := reconcileFailing(ctx, "acquire-unclassified-mr", renderer)
+
+			Expect(result.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
+			stalled := apimeta.FindStatusCondition(mi.Status.Conditions, status.StalledCondition)
+			Expect(stalled).NotTo(BeNil())
+			Expect(stalled.Status).To(Equal(metav1.ConditionTrue))
+			Expect(stalled.Reason).To(Equal(status.ResolutionFailedReason))
+
+			deleteInstance(ctx, "acquire-unclassified-mr")
 		})
 	})
 

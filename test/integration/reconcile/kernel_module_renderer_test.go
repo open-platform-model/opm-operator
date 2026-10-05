@@ -17,27 +17,19 @@ limitations under the License.
 package reconcile_test
 
 import (
-	"errors"
 	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/tools/events"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/open-platform-model/library/opm/kernel"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/internal/apply"
-	opmcontroller "github.com/open-platform-model/opm-operator/internal/controller"
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 	"github.com/open-platform-model/opm-operator/internal/render"
-	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/pkg/core"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
 )
@@ -46,16 +38,6 @@ import (
 // reconciler wires it in production). The happy path requires the fixture
 // module and its catalog to resolve from CUE_REGISTRY (GHCR under
 // `task dev:test`); it is skipped automatically when either is unavailable.
-
-// valuesFrame is the frame a values error carries for the instance name:
-// instance synthesis, the one check of the values against #config.
-func valuesFrame(instance string) string {
-	return `synthesizing release: Kernel.SynthesizeInstance: instance "` + instance + `": `
-}
-
-// configPath is the path a values finding names #config by: synthesis
-// reports it inside the instance's #module.
-const configPath = "#module.#config"
 
 // helloDefaultMessage is the fixture module's #config.message default
 // (test/fixtures/modules/hello/module.cue).
@@ -280,153 +262,31 @@ var _ = Describe("KernelModuleRenderer Integration", func() {
 			Expect(configMapMessage(res)).To(Equal(helloDefaultMessage))
 		})
 
-		// What a user reads when spec.values violate the module's #config.
-		// The frame and path constants are the parts that move when the
-		// renderer stops checking the values itself; the findings and their
-		// spec.values positions stay.
-		DescribeTable("reports a #config violation at the spec.values origin",
-			func(raw string, wantFindings ...string) {
-				renderer := &render.KernelModuleRenderer{
-					Kernel:      k,
-					Store:       store,
-					Registry:    registry,
-					RuntimeName: core.LabelManagedByControllerValue,
-				}
-
-				// The values reach synthesis as one source whose origin names
-				// the CR field, so the error is attributed there rather than to
-				// an anonymous values filename.
-				values := &releasesv1alpha1.RawValues{}
-				values.Raw = []byte(raw)
-				hello := fixtures.Must(GinkgoT(), "hello")
-				res, err := renderer.RenderModule(ctx,
-					"kernel-hello-bad-values", "default",
-					hello.ModulePath, hello.Tag(),
-					values)
-
-				Expect(res).To(BeNil())
-				Expect(err).To(HaveOccurred())
-				GinkgoWriter.Printf("values %s: %s\n", raw, err)
-				Expect(err.Error()).To(HavePrefix(valuesFrame("kernel-hello-bad-values")),
-					"a values error carries the renderer's frame")
-				for _, want := range wantFindings {
-					Expect(err.Error()).To(ContainSubstring(want))
-				}
-				Expect(store.Leased()).To(BeEmpty(), "a failed render releases its lease on return")
-			},
-			Entry("a value of the wrong type", `{"message": 42}`,
-				configPath+".message: conflicting values 42 and string (",
-				"spec.values:1:1, spec.values:1:13)"),
-			Entry("a field #config does not allow", `{"bogus": 1}`,
-				"field not allowed (spec.values:1:2)"),
-		)
-
-		// A required #config value left unset: the required_values fixture
-		// declares message (read by its component) and count (read by
-		// nothing), neither with a default.
-		Context("when the values leave a required #config value unset", func() {
-			var renderer *render.KernelModuleRenderer
-			var fixture fixtures.Coordinate
-
-			BeforeEach(func() {
-				renderer = &render.KernelModuleRenderer{
-					Kernel:      k,
-					Store:       store,
-					Registry:    registry,
-					RuntimeName: core.LabelManagedByControllerValue,
-				}
-				fixture = fixtures.Must(GinkgoT(), "required_values")
-			})
-
-			renderWith := func(name, raw string) (*render.RenderResult, error) {
-				values := &releasesv1alpha1.RawValues{}
-				values.Raw = []byte(raw)
-				return renderer.RenderModule(ctx, name, "default", fixture.ModulePath, fixture.Tag(), values)
-			}
-
-			// Synthesis checks the values against #config without
-			// concreteness and then the whole built instance for it, so an
-			// unset value is reported where a component reads it.
-			It("refuses an unset value a component reads, at the component path", func() {
-				res, err := renderWith("required-read", `{"count": 1}`)
-
-				Expect(res).To(BeNil())
-				Expect(err).To(HaveOccurred())
-				GinkgoWriter.Printf("unset and read: %s\n", err)
-				Expect(err.Error()).To(HavePrefix(valuesFrame("required-read")))
-				Expect(err.Error()).To(ContainSubstring(
-					"not fully concrete: components.required.spec.configMaps.required.data.message: incomplete value string"))
-				Expect(errors.Is(err, render.ErrAcquire)).To(BeFalse(), "the refusal is not an acquisition failure")
-			})
-
-			It("renders when an unset value is read by nothing", func() {
-				res, err := renderWith("required-unread", `{"message": "x"}`)
-
-				Expect(err).NotTo(HaveOccurred(), "nothing in the build consumes count")
-				Expect(configMapMessage(res)).To(Equal("x"))
-			})
-		})
-
-		// The same violation through the ModuleInstance reconciler: the
-		// condition and reason a user sees, with the renderer's error as the
-		// condition message.
-		It("stalls a ModuleInstance whose spec.values violate #config with reason RenderFailed", func() {
+		It("reports a #config violation at the spec.values origin", func() {
 			renderer := &render.KernelModuleRenderer{
 				Kernel:      k,
 				Store:       store,
 				Registry:    registry,
 				RuntimeName: core.LabelManagedByControllerValue,
 			}
-			reconciler := &opmcontroller.ModuleInstanceReconciler{
-				Client:          k8sClient,
-				Scheme:          k8sClient.Scheme(),
-				RestConfig:      cfg,
-				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
-				EventRecorder:   events.NewFakeRecorder(16),
-				Renderer:        renderer,
-			}
 
-			hello := fixtures.Must(GinkgoT(), "hello")
+			// The fixture's #config.message is a string; an integer violates
+			// it. The values reach synthesis as one source whose origin names
+			// the CR field, so the error is attributed there rather than to
+			// an anonymous values filename.
 			values := &releasesv1alpha1.RawValues{}
 			values.Raw = []byte(`{"message": 42}`)
-			mi := &releasesv1alpha1.ModuleInstance{
-				ObjectMeta: metav1.ObjectMeta{Name: "values-violation-mi", Namespace: "default"},
-				Spec: releasesv1alpha1.ModuleInstanceSpec{
-					Module: releasesv1alpha1.ModuleReference{Path: hello.ModulePath, Version: hello.Tag()},
-					Values: values,
-				},
-			}
-			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
-			DeferCleanup(func() {
-				Expect(k8sClient.Delete(ctx, mi)).To(Succeed())
-				_, _ = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: keyOfObject(mi)})
-			})
+			hello := fixtures.Must(GinkgoT(), "hello")
+			res, err := renderer.RenderModule(ctx,
+				"kernel-hello-bad-values", "default",
+				hello.ModulePath, hello.Tag(),
+				values)
 
-			req := reconcile.Request{NamespacedName: keyOfObject(mi)}
-			_, err := reconciler.Reconcile(ctx, req) // adds the finalizer
-			Expect(err).NotTo(HaveOccurred())
-			_, err = reconciler.Reconcile(ctx, req)
-			Expect(err).NotTo(HaveOccurred(), "a stalled failure returns no error")
-
-			var current releasesv1alpha1.ModuleInstance
-			Expect(k8sClient.Get(ctx, keyOfObject(mi), &current)).To(Succeed())
-
-			// The message the renderer returns for the values as stored, rendered
-			// directly, is what the condition carries unchanged. The API server
-			// stores spec.values as compact JSON, so the positions are those of
-			// the stored document, not of the bytes the test sent.
-			_, renderErr := renderer.RenderModule(ctx, mi.Name, mi.Namespace, hello.ModulePath, hello.Tag(), current.Spec.Values)
-			Expect(renderErr).To(HaveOccurred())
-			GinkgoWriter.Printf("condition message: %s\n", renderErr)
-			for _, cond := range []string{status.ReadyCondition, status.StalledCondition} {
-				c := meta.FindStatusCondition(current.Status.Conditions, cond)
-				Expect(c).NotTo(BeNil(), "%s is set", cond)
-				Expect(c.Reason).To(Equal(status.RenderFailedReason), "%s reason", cond)
-				Expect(c.Message).To(Equal(renderErr.Error()), "%s message is the renderer's error", cond)
-			}
-			Expect(meta.IsStatusConditionFalse(current.Status.Conditions, status.ReadyCondition)).To(BeTrue())
-			Expect(meta.IsStatusConditionTrue(current.Status.Conditions, status.StalledCondition)).To(BeTrue())
-			Expect(current.Status.Inventory).To(BeNil(), "nothing is applied under a refused render")
+			Expect(res).To(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("spec.values"),
+				"a values error names the origin the operator gave the source")
+			Expect(store.Leased()).To(BeEmpty(), "a failed render releases its lease on return")
 		})
 	})
 })

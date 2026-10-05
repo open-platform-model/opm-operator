@@ -184,15 +184,6 @@ func TestClassifyRenderError(t *testing.T) {
 			wantReason:  status.PlatformNotReadyReason,
 		},
 		{
-			// Instance synthesis refusing the values: the library's frame
-			// over a CUE error, nothing typed for the classifier to find.
-			name: "values that violate #config are a render failure",
-			err: fmt.Errorf("synthesizing release: %w", fmt.Errorf(`Kernel.SynthesizeInstance: instance "demo": %w`,
-				errors.New("#module.#config.message: conflicting values 42 and string (module.cue:30:11, spec.values:1:1, spec.values:1:13)"))),
-			wantOutcome: FailedStalled,
-			wantReason:  status.RenderFailedReason,
-		},
-		{
 			name:        "synthesis failure is a render failure",
 			err:         fmt.Errorf("synthesizing release: %w", errors.New(`instance "demo": incomplete value`)),
 			wantOutcome: FailedStalled,

@@ -1,7 +1,9 @@
 ## Why
 
-`.github/CODEOWNERS` names two code owners on every line. Release-please and Dependabot PRs touch
-owned paths, so each one requests a review from both maintainers. The owner wants to be the only
+`.github/CODEOWNERS` names two code owners on every line. Any PR that touches an owned path
+requests a review from both maintainers: human PRs 241 and 243 already show a request to the
+second maintainer. Release-please and Dependabot PRs touch owned paths too, so they would do the
+same once opened after CODEOWNERS landed (PR 225). The owner wants to be the only
 code owner, as `.github` (PR 16), core, library, cli and catalog_opm already do.
 
 ## What Changes

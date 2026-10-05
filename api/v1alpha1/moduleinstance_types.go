@@ -127,6 +127,18 @@ type ModuleInstanceStatus struct {
 	// +optional
 	LastAppliedSourceDigest string `json:"lastAppliedSourceDigest,omitempty"`
 
+	// lastAppliedVersion is the version of the module the operator last
+	// applied, in plain text, as the module declares it in metadata.version
+	// (bare SemVer, for example 0.1.0). It is set with the other last-applied
+	// fields when an apply succeeds, and rewritten by a reconcile that renders
+	// and finds nothing to change. It is empty when the module's version could
+	// not be read.
+	//
+	// Written by the operator only. While spec.owner is cli it is not updated
+	// and may name the version of an earlier operator apply.
+	// +optional
+	LastAppliedVersion string `json:"lastAppliedVersion,omitempty"`
+
 	// +optional
 	LastAppliedConfigDigest string `json:"lastAppliedConfigDigest,omitempty"`
 

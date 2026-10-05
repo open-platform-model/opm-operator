@@ -168,6 +168,11 @@ func ReconcileModulePackage(
 		// the zero outcome (NoOp) would otherwise report a success. A panic
 		// is caught before this flag and the NoOp branch are read.
 		skipCommit bool
+
+		// renderedVersion is the module version this attempt's render
+		// reported, nil until a render result is in hand. A NoOp writes it
+		// to lastAppliedVersion only when it is set.
+		renderedVersion *string
 	)
 
 	// A panic is recovered first: the outcome is still its zero value, NoOp,
@@ -190,6 +195,7 @@ func ReconcileModulePackage(
 			status.MarkReady(&pkg, "Reconciliation succeeded")
 			updateModulePackageFailureCounters(&pkg.Status, outcome, phases)
 			pkg.Status.NextRetryAt = nil
+			recordNoOpVersion(&pkg.Status.LastAppliedVersion, renderedVersion)
 			if err := patchModulePackageStatus(ctx, patcher, &pkg); err != nil {
 				log.Error(err, "Failed to patch NoOp status")
 			}
@@ -207,6 +213,7 @@ func ReconcileModulePackage(
 		if reconciled {
 			pkg.Status.LastAppliedAt = &now
 			pkg.Status.LastAppliedSourceDigest = digests.Source
+			pkg.Status.LastAppliedVersion = appliedVersion(renderedVersion)
 			pkg.Status.LastAppliedConfigDigest = digests.Config
 			pkg.Status.LastAppliedRenderDigest = digests.Render
 
@@ -281,6 +288,7 @@ func ReconcileModulePackage(
 	}
 
 	computeModulePackageDigests(converted, &digests)
+	renderedVersion = &converted.result.ModuleVersion
 
 	lastApplied := status.DigestSet{
 		Source:    pkg.Status.LastAppliedSourceDigest,

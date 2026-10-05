@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
@@ -1148,6 +1149,166 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "noop-mr", Namespace: namespace},
 			})).To(Succeed())
+		})
+	})
+
+	Context("Last applied version", func() {
+		newReconciler := func(renderer *stubRenderer) *ModuleInstanceReconciler {
+			return &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   events.NewFakeRecorder(10),
+				Renderer:        renderer,
+			}
+		}
+
+		// appliedInstance creates an instance and reconciles it to a first
+		// successful apply with the default stub (version stubModuleVersion).
+		appliedInstance := func(ctx context.Context, name string) types.NamespacedName {
+			createModuleInstance(ctx, name)
+			nn := types.NamespacedName{Name: name, Namespace: namespace}
+			r := newReconciler(&stubRenderer{})
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			return nn
+		}
+
+		// changedRender is a render whose resources differ from the default
+		// stub's, so its render digest differs and the reconcile applies.
+		changedRender := func(version string) *render.RenderResult {
+			values := &releasesv1alpha1.RawValues{}
+			values.Raw = []byte(`{"message": "changed"}`)
+			res := stubRenderResult(namespace, values)
+			res.ModuleVersion = version
+			return res
+		}
+
+		setRecordedVersion := func(ctx context.Context, nn types.NamespacedName, version string) {
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			mi.Status.LastAppliedVersion = version
+			Expect(k8sClient.Status().Update(ctx, &mi)).To(Succeed())
+		}
+
+		cleanup := func(ctx context.Context, nn types.NamespacedName) {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: namespace},
+			}))).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: namespace},
+			})).To(Succeed())
+		}
+
+		It("records the rendered module version on a successful apply", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "version-applied-mi")
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			Expect(mi.Status.LastAppliedVersion).To(Equal(stubModuleVersion))
+			Expect(mi.Status.LastAppliedSourceDigest).NotTo(BeEmpty())
+
+			cleanup(ctx, nn)
+		})
+
+		It("keeps the recorded version and digests when an apply fails", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "version-failed-mi")
+
+			var before releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
+
+			realWithWatch, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme.Scheme})
+			Expect(err).NotTo(HaveOccurred())
+			failingClient := interceptor.NewClient(realWithWatch, interceptor.Funcs{
+				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+					return fmt.Errorf("injected apply failure")
+				},
+			})
+			r := newReconciler(&stubRenderer{result: changedRender("0.2.0")})
+			r.ResourceManager = apply.NewResourceManager(failingClient, "opm-controller")
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse), "the apply failed")
+			Expect(mi.Status.LastAppliedVersion).To(Equal(stubModuleVersion))
+			Expect(mi.Status.LastAppliedSourceDigest).To(Equal(before.Status.LastAppliedSourceDigest))
+			Expect(mi.Status.LastAppliedConfigDigest).To(Equal(before.Status.LastAppliedConfigDigest))
+			Expect(mi.Status.LastAppliedRenderDigest).To(Equal(before.Status.LastAppliedRenderDigest))
+
+			cleanup(ctx, nn)
+		})
+
+		It("fills an empty field on a NoOp without touching the attempt record", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "version-noop-fill-mi")
+			setRecordedVersion(ctx, nn, "")
+
+			var before releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
+			Expect(before.Status.LastAppliedVersion).To(BeEmpty())
+
+			_, err := newReconciler(&stubRenderer{}).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			Expect(mi.Status.LastAppliedVersion).To(Equal(stubModuleVersion))
+			Expect(mi.Status.History).To(HaveLen(len(before.Status.History)), "a NoOp records no history")
+			Expect(mi.Status.LastAttemptedAt).To(Equal(before.Status.LastAttemptedAt), "a NoOp is not an attempt")
+
+			cleanup(ctx, nn)
+		})
+
+		It("corrects a stale version on a NoOp after an ownership handback", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "version-noop-stale-mi")
+			setRecordedVersion(ctx, nn, "9.9.9")
+
+			var before releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
+
+			_, err := newReconciler(&stubRenderer{}).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			Expect(mi.Status.LastAppliedVersion).To(Equal(stubModuleVersion),
+				"a NoOp re-proves the applied version, so it replaces a stale one")
+			Expect(mi.Status.History).To(HaveLen(len(before.Status.History)), "the reconcile was a NoOp")
+
+			cleanup(ctx, nn)
+		})
+
+		It("clears the field on an apply whose render reports no version", func() {
+			ctx := context.Background()
+			nn := appliedInstance(ctx, "version-cleared-mi")
+
+			_, err := newReconciler(&stubRenderer{result: changedRender("")}).Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var mi releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+			ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue), "the apply succeeded")
+			Expect(mi.Status.LastAppliedRenderDigest).NotTo(BeEmpty())
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(releasesv1alpha1.GroupVersion.WithKind("ModuleInstance"))
+			Expect(k8sClient.Get(ctx, nn, obj)).To(Succeed())
+			_, found, err := unstructured.NestedString(obj.Object, "status", "lastAppliedVersion")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found).To(BeFalse(), "a stale version must not survive the apply")
+
+			cleanup(ctx, nn)
 		})
 	})
 

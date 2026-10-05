@@ -8,6 +8,7 @@ import (
 
 	cueerrors "cuelang.org/go/cue/errors"
 
+	oerrors "github.com/open-platform-model/library/opm/errors"
 	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
 	"github.com/open-platform-model/library/opm/module"
@@ -85,9 +86,11 @@ var _ ModuleRenderer = (*KernelModuleRenderer)(nil)
 // store (returning ErrPlatformNotReady before any I/O when absent), acquires
 // the module, loads the values as one values source with origin spec.values
 // (an empty document when none are supplied, letting the module's #config
-// defaults apply) and checks it against the module's #config, synthesizes
-// the instance, renders it against the platform, and adapts the compiled
-// output to operator resources plus inventory entries.
+// defaults apply), synthesizes the instance, renders it against the
+// platform, and adapts the compiled output to operator resources plus
+// inventory entries. Synthesis is the one check of the values against the
+// module's #config: it reports a conflict at the values source's own
+// positions, so a values error names spec.values.
 //
 // Every kernel call shares nothing (library ADR-005, ADR-007): acquisition,
 // synthesis and the render build each evaluate in a context of their own, so
@@ -132,8 +135,9 @@ func (r *KernelModuleRenderer) RenderModule(
 }
 
 // synthesize acquires the module and synthesizes the source-carrying
-// instance. The Kernel is safe for concurrent use (library ADR-007), so no
-// gate is taken.
+// instance from the values source. A synthesis failure is a synthesisError,
+// which words every CUE finding with its positions. The Kernel is safe for
+// concurrent use (library ADR-007), so no gate is taken.
 func (r *KernelModuleRenderer) synthesize(
 	ctx context.Context,
 	name, namespace, modulePath, moduleVersion string,
@@ -159,38 +163,72 @@ func (r *KernelModuleRenderer) synthesize(
 	if err != nil {
 		return nil, fmt.Errorf("compiling values: %w", err)
 	}
-	sources := []kernel.Source{src}
-
-	// Check the source against the module's #config before synthesis.
-	// Synthesis bakes the values into the module's own build, and a
-	// violation there surfaces where a component consumed the value (a
-	// path inside the module) before the kernel's own per-source check
-	// runs; the kernel's layered validation reports it at the source's
-	// positions instead, so the error names spec.values.
-	if _, err := r.Kernel.ValidateConfigDetailed(mod.ConfigSchema(), sources); err != nil {
-		return nil, fmt.Errorf("validating values against the module's #config: %s", cueFindings(err))
-	}
 
 	inst, err := r.Kernel.SynthesizeInstance(ctx, kernel.InstanceInput{
 		Module:    mod,
 		Name:      name,
 		Namespace: namespace,
-		Values:    sources,
+		Values:    []kernel.Source{src},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("synthesizing release: %w", err)
+		return nil, &synthesisError{err: err}
 	}
 	return inst, nil
 }
 
+// synthesisError is a failed instance synthesis. Its message is
+// `synthesizing release: ` followed by the library's error with its CUE
+// findings listed (describe); it unwraps to the library's error, so
+// errors.Is and errors.AsType reach every typed cause beneath it (a registry
+// fetch failure, a context deadline).
+type synthesisError struct{ err error }
+
+func (e *synthesisError) Error() string { return "synthesizing release: " + describe(e.err) }
+func (e *synthesisError) Unwrap() error { return e.err }
+
+// describe keeps the library's frame (the text before the first CUE error in
+// the chain) and replaces that CUE error's one-line summary, which keeps only
+// its first finding and no positions, with its findings and their positions,
+// so a values conflict names spec.values with line and column. A registry
+// fetch failure reads as err.Error(): its message is the cause's own, often a
+// CUE error list from the loader, and stays as the library wrote it. So does
+// an error with no CUE error in its chain, or one whose message does not end
+// with the CUE error's own.
+func describe(err error) string {
+	if _, ok := errors.AsType[*oerrors.FetchError](err); ok {
+		return err.Error()
+	}
+	ce, ok := errors.AsType[cueerrors.Error](err)
+	if !ok {
+		return err.Error()
+	}
+	msg := err.Error()
+	frame, found := strings.CutSuffix(msg, ce.Error())
+	if !found {
+		return msg
+	}
+	return frame + cueFindings(ce)
+}
+
+// maxFindings caps how many findings cueFindings lists. Synthesis can
+// report one finding per incomplete field of every component, and the
+// message lands verbatim in a condition (bounded by the CRD) and in the
+// status history; ten findings with positions keep it to a few kilobytes.
+const maxFindings = 10
+
 // cueFindings words a CUE error tree as one finding per entry, each followed
 // by the positions CUE attributed it to, so a values violation reads
-// `message: conflicting values ... (spec.values:1:13, ...)`. A non-CUE error
-// is returned as its own message.
+// `message: conflicting values ... (spec.values:1:13, ...)`. It lists at most
+// maxFindings and then `and N more`. A non-CUE error is returned as its own
+// message.
 func cueFindings(err error) string {
 	findings := cueerrors.Errors(err)
-	lines := make([]string, 0, len(findings))
-	for _, e := range findings {
+	lines := make([]string, 0, min(len(findings), maxFindings)+1)
+	for i, e := range findings {
+		if i == maxFindings {
+			lines = append(lines, fmt.Sprintf("and %d more", len(findings)-maxFindings))
+			break
+		}
 		line := e.Error()
 		if positions := cueerrors.Positions(e); len(positions) > 0 {
 			at := make([]string, 0, len(positions))

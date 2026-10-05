@@ -42,7 +42,8 @@ test/fixtures/modules/hello_web/moduleinstance.yaml
 test/fixtures/modules/podinfo/identity/identity.cue
 test/fixtures/modules/podinfo/moduleinstance.yaml
 test/fixtures/modules/redis/identity/identity.cue
-test/fixtures/modules/redis/moduleinstance.yaml"
+test/fixtures/modules/redis/moduleinstance.yaml
+test/fixtures/modules/required_values/identity/identity.cue"
 
 # S4 freezes one moved module file for every OPM key it pins (design.md, "The S4 frozen choice").
 S4_FILE=test/fixtures/modules/hello/cue.mod/module.cue

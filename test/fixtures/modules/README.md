@@ -22,6 +22,7 @@ outright.
 | `redis`     | `StatefulWorkload`      | StatefulSet + headless Service + PVC, exec readiness probe    | stateful app with persistence + an exec probe |
 | `backup_provider` | none              | one cluster-scoped `TransformerRegistration`                  | a provider registering the `backup` catalog fixture (0015:D3) |
 | `backup_consumer` | volume + opm `backup` trait | one ConfigMap, rendered by the `backup` catalog          | a consumer of a provider-fulfilled contract   |
+| `required_values` | ConfigMaps            | one ConfigMap                                                  | required `#config` values with no defaults, one read and one not; test-only |
 
 `backup_provider` and `backup_consumer` are one set with the catalog fixture
 `test/fixtures/catalogs/backup` (`testing.opmodel.dev/catalogs/operator/backup@v0`),

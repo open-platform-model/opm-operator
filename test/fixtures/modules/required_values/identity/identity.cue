@@ -1,0 +1,17 @@
+// Package identity is the single source of this module's path and version
+// (core #IdentityPackage, 0010:D2, 0011:D12). It sits at the
+// bottom of the module's import graph — no intra-module imports, no core
+// import; validation is external (a publishing tool unifies this package
+// against core's #IdentityPackage).
+package identity
+
+// ModulePath is the module's complete CUE module path, major suffix included
+// — byte-identical to cue.mod's `module:` field.
+ModulePath: "testing.opmodel.dev/modules/operator/required_values@v0"
+
+// Version is the module's bare SemVer; its major must agree with ModulePath's.
+// Hand-managed: these fixtures are not on release-please's version train, so a
+// bump is an explicit edit here (or `opm module version set`). A plain
+// literal: the kernel's loader gate requires a concrete value, and a defaulted
+// disjunction is not one.
+Version: "0.0.1"

@@ -34,7 +34,6 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
 )
 
@@ -93,12 +92,9 @@ func renderedClaimResult() *render.RenderResult {
 		Component:   spikeClaimInstanceName,
 		Transformer: "opm#transformer-registration-transformer",
 	}
-	u, err := resource.ToUnstructured()
-	Expect(err).NotTo(HaveOccurred())
 
 	return &render.RenderResult{
-		Resources:        []*object.Resource{resource},
-		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
+		Resources: []*object.Resource{resource},
 	}
 }
 

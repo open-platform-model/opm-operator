@@ -52,9 +52,12 @@ func shrinkDecider(params *ModuleInstanceParams) *shrink.Decider {
 // applied and the refusals that kept the rest out of it.
 //
 // The inventory is deliberately not derived from the returned list: the
-// operator still owns a resource it declined to update, and dropping it from
-// the inventory would mark it stale and prune the very object the refusal
-// exists to protect (verified in withhold_invariant_test.go).
+// reconciler reads converted.entries, which convertRender builds from the
+// full converted set. The operator still owns a resource it declined to
+// update, and dropping it from the inventory would mark it stale and prune
+// the very object the refusal exists to protect. A refusal returns before
+// the prune and the inventory commit (pinned by the shrink refusal
+// integration test).
 func withholdRefused(
 	ctx context.Context,
 	decider ClaimShrinkDecider,

@@ -5,16 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
-	"strings"
-
-	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 )
 
 // DigestSet holds the four reconcile digests tracked in ModuleInstance.status.
+// This package computes the source and config digests; the render and
+// inventory digests are the library's (opm/k8s/inventory).
 // Uses named fields rather than a map for type safety (design decision 3).
 //
 // Maps to status fields:
@@ -30,11 +28,12 @@ type DigestSet struct {
 	// Config is the SHA-256 of normalized user values.
 	Config string
 
-	// Render is the SHA-256 of the sorted, serialized rendered resource set.
+	// Render is the render digest: RenderDigest from the library's
+	// opm/k8s/inventory over the render's one object.Export.
 	Render string
 
-	// Inventory is the SHA-256 of the owned resource inventory
-	// (computed via internal/inventory.ComputeDigest).
+	// Inventory is the inventory digest: Digest from the library's
+	// opm/k8s/inventory over the inventory's entries.
 	Inventory string
 }
 
@@ -48,8 +47,7 @@ func ModuleSourceDigest(modulePath, moduleVersion string) string {
 
 // ConfigDigest computes a deterministic SHA-256 digest of the release values.
 // Serializes RawValues to canonical JSON (sorted keys), then hashes.
-// Returns the SHA-256 of empty input if values is nil (nil = no config),
-// consistent with inventory.ComputeDigest(nil).
+// Returns the SHA-256 of empty input if values is nil (nil = no config).
 // Format: "sha256:<hex>"
 func ConfigDigest(values *releasesv1alpha1.RawValues) string {
 	if values == nil || len(values.Raw) == 0 {
@@ -71,58 +69,6 @@ func ConfigDigest(values *releasesv1alpha1.RawValues) string {
 	}
 	sum := sha256.Sum256(canonical)
 	return fmt.Sprintf("sha256:%x", sum)
-}
-
-// RenderDigest computes a deterministic SHA-256 digest of a rendered set from
-// its single export (object.Export). It sorts the objects by group, kind,
-// namespace and name, the order inventory.ComputeDigest uses, and hashes each
-// object's exported JSON in that order. The group is the apiVersion up to its
-// last "/", so an apiVersion that does not parse still sorts as it always did.
-// The bytes are pinned by TestRenderDigest_GoldenBytes: a change to them makes
-// every applied instance look changed once.
-// Format: "sha256:<hex>"
-func RenderDigest(exported []object.Exported) string {
-	order := make([]int, len(exported))
-	for i := range order {
-		order[i] = i
-	}
-	type sortKey struct{ group, kind, namespace, name string }
-	keyOf := func(e object.Exported) sortKey {
-		u := e.Object
-		return sortKey{
-			group:     apiGroup(u.GetAPIVersion()),
-			kind:      u.GetKind(),
-			namespace: u.GetNamespace(),
-			name:      u.GetName(),
-		}
-	}
-	sort.SliceStable(order, func(a, b int) bool {
-		ki, kj := keyOf(exported[order[a]]), keyOf(exported[order[b]])
-		if ki.group != kj.group {
-			return ki.group < kj.group
-		}
-		if ki.kind != kj.kind {
-			return ki.kind < kj.kind
-		}
-		if ki.namespace != kj.namespace {
-			return ki.namespace < kj.namespace
-		}
-		return ki.name < kj.name
-	})
-
-	h := sha256.New()
-	for _, i := range order {
-		h.Write(exported[i].JSON)
-	}
-	return fmt.Sprintf("sha256:%x", h.Sum(nil))
-}
-
-// apiGroup returns the group of "group/version", or "" for a core "version".
-func apiGroup(apiVersion string) string {
-	if idx := strings.LastIndex(apiVersion, "/"); idx >= 0 {
-		return apiVersion[:idx]
-	}
-	return ""
 }
 
 // IsNoOp returns true if all four digests in current match lastApplied.

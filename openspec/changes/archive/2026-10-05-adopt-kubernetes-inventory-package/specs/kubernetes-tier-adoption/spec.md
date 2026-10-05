@@ -1,23 +1,4 @@
-# kubernetes-tier-adoption Specification
-
-## Purpose
-Defines how the operator adopts the library's Kubernetes tier: it takes resource conversion and the OPM label vocabulary from `opm/k8s/object` and `opm/k8s/labels`, keeps no copy of them, and its lint refuses one reintroduced at the old path.
-
-## Requirements
-
-### Requirement: The operator uses the library's object and label packages and keeps no copy
-
-The operator SHALL take the Kubernetes resource wrapper over the kernel's compiled output, its JSON and unstructured conversion, the duplicate-identity check, the OPM label keys and values, and the recognition of an OPM manager label value from the library's Kubernetes tier (`opm/k8s/object` and `opm/k8s/labels`). It SHALL declare no type, constant or function of its own for any of them and no alias to them. Its lint SHALL refuse an import of the package path that held its earlier copy, `github.com/open-platform-model/opm-operator/pkg/core`. Source: 0012:D3:R6.
-
-#### Scenario: No local copy
-
-- **WHEN** the operator's Go source is searched for the package `pkg/core`, a `Resource` type wrapping a CUE value with instance, component and transformer provenance, or a declaration of the `app.kubernetes.io/managed-by` or `module-instance.opmodel.dev/uuid` label key
-- **THEN** none is found; every reader imports `opm/k8s/object` or `opm/k8s/labels`
-
-#### Scenario: Lint refuses the old path
-
-- **WHEN** a package exists at `github.com/open-platform-model/opm-operator/pkg/core` and a Go file in the repository imports it
-- **THEN** `task dev:lint` fails on the rule `no-local-kubernetes-tier-copy`, with a message naming the library packages to use instead
+## MODIFIED Requirements
 
 ### Requirement: The reconciler converts a render with one export
 
@@ -42,6 +23,8 @@ The reconciler SHALL convert a render's resources with one call to the library's
 
 - **WHEN** a render of N resources is converted for apply
 - **THEN** the conversion carries N inventory entries, one per `Exported.Object` in input order, and the render result carries none
+
+## ADDED Requirements
 
 ### Requirement: The operator uses the library's inventory package and keeps no copy
 

@@ -25,7 +25,6 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmmetrics "github.com/open-platform-model/opm-operator/internal/metrics"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/shrink"
@@ -450,7 +449,7 @@ func ReconcileModuleInstance(
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 	digests.Render = converted.digest
-	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
+	digests.Inventory = inventoryDigestOf(converted.entries)
 	renderedVersion = &renderResult.ModuleVersion
 	key := renderedKey(digests.Source, digests.Config, renderResult, params.OperatorVersion, params.LibraryVersion)
 	renderedInputs = &key
@@ -539,7 +538,7 @@ func ReconcileModuleInstance(
 	if mi.Status.Inventory != nil {
 		previousEntries = mi.Status.Inventory.Entries
 	}
-	staleSet := inventory.ComputeStaleSet(previousEntries, renderResult.InventoryEntries)
+	staleSet := staleEntries(previousEntries, converted.entries)
 
 	// Build impersonated client and resource manager if serviceAccountName is set.
 	// Apply and prune use the impersonated identity; all other phases use the controller's own client.
@@ -612,7 +611,7 @@ func ReconcileModuleInstance(
 	// Successful apply resolves any drift.
 	status.ClearDrifted(&mi)
 
-	newEntries = renderResult.InventoryEntries
+	newEntries = converted.entries
 
 	// Phase 6: Prune stale resources (only if spec.prune=true and apply succeeded).
 	phases.pruneRan = true
@@ -773,7 +772,7 @@ func nextInventory(prev *releasesv1alpha1.Inventory, entries []releasesv1alpha1.
 	}
 	return &releasesv1alpha1.Inventory{
 		Revision: rev,
-		Digest:   inventory.ComputeDigest(entries),
+		Digest:   inventoryDigestOf(entries),
 		Count:    int64(len(entries)),
 		Entries:  entries,
 	}

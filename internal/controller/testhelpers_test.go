@@ -30,7 +30,6 @@ import (
 	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
 )
 
@@ -142,14 +141,8 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 		Transformer: "kubernetes#simple",
 	}
 
-	u, err := resource.ToUnstructured()
-	if err != nil {
-		panic(fmt.Sprintf("converting stub resource: %v", err))
-	}
-
 	return &render.RenderResult{
 		Resources:         []*object.Resource{resource},
-		InventoryEntries:  []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 		RequiredContracts: []string{stubContract},
 		ModuleVersion:     stubModuleVersion,
 		PlatformIdentity:  stubPlatformIdentity,

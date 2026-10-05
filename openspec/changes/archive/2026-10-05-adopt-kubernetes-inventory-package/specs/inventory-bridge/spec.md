@@ -1,15 +1,22 @@
-## Purpose
+## REMOVED Requirements
 
-The boundary between the API's inventory entry (`v1alpha1.InventoryEntry`, the shape `status.inventory` stores) and the library's `opm/k8s/inventory`, which owns the entry, the stale set and the inventory digest. The operator converts between the two entry types and builds its entries from its one export of a render.
+### Requirement: Inventory identity comparison
+**Reason**: The operator keeps no identity relation of its own. The library's `inventory.SameObject` (`opm/k8s/inventory`) is the one relation, and it is component-blind (0012:D7). The component-aware `IdentityEqual` had no production caller.
+**Migration**: Compare through `inventory.SameObject` after `inventory.ToEntry`, or use `inventory.StaleSet` for the stale set.
 
-## Requirements
+### Requirement: Stale set computation
+**Reason**: Replaced by "The stale set is the library's component-blind stale set", which computes the same outcome with `opm/k8s/inventory.StaleSet` instead of the operator's `ComputeStaleSet`.
+**Migration**: None for users: the stale set is the same. Code calls `StaleSet` through the conversions.
 
-### Requirement: Inventory type alias preserved
-The existing `type Current = releasesv1alpha1.Inventory` alias in `internal/inventory` MUST be preserved as a semantic marker used by other internal packages.
+### Requirement: Inventory digest computation
+**Reason**: Replaced by "The inventory digest is the library's canonical digest". The operator's `ComputeDigest` hashed the CRD entries' JSON, so it depended on their JSON tags (0012:D7).
+**Migration**: The stored `status.inventory.digest` changes once (proposal, Migration note).
 
-#### Scenario: Alias names the API inventory type
-- **WHEN** `internal/inventory` is inspected
-- **THEN** it declares `Current` as an alias of the API's `Inventory` type, not a distinct type
+### Requirement: Entry construction from unstructured resource
+**Reason**: Replaced by "Inventory entries come from the one export", which builds each entry with the library's `inventory.NewEntry` from the object the one export decoded.
+**Migration**: None: the entry fields are the same.
+
+## ADDED Requirements
 
 ### Requirement: Inventory entries convert losslessly to and from the library's Entry
 The `internal/inventory` package MUST provide the conversions between `v1alpha1.InventoryEntry` and the library's `inventory.Entry` (`opm/k8s/inventory`), one entry and a slice of entries each way. Group, Kind, Namespace, Name, Version and Component MUST map one to one, so a round trip in either direction returns an equal value. The package MUST declare no identity relation, stale-set function or digest of its own. Those are the library's (0012:D7).

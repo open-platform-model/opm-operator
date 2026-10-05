@@ -1,24 +1,17 @@
 package render
 
 import (
-	"fmt"
-
 	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
-
-	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 )
 
-// RenderResult holds the output of a successful RenderModule call.
-// Contains both the rendered resources and their inventory entries, giving the
-// caller everything needed for apply + inventory in one call.
+// RenderResult holds the output of a successful RenderModule call: the
+// rendered resources, still backed by their CUE values, and the render's
+// plain data. It carries no inventory entries and no digest: the reconciler
+// exports the resources once and builds both from that export.
 type RenderResult struct {
 	// Resources is the ordered list of rendered Kubernetes resources.
 	Resources []*object.Resource
-
-	// InventoryEntries are the CRD-typed inventory entries built from Resources.
-	InventoryEntries []releasesv1alpha1.InventoryEntry
 
 	// Warnings are the render's advisory findings, worded by the operator
 	// (renderWarnings) from the diagnostics' rows: effectively-optional unhandled
@@ -73,17 +66,4 @@ type RenderResult struct {
 	// render actually used; the reconciler records both in the render input
 	// key.
 	SkewPolicy string
-}
-
-// buildInventoryEntries converts rendered resources to inventory entries.
-func buildInventoryEntries(resources []*object.Resource) ([]releasesv1alpha1.InventoryEntry, error) {
-	entries := make([]releasesv1alpha1.InventoryEntry, 0, len(resources))
-	for _, r := range resources {
-		u, err := r.ToUnstructured()
-		if err != nil {
-			return nil, fmt.Errorf("converting resource %s to unstructured: %w", r, err)
-		}
-		entries = append(entries, inventory.NewEntryFromResource(u))
-	}
-	return entries, nil
 }

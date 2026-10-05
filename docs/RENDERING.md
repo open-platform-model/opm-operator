@@ -42,10 +42,10 @@ process, ModuleInstances and ModulePackages together. The manager builds one
 pool of that many render slots and both controllers share it: a reconcile
 takes a slot just before it calls the renderer (platform lease, acquisition,
 synthesis and the render build) and holds it through the export of the
-result for apply (the render digest and the unstructured conversion). Each
-resource is exported twice inside the slot: once by the renderer for the
-inventory entries, and once more for the digest and the conversion, which
-share that export. It gives the slot back once the rendered CUE values are
+result for apply. Each resource is exported once inside the slot, and the
+render digest, the unstructured objects it applies and the inventory entries
+all come from that one export; the rendered CUE values are dropped as soon
+as it returns. It gives the slot back once the rendered CUE values are
 dropped, on success, error or a recovered panic. The export is part of the
 window because the rendered values pin the whole build until then, and it is
 where the heap peaks: for a cert-manager-sized module the export peaks higher
@@ -214,6 +214,15 @@ Rules for later changes:
   image built from `main` without a version bump keeps its key: the e2e of
   such a change runs the manager with `--drift-render-interval=0` or expects
   the one-time apply to wait up to the interval.
+  Adopting the library's `opm/k8s/inventory` is one such change: the
+  render digest (`lastApplied*RenderDigest`) and the inventory digest
+  (`status.inventory.digest`) are that package's `RenderDigest` and
+  `Digest`, the render digest leaves out the value of the
+  `app.kubernetes.io/managed-by` label so the cli and the operator digest one
+  render alike once the cli computes it with the same package, and the inventory digest hashes a canonical encoding of the
+  entries rather than their JSON. Both stored values changed once with that
+  release, so every operator-managed object rendered and applied once after
+  the upgrade and then converged.
 - **A per-reconcile check runs before the skip.** A check that must run on
   every reconcile, such as a health condition that requeues until a rollout
   converges, either runs before the skip or makes its own not-yet-converged

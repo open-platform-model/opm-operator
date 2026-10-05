@@ -69,7 +69,8 @@ func TestResultFromRender_RefusesTwoRegistrationsUnderOneName(t *testing.T) {
 }
 
 // The healthy path is untouched: objects with distinct identities adapt to
-// one resource and one inventory entry each.
+// one resource each. The result carries no inventory entries: the
+// reconciler builds them from its one export.
 func TestResultFromRender_AdaptsDistinctIdentities(t *testing.T) {
 	ctx := cuecontext.New()
 	out := &kernel.RenderResult{Compiled: []*kernel.Compiled{
@@ -90,7 +91,6 @@ func TestResultFromRender_AdaptsDistinctIdentities(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Len(t, res.Resources, 2)
-	assert.Len(t, res.InventoryEntries, 2)
 }
 
 // Only the shared identity is reported: a render carrying one duplicated

@@ -52,7 +52,7 @@ type PruneResult struct {
 // fail-slow).
 //
 // The caller is responsible for:
-//   - Computing the stale set via internal/inventory.ComputeStaleSet
+//   - Computing the stale set with the library's opm/k8s/inventory.StaleSet
 //   - Checking spec.prune before calling this function
 //   - Ensuring apply succeeded before calling prune
 //   - Supplying ownerUUID from the freshly-rendered resources or

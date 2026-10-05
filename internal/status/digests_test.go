@@ -3,12 +3,8 @@ package status
 import (
 	"testing"
 
-	"cuelang.org/go/cue/cuecontext"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-
-	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 )
@@ -17,23 +13,6 @@ func rawValues(jsonStr string) *releasesv1alpha1.RawValues {
 	return &releasesv1alpha1.RawValues{
 		JSON: apiextensionsv1.JSON{Raw: []byte(jsonStr)},
 	}
-}
-
-func testResource(t *testing.T, cueSrc string) *object.Resource {
-	t.Helper()
-	ctx := cuecontext.New()
-	v := ctx.CompileString(cueSrc)
-	require.NoError(t, v.Err())
-	return &object.Resource{Value: v}
-}
-
-// exported runs the library's single export over resources, as the
-// reconciler does before it computes the render digest.
-func exported(t *testing.T, resources ...*object.Resource) []object.Exported {
-	t.Helper()
-	out, err := object.Export(resources)
-	require.NoError(t, err)
-	return out
 }
 
 // --- ModuleSourceDigest tests ---
@@ -65,14 +44,14 @@ func TestConfigDigest_Deterministic(t *testing.T) {
 func TestConfigDigest_NilValues(t *testing.T) {
 	d := ConfigDigest(nil)
 	assert.Equal(t, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", d,
-		"nil values should hash empty input, consistent with inventory.ComputeDigest(nil)")
+		"nil values (no config) hash empty input")
 }
 
 func TestConfigDigest_EmptyRaw(t *testing.T) {
 	v := &releasesv1alpha1.RawValues{}
 	d := ConfigDigest(v)
 	assert.Equal(t, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", d,
-		"empty raw should hash empty input, consistent with inventory.ComputeDigest(nil)")
+		"empty raw values hash empty input")
 }
 
 func TestConfigDigest_ContentSensitive(t *testing.T) {
@@ -80,79 +59,6 @@ func TestConfigDigest_ContentSensitive(t *testing.T) {
 	b := rawValues(`{"key":"value-b"}`)
 	assert.NotEqual(t, ConfigDigest(a), ConfigDigest(b),
 		"different values should produce different digests")
-}
-
-// --- RenderDigest tests ---
-
-func TestRenderDigest_OrderIndependent(t *testing.T) {
-	deploy := testResource(t, `{
-		apiVersion: "apps/v1"
-		kind:       "Deployment"
-		metadata: { name: "app", namespace: "ns" }
-		spec: replicas: 1
-	}`)
-	svc := testResource(t, `{
-		apiVersion: "v1"
-		kind:       "Service"
-		metadata: { name: "svc", namespace: "ns" }
-		spec: type: "ClusterIP"
-	}`)
-
-	d1 := RenderDigest(exported(t, deploy, svc))
-	d2 := RenderDigest(exported(t, svc, deploy))
-	assert.Equal(t, d1, d2, "order should not affect digest")
-	assert.Contains(t, d1, "sha256:")
-}
-
-func TestRenderDigest_ContentSensitive(t *testing.T) {
-	a := testResource(t, `{
-		apiVersion: "apps/v1"
-		kind:       "Deployment"
-		metadata: { name: "app-a", namespace: "ns" }
-	}`)
-	b := testResource(t, `{
-		apiVersion: "apps/v1"
-		kind:       "Deployment"
-		metadata: { name: "app-b", namespace: "ns" }
-	}`)
-
-	da := RenderDigest(exported(t, a))
-	db := RenderDigest(exported(t, b))
-	assert.NotEqual(t, da, db, "different resources should produce different digests")
-}
-
-// TestRenderDigest_GoldenBytes pins the render digest of a fixed set, given
-// out of sort order. lastAppliedRenderDigest gates no-op detection, so a
-// change to these bytes makes every applied instance re-apply once after an
-// upgrade. The literal was recorded before the digest read the library's
-// export; never edit it to make a refactor pass.
-func TestRenderDigest_GoldenBytes(t *testing.T) {
-	role := testResource(t, `{
-		apiVersion: "rbac.authorization.k8s.io/v1"
-		kind:       "ClusterRole"
-		metadata: name: "reader"
-		rules: [{apiGroups: [""], resources: ["pods"], verbs: ["get", "list"]}]
-	}`)
-	svc := testResource(t, `{
-		apiVersion: "v1"
-		kind:       "Service"
-		metadata: { name: "web", namespace: "apps" }
-		spec: { type: "ClusterIP", ports: [{port: 80}] }
-	}`)
-	deploy := testResource(t, `{
-		apiVersion: "apps/v1"
-		kind:       "Deployment"
-		metadata: { name: "web", namespace: "apps", labels: app: "web" }
-		spec: replicas: 2
-	}`)
-
-	d := RenderDigest(exported(t, svc, deploy, role))
-	assert.Equal(t, "sha256:27ca646c68345860d39c6bf8409e9a8dc4df1980a24b483a60af1b759545dfea", d)
-}
-
-func TestRenderDigest_Empty(t *testing.T) {
-	d := RenderDigest(nil)
-	assert.Contains(t, d, "sha256:")
 }
 
 // --- IsNoOp tests ---

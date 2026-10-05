@@ -45,7 +45,6 @@ import (
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	opmcontroller "github.com/open-platform-model/opm-operator/internal/controller"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 	"github.com/open-platform-model/opm-operator/test/fixtures"
@@ -115,11 +114,8 @@ func namedConfigMapResult(name, namespace string) *render.RenderResult {
 		name))
 	Expect(cm.Err()).NotTo(HaveOccurred())
 	resource := &object.Resource{Value: cm, Instance: name, Component: "hello", Transformer: "kubernetes#simple"}
-	u, err := resource.ToUnstructured()
-	Expect(err).NotTo(HaveOccurred())
 	return &render.RenderResult{
-		Resources:        []*object.Resource{resource},
-		InventoryEntries: []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
+		Resources: []*object.Resource{resource},
 	}
 }
 

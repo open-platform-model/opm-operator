@@ -36,7 +36,6 @@ import (
 	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -80,13 +79,8 @@ func namedConfigMapRenderResult(names ...string) *render.RenderResult {
 			Component:   name,
 			Transformer: "kubernetes#simple",
 		}
-		u, err := resource.ToUnstructured()
-		if err != nil {
-			panic(fmt.Sprintf("converting named stub resource: %v", err))
-		}
 
 		result.Resources = append(result.Resources, resource)
-		result.InventoryEntries = append(result.InventoryEntries, inventory.NewEntryFromResource(u))
 	}
 	return result
 }
@@ -223,7 +217,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		cleanupInstance(nn)
 	})
 
-	// Validates selective pruning via ComputeStaleSet identity comparison
+	// Validates selective pruning via the library's StaleSet identity comparison
 	// across multiple resources (design 2.3).
 	It("should prune only the removed resource when multiple exist", func() {
 		mrName := "selective-prune-mr"

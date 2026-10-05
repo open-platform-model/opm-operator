@@ -210,16 +210,17 @@ func cueFindings(err error) string {
 }
 
 // resultFromRender adapts the kernel's render output to the operator's
-// RenderResult: compiled objects to resources with provenance, inventory
-// entries built through the existing ToUnstructured bridge, the advisory
+// RenderResult: compiled objects to resources with provenance, the advisory
 // rows worded as warnings (renderWarnings), and the rows themselves
 // (unhandled traits, resolved versions) carried through for the reconciler.
+// It does not export the resources: the reconciler's one export builds the
+// render digest, the apply objects and the inventory entries.
 //
-// The duplicate-identity check runs first, before any resource, inventory
-// entry or warning is built: two objects sharing one apply identity reach
-// apply as two writes to one object and the last silently overwrites the
-// first, so a refused render must leave no resource, no inventory entry and
-// no digest for either loop to act on (0015:D15). The library's error is
+// The duplicate-identity check runs first, before any resource or warning is
+// built: two objects sharing one apply identity reach apply as two writes to
+// one object and the last silently overwrites the first, so a refused render
+// must leave no resource and no digest for either loop to act on
+// (0015:D15). The library's error is
 // returned bare so both classifiers find its type and status carries its
 // message verbatim.
 //
@@ -235,16 +236,8 @@ func resultFromRender(
 		return nil, &object.DuplicateIdentitiesError{Duplicates: dups}
 	}
 
-	resources := object.Resources(out.Compiled)
-
-	entries, err := buildInventoryEntries(resources)
-	if err != nil {
-		return nil, fmt.Errorf("building inventory entries: %w", err)
-	}
-
 	return &RenderResult{
-		Resources:         resources,
-		InventoryEntries:  entries,
+		Resources:         object.Resources(out.Compiled),
 		Warnings:          renderWarnings(out.Diagnostics),
 		UnhandledTraits:   out.Diagnostics.UnhandledTraits,
 		ResolvedVersions:  out.Diagnostics.ResolvedVersions,

@@ -36,7 +36,6 @@ import (
 	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
-	"github.com/open-platform-model/opm-operator/internal/inventory"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
@@ -62,7 +61,7 @@ const (
 func claimResource(
 	claimName, providerName, version string,
 	provides ...string,
-) (*object.Resource, releasesv1alpha1.InventoryEntry) {
+) *object.Resource {
 	quoted := make([]string, 0, len(provides))
 	for _, fqn := range provides {
 		quoted = append(quoted, fmt.Sprintf("%q", fqn))
@@ -98,28 +97,55 @@ func claimResource(
 		panic(fmt.Sprintf("compiling stub claim: %v", claim.Err()))
 	}
 
-	resource := &object.Resource{
+	return &object.Resource{
 		Value:       claim,
 		Instance:    providerName,
 		Component:   "registration",
 		Transformer: "kubernetes#simple",
 	}
-	u, err := resource.ToUnstructured()
-	if err != nil {
-		panic(fmt.Sprintf("converting stub claim: %v", err))
+}
+
+// configMapResource builds one owned ConfigMap resource carrying the given
+// data payload, plus the labels the prune ownership guard reads.
+func configMapResource(name, payload string) *object.Resource {
+	cueCtx := cuecontext.New()
+	cm := cueCtx.CompileString(fmt.Sprintf(`{
+	apiVersion: "v1"
+	kind:       "ConfigMap"
+	metadata: {
+		name:      %q
+		namespace: %q
+		labels: {
+			%q: %q
+			%q: %q
+			%q: %q
+		}
 	}
-	return resource, inventory.NewEntryFromResource(u)
+	data: {
+		payload: %q
+	}
+}`, name, namespace,
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceNamespace, namespace,
+		labels.ModuleInstanceUUID, stubInstanceUUID,
+		payload))
+	if cm.Err() != nil {
+		panic(fmt.Sprintf("compiling stub ConfigMap: %v", cm.Err()))
+	}
+	return &object.Resource{
+		Value:       cm,
+		Instance:    name,
+		Component:   name,
+		Transformer: "kubernetes#simple",
+	}
 }
 
 // providerRenderResult is what a provider module renders: its claim plus one
 // ordinary resource, so a refusal can be shown to withhold the claim alone.
 func providerRenderResult(claimName, providerName string, provides ...string) *render.RenderResult {
-	claim, claimEntry := claimResource(claimName, providerName, upgradedVersion, provides...)
-	sidecar, sidecarEntry := configMapResource(providerName+"-cm", upgradedPayload)
-	return &render.RenderResult{
-		Resources:        []*object.Resource{claim, sidecar},
-		InventoryEntries: []releasesv1alpha1.InventoryEntry{claimEntry, sidecarEntry},
-	}
+	claim := claimResource(claimName, providerName, upgradedVersion, provides...)
+	sidecar := configMapResource(providerName+"-cm", upgradedPayload)
+	return &render.RenderResult{Resources: []*object.Resource{claim, sidecar}}
 }
 
 // storeClaim creates the accepted claim the cluster already holds, with a
@@ -172,10 +198,11 @@ func demandContracts(name string, contracts ...string) types.NamespacedName {
 
 var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 	// The refusal must not cost the instance its ownership of the claim. The
-	// general invariant is pinned in withhold_invariant_test.go; this pins the
-	// refusal's own path, where the reconcile returns before both the
-	// inventory commit and the prune, so an inventory committed by an earlier
-	// successful reconcile is retained rather than rewritten.
+	// reconciler reads its inventory entries from the full converted set, not
+	// from the apply list; this pins the refusal's own path, where the
+	// reconcile returns before both the inventory commit and the prune, so an
+	// inventory committed by an earlier successful reconcile is retained
+	// rather than rewritten.
 	It("keeps the claim in the inventory and unpruned across a refusal", func() {
 		providerName := "shrink-owned-mr"
 		claimName := namespace + "." + providerName

@@ -330,3 +330,11 @@ func TestHealthJudgesOnlyThroughTheLibrary(t *testing.T) {
 		return true
 	})
 }
+
+// An instance the manager applied as itself is read through the manager's
+// uncached API reader, never its cached client.
+func TestManagerReader(t *testing.T) {
+	apiReader := &healthReader{}
+	assert.Same(t, apiReader, managerReader(apiReader, nil))
+	assert.Nil(t, managerReader(nil, nil))
+}

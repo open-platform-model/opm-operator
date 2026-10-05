@@ -223,9 +223,16 @@ var _ = Describe("ModuleInstance Healthy condition", func() {
 		Expect(h.Message).To(Equal(fmt.Sprintf("1/2 objects ready: Deployment %s/%s (NotReady)", namespace, healthDeploymentName)))
 		Expect(applied.Status.NextRetryAt).To(BeNil(), "a health requeue is not a failure")
 
+		By("a skipped render before the rollout judges again and requeues")
+		calls := renderer.calls.Load()
+		res = reconcileOnce(ctx, r, nn)
+		Expect(renderer.calls.Load()).To(Equal(calls), "the render is skipped")
+		Expect(res.RequeueAfter).To(BeNumerically(">=", 5*time.Second))
+		Expect(res.RequeueAfter).To(BeNumerically("<=", 2*time.Minute))
+		Expect(healthy(get(ctx, nn)).Reason).To(Equal(status.NotRolledOutReason))
+
 		By("once the Deployment has rolled out, the skipped render patches only Healthy")
 		setDeploymentStatus(ctx, true, false)
-		calls := renderer.calls.Load()
 		counting, writes := patchCountingClient()
 		r.Client = counting
 		res = reconcileOnce(ctx, r, nn)

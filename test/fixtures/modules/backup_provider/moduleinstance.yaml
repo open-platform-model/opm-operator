@@ -40,6 +40,6 @@ metadata:
 spec:
   module:
     path: testing.opmodel.dev/modules/operator/backup_provider@v0
-    version: v0.1.0
+    version: v0.1.1
   serviceAccountName: backup-provider-applier
   prune: true

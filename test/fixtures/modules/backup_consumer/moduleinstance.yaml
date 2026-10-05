@@ -37,7 +37,7 @@ metadata:
 spec:
   module:
     path: testing.opmodel.dev/modules/operator/backup_consumer@v0
-    version: v0.1.0
+    version: v0.1.1
   serviceAccountName: backup-consumer-applier
   values:
     schedule: "15 4 * * *"

@@ -26,6 +26,6 @@ Sections per design.md § Sections. Run every test with a private absolute `TMPD
 
 ## 3. Verification
 
-- [ ] 3.1 `task dev:e2e` on Kind under `flock` on the session's `kind-opm-dev.lock`, with `LOCAL_REGISTRY` set as `.github/workflows/test-e2e.yml` sets it, so the registry-backed specs run. If the shared local registry lacks a fixture, do not publish to it: record which specs skipped and leave them to PR CI. Verify: green, and any skip named here.
-- [ ] 3.2 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green; `openspec validate adopt-kubernetes-object-packages --strict` passes.
-- [ ] 3.3 Tick 3.1 and 3.2, then commit `chore(openspec): record the verification of adopt-kubernetes-object-packages`.
+- [x] 3.1 `task dev:e2e` on Kind under `flock` on the session's `kind-opm-dev.lock`, with `LOCAL_REGISTRY` set as `.github/workflows/test-e2e.yml` sets it, so the registry-backed specs run. If the shared local registry lacks a fixture, do not publish to it: record which specs skipped and leave them to PR CI. Verify: green, and any skip named here. Result: green, 14 of 16 specs ran with `LOCAL_REGISTRY` pointing `testing.opmodel.dev` at the shared registry (every fixture version the tree pins was present); the two skipped specs are the suite's standing TODO placeholders (concurrent reconcile, controller-pod restart), not registry skips.
+- [x] 3.2 `task dev:fmt dev:vet dev:lint dev:test` and `task docs:bundle:check` green; `openspec validate adopt-kubernetes-object-packages --strict` passes. Result: all green; `openspec validate --specs --strict` still fails 13 main specs that already failed on `origin/main` (missing Purpose sections), none of them introduced here.
+- [x] 3.3 Tick 3.1 and 3.2, then commit `chore(openspec): record the verification of adopt-kubernetes-object-packages`.

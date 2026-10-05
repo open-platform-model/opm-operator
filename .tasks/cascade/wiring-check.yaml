@@ -1,0 +1,16 @@
+pin-comment: .github main
+receiver: true
+env-allow: [REGISTRY, IMAGE_NAME, CUE_VERSION]
+publish-workflows: [release.yml, publish-fixtures.yml, docs.yml, image-pr.yml, test-e2e.yml, module-image.yml, module-deps.yml]
+ci:
+  workflow: lint.yml
+  job: lint
+notify:
+  needs: [release-please, publish-release]
+  if: needs.release-please.outputs.release_created == 'true' && vars.CASCADE_NOTIFY != 'off'
+  tag: ${{ needs.release-please.outputs.tag_name }}
+publish:
+  labels-managed: false
+extra-references:
+  - file: module-deps.yml
+    kind: resolver

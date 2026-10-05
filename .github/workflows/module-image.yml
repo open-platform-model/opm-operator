@@ -12,8 +12,8 @@ name: Operator module image PR
 # hack/operator-module/image.sh with no App token and hands the changed module
 # file on as an artifact; publish mints the release App token and only runs
 # hack/operator-module/bot-pr.sh, which pushes the branch and opens the PR. A
-# PR opened with the App's token runs its CI on its own. publish runs in the
-# main-only Environment release, the only place the key lives.
+# PR opened with the App's token runs its CI on its own. publish reads the
+# key from the main-only Environment release.
 
 on:
   workflow_dispatch:

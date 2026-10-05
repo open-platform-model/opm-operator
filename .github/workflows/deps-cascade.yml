@@ -11,9 +11,10 @@ name: Deps cascade
 #
 # It is a dry run unless the repo variable CASCADE_DRY_RUN is exactly false:
 # unset, deleted or any other value pushes nothing (contract 9.1). Every
-# .github reference here, in release.yml, cascade-gates.yml and
-# cascade-task.yml carries one SHA, moved only by a ci(deps) pin PR;
-# task cascade:wiring:check enforces both in the Lint job.
+# .github reference here, in release.yml, cascade-gates.yml, module-deps.yml and
+# cascade-task.yml carries one SHA, moved only by a ci(deps) pin PR. A
+# gates-only run never starts publish, and cascade-publish refuses one through
+# its gates-only input. The wiring check (Lint job) enforces all of this.
 
 on:
   repository_dispatch:
@@ -44,7 +45,7 @@ jobs:
       contents: read
       pull-requests: read
       statuses: write
-    uses: open-platform-model/.github/.github/workflows/cascade-receive.yml@2376ffae4bfc665f327d51581350dea694c01504 # .github main
+    uses: open-platform-model/.github/.github/workflows/cascade-receive.yml@6938f8e0247e019cb0c2db13fff5b7b558a6b67d # .github main
     with:
       dry-run: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
       gates-only: ${{ inputs.gates_only == true }}
@@ -60,6 +61,7 @@ jobs:
       && needs.cascade.outputs.compute-ok == 'true'
       && needs.cascade.outputs.dry-run == 'false'
       && inputs.dry_run != true
+      && inputs.gates_only != true
       && vars.CASCADE_DRY_RUN == 'false'
       && github.ref == 'refs/heads/main'
       && contains(fromJSON('["push","recreate","close","conflict","too_long"]'), needs.cascade.outputs.action)
@@ -71,9 +73,10 @@ jobs:
       pull-requests: read
     steps:
       - name: Publish
-        uses: open-platform-model/.github/.github/actions/cascade-publish@2376ffae4bfc665f327d51581350dea694c01504 # .github main
+        uses: open-platform-model/.github/.github/actions/cascade-publish@6938f8e0247e019cb0c2db13fff5b7b558a6b67d # .github main
         with:
           dry-run: ${{ inputs.dry_run == true || vars.CASCADE_DRY_RUN != 'false' }}
+          gates-only: ${{ inputs.gates_only == true }}
           labels-managed: false
           client-id: ${{ vars.CASCADE_APP_CLIENT_ID }}
           private-key: ${{ secrets.CASCADE_APP_PRIVATE_KEY }}

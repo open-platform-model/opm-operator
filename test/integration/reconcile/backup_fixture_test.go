@@ -186,7 +186,7 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 	// schema.ProvidesSince carries the `provides` field core computes, and the
 	// library decodes it. A catalog pinned to an older core carries no such
 	// field, and the library falls back to a deprecated fold over
-	// #transformers, which is removed before GA, after catalog_opm is
+	// #transformers. The fold is removed before GA, after catalog_opm is
 	// republished against a newer core. Acceptance compares that set with the
 	// claim for exact equality (0015:D11), so each path must accept the same
 	// valid claim. Each spec asserts the facts that pick its path, so a
@@ -195,7 +195,8 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 	// the same set, so these specs cannot tell which of the two ran there.
 
 	It("accepts a claim on a catalog built against a core older than the provides field (fold fallback)", func() {
-		claim := renderBackupClaim(k, registry, "backup-provider-fold")
+		store := generatedPlatformStore(k, registry)
+		claim := renderBackupClaim(k, store, registry, "backup-provider-fold")
 
 		// The catalog as acceptance acquires it: from the registry, at the
 		// claim's own coordinate.
@@ -211,12 +212,12 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 			"premise: a catalog built against core %s carries no provides field", pin)
 
 		expectProvidesExactlyBackup(cat, claim)
-		expectAccepted(acceptBackupClaim(k, registry, k, claim))
+		expectAccepted(acceptBackupClaimWith(store, k, claim))
 	})
 
 	It("accepts a claim on a catalog built against a core with the provides field (decoded field)", func() {
-		claim := renderBackupClaim(k, registry, "backup-provider-field")
 		store := generatedPlatformStore(k, registry)
+		claim := renderBackupClaim(k, store, registry, "backup-provider-field")
 
 		dir := backupCatalogPinnedTo(backup, "v"+schema.ProvidesSince)
 		cat, err := k.AcquireCatalogFromDir(ctx, dir)
@@ -250,13 +251,17 @@ var _ = Describe("Backup fixture set (registry-backed)", func() {
 // inventory owns it, and removes both when the spec ends. The instance name
 // keeps each spec's claim distinct; the cleanup keeps either spec from being
 // refused DuplicateClaim by the other's claim on the same catalog.
-func renderBackupClaim(k *kernel.Kernel, registry, instance string) *unstructured.Unstructured {
+func renderBackupClaim(
+	k *kernel.Kernel,
+	store *platformstore.Store,
+	registry, instance string,
+) *unstructured.Unstructured {
 	GinkgoHelper()
 	const namespace = "default"
 
 	r := &render.KernelModuleRenderer{
 		Kernel:      k,
-		Store:       generatedPlatformStore(k, registry),
+		Store:       store,
 		Registry:    registry,
 		RuntimeName: core.LabelManagedByControllerValue,
 	}
@@ -329,18 +334,6 @@ func expectProvidesExactlyBackup(cat *catalog.Catalog, claim *unstructured.Unstr
 	Expect(err).NotTo(HaveOccurred())
 	Expect(provides).To(ConsistOf(derived), "the claim lists exactly what the catalog implements")
 	return derived
-}
-
-// acceptBackupClaim judges the claim against a freshly generated platform,
-// acquiring the catalog through catalogs.
-func acceptBackupClaim(
-	k *kernel.Kernel,
-	registry string,
-	catalogs controller.CatalogAcquirer,
-	claim *unstructured.Unstructured,
-) releasesv1alpha1.TransformerRegistration {
-	GinkgoHelper()
-	return acceptBackupClaimWith(generatedPlatformStore(k, registry), catalogs, claim)
 }
 
 // acceptBackupClaimWith runs the real acceptance reconciler once on the

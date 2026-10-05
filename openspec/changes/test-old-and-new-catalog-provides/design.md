@@ -18,7 +18,7 @@ Acceptance (`TransformerRegistrationReconciler.Reconcile`) acquires the claimed 
 **Goals:**
 
 - Prove that acceptance accepts the `backup_provider` claim when the catalog is answered by the fold (old core pin) and when it is answered by the decoded field (core at or after `ProvidesSince`).
-- Pin each path's premises in the spec that relies on them: the core pin and whether the `provides` field exists. A fixture move or a library change to `ProvidesSince` then fails loudly, naming the premise, instead of quietly testing one path twice. A library that reads the field for a catalog pinned before `ProvidesSince` fails the old spec, because that catalog has no field.
+- Pin each path's premises in the spec that relies on them: the core pin and whether the `provides` field exists. A fixture move or a library change to `ProvidesSince` then fails loudly, naming the premise, instead of quietly testing one path twice. A library that stops folding a catalog without the field fails the old spec; one that picks its path by the field's presence, ignoring the pin, passes it, since that catalog has no field.
 - Not a goal, because it cannot be observed from outside the library: telling the fold from the field on a catalog pinned at or after `ProvidesSince`. On a real core both give the same set, so a library that always folded still passes the new spec. The library's own tests (library#195) cover that direction.
 
 **Non-Goals:**
@@ -50,7 +50,7 @@ The pin does not move with library core bumps. The copy still depends on opm `v4
 - Old: `Requires()["opmodel.dev/core@v2"]` compares below `"v"+schema.ProvidesSince`, and `cat.Package.LookupPath(schema.CatalogProvides).Exists()` is false.
 - New: the pin compares equal to `ProvidesSince`, the field exists, and decoding it gives the same set `Provides()` returns.
 
-These are the facts that select each path, not an observation of which branch ran. They catch a fixture or library-default move, and a library that reads the field for an old catalog. They cannot catch a library that folds a new catalog, because the fold and the field agree on a real core.
+These are the facts that select each path, not an observation of which branch ran. They catch a fixture or library-default move, and a library that stops folding a catalog without the field. A library that picks its path by the field's presence, ignoring the pin, passes the old spec, since that catalog has no field. They cannot catch a library that folds a new catalog, because the fold and the field agree on a real core.
 - Both: `Provides()` is exactly `opmodel.dev/catalogs/opm/traits/backup@v1alpha1`, and the rendered claim's `spec.provides` equals it.
 
 ### D4. Run the real reconciler, not `providesDrift` alone

@@ -1,0 +1,9 @@
+# Enhancement declaration, read by `task enhancements:delivery:log` at archive time.
+# See enhancements/schema.cue #ChangeDeclaration.
+#
+# Under-claimed on purpose. 0021:D8 is a set of GA exit criteria; R12 (a caller
+# tells a fetch failure by type, not by message text) is the library's, and the
+# library change that typed the errors declared it the same way. This change
+# moves the operator onto those types, which delivers no decision by itself.
+implements:
+  - enhancement: "0021"

@@ -217,7 +217,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		cleanupInstance(nn)
 	})
 
-	// Validates selective pruning via ComputeStaleSet identity comparison
+	// Validates selective pruning via the library's StaleSet identity comparison
 	// across multiple resources (design 2.3).
 	It("should prune only the removed resource when multiple exist", func() {
 		mrName := "selective-prune-mr"

@@ -63,8 +63,8 @@ func TestConvertRender_DropsResources(t *testing.T) {
 }
 
 // TestConvertRender_OneExport checks that the digest and the apply objects
-// come from one export: the digest is RenderDigest over object.Export of the
-// same resources, and the apply objects are that export's objects in input
+// come from one export: the digest is the library's RenderDigest over
+// object.Export of the same resources, and the apply objects are that export's objects in input
 // order.
 func TestConvertRender_OneExport(t *testing.T) {
 	srcs := []string{
@@ -87,7 +87,11 @@ func TestConvertRender_OneExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("convertRender: %v", err)
 	}
-	if got, wantDigest := converted.digest, status.RenderDigest(want); got != wantDigest {
+	wantDigest, err := k8sinventory.RenderDigest(want)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	if got := converted.digest; got != wantDigest {
 		t.Fatalf("digest: got %q, want %q", got, wantDigest)
 	}
 	if len(converted.resources) != len(want) {
@@ -184,7 +188,7 @@ func TestConvertRender_EntriesFromTheOneExport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ToUnstructured: %v", err)
 		}
-		if want := inventory.NewEntryFromResource(u); converted.entries[i] != want {
+		if want := inventory.FromEntry(k8sinventory.NewEntry(u)); converted.entries[i] != want {
 			t.Fatalf("entry %d differs from the second-export entry: got %+v, want %+v", i, converted.entries[i], want)
 		}
 	}
@@ -194,4 +198,101 @@ func TestConvertRender_EntriesFromTheOneExport(t *testing.T) {
 	}); converted.entries[0] != want {
 		t.Fatalf("deployment entry: got %+v, want %+v", converted.entries[0], want)
 	}
+}
+
+// TestRenderDigestFailure maps a failure of the library's RenderDigest to a
+// render failure at the step an export failure uses.
+func TestRenderDigestFailure(t *testing.T) {
+	cause := errors.New("object 0: not a single JSON object")
+	err := renderDigestFailure(cause)
+	if err.reason != status.RenderFailedReason {
+		t.Fatalf("want reason %q, got %q", status.RenderFailedReason, err.reason)
+	}
+	if want := "computing render digest: " + cause.Error(); err.Error() != want {
+		t.Fatalf("message:\n got %q\nwant %q", err.Error(), want)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatal("the cause must stay reachable")
+	}
+}
+
+// TestConvertRender_RenderDigestIgnoresTheRuntimeName pins that the render
+// digest the operator records leaves out the managed-by value, so the cli
+// (opm-cli) and the operator (opm-controller) digest one render alike, while
+// any other label still counts.
+func TestConvertRender_RenderDigestIgnoresTheRuntimeName(t *testing.T) {
+	digestWith := func(labels string) string {
+		t.Helper()
+		src := `{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "a", namespace: "x", labels: {` + labels + `}}}`
+		converted, err := convertRender(&render.RenderResult{Resources: []*object.Resource{convertTestResource(t, src)}})
+		if err != nil {
+			t.Fatalf("convertRender: %v", err)
+		}
+		return converted.digest
+	}
+	controller := digestWith(`"app.kubernetes.io/managed-by": "opm-controller"`)
+	cli := digestWith(`"app.kubernetes.io/managed-by": "opm-cli"`)
+	if controller != cli {
+		t.Fatalf("renders that differ only in managed-by digest differently: %q vs %q", controller, cli)
+	}
+	other := digestWith(`"app.kubernetes.io/managed-by": "opm-controller", app: "web"`)
+	if other == controller {
+		t.Fatal("a label other than managed-by must move the render digest")
+	}
+}
+
+// TestInventoryDigestOf pins the inventory digest the reconcilers record:
+// the library's canonical digest of the entries, independent of their order
+// and sensitive to their content.
+func TestInventoryDigestOf(t *testing.T) {
+	a := releasesv1alpha1.InventoryEntry{Group: "apps", Kind: "Deployment", Namespace: "ns", Name: "app", Version: "v1", Component: "web"}
+	b := releasesv1alpha1.InventoryEntry{Kind: "Service", Namespace: "ns", Name: "svc", Version: "v1", Component: "web"}
+
+	got := inventoryDigestOf([]releasesv1alpha1.InventoryEntry{a, b})
+	if want := k8sinventory.Digest(inventory.ToEntries([]releasesv1alpha1.InventoryEntry{a, b})); got != want {
+		t.Fatalf("got %q, want the library's %q", got, want)
+	}
+	if reversed := inventoryDigestOf([]releasesv1alpha1.InventoryEntry{b, a}); reversed != got {
+		t.Fatalf("entry order moved the digest: %q vs %q", reversed, got)
+	}
+	renamed := b
+	renamed.Name = "svc-2"
+	if inventoryDigestOf([]releasesv1alpha1.InventoryEntry{a, renamed}) == got {
+		t.Fatal("a changed name must move the digest")
+	}
+}
+
+// TestStaleEntries pins the stale set the reconcilers prune: the library's
+// component- and version-blind stale set, in previous order, never nil.
+func TestStaleEntries(t *testing.T) {
+	deploy := releasesv1alpha1.InventoryEntry{Group: "apps", Kind: "Deployment", Namespace: "ns", Name: "app", Version: "v1", Component: "web"}
+	svc := releasesv1alpha1.InventoryEntry{Kind: "Service", Namespace: "ns", Name: "svc", Version: "v1", Component: "web"}
+	cm := releasesv1alpha1.InventoryEntry{Kind: "ConfigMap", Namespace: "ns", Name: "cfg", Version: "v1", Component: "web"}
+
+	t.Run("detects stale entries", func(t *testing.T) {
+		got := staleEntries([]releasesv1alpha1.InventoryEntry{deploy, svc, cm}, []releasesv1alpha1.InventoryEntry{deploy, cm})
+		if len(got) != 1 || got[0] != svc {
+			t.Fatalf("got %v, want only %v", got, svc)
+		}
+	})
+	t.Run("no stale entries", func(t *testing.T) {
+		got := staleEntries([]releasesv1alpha1.InventoryEntry{deploy}, []releasesv1alpha1.InventoryEntry{deploy})
+		if got == nil || len(got) != 0 {
+			t.Fatalf("want a non-nil empty stale set, got %#v", got)
+		}
+	})
+	t.Run("a version change leaves nothing stale", func(t *testing.T) {
+		moved := deploy
+		moved.Version = "v2"
+		if got := staleEntries([]releasesv1alpha1.InventoryEntry{deploy}, []releasesv1alpha1.InventoryEntry{moved}); len(got) != 0 {
+			t.Fatalf("got %v, want nothing stale", got)
+		}
+	})
+	t.Run("a component rename leaves nothing stale", func(t *testing.T) {
+		renamed := deploy
+		renamed.Component = "frontend"
+		if got := staleEntries([]releasesv1alpha1.InventoryEntry{deploy}, []releasesv1alpha1.InventoryEntry{renamed}); len(got) != 0 {
+			t.Fatalf("got %v, want nothing stale", got)
+		}
+	})
 }

@@ -68,12 +68,38 @@ func convertRender(result *render.RenderResult) (*convertedRender, error) {
 		resources[i] = exported[i].Object
 		entries[i] = inventory.FromEntry(k8sinventory.NewEntry(exported[i].Object))
 	}
+	digest, err := k8sinventory.RenderDigest(exported)
+	if err != nil {
+		return nil, renderDigestFailure(err)
+	}
 	return &convertedRender{
 		result:    result,
-		digest:    status.RenderDigest(exported),
+		digest:    digest,
 		resources: resources,
 		entries:   entries,
 	}, nil
+}
+
+// renderDigestFailure maps a failure of the library's RenderDigest to its
+// conversion error: a render failure at the step an export failure uses. It
+// cannot fire after a successful object.Export, which returns only objects
+// it decoded from that JSON, but it is handled rather than ignored.
+func renderDigestFailure(err error) *conversionError {
+	return &conversionError{reason: status.RenderFailedReason, step: "computing render digest", err: err}
+}
+
+// staleEntries is the library's component-blind stale set (0012:D7) over
+// the API entries: every previous entry no current entry names the same
+// object as, in previous order, never nil.
+func staleEntries(previous, current []releasesv1alpha1.InventoryEntry) []releasesv1alpha1.InventoryEntry {
+	return inventory.FromEntries(k8sinventory.StaleSet(inventory.ToEntries(previous), inventory.ToEntries(current)))
+}
+
+// inventoryDigestOf is the library's inventory digest (0012:D7) of the API
+// entries: a canonical field-by-field encoding, independent of entry order
+// and of the CRD type's JSON tags.
+func inventoryDigestOf(entries []releasesv1alpha1.InventoryEntry) string {
+	return k8sinventory.Digest(inventory.ToEntries(entries))
 }
 
 // exportFailure maps an object.Export failure to its conversion error.

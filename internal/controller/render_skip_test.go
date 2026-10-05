@@ -18,7 +18,12 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"slices"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -36,12 +41,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	k8sinventory "github.com/open-platform-model/library/opm/k8s/inventory"
+	"github.com/open-platform-model/library/opm/k8s/object"
+
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/apply"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	opmsource "github.com/open-platform-model/opm-operator/internal/source"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
+
+// upgradedOperatorVersion is the operator version the upgrade specs move to
+// from testOperatorVersion.
+const upgradedOperatorVersion = "v1.0.1-test"
 
 // callCountingRenderer counts the module renders a reconcile asks for.
 type callCountingRenderer struct {
@@ -132,6 +144,78 @@ func setPackageIdentity(ctx context.Context, identity string) {
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 }
 
+// preUpgradeInventoryDigest is the inventory digest the operator recorded
+// before it adopted the library's opm/k8s/inventory: the entries sorted by
+// group, kind, namespace, name, component and version, hashed as their JSON.
+// It is kept here only to seed status with a pre-upgrade value.
+func preUpgradeInventoryDigest(entries []releasesv1alpha1.InventoryEntry) string {
+	sorted := slices.Clone(entries)
+	if len(sorted) == 0 {
+		return fmt.Sprintf("sha256:%x", sha256.Sum256(nil))
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		for _, pair := range [][2]string{
+			{a.Group, b.Group}, {a.Kind, b.Kind}, {a.Namespace, b.Namespace},
+			{a.Name, b.Name}, {a.Component, b.Component},
+		} {
+			if pair[0] != pair[1] {
+				return pair[0] < pair[1]
+			}
+		}
+		return a.Version < b.Version
+	})
+	b, err := json.Marshal(sorted)
+	Expect(err).NotTo(HaveOccurred())
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(b))
+}
+
+// preUpgradeRenderDigest is the render digest the operator recorded before it
+// adopted the library's opm/k8s/inventory: the exported objects sorted by
+// group, kind, namespace and name, their JSON hashed in that order, with the
+// managed-by value included. It is kept here only to seed status with a
+// pre-upgrade value.
+func preUpgradeRenderDigest(exported []object.Exported) string {
+	group := func(apiVersion string) string {
+		if idx := strings.LastIndex(apiVersion, "/"); idx >= 0 {
+			return apiVersion[:idx]
+		}
+		return ""
+	}
+	order := make([]int, len(exported))
+	for i := range order {
+		order[i] = i
+	}
+	key := func(i int) [4]string {
+		u := exported[i].Object
+		return [4]string{group(u.GetAPIVersion()), u.GetKind(), u.GetNamespace(), u.GetName()}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		ka, kb := key(order[a]), key(order[b])
+		return slices.Compare(ka[:], kb[:]) < 0
+	})
+	h := sha256.New()
+	for _, i := range order {
+		h.Write(exported[i].JSON)
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil))
+}
+
+// libraryDigestsOf returns the render digest and the inventory digest the
+// operator now records for result: the library's digests over one export of
+// its resources and over the entries built from that export.
+func libraryDigestsOf(result *render.RenderResult) (renderDigest, inventoryDigest string, exported []object.Exported) {
+	exported, err := object.Export(result.Resources)
+	Expect(err).NotTo(HaveOccurred())
+	renderDigest, err = k8sinventory.RenderDigest(exported)
+	Expect(err).NotTo(HaveOccurred())
+	entries := make([]k8sinventory.Entry, 0, len(exported))
+	for _, e := range exported {
+		entries = append(entries, k8sinventory.NewEntry(e.Object))
+	}
+	return renderDigest, k8sinventory.Digest(entries), exported
+}
+
 // The render skip (render-input-key): a reconcile whose render input key
 // matches status.lastAppliedInputs, whose last confirming render is younger
 // than the drift render interval, that is Ready and has observed its
@@ -207,6 +291,26 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 				mutate(&mi.Status)
 				return k8sClient.Status().Update(ctx, &mi)
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+		}
+
+		// seedPreUpgradeDigests overwrites the stored inventory and render
+		// digests with the values the earlier encoding gives for the same
+		// entries and render, as an instance applied by the earlier operator
+		// holds them. The key stays the one appliedInstance recorded, under
+		// testOperatorVersion.
+		seedPreUpgradeDigests := func(ctx context.Context, nn types.NamespacedName) {
+			mi := get(ctx, nn)
+			Expect(mi.Status.LastAppliedInputs).NotTo(BeNil())
+			_, _, exported := libraryDigestsOf(stubRenderResult(namespace, mi.Spec.Values))
+			oldRender := preUpgradeRenderDigest(exported)
+			oldInventory := preUpgradeInventoryDigest(mi.Status.Inventory.Entries)
+			Expect(oldRender).NotTo(Equal(mi.Status.LastAppliedRenderDigest), "the encodings differ")
+			Expect(oldInventory).NotTo(Equal(mi.Status.Inventory.Digest), "the encodings differ")
+			updateStatus(ctx, nn, func(s *releasesv1alpha1.ModuleInstanceStatus) {
+				s.LastAppliedRenderDigest = oldRender
+				s.LastAttemptedRenderDigest = oldRender
+				s.Inventory.Digest = oldInventory
+			})
 		}
 
 		It("skips the render and patches nothing when the inputs are unchanged", func() {
@@ -369,7 +473,7 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 			values.Raw = []byte(`{"message": "re-digested"}`)
 			upgraded := &callCountingRenderer{stubRenderer: stubRenderer{result: stubRenderResult(namespace, values)}}
 			r := newReconciler(upgraded, interval)
-			r.OperatorVersion = "v1.0.1-test"
+			r.OperatorVersion = upgradedOperatorVersion
 			reconcileOnce(ctx, r, nn)
 
 			Expect(renderer.calls.Load()).To(Equal(calls))
@@ -382,10 +486,79 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 				Config:          after.Status.LastAppliedConfigDigest,
 				PackageIdentity: stubPlatformIdentity,
 				SkewPolicy:      stubSkewPolicy,
-				OperatorVersion: "v1.0.1-test",
+				OperatorVersion: upgradedOperatorVersion,
 				LibraryVersion:  testLibraryVersion,
 			}
 			Expect(after.Status.LastAppliedInputs.Digest).To(Equal(want.Digest()))
+		})
+
+		// The one-time digest change of adopting the library's
+		// opm/k8s/inventory, pinned against the render skip: an instance
+		// whose stored digests are in the earlier encoding renders once and
+		// applies once under the next operator version, then converges.
+		It("applies the library's digests once after an upgrade, then converges", func() {
+			ctx := context.Background()
+			renderer := &callCountingRenderer{}
+			nn := appliedInstance(ctx, "skip-inventory-upgrade-mi", renderer)
+			seedPreUpgradeDigests(ctx, nn)
+			before := get(ctx, nn)
+			calls := renderer.calls.Load()
+
+			By("the first reconcile under the new operator renders and applies once")
+			r := newReconciler(renderer, interval)
+			r.OperatorVersion = upgradedOperatorVersion
+			reconcileOnce(ctx, r, nn)
+			Expect(renderer.calls.Load()).To(Equal(calls+1), "the key moved with the operator version")
+			after := get(ctx, nn)
+			Expect(after.Status.History).To(HaveLen(len(before.Status.History)+1), "one apply")
+			Expect(after.Status.Inventory.Revision).To(Equal(before.Status.Inventory.Revision + 1))
+			wantRender, wantInventory, _ := libraryDigestsOf(stubRenderResult(namespace, before.Spec.Values))
+			Expect(after.Status.LastAppliedRenderDigest).To(Equal(wantRender))
+			Expect(after.Status.Inventory.Digest).To(Equal(wantInventory))
+
+			By("the next reconcile under the same operator skips and patches nothing")
+			calls = renderer.calls.Load()
+			counting, writes := patchCountingClient()
+			r.Client = counting
+			reconcileOnce(ctx, r, nn)
+			Expect(renderer.calls.Load()).To(Equal(calls), "skipped")
+			Expect(writes.Load()).To(BeZero(), "nothing patched")
+
+			By("a render after the interval ends NoOp without a second apply")
+			old := metav1.NewTime(time.Now().Add(-31 * time.Minute).Truncate(time.Second))
+			updateStatus(ctx, nn, func(s *releasesv1alpha1.ModuleInstanceStatus) { s.LastAppliedInputs.RenderedAt = old })
+			r.Client = k8sClient
+			reconcileOnce(ctx, r, nn)
+			Expect(renderer.calls.Load()).To(Equal(calls + 1))
+			converged := get(ctx, nn)
+			Expect(converged.Status.History).To(HaveLen(len(after.Status.History)), "NoOp: no second apply")
+			Expect(converged.Status.Inventory.Revision).To(Equal(after.Status.Inventory.Revision))
+		})
+
+		// The documented boundary: the key holds no digest, so a key recorded
+		// by the running operator version hides the earlier encoding until
+		// the drift render interval passes. Release images always move the
+		// version, so this costs only a development image the interval.
+		It("keeps the earlier digests under a key from the same version until the interval", func() {
+			ctx := context.Background()
+			renderer := &callCountingRenderer{}
+			nn := appliedInstance(ctx, "skip-inventory-same-version-mi", renderer)
+			seedPreUpgradeDigests(ctx, nn)
+			before := get(ctx, nn)
+			calls := renderer.calls.Load()
+
+			reconcileOnce(ctx, newReconciler(renderer, interval), nn)
+			Expect(renderer.calls.Load()).To(Equal(calls), "the key matches, so the render is skipped")
+
+			old := metav1.NewTime(time.Now().Add(-31 * time.Minute).Truncate(time.Second))
+			updateStatus(ctx, nn, func(s *releasesv1alpha1.ModuleInstanceStatus) { s.LastAppliedInputs.RenderedAt = old })
+			reconcileOnce(ctx, newReconciler(renderer, interval), nn)
+			Expect(renderer.calls.Load()).To(Equal(calls + 1))
+			after := get(ctx, nn)
+			Expect(after.Status.History).To(HaveLen(len(before.Status.History)+1), "the render applies once")
+			wantRender, wantInventory, _ := libraryDigestsOf(stubRenderResult(namespace, before.Spec.Values))
+			Expect(after.Status.LastAppliedRenderDigest).To(Equal(wantRender))
+			Expect(after.Status.Inventory.Digest).To(Equal(wantInventory))
 		})
 
 		It("renders when no Platform exists", func() {
@@ -551,6 +724,70 @@ var _ = Describe("Render skip on unchanged inputs", func() {
 			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(renderer.calls.Load()).To(Equal(renders+1), "once recorded, the next requeue skips")
+		})
+
+		It("applies the library's digests once after an upgrade, then converges", func() {
+			ctx := context.Background()
+			fetcher, renderer := newCounters()
+			nn, _, r := appliedPackage(ctx, "skip-inventory-upgrade-pkg", fetcher, renderer)
+			var before releasesv1alpha1.ModulePackage
+			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
+			wantRender, wantInventory, exported := libraryDigestsOf(stubRenderResult(namespace, nil))
+			Expect(before.Status.LastAppliedRenderDigest).To(Equal(wantRender))
+			Expect(before.Status.Inventory.Digest).To(Equal(wantInventory))
+			oldRender := preUpgradeRenderDigest(exported)
+			oldInventory := preUpgradeInventoryDigest(before.Status.Inventory.Entries)
+			Eventually(func() error {
+				var pkg releasesv1alpha1.ModulePackage
+				if err := k8sClient.Get(ctx, nn, &pkg); err != nil {
+					return err
+				}
+				pkg.Status.LastAppliedRenderDigest = oldRender
+				pkg.Status.LastAttemptedRenderDigest = oldRender
+				pkg.Status.Inventory.Digest = oldInventory
+				return k8sClient.Status().Update(ctx, &pkg)
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+			Expect(k8sClient.Get(ctx, nn, &before)).To(Succeed())
+			renders := renderer.calls.Load()
+
+			By("the first reconcile under the new operator renders and applies once")
+			r.OperatorVersion = upgradedOperatorVersion
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(renderer.calls.Load()).To(Equal(renders + 1))
+			var after releasesv1alpha1.ModulePackage
+			Expect(k8sClient.Get(ctx, nn, &after)).To(Succeed())
+			Expect(after.Status.History).To(HaveLen(len(before.Status.History)+1), "one apply")
+			Expect(after.Status.Inventory.Revision).To(Equal(before.Status.Inventory.Revision + 1))
+			Expect(after.Status.LastAppliedRenderDigest).To(Equal(wantRender))
+			Expect(after.Status.Inventory.Digest).To(Equal(wantInventory))
+
+			By("the next reconcile under the same operator skips and patches nothing")
+			counting, writes := patchCountingClient()
+			r.Client = counting
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(renderer.calls.Load()).To(Equal(renders+1), "skipped")
+			Expect(writes.Load()).To(BeZero(), "nothing patched")
+
+			By("a render after the interval ends NoOp without a second apply")
+			old := metav1.NewTime(time.Now().Add(-31 * time.Minute).Truncate(time.Second))
+			Eventually(func() error {
+				var pkg releasesv1alpha1.ModulePackage
+				if err := k8sClient.Get(ctx, nn, &pkg); err != nil {
+					return err
+				}
+				pkg.Status.LastAppliedInputs.RenderedAt = old
+				return k8sClient.Status().Update(ctx, &pkg)
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+			r.Client = k8sClient
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(renderer.calls.Load()).To(Equal(renders + 2))
+			var converged releasesv1alpha1.ModulePackage
+			Expect(k8sClient.Get(ctx, nn, &converged)).To(Succeed())
+			Expect(converged.Status.History).To(HaveLen(len(after.Status.History)), "NoOp: no second apply")
+			Expect(converged.Status.Inventory.Revision).To(Equal(after.Status.Inventory.Revision))
 		})
 	})
 })

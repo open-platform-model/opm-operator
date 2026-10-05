@@ -214,6 +214,15 @@ Rules for later changes:
   image built from `main` without a version bump keeps its key: the e2e of
   such a change runs the manager with `--drift-render-interval=0` or expects
   the one-time apply to wait up to the interval.
+  Adopting the library's `opm/k8s/inventory` is one such change: the
+  render digest (`lastApplied*RenderDigest`) and the inventory digest
+  (`status.inventory.digest`) are that package's `RenderDigest` and
+  `Digest`, the render digest leaves out the value of the
+  `app.kubernetes.io/managed-by` label so the cli and the operator digest one
+  render alike, and the inventory digest hashes a canonical encoding of the
+  entries rather than their JSON. Both stored values changed once with that
+  release, so every operator-managed object rendered and applied once after
+  the upgrade and then converged.
 - **A per-reconcile check runs before the skip.** A check that must run on
   every reconcile, such as a health condition that requeues until a rollout
   converges, either runs before the skip or makes its own not-yet-converged

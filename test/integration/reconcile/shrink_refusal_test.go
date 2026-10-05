@@ -198,12 +198,11 @@ func demandContracts(name string, contracts ...string) types.NamespacedName {
 
 var _ = Describe("Reconcile Provides Shrink Refusal", func() {
 	// The refusal must not cost the instance its ownership of the claim. The
-	// general invariant (the inventory is built from the full converted set
-	// before any resource is withheld from the apply list) is pinned by
-	// TestWithholdRefused_KeepsEntriesForTheFullSet in internal/reconcile;
-	// this pins the refusal's own path, where the reconcile returns before both the
-	// inventory commit and the prune, so an inventory committed by an earlier
-	// successful reconcile is retained rather than rewritten.
+	// reconciler reads its inventory entries from the full converted set, not
+	// from the apply list; this pins the refusal's own path, where the
+	// reconcile returns before both the inventory commit and the prune, so an
+	// inventory committed by an earlier successful reconcile is retained
+	// rather than rewritten.
 	It("keeps the claim in the inventory and unpruned across a refusal", func() {
 		providerName := "shrink-owned-mr"
 		claimName := namespace + "." + providerName

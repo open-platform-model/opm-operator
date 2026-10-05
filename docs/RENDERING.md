@@ -219,7 +219,7 @@ Rules for later changes:
   (`status.inventory.digest`) are that package's `RenderDigest` and
   `Digest`, the render digest leaves out the value of the
   `app.kubernetes.io/managed-by` label so the cli and the operator digest one
-  render alike, and the inventory digest hashes a canonical encoding of the
+  render alike once the cli computes it with the same package, and the inventory digest hashes a canonical encoding of the
   entries rather than their JSON. Both stored values changed once with that
   release, so every operator-managed object rendered and applied once after
   the upgrade and then converged.

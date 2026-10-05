@@ -187,11 +187,13 @@ func TestRefusalMessage(t *testing.T) {
 	}
 }
 
-// TestWithholdRefused_KeepsEntriesForTheFullSet pins the invariant the
-// refusal rests on: the inventory entries come from the full converted set,
-// so a resource withheld from the apply list stays owned and never becomes
-// stale. convertRender builds the entries before withholdRefused runs, and
-// withholdRefused neither sees nor changes them.
+// TestWithholdRefused_KeepsEntriesForTheFullSet checks that the converted
+// entries cover the full set and that withholding a resource from the apply
+// list leaves them as they were. withholdRefused never receives the entries,
+// so this holds by construction; it does not pin which set the reconciler
+// builds the stale set from. The reconciler reads converted.entries, and a
+// refusal returns before the prune and the inventory commit (pinned by the
+// shrink refusal integration test).
 func TestWithholdRefused_KeepsEntriesForTheFullSet(t *testing.T) {
 	result := &render.RenderResult{Resources: []*object.Resource{
 		convertTestResource(t, `{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "a", namespace: "x"}}`),

@@ -4,9 +4,9 @@
 
 The ModuleInstance and ModulePackage reconcilers SHALL record on `status.lastAppliedVersion` the version of the module whose render they last applied, as plain text beside the `lastApplied*` digests. The value SHALL be the version the rendered instance's source module declares in its `metadata.version` (bare SemVer, for example `0.1.0`), read the same way on both kinds; for a ModuleInstance it is not copied from `spec.module.version`.
 
-The field SHALL be written together with the other `lastApplied*` fields, on an attempt whose apply (and prune, when enabled) succeeded. An attempt that fails, panics, is suspended, or belongs to a CLI-owned instance SHALL leave it as it was.
+The field SHALL be written together with the other `lastApplied*` fields, on an attempt whose apply (and prune, when enabled) succeeded. An attempt that fails, panics, is suspended, belongs to a CLI-owned instance, or is the operator's own instance (refused) SHALL leave it as it was.
 
-When the outcome is `NoOp` and `status.lastAppliedVersion` is empty, the reconciler SHALL set it to the version the render of that attempt reported. A `NoOp` SHALL NOT change a non-empty value.
+When the outcome is `NoOp` and the attempt rendered, the reconciler SHALL set it to the version that render reported, whatever the field held: a `NoOp` means every digest equals the last apply's, and the source digest pins the module version, so the rendered version is the applied one. This fills the field on an object applied before it existed and corrects it after an ownership handback, where the cli moved the digests without touching this field. A reconcile that did not render (for example one that skips the render because its inputs are unchanged) SHALL leave the field as it was.
 
 A version that cannot be read as a concrete string SHALL NOT fail the reconcile. A successful apply then writes the field empty, so it never names a version the last apply did not render.
 
@@ -37,10 +37,15 @@ Source: owner decision j5 of the kernel-plan walkthrough (2026-10-03), recorded 
 - **THEN** `status.lastAppliedVersion` is set to the version the render reported
 - **AND** `lastAttempted*`, `inventory` and history are not modified
 
-#### Scenario: A NoOp never overwrites a recorded version
+#### Scenario: A NoOp after an ownership handback corrects a stale version
 
-- **WHEN** the outcome is `NoOp` and `status.lastAppliedVersion` already holds a value
-- **THEN** the value is unchanged
+- **WHEN** `status.lastAppliedVersion` holds `9.9.9`, the module renders at `0.1.0`, and the reconcile is a `NoOp` because the `lastApplied*` digests already match that render
+- **THEN** `status.lastAppliedVersion` is `0.1.0`
+
+#### Scenario: An apply whose render reports no version clears the field
+
+- **WHEN** an instance that recorded `lastAppliedVersion` `0.1.0` renders a changed set whose module version cannot be read, and the apply succeeds
+- **THEN** `status.lastAppliedVersion` is absent from the object
 
 ## MODIFIED Requirements
 
@@ -51,8 +56,8 @@ attempt, including `NoOp`. On meaningful outcomes (`Applied`, `AppliedAndPruned`
 `lastAttempted*`, `lastApplied*` (on success), `inventory` (on success),
 history, failure counters, and `nextRetryAt`. On `NoOp`, the patch is bounded
 to: drift condition (`Drifted`), failure counter deltas (incl. drift counter),
-`nextRetryAt` clearing, `requiredContracts`, and `lastAppliedVersion` when it
-is empty. `lastAttempted*`, `inventory`, and history MUST NOT be modified on
+`nextRetryAt` clearing, `requiredContracts`, and `lastAppliedVersion` when the
+attempt rendered. `lastAttempted*`, `inventory`, and history MUST NOT be modified on
 `NoOp` — those fields describe meaningful reconcile outcomes.
 
 `requiredContracts` is in the `NoOp` set deliberately, and it is the one field
@@ -63,11 +68,12 @@ may be a no-op for apply while being the only evidence that the demand moved.
 Bounding it out of the `NoOp` patch would leave the field describing a render
 the operator has already superseded.
 
-`lastAppliedVersion` is in the `NoOp` set only to fill it once on an object
-applied before the field existed. A `NoOp` means the source digest equals the
-last apply's, and the source digest pins the module version, so the version
-the render reports is the one last applied. A `NoOp` never changes a recorded
-value.
+`lastAppliedVersion` is in the `NoOp` set because a `NoOp` re-proves it. A
+`NoOp` means the source digest equals the last apply's, and the source digest
+pins the module version, so the version the render reports is the one last
+applied, whoever applied it. Writing it fills the field on an object applied
+before it existed and corrects it after an ownership handback. A reconcile
+that did not render leaves it as it was.
 
 Storm safety is provided by `WithEventFilter(predicate.GenerationChangedPredicate{})`
 on the controller. Status subresource patches do not bump

@@ -8,8 +8,8 @@ The owner settled this in the kernel-plan walkthrough (task j5, 2026-10-03): "Op
 
 - **A new status field, `status.lastAppliedVersion`, on ModuleInstance and ModulePackage.** A plain string, optional, beside `lastAppliedSourceDigest`. It holds the version of the module whose render the operator last applied successfully, as that module declares it in `metadata.version` (bare SemVer, for example `0.1.0`).
 - **The render reports the version.** `render.RenderResult` gains `ModuleVersion`. Both kernel renderers (`KernelModuleRenderer` for ModuleInstance, `KernelPackageRenderer` for ModulePackage) read it off the rendered instance's source module (`#module.metadata.version`) through the library's public `opm/schema` paths. One reading for both kinds, so the field means the same thing on each.
-- **The reconcile loops write it.** On a successful apply (and prune, when enabled), the deferred status commit sets `lastAppliedVersion` together with the other `lastApplied*` fields. A failed attempt, a panicking attempt, a suspended object and a CLI-owned instance leave it as it was, exactly like the digests.
-- **A NoOp fills it once.** An object applied by an operator release without this field is a NoOp on every later reconcile until something changes, so the field would stay empty indefinitely. When the outcome is NoOp and `lastAppliedVersion` is empty, the NoOp commit writes the version the render just reported. A NoOp never changes a recorded value. This is sound because a NoOp means the source digest matches the last apply, and the source digest pins the module version on both kinds.
+- **The reconcile loops write it.** On a successful apply (and prune, when enabled), the deferred status commit sets `lastAppliedVersion` together with the other `lastApplied*` fields. A failed attempt, a panicking attempt, a suspended object, a CLI-owned instance and the operator's own (refused) instance leave it as it was, exactly like the digests.
+- **A NoOp re-proves it.** A NoOp that rendered writes the version the render just reported, whatever the field held. This is sound because a NoOp means every digest matches the last apply, and the source digest pins the module version on both kinds, so the rendered version is the applied one. It fills the field on objects applied by an operator release without it (they stay NoOp until something changes), and it corrects a stale value after an ownership handback: the cli moves the `lastApplied*` digests on a CLI-owned instance but not this field, so the first operator reconcile after the instance returns to `spec.owner: operator` is a NoOp that must replace the version of the earlier operator apply. A reconcile that did not render leaves the field as it was.
 - **Generated files.** `config/crd/bases`, `dist/install.yaml` and the operator module's generated CRD data (`modules/opm_operator/zz_generated_crds.cue`) are regenerated with the repository tasks, never by hand. The field's doc comment becomes the CRD description and the generated resource reference.
 
 ## Classification
@@ -18,7 +18,7 @@ The owner settled this in the kernel-plan walkthrough (task j5, 2026-10-03): "Op
 
 The regenerated `modules/opm_operator/zz_generated_crds.cue` is the forced exception in `AGENTS.md`: a CRD change must regenerate the module's data in the same PR, so the squash commit also lands in the module's changelog and opens a module release PR, which the module's release gate holds until an operator release carrying this `config/` reaches the module.
 
-Complexity (Principle VII): one string field per kind, one result field, one read helper shared by both renderers, and one conditional write in each NoOp commit. The NoOp fill is the only behaviour beyond "set on apply"; without it the field is empty on every instance that existed before the upgrade and has not changed since, which defeats its purpose.
+Complexity (Principle VII): one string field per kind, one result field, one read helper shared by both renderers, and one write in each NoOp commit, guarded only by whether the attempt rendered. The NoOp write is the only behaviour beyond "set on apply"; without it the field is empty on every instance that existed before the upgrade and has not changed since, and stale after every ownership handback.
 
 ## Capabilities
 
@@ -28,7 +28,8 @@ None.
 
 ### Modified Capabilities
 
-- `reconcile-loop-assembly`: a new requirement says both kinds record the applied module version in plain text on a successful apply and fill an empty field on NoOp; "Status always patched" names `lastAppliedVersion` in the NoOp patch set.
+- `reconcile-loop-assembly`: a new requirement says both kinds record the applied module version in plain text on a successful apply and rewrite it on a NoOp that rendered; "Status always patched" names `lastAppliedVersion` in the NoOp patch set.
+- `kernel-module-renderer`: a new requirement says both kernel renderers report the rendered module's declared version on `RenderResult.ModuleVersion`.
 
 ## Impact
 
@@ -36,6 +37,6 @@ None.
 - Render: `internal/render/module.go` (`RenderResult.ModuleVersion`), `internal/render/kernel_module_renderer.go`, `internal/render/kernel_package_renderer.go`, a small read helper beside `internal/render/demand.go`.
 - Reconcile: `internal/reconcile/moduleinstance.go` (deferred commit and `commitNoOpStatus`), `internal/reconcile/modulepackage.go` (deferred commit and its inline NoOp branch). Builds on the deferred-commit shape of op-fix-panic-seam (#236): `reconcileAction`, `nextInventory` and the recover branch.
 - Generated: `config/crd/bases/opmodel.dev_moduleinstances.yaml`, `config/crd/bases/opmodel.dev_modulepackages.yaml`, `dist/install.yaml`, `modules/opm_operator/zz_generated_crds.cue`.
-- Tests: `internal/render` (the read helper), `test/integration/reconcile` (both kernel renderers report the fixture's version), `internal/controller` (envtest: set on apply, unchanged on a failed apply, filled on NoOp, never overwritten by NoOp).
-- Downstream: none required. The cli writes `lastApplied*` digests for CLI-owned instances and does not learn this field here; whether the cli records it too is not part of the owner's decision and is left open.
+- Tests: `internal/render` (the read helper), `test/integration/reconcile` (both kernel renderers report the fixture's version), `internal/controller` (envtest: set on apply, unchanged on a failed apply, filled on NoOp, corrected by a NoOp after a handback, cleared by an apply whose render reports no version).
+- Downstream: none required. The cli writes `lastApplied*` digests for CLI-owned instances and does not learn this field here, so while `spec.owner` is `cli` the field is not updated and may name the version of an earlier operator apply. Whether the cli records it too is not part of the owner's decision and is left open (a follow-up issue at most).
 - No enhancement decision backs this change (the owner's j5 answer is a walkthrough decision recorded in ADR-008), so there is no `enhancement.yaml`.

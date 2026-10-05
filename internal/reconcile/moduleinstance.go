@@ -257,10 +257,11 @@ func ReconcileModuleInstance(
 	reportResume(ctx, params.EventRecorder, &mi)
 
 	// Skip the render when its inputs are unchanged. It sits before the
-	// deferred status commit is armed: a skip is not an attempt, patches
-	// nothing, emits no event and records no reconcile metric.
+	// deferred status commit is armed: a skip is not an attempt, emits no
+	// event and records no reconcile metric. It judges health, so a requeue
+	// waiting for a rollout can observe it, and patches that one condition.
 	if instanceRenderSkippable(ctx, params, &mi) {
-		return ctrl.Result{}, nil
+		return judgeSkippedInstance(ctx, params, patcher, &mi), nil
 	}
 
 	// Track digests and outcome across phases for deferred status commit.
@@ -534,7 +535,10 @@ func ReconcileModuleInstance(
 		log.Info("No changes detected, skipping apply")
 		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeNormal, status.NoOpReason, "Reconcile", "No changes detected")
 		outcome = NoOp
-		return ctrl.Result{}, nil
+		// Judged before the deferred NoOp commit, which patches it.
+		v := judgeInstanceHealth(ctx, params, &mi, inventoryEntries(mi.Status.Inventory))
+		applyHealth(&mi, v)
+		return ctrl.Result{RequeueAfter: healthRequeue(v, mi.Status.LastAppliedAt, time.Now())}, nil
 	}
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
@@ -640,7 +644,64 @@ func ReconcileModuleInstance(
 	params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeNormal, status.ReconciliationSucceededReason, "Reconcile", "Reconciliation succeeded")
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
-	return ctrl.Result{}, nil
+	// Judge health after the apply and prune returned, through the identity
+	// that applied. The deferred commit is about to write lastAppliedAt as
+	// now, so the health requeue counts from now: it is the floor.
+	v := judgeHealth(ctx, appliedHealthReader(params, effectiveSA, applyClient), newEntries)
+	applyHealth(&mi, v)
+	now := metav1.Now()
+	return ctrl.Result{RequeueAfter: healthRequeue(v, &now, now.Time)}, nil
+}
+
+// appliedHealthReader is the reader of a successful apply's health
+// judgement: the impersonated client that applied, or the manager's uncached
+// reader when the manager applied as itself.
+func appliedHealthReader(params *ModuleInstanceParams, effectiveSA string, applyClient client.Client) client.Reader {
+	if effectiveSA != "" {
+		return applyClient
+	}
+	return managerReader(params.APIReader, params.Client)
+}
+
+// judgeInstanceHealth judges entries through the reader of the identity that
+// applies mi: the impersonated client when an effective ServiceAccount is
+// set, the manager's uncached reader otherwise. A reader that cannot be built
+// gives HealthUnknown with the error.
+func judgeInstanceHealth(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	mi *releasesv1alpha1.ModuleInstance,
+	entries []releasesv1alpha1.InventoryEntry,
+) healthVerdict {
+	if sa, _ := resolveEffectiveSA(mi.Spec.ServiceAccountName, params.DefaultServiceAccount); sa == "" {
+		return judgeHealth(ctx, managerReader(params.APIReader, params.Client), entries)
+	}
+	_, impClient, err := buildApplyClient(ctx, params, mi)
+	if err != nil {
+		return unreadableVerdict(entries, err)
+	}
+	return judgeHealth(ctx, impClient, entries)
+}
+
+// judgeSkippedInstance judges the health of a ModuleInstance whose render was
+// skipped and patches the Healthy condition alone; the patch is empty when
+// the judgement did not change it. Nothing else is written: no
+// observedGeneration, no lastAttempted*, no history, no event. A failed
+// patch is logged, and the health requeue is returned either way.
+func judgeSkippedInstance(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	patcher *patch.SerialPatcher,
+	mi *releasesv1alpha1.ModuleInstance,
+) ctrl.Result {
+	v := judgeInstanceHealth(ctx, params, mi, inventoryEntries(mi.Status.Inventory))
+	applyHealth(mi, v)
+	if err := patcher.Patch(ctx, mi,
+		patch.WithOwnedConditions{Conditions: []string{status.HealthyCondition}},
+	); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to patch the Healthy condition of a skipped render")
+	}
+	return ctrl.Result{RequeueAfter: healthRequeue(v, mi.Status.LastAppliedAt, time.Now())}
 }
 
 // markApplyFailure records a failed apply on the instance and returns the

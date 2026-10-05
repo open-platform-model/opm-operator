@@ -143,7 +143,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Starting opm-operator", "version", opmversion.Full())
+	// The operator and library versions are parts of every render input key,
+	// so an upgrade of either renders every object once. Read once here and
+	// injected, so the reconcilers hold no process globals.
+	operatorVersion := opmversion.Full()
+	libraryVersion := opmversion.Library()
+	setupLog.Info("Starting opm-operator", "version", operatorVersion, "libraryVersion", libraryVersion)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -317,6 +322,8 @@ func main() {
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
 		RenderSlots:           renderSlots,
+		OperatorVersion:       operatorVersion,
+		LibraryVersion:        libraryVersion,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleInstance")
 		os.Exit(1)
@@ -338,6 +345,8 @@ func main() {
 		Kernel:                k,
 		MaxConcurrentRenders:  maxConcurrentRenders,
 		RenderSlots:           renderSlots,
+		OperatorVersion:       operatorVersion,
+		LibraryVersion:        libraryVersion,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModulePackage")
 		os.Exit(1)

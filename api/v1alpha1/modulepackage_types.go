@@ -122,6 +122,20 @@ type ModulePackageStatus struct {
 	// +optional
 	LastAppliedVersion string `json:"lastAppliedVersion,omitempty"`
 
+	// lastAppliedInputs identifies the inputs of the last render that left
+	// the cluster holding its output: a digest over the module source, the
+	// values, the platform package identity, the catalog skew policy, and the
+	// operator and library versions, and renderedAt, when that render ran. It
+	// is set with the other last-applied fields when an apply succeeds, and
+	// rewritten by a reconcile that renders and finds nothing to change.
+	//
+	// While the digest matches the current inputs and renderedAt is younger
+	// than the manager's --drift-render-interval, a reconcile of a Ready
+	// object that has observed its generation does not render, so drift is
+	// re-evaluated at most once per interval while nothing changes.
+	// +optional
+	LastAppliedInputs *RenderInputs `json:"lastAppliedInputs,omitempty"`
+
 	// +optional
 	LastAppliedConfigDigest string `json:"lastAppliedConfigDigest,omitempty"`
 

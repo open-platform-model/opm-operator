@@ -67,6 +67,19 @@ type ModulePackageParams struct {
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
 
+	// OperatorVersion and LibraryVersion are the running operator's
+	// version.Full() and version.Library(), parts of the render input key.
+	// They are injected so tests can set them; an empty one makes every key
+	// incomplete, so nothing is recorded and nothing is skipped.
+	OperatorVersion string
+	LibraryVersion  string
+
+	// DriftRenderInterval is the manager's --drift-render-interval: how long
+	// a reconcile whose render inputs are unchanged may skip its render after
+	// the render that recorded them. Zero disables the skip and the record
+	// of the key on a NoOp.
+	DriftRenderInterval time.Duration
+
 	// convert exports a render result for apply. Nil, as in production,
 	// means convertRender; tests in this package set it to observe the
 	// conversion, for example that it runs while the render slot is held.
@@ -173,6 +186,11 @@ func ReconcileModulePackage(
 		// reported, nil until a render result is in hand. A NoOp writes it
 		// to lastAppliedVersion only when it is set.
 		renderedVersion *string
+
+		// renderedInputs is the render input key of this attempt's render,
+		// nil until a render result is in hand. A success or a NoOp records
+		// it as lastAppliedInputs; a failure or a panic does not.
+		renderedInputs *status.RenderInputKey
 	)
 
 	// A panic is recovered first: the outcome is still its zero value, NoOp,
@@ -196,6 +214,7 @@ func ReconcileModulePackage(
 			updateModulePackageFailureCounters(&pkg.Status, outcome, phases)
 			pkg.Status.NextRetryAt = nil
 			recordNoOpVersion(&pkg.Status.LastAppliedVersion, renderedVersion)
+			recordInputs(&pkg.Status.LastAppliedInputs, noOpInputs(params.DriftRenderInterval, renderedInputs), now)
 			if err := patchModulePackageStatus(ctx, patcher, &pkg); err != nil {
 				log.Error(err, "Failed to patch NoOp status")
 			}
@@ -216,6 +235,7 @@ func ReconcileModulePackage(
 			pkg.Status.LastAppliedVersion = appliedVersion(renderedVersion)
 			pkg.Status.LastAppliedConfigDigest = digests.Config
 			pkg.Status.LastAppliedRenderDigest = digests.Render
+			recordInputs(&pkg.Status.LastAppliedInputs, renderedInputs, now)
 
 			pkg.Status.Inventory = nextInventory(pkg.Status.Inventory, newEntries)
 			digests.Inventory = pkg.Status.Inventory.Digest
@@ -289,6 +309,8 @@ func ReconcileModulePackage(
 
 	computeModulePackageDigests(converted, &digests)
 	renderedVersion = &converted.result.ModuleVersion
+	key := renderedKey(digests.Source, digests.Config, converted.result, params.OperatorVersion, params.LibraryVersion)
+	renderedInputs = &key
 
 	lastApplied := status.DigestSet{
 		Source:    pkg.Status.LastAppliedSourceDigest,

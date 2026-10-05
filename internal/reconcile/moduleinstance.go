@@ -65,6 +65,19 @@ type ModuleInstanceParams struct {
 	// events are emitted on transition only. Nil emits every non-empty set.
 	Warnings *WarningTracker
 
+	// OperatorVersion and LibraryVersion are the running operator's
+	// version.Full() and version.Library(), parts of the render input key.
+	// They are injected so tests can set them; an empty one makes every key
+	// incomplete, so nothing is recorded and nothing is skipped.
+	OperatorVersion string
+	LibraryVersion  string
+
+	// DriftRenderInterval is the manager's --drift-render-interval: how long
+	// a reconcile whose render inputs are unchanged may skip its render after
+	// the render that recorded them. Zero disables the skip and the record
+	// of the key on a NoOp.
+	DriftRenderInterval time.Duration
+
 	// convert exports a render result for apply. Nil, as in production,
 	// means convertRender; tests in this package set it to observe the
 	// conversion, for example that it runs while the render slot is held.
@@ -83,7 +96,10 @@ func (p *ModuleInstanceParams) convertFn() func(*render.RenderResult) (*converte
 // commitNoOpStatus is the deferred status commit of a NoOp reconcile. Drift
 // detection ran and may have set or cleared the Drifted condition, and phase
 // counters may need an increment or reset, so they are persisted through a
-// bounded patch; lastAttempted, history and inventory are not touched.
+// bounded patch; lastAttempted, history and inventory are not touched. A
+// non-nil renderedInputs is recorded as lastAppliedInputs: the NoOp re-proves
+// that the cluster holds what those inputs produce. The caller passes nil
+// when the skip is disabled (noOpInputs).
 //
 // NoOp implies the digests match LastApplied (a previous reconcile applied
 // successfully), so Ready=True is the correct state. MarkReconciling at the
@@ -95,12 +111,14 @@ func commitNoOpStatus(
 	mi *releasesv1alpha1.ModuleInstance,
 	phases phaseOutcomes,
 	renderedVersion *string,
+	renderedInputs *status.RenderInputKey,
 	reconcileStart time.Time,
 ) {
 	status.MarkReady(mi, "Reconciliation succeeded")
 	updateFailureCounters(&mi.Status, NoOp, phases)
 	mi.Status.NextRetryAt = nil
 	recordNoOpVersion(&mi.Status.LastAppliedVersion, renderedVersion)
+	recordInputs(&mi.Status.LastAppliedInputs, renderedInputs, metav1.Now())
 	if patchErr := patcher.Patch(ctx, mi,
 		patch.WithOwnedConditions{
 			Conditions: []string{
@@ -258,13 +276,19 @@ func ReconcileModuleInstance(
 		// to lastAppliedVersion only when it is set, so a reconcile that did
 		// not render never touches the field.
 		renderedVersion *string
+
+		// renderedInputs is the render input key of this attempt's render,
+		// nil until a render result is in hand. A success or a NoOp records
+		// it as lastAppliedInputs; a failure, a refusal or a panic does not.
+		renderedInputs *status.RenderInputKey
 	)
 
 	// Deferred status commit — patches status on every reconcile attempt,
 	// including NoOp. On NoOp, the patch is bounded to drift condition,
 	// failure counter deltas, clearing nextRetryAt, requiredContracts and,
-	// when this attempt rendered, lastAppliedVersion; lastAttempted/history/
-	// inventory are not touched (they describe meaningful outcomes).
+	// when this attempt rendered, lastAppliedVersion and (while the skip is
+	// enabled) lastAppliedInputs; lastAttempted/history/inventory are not
+	// touched (they describe meaningful outcomes).
 	// Storm-safe: GenerationChangedPredicate on the controller's event filter
 	// prevents status-only patches from triggering watch-driven reconciles.
 	//
@@ -282,7 +306,8 @@ func ReconcileModuleInstance(
 			return
 		}
 		if outcome == NoOp {
-			commitNoOpStatus(ctx, patcher, &mi, phases, renderedVersion, reconcileStart)
+			commitNoOpStatus(ctx, patcher, &mi, phases, renderedVersion,
+				noOpInputs(params.DriftRenderInterval, renderedInputs), reconcileStart)
 			return
 		}
 
@@ -302,6 +327,7 @@ func ReconcileModuleInstance(
 			mi.Status.LastAppliedVersion = appliedVersion(renderedVersion)
 			mi.Status.LastAppliedConfigDigest = digests.Config
 			mi.Status.LastAppliedRenderDigest = digests.Render
+			recordInputs(&mi.Status.LastAppliedInputs, renderedInputs, now)
 
 			mi.Status.Inventory = nextInventory(mi.Status.Inventory, newEntries)
 			digests.Inventory = mi.Status.Inventory.Digest
@@ -401,6 +427,8 @@ func ReconcileModuleInstance(
 	digests.Render = converted.digest
 	digests.Inventory = inventory.ComputeDigest(renderResult.InventoryEntries)
 	renderedVersion = &renderResult.ModuleVersion
+	key := renderedKey(digests.Source, digests.Config, renderResult, params.OperatorVersion, params.LibraryVersion)
+	renderedInputs = &key
 
 	// Phase 4: Plan actions — no-op detection, drift detection, compute stale set.
 	//

@@ -88,6 +88,16 @@ type ModulePackageReconciler struct {
 	// unbounded (tests that need no bound).
 	RenderSlots *render.Slots
 
+	// OperatorVersion and LibraryVersion are the running operator's
+	// version.Full() and version.Library(), parts of the render input key.
+	// Empty makes every key incomplete: nothing is recorded or skipped.
+	OperatorVersion string
+	LibraryVersion  string
+
+	// DriftRenderInterval is the manager's --drift-render-interval. Zero
+	// disables the render skip and the record of the key on a NoOp.
+	DriftRenderInterval time.Duration
+
 	// warnings remembers each package's last render warnings so RenderWarning
 	// events are emitted on transition only (0019:D18).
 	warnings opmreconcile.WarningTracker
@@ -119,6 +129,9 @@ func (r *ModulePackageReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		RenderSlots:           r.RenderSlots,
 		DefaultServiceAccount: r.DefaultServiceAccount,
 		Warnings:              &r.warnings,
+		OperatorVersion:       r.OperatorVersion,
+		LibraryVersion:        r.LibraryVersion,
+		DriftRenderInterval:   r.DriftRenderInterval,
 	}, req)
 }
 

@@ -81,6 +81,21 @@ const stubContract = "opmodel.dev/catalogs/opm/resources/config-maps@v1beta1"
 // a module declares it in metadata.version.
 const stubModuleVersion = "0.1.0"
 
+// stubPlatformIdentity and stubSkewPolicy are the platform the stub render
+// result reports it rendered against, as a kernel render reports the record
+// it leased.
+const (
+	stubPlatformIdentity = "gen-1"
+	stubSkewPolicy       = releasesv1alpha1.SkewPolicyWarn
+)
+
+// testOperatorVersion and testLibraryVersion stand in for version.Full() and
+// version.Library(), which a test binary cannot report for the library.
+const (
+	testOperatorVersion = "v1.0.0-test"
+	testLibraryVersion  = "v1.0.0-test.library"
+)
+
 // stubRenderResult builds a ConfigMap render result named "test-module" in the
 // given namespace, with data.message from values (default "hello").
 func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *render.RenderResult {
@@ -134,6 +149,8 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 		InventoryEntries:  []releasesv1alpha1.InventoryEntry{inventory.NewEntryFromResource(u)},
 		RequiredContracts: []string{stubContract},
 		ModuleVersion:     stubModuleVersion,
+		PlatformIdentity:  stubPlatformIdentity,
+		SkewPolicy:        stubSkewPolicy,
 	}
 }
 

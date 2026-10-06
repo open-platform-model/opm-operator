@@ -9,7 +9,7 @@ package opm_operator
 		apiVersion: "apiextensions.k8s.io/v1"
 		kind:       "CustomResourceDefinition"
 		metadata: {
-			annotations: "controller-gen.kubebuilder.io/version": "v0.20.1"
+			annotations: "controller-gen.kubebuilder.io/version": "v0.22.0"
 			name: "moduleinstances.opmodel.dev"
 		}
 		spec: {
@@ -468,7 +468,7 @@ package opm_operator
 		apiVersion: "apiextensions.k8s.io/v1"
 		kind:       "CustomResourceDefinition"
 		metadata: {
-			annotations: "controller-gen.kubebuilder.io/version": "v0.20.1"
+			annotations: "controller-gen.kubebuilder.io/version": "v0.22.0"
 			name: "modulepackages.opmodel.dev"
 		}
 		spec: {
@@ -969,7 +969,7 @@ package opm_operator
 		apiVersion: "apiextensions.k8s.io/v1"
 		kind:       "CustomResourceDefinition"
 		metadata: {
-			annotations: "controller-gen.kubebuilder.io/version": "v0.20.1"
+			annotations: "controller-gen.kubebuilder.io/version": "v0.22.0"
 			name: "platforms.opmodel.dev"
 		}
 		spec: {
@@ -1346,7 +1346,7 @@ package opm_operator
 		apiVersion: "apiextensions.k8s.io/v1"
 		kind:       "CustomResourceDefinition"
 		metadata: {
-			annotations: "controller-gen.kubebuilder.io/version": "v0.20.1"
+			annotations: "controller-gen.kubebuilder.io/version": "v0.22.0"
 			name: "transformerregistrations.opmodel.dev"
 		}
 		spec: {

@@ -13,9 +13,9 @@ vars:
   CONTROLLER_GEN: '{{.LOCALBIN}}/controller-gen'
   ENVTEST: '{{.LOCALBIN}}/setup-envtest'
   GOLANGCI_LINT: '{{.LOCALBIN}}/golangci-lint'
-  KUSTOMIZE_VERSION: v5.8.1
-  CONTROLLER_TOOLS_VERSION: v0.20.1
-  GOLANGCI_LINT_VERSION: v2.8.0
+  KUSTOMIZE_VERSION: v5.8.2
+  CONTROLLER_TOOLS_VERSION: v0.22.0
+  GOLANGCI_LINT_VERSION: v2.14.0
   ENVTEST_VERSION:
     sh: |
       v=$(go list -m -f '{{`{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}`}}' sigs.k8s.io/controller-runtime 2>/dev/null)
@@ -29,7 +29,7 @@ vars:
   KIND_CLUSTER: '{{.KIND_CLUSTER | default "opm-operator-test-e2e"}}'
   REGISTRY_CONTAINER: '{{.REGISTRY_CONTAINER | default "opm-registry"}}'
   REGISTRY_PORT: '{{.REGISTRY_PORT | default "5000"}}'
-  REGISTRY_IMAGE: '{{.REGISTRY_IMAGE | default "registry:2"}}'
+  REGISTRY_IMAGE: '{{.REGISTRY_IMAGE | default "registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"}}'
   # Used for publishing modules to the local registry
   CUE_REGISTRY: '{{.CUE_REGISTRY | default "testing.opmodel.dev=localhost:5000+insecure,opmodel.dev=localhost:5000+insecure,registry.cue.works"}}'
   # Fixtures from a local registry, everything else (core, catalogs) from GHCR.

@@ -3,16 +3,16 @@ version: '3'
 vars:
   # FLUX_VERSION pins the flux2 distribution installed for e2e. It MUST match
   # the distribution whose controller libraries go.mod pins (currently
-  # github.com/fluxcd/source-controller/api v1.9.1, shipped by flux2 v2.9.0).
+  # github.com/fluxcd/source-controller/api v1.9.6, shipped by flux2 v2.9.6).
   # When bumping the fluxcd/* library line (A1/D4 coupled bump), bump this pin
   # in the same change. CI (.github/workflows/test-e2e.yml) greps this variable
   # to install the flux CLI at the same version — the CLI refuses to install a
   # toolkit distribution newer than itself.
-  FLUX_VERSION: v2.9.0
+  FLUX_VERSION: v2.9.6
   # sha256 of that release's flux_<version>_linux_amd64.tar.gz (from its
   # flux_<version>_checksums.txt). CI checks the CLI tarball against it; bump
   # it with FLUX_VERSION.
-  FLUX_CLI_SHA256_LINUX_AMD64: 7aa9779fc7ec6d030e609dab7dbed8c6fc9e3a7f4670834ad02369268aaf341f
+  FLUX_CLI_SHA256_LINUX_AMD64: b4d22673e9246cbd628881f1a9ef3b090085dced291e42d804555cee8e8d42c5
 
 tasks:
   install:

@@ -5,10 +5,10 @@ Keeps the linter configuration check of the required `Lint` job independent of t
 ## ADDED Requirements
 
 ### Requirement: Linter configuration check needs no network
-The linter configuration check (`task dev:lint:config`) SHALL validate `.golangci.yml` with the linter's own `config verify` command against a JSON schema file committed in the repository, and SHALL NOT make a network request. The `Lint` job SHALL run this check on every run.
+The linter configuration check (`task dev:lint:config`) SHALL validate `.golangci.yml` with the linter's own `config verify` command against a JSON schema file committed in the repository, and the check itself SHALL NOT make a network request. Installing the linter, which the task does before the check, is outside this requirement. The `Lint` job SHALL run this check on every run.
 
 #### Scenario: Valid configuration without a network
-- **WHEN** `task dev:lint:config` runs in a network namespace with no route, with the linter already installed
+- **WHEN** the check script that `task dev:lint:config` runs is started in a network namespace with no route, with the linter already installed
 - **THEN** it exits 0 and reports the version, the schema file and that no network was used
 
 #### Scenario: Invalid configuration

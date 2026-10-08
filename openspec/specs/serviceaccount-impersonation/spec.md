@@ -33,7 +33,7 @@ When `spec.serviceAccountName` is empty, the effective impersonation target MUST
 - **AND** a ServiceAccount `opm-deployer` exists in namespace `team-a`
 - **WHEN** the controller reconciles
 - **THEN** apply and prune operations impersonate `system:serviceaccount:team-a:opm-deployer`
-- **AND** the impersonation config carries the standard SA groups (`system:serviceaccounts`, `system:serviceaccounts:team-a`, `system:authenticated`)
+- **AND** the impersonated identity is a member of the standard SA groups (`system:serviceaccounts`, `system:serviceaccounts:team-a`, `system:authenticated`)
 
 ### Requirement: Missing ServiceAccount stalls reconcile
 If the specified ServiceAccount does not exist, the reconcile MUST fail with a stalled condition.
@@ -61,22 +61,20 @@ The ServiceAccount MUST be in the same namespace as the ModuleRelease.
 - **WHEN** the controller builds the impersonated client
 - **THEN** it impersonates `system:serviceaccount:team-a:deploy-sa` (same namespace)
 
-### Requirement: Impersonation includes standard SA group set
-The impersonated client MUST be configured with both `UserName` and `Groups` on the `rest.ImpersonationConfig`. The Kubernetes apiserver does not derive group membership from the impersonated `UserName`; it reads `Impersonate-Group` headers independently. Without explicit groups, the impersonated identity belongs to no groups, and any RBAC binding whose subject targets a group (`system:serviceaccounts`, `system:serviceaccounts:<namespace>`, or `system:authenticated`) silently fails — even though the same SA succeeds when authenticating with its own token.
+### Requirement: Impersonated identity has the ServiceAccount's groups
+An impersonated request MUST reach the apiserver as the user `system:serviceaccount:<namespace>:<name>` with exactly the groups a token of that ServiceAccount carries: `system:serviceaccounts`, `system:serviceaccounts:<namespace>` and `system:authenticated`. The controller MUST NOT name a group on an impersonated request; the apiserver derives these groups from the ServiceAccount user name. An RBAC binding whose subject is one of these groups MUST authorise the impersonated request as it authorises the same ServiceAccount with its own token.
 
-The `Groups` slice MUST contain the standard set that the apiserver's `serviceaccount.TokenAuthenticator` would inject for an SA in the given namespace:
+#### Scenario: Identity seen by the apiserver
+- **GIVEN** a ServiceAccount `deploy-sa` in namespace `team-a`
+- **WHEN** the controller's impersonated client for it asks the apiserver who it is
+- **THEN** the user is `system:serviceaccount:team-a:deploy-sa`
+- **AND** the groups are exactly `system:serviceaccounts`, `system:serviceaccounts:team-a` and `system:authenticated`
 
-- `system:serviceaccounts`
-- `system:serviceaccounts:<namespace>` (where `<namespace>` is the SA's namespace)
-- `system:authenticated`
-
-This matches the behavior of Flux's `runtime/client/impersonation` and gives impersonated identity parity with token-based identity for the same SA.
-
-#### Scenario: Impersonation config carries standard groups
+#### Scenario: No group is sent
 - **GIVEN** a ModuleRelease in namespace `team-a` with `spec.serviceAccountName=deploy-sa`
 - **WHEN** the controller builds the impersonated client
-- **THEN** the underlying `rest.ImpersonationConfig.Groups` is exactly `["system:serviceaccounts", "system:serviceaccounts:team-a", "system:authenticated"]`
-- **AND** `rest.ImpersonationConfig.UserName` is `system:serviceaccount:team-a:deploy-sa`
+- **THEN** the impersonation config names the user `system:serviceaccount:team-a:deploy-sa`
+- **AND** it names no group
 
 #### Scenario: Group-subject RoleBinding authorizes apply
 - **GIVEN** a ModuleRelease in namespace `team-a` with `spec.serviceAccountName=deploy-sa` and a RoleBinding in `team-a` whose subjects are `[{Kind: "Group", Name: "system:serviceaccounts:team-a"}]` granting permissions on the resources to be applied
@@ -84,10 +82,34 @@ This matches the behavior of Flux's `runtime/client/impersonation` and gives imp
 - **THEN** the apply succeeds (the impersonated identity is recognized as a member of `system:serviceaccounts:team-a`)
 - **AND** `Ready=True` is set on the ModuleRelease
 
-#### Scenario: Authenticated-group binding authorizes read access
-- **GIVEN** a ClusterRoleBinding granting `view` on a CRD to the group `system:authenticated`
-- **WHEN** the controller's impersonated client lists instances of that CRD
-- **THEN** the request is authorized (the impersonated identity is a member of `system:authenticated`)
+#### Scenario: ServiceAccount without a binding is refused
+- **GIVEN** a ServiceAccount in namespace `team-a` that no RoleBinding names, directly or through a group
+- **WHEN** the controller applies a resource in `team-a` as that ServiceAccount
+- **THEN** the apiserver refuses the apply as forbidden
+- **AND** the resource is not created
+
+### Requirement: Controller may impersonate ServiceAccounts only
+The controller's own ClusterRole MUST grant the `impersonate` verb on `serviceaccounts` and on no other resource. It MUST NOT grant `impersonate` on `users` or on `groups`. This MUST hold in every form the role ships in: the kustomize role, the install manifest and the operator module's rendered RBAC. With that role alone the apply path MUST still work.
+
+#### Scenario: Shipped role names serviceaccounts only
+- **WHEN** the rules of the shipped manager ClusterRole are read
+- **THEN** the only resource with the `impersonate` verb is `serviceaccounts`
+
+#### Scenario: Apply works under the shipped role
+- **GIVEN** a controller identity that holds exactly the rules of the shipped manager ClusterRole
+- **AND** a ServiceAccount in namespace `team-a` that a RoleBinding allows to manage ConfigMaps
+- **WHEN** the controller applies a ConfigMap in `team-a` as that ServiceAccount
+- **THEN** the apply succeeds
+
+#### Scenario: Impersonating a user is refused
+- **GIVEN** a controller identity that holds exactly the rules of the shipped manager ClusterRole
+- **WHEN** it sends a request that impersonates the user `jane`, with or without a group
+- **THEN** the apiserver refuses the request as forbidden
+
+#### Scenario: Claiming a group is refused
+- **GIVEN** a controller identity that holds exactly the rules of the shipped manager ClusterRole
+- **WHEN** it sends a request that impersonates a ServiceAccount and names the group `system:masters`
+- **THEN** the apiserver refuses the request as forbidden
 
 ### Requirement: Explicit spec.serviceAccountName takes precedence over flag default
 When `spec.serviceAccountName` is non-empty, the controller MUST impersonate the named ServiceAccount regardless of the `--default-service-account` flag value. The flag is only a fallback for empty `spec.serviceAccountName`.

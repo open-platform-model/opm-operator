@@ -19,20 +19,6 @@ The `internal/apply` package MUST provide a `Prune` function that deletes resour
 - **WHEN** the stale set is empty
 - **THEN** the prune is a no-op and returns zero deleted
 
-### Requirement: Namespace safety exclusion
-The `Prune` function MUST NOT delete resources of kind `Namespace`, regardless of stale set membership.
-
-#### Scenario: Namespace in stale set
-- **WHEN** a Namespace resource is in the stale set
-- **THEN** the Namespace is skipped and counted in the skipped total
-
-### Requirement: CRD safety exclusion
-The `Prune` function MUST NOT delete resources of kind `CustomResourceDefinition`, regardless of stale set membership.
-
-#### Scenario: CRD in stale set
-- **WHEN** a CustomResourceDefinition resource is in the stale set
-- **THEN** the CRD is skipped and counted in the skipped total
-
 ### Requirement: Prune result
 The `Prune` function MUST return a `PruneResult` with counts of deleted and skipped resources.
 
@@ -46,73 +32,6 @@ The `Prune` function MUST continue deleting remaining stale resources if one del
 #### Scenario: Partial failure
 - **WHEN** one stale resource deletion fails but others succeed
 - **THEN** all remaining deletions are attempted and the error is returned alongside the partial result
-
-### Requirement: Live-state UUID-based ownership guard
-The `Prune` function MUST verify ownership of each candidate resource against the live cluster state before deletion, using the `module-instance.opmodel.dev/uuid` label as the primary identity signal. The guard is defense-in-depth — inventory remains the primary mechanism for deciding what to prune (Constitution Principle III) — but a final live-state check prevents stale-set computation defects from causing destruction and protects against cross-ModuleInstance ownership collisions.
-
-`Prune` MUST accept the reconciling ModuleInstance's instance UUID as a parameter (its signature changes from `Prune(ctx, c, stale)` to `Prune(ctx, c, ownerUUID, stale)`). Callers supply the UUID from the freshly-rendered resources (apply path) or from `ModuleInstanceStatus.InstanceUUID` (deletion path).
-
-For each entry in the stale set that passes safety exclusions (Namespace, CRD), the function MUST:
-
-1. `Get` the live object by GVK, Namespace, Name.
-2. If `Get` returns NotFound, treat as success (already-deleted) and continue. (Existing behavior, preserved.)
-3. If `Get` returns any other error, append to the error collection and continue with the next entry. (Existing fail-slow behavior, preserved.)
-4. If the live object's `app.kubernetes.io/managed-by` label value is not recognized by `labels.IsOPMManagedBy` from the library's `opm/k8s/labels` (i.e., the live object is not OPM-managed), skip the deletion, increment `PruneResult.Skipped`, log a structured warning, and continue.
-5. If the live object carries a non-empty `module-instance.opmodel.dev/uuid` label whose value differs from the supplied `ownerUUID`, skip the deletion, increment `PruneResult.Skipped`, log a structured warning, and continue. (An empty live UUID label is tolerated for backward compatibility with resources applied before the UUID label was stamped.)
-6. Otherwise, proceed with `Delete`.
-
-#### Scenario: Skip resource missing OPM managed-by label
-- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with no `app.kubernetes.io/managed-by` label (or a value not recognized by `labels.IsOPMManagedBy`)
-- **WHEN** the controller runs Prune with any `ownerUUID`
-- **THEN** the ConfigMap is NOT deleted
-- **AND** `PruneResult.Skipped` is incremented
-- **AND** a warning is logged with kind, namespace, name, and reason `not OPM-managed`
-
-#### Scenario: Skip resource whose instance UUID disagrees with reconciling instance
-- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with `app.kubernetes.io/managed-by=opm-controller` and `module-instance.opmodel.dev/uuid=<UUID-A>`
-- **WHEN** the controller runs Prune with `ownerUUID=<UUID-B>` (different ModuleInstance)
-- **THEN** the ConfigMap is NOT deleted
-- **AND** `PruneResult.Skipped` is incremented
-- **AND** a warning is logged with kind, namespace, name, expected `ownerUUID`, and observed `module-instance.opmodel.dev/uuid`
-
-#### Scenario: Delete resource whose instance UUID matches reconciling instance
-- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with `app.kubernetes.io/managed-by=opm-controller` and `module-instance.opmodel.dev/uuid=<UUID-A>`
-- **WHEN** the controller runs Prune with `ownerUUID=<UUID-A>` (same ModuleInstance)
-- **THEN** the ConfigMap is deleted
-- **AND** `PruneResult.Deleted` is incremented
-
-#### Scenario: Tolerate legacy resource with empty UUID label
-- **GIVEN** a stale entry for ConfigMap `team-a/legacy` and a live ConfigMap with `app.kubernetes.io/managed-by=open-platform-model` (legacy value) and no `module-instance.opmodel.dev/uuid` label (resource was applied before UUID labels were introduced)
-- **WHEN** the controller runs Prune with any `ownerUUID`
-- **THEN** the ConfigMap is deleted (legacy resources predate the UUID label and are trusted as OPM-owned via the managed-by label)
-- **AND** `PruneResult.Deleted` is incremented
-
-#### Scenario: Delete resource still carrying the CLI manager identity
-
-- **GIVEN** a stale entry for ConfigMap `team-a/example` and a live ConfigMap with `app.kubernetes.io/managed-by=opm-cli` and a UUID label matching the reconciling instance (the post-handoff window: applied by the CLI, removed from the module before any relabeling reconcile ran — 0006:D40)
-- **WHEN** the controller runs Prune with the matching `ownerUUID`
-- **THEN** the ConfigMap is deleted (all OPM manager identities are accepted by `labels.IsOPMManagedBy`)
-- **AND** `PruneResult.Deleted` is incremented
-
-### Requirement: Release UUID persisted on ModuleReleaseStatus
-The controller MUST persist the rendered ModuleRelease's release UUID on `ModuleReleaseStatus.ReleaseUUID` after the first successful render. The value is read from any rendered resource's `module-release.opmodel.dev/uuid` label (all rendered resources carry the same UUID). The Status field is consumed by the deletion path to supply `ownerUUID` to `apply.Prune`; the apply/prune happy path may read directly from the freshly-rendered resources.
-
-#### Scenario: Status.ReleaseUUID populated after first successful reconcile
-- **GIVEN** a freshly-created ModuleRelease that successfully renders and applies
-- **WHEN** the deferred status patcher commits Status
-- **THEN** `mr.Status.ReleaseUUID` is set to the rendered release UUID (a non-empty string in UUID format)
-
-#### Scenario: Deletion path reads UUID from Status
-- **GIVEN** a ModuleRelease being deleted, with `mr.Status.ReleaseUUID` populated by a prior successful reconcile and `mr.Status.Inventory.Entries` non-empty
-- **WHEN** the controller runs deletion cleanup (which calls `apply.Prune`)
-- **THEN** `apply.Prune` is invoked with `ownerUUID = mr.Status.ReleaseUUID`
-- **AND** the live-state UUID guard correctly distinguishes resources owned by this MR from any others sharing GVK+ns+name
-
-#### Scenario: Deletion of never-successfully-reconciled MR is a no-op
-- **GIVEN** a ModuleRelease being deleted, with `mr.Status.ReleaseUUID` empty (never successfully reconciled) and `mr.Status.Inventory.Entries` empty
-- **WHEN** the controller runs deletion cleanup
-- **THEN** `apply.Prune` is called with an empty stale set (nothing to prune)
-- **AND** the finalizer is removed
 
 ### Requirement: Prune not attempted while stalled on DeletionSAMissing
 The deletion-cleanup prune pass MUST NOT execute while the release is stalled with reason `DeletionSAMissing`. In that state, the impersonated client cannot be built, and prune with any fallback identity is explicitly disallowed.
@@ -241,3 +160,142 @@ A kept claim keeps its OPM labels. When a later render of the same instance prod
 - **WHEN** a later render of the same instance holds a claim `media/cache`
 - **THEN** the apply succeeds on the live claim
 - **AND** `status.inventory.entries` lists `media/cache`
+
+### Requirement: Prune asks the library's delete verdict
+For every entry it may delete, the prune MUST read the live object with the client that would delete it and MUST ask the library's delete verdict (`opm/k8s/ownership`) with that object and an identity of the instance. When the instance has more than one identity to judge with, it MUST ask with each in turn, and the object counts as the instance's own when the verdict says proceed for one of them. It MUST delete the object only then, and it MUST NOT decide ownership with a label or annotation comparison of its own. Source: 0012:D4:R1, 0012:D8:R8.
+
+The prune MUST act on each answer as follows:
+
+- Proceed: the object is deleted, unless it is a PersistentVolumeClaim that `spec.dataPolicy` keeps. A claim counts as kept only after the verdict said proceed.
+- The object does not exist: success, as before.
+- For every identity, the object is not managed by OPM, belongs to another instance, or carries an adopt annotation that names another instance: the object is left in the cluster, counted as skipped and named in the prune result with the library's reason and message. It is not an error.
+- The read fails with an error other than NotFound: the entry is a failed prune and the remaining entries are still attempted, as before. A PersistentVolumeClaim that cannot be read while `spec.dataPolicy` keeps claims is kept without an error, as before.
+
+An object without a UUID label MUST still be deleted when OPM manages it, and every OPM manager label value MUST be accepted, as before.
+
+#### Scenario: Object not managed by OPM is left
+- **GIVEN** a stale entry for ConfigMap `team-a/example` whose live object has no `app.kubernetes.io/managed-by` label
+- **WHEN** the controller prunes the stale set
+- **THEN** the ConfigMap still exists
+- **AND** the prune result names it with the reason `not-opm-managed`
+
+#### Scenario: Object of another instance is left
+- **GIVEN** a stale entry for ConfigMap `team-a/example` whose live object is managed by OPM and carries the UUID label of another instance
+- **WHEN** the controller prunes the stale set with this instance's identity
+- **THEN** the ConfigMap still exists
+- **AND** the prune result names it with the reason `owner-mismatch`
+
+#### Scenario: Object being adopted by another instance is left
+- **GIVEN** a stale entry for ConfigMap `team-a/example` whose live object carries this instance's UUID label and the annotation `opmodel.dev/adopt` with the UUID of another instance
+- **WHEN** the controller prunes the stale set
+- **THEN** the ConfigMap still exists
+- **AND** the prune result names it with the reason `adopted-elsewhere`
+
+#### Scenario: Own object is deleted
+- **GIVEN** a stale entry for ConfigMap `team-a/example` whose live object is managed by OPM and carries this instance's UUID label and no adopt annotation
+- **WHEN** the controller prunes the stale set
+- **THEN** the ConfigMap is deleted and counted as deleted
+
+#### Scenario: Object without a UUID label is deleted
+- **GIVEN** a stale entry for ConfigMap `team-a/legacy` whose live object carries `app.kubernetes.io/managed-by=open-platform-model` and no UUID label
+- **WHEN** the controller prunes the stale set
+- **THEN** the ConfigMap is deleted
+
+#### Scenario: Object still carrying the cli manager identity is deleted
+- **GIVEN** a stale entry for ConfigMap `team-a/example` whose live object carries `app.kubernetes.io/managed-by=opm-cli` and this instance's UUID label
+- **WHEN** the controller prunes the stale set
+- **THEN** the ConfigMap is deleted
+
+#### Scenario: A failed read fails the entry and not the run
+- **GIVEN** a stale set of two ConfigMaps and an API server that refuses the read of the first
+- **WHEN** the controller prunes the stale set
+- **THEN** the second ConfigMap is deleted
+- **AND** the prune returns an error that names the first
+
+### Requirement: Kinds OPM never deletes are the library's
+The prune MUST NOT delete an object of a kind the library's ownership package excludes from deletion: a `Namespace` of the core group and a `CustomResourceDefinition` of `apiextensions.k8s.io`. The match MUST be on group and kind. Such an entry MUST be left without a read, counted as skipped and named in the prune result with the reason `safety-excluded`.
+
+#### Scenario: Namespace in the stale set
+- **WHEN** a core `Namespace` is in the stale set
+- **THEN** it is not deleted and the prune result names it with the reason `safety-excluded`
+
+#### Scenario: CustomResourceDefinition in the stale set
+- **WHEN** a `CustomResourceDefinition` of `apiextensions.k8s.io` is in the stale set
+- **THEN** it is not deleted and the prune result names it with the reason `safety-excluded`
+
+#### Scenario: The same kind name in another group
+- **GIVEN** a stale entry of kind `Namespace` in the group `example.com`, live and owned by the instance
+- **WHEN** the controller prunes the stale set
+- **THEN** the object is deleted
+
+### Requirement: Deletes carry the UID precondition
+Every DELETE the prune sends MUST carry a precondition on the UID of the live object the verdict judged. A DELETE that the API server refuses on that precondition MUST be a failed prune for that entry: it MUST NOT be counted as deleted, the object that now holds the name MUST NOT be deleted in that run, and the remaining entries MUST still be attempted.
+
+#### Scenario: The judged object is deleted
+- **GIVEN** a stale ConfigMap owned by the instance
+- **WHEN** the controller prunes it
+- **THEN** the DELETE request names the UID of the object that was read
+
+#### Scenario: An object replaced since the read survives
+- **GIVEN** a stale ConfigMap that is deleted and created again under the same name after the prune read it and before the prune deletes it
+- **WHEN** the prune sends its DELETE
+- **THEN** the new ConfigMap still exists
+- **AND** the prune returns an error for that entry and counts nothing as deleted for it
+
+### Requirement: The prune judges with the recorded identities
+The prune of stale resources MUST judge with the identities the status held when the apply of the same reconcile started: `status.instanceUUID`, and `status.previousInstanceUUID` when it is set. A stale object that carries either identity, and that the verdict lets the operator delete under it, MUST be deleted. Source: owner decisions of 2026-10-08 (prune judges with the identity stored in the instance's record, also after the instance identity changed; the status keeps both identities until the prune succeeded).
+
+When `status.instanceUUID` was empty when the reconcile started, the prune MUST ask the verdict with the render's identity first and then with no identity, so that it deletes what the managed-by label alone let it delete before.
+
+#### Scenario: Stale object after the instance identity changed
+- **GIVEN** a ModuleInstance with `status.instanceUUID` `A` and `spec.prune=true`, whose `spec.module.path` changes so that its render carries identity `B` and no longer holds ConfigMap `team-a/old`, which carries the UUID label `A`
+- **WHEN** the reconcile applies and prunes
+- **THEN** ConfigMap `team-a/old` is deleted
+- **AND** after the reconcile `status.instanceUUID` is `B` and `status.previousInstanceUUID` is empty
+
+#### Scenario: A failed prune leaves nothing orphaned on the retry
+- **GIVEN** the same change of identity, a second stale ConfigMap `team-a/older` with the UUID label `A`, and a prune whose DELETE of `team-a/old` fails
+- **WHEN** the reconcile ends and the next reconcile runs
+- **THEN** after the first reconcile `status.instanceUUID` is `B`, `status.previousInstanceUUID` is `A` and `status.inventory` is unchanged
+- **AND** the second reconcile deletes `team-a/old`, and `team-a/older` if it still exists
+- **AND** after it `status.previousInstanceUUID` is empty
+
+#### Scenario: A stale object that was already relabelled
+- **GIVEN** an identity change from `A` to `B` that is not settled, and a later render of identity `B` that drops Deployment `team-a/app`, which the earlier apply relabelled to `B`
+- **WHEN** the reconcile applies and prunes
+- **THEN** Deployment `team-a/app` is deleted
+
+#### Scenario: Stale object that carries a third identity
+- **GIVEN** a stale ConfigMap whose live UUID label is neither of the recorded identities nor empty
+- **WHEN** the controller prunes the stale set
+- **THEN** the ConfigMap still exists and the prune result names it with the reason `owner-mismatch`
+
+#### Scenario: No recorded identity, object of an unknown earlier identity
+- **GIVEN** an object with an inventory and an empty `status.instanceUUID`, whose render carries identity `B`, and a stale ConfigMap that is managed by OPM, carries the UUID label `X` and has no adopt annotation
+- **WHEN** the reconcile applies and prunes
+- **THEN** the ConfigMap is deleted
+
+#### Scenario: No recorded identity, object annotated for this instance
+- **GIVEN** the same object, and a stale ConfigMap that is managed by OPM, carries no UUID label and carries the annotation `opmodel.dev/adopt` with the value `B`
+- **WHEN** the reconcile applies and prunes
+- **THEN** the ConfigMap is deleted
+
+#### Scenario: No recorded identity, object annotated for another instance
+- **GIVEN** the same object, and a stale ConfigMap that carries the annotation `opmodel.dev/adopt` with the value `C`
+- **WHEN** the reconcile applies and prunes
+- **THEN** the ConfigMap still exists and the prune result names it with the reason `adopted-elsewhere`
+
+### Requirement: The prune result names what was left behind
+The prune result MUST name every entry the prune left in the cluster because the verdict skipped it, a safety-excluded kind included, with the library's reason and message for it. An entry that was already absent and a kept PersistentVolumeClaim MUST NOT be named there. An entry left behind MUST leave `status.inventory` as a deleted entry does, and MUST NOT make the reconcile fail.
+
+#### Scenario: Mixed prune
+- **GIVEN** a stale set with an own ConfigMap, a ConfigMap of another instance, a core Namespace and an entry that no longer exists
+- **WHEN** the controller prunes the stale set
+- **THEN** the result counts one deleted and two skipped
+- **AND** it names the ConfigMap of another instance and the Namespace, each with its reason and message
+
+#### Scenario: Inventory after an object was left behind
+- **GIVEN** a ModuleInstance whose prune left ConfigMap `team-a/example` behind
+- **WHEN** the reconcile completes
+- **THEN** `status.inventory.entries` does not list `team-a/example`
+- **AND** the `Ready` condition is True

@@ -6,6 +6,8 @@ Accepted
 
 See also [ADR-019](019-fixed-requeue-interval-for-module-instances.md): an object that no longer exists is not drift, and the controller creates it again. Drift on an object that exists is still detected only.
 
+See also [RENDERING.md](../docs/RENDERING.md), "Which identity runs drift detection": which identity sends the dry-run, and what the `Drifted` condition reads when that identity is refused.
+
 ## Context
 
 Configuration drift occurs when the live state of a resource diverges from the rendered desired state for fields managed by `opm-controller`. This can happen through manual `kubectl` edits, mutating admission webhooks, or other controllers modifying the same resources.
@@ -22,7 +24,7 @@ Automatic correction is dangerous in early controller iterations. Mutating webho
 
 In v1alpha1, the controller detects drift but does not automatically correct it.
 
-Detection mechanism: during the `PlanActions` phase, the controller may use an SSA dry-run to compare live state against desired state for fields owned by `opm-controller`. The dry-run is sent by the identity that applies the instance (the impersonated ServiceAccount, or the controller when none is set), never by the controller in place of a ServiceAccount. A dry-run that identity may not send is reported as `Drifted=Unknown`, not as drift and not as its absence.
+Detection mechanism: during the `PlanActions` phase, the controller may use an SSA dry-run to compare live state against desired state for fields owned by `opm-controller`.
 
 Reporting: if drift is found, the controller sets a `Drifted=True` condition on the `ModuleRelease` status. The reconcile loop completes normally without re-applying.
 

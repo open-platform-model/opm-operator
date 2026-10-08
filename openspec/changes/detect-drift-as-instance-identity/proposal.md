@@ -5,7 +5,7 @@ A ModuleInstance applies its objects as its effective ServiceAccount (`spec.serv
 ## What Changes
 
 - Drift detection of a ModuleInstance runs through the same client as its apply: the impersonated ServiceAccount when one is effective, the operator's own client when none is. The reconcile builds that client once, before drift detection, and the apply, the prune and the health reads of the same reconcile reuse it.
-- When the effective identity may not dry-run an object (the API server answers `Forbidden`), the reconcile sets `Drifted=Unknown` with the new reason `DriftCheckForbidden` and the API server's message, which names the identity and the object. Today the condition is left as it was.
+- When the effective identity may not dry-run an object (the API server answers `Forbidden`), the reconcile sets `Drifted=Unknown` with the new reason `DriftCheckForbidden` and the API server's message, which names the identity and the object. Today the condition is left as it was. A refused read of the live object counts the same: the reconcile reads each object as that identity before the dry-run, because the dry-run alone would compare against an object it could not read and report drift.
 - When the effective ServiceAccount cannot be impersonated at all (it does not exist, or the client cannot be built), drift detection does not run and the reconcile sets `Drifted=Unknown` with reason `ImpersonationFailed`. It never falls back to the operator's identity.
 - Both cases count as a failed drift detection (`status.failureCounters.drift`), restore nothing and do not move `Ready`: a reconcile with unchanged digests stays a `NoOp`, and a reconcile that applies stalls or fails in the apply phase as it does today.
 - Docs state which identity runs drift detection and list the new reason.
@@ -30,6 +30,6 @@ None.
 
 - Code: `internal/reconcile/moduleinstance.go` (the apply client is built before drift detection), `internal/status/conditions.go` (the reason and its helper). `internal/apply/drift.go` and `internal/apply/impersonate.go` keep their signatures.
 - Tests: `internal/apply/drift_identity_test.go` (the dry-run carries the impersonation header), `test/integration/reconcile/drift_identity_test.go` (envtest: identity, refusal, missing ServiceAccount, flag default), `internal/status` unit test.
-- Docs: `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md`, the tenancy page, `adr/012-drift-detection-only.md`.
+- Docs: `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md`, `docs/site/start/install-the-operator.md`, a pointer in `adr/012-drift-detection-only.md`.
 - Load: none added. A rendering reconcile of an impersonating instance already built one impersonated client (for health on a `NoOp`, for apply otherwise); it now builds it earlier and once.
 - Operators who relied on the operator's own rights for drift detection (a ServiceAccount that may not `patch` what it once applied) now read `Drifted=Unknown` with `DriftCheckForbidden` where they read a drift verdict.

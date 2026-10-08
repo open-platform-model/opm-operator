@@ -288,7 +288,7 @@ Two cases give no verdict. Both set `Drifted` to `Unknown`, add one to
 
 | Reason on `Drifted` | Cause | Fix |
 | --- | --- | --- |
-| `DriftCheckForbidden` | The API server refused the dry-run for that identity. The message names the identity, the verb and the resource. | Give the ServiceAccount `get` and `patch` on every kind the module renders. |
+| `DriftCheckForbidden` | The API server refused the read or the dry-run of an object for that identity. The message names the identity, the verb and the resource. | Give the ServiceAccount `get` and `patch` on every kind the module renders, and `create` so that the dry-run of a missing object is allowed. |
 | `ImpersonationFailed` | The ServiceAccount does not exist, or its client could not be built. No dry-run is sent. | Create the ServiceAccount. |
 
 The operator does not send the dry-run as itself when the ServiceAccount

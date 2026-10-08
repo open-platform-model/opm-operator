@@ -30,7 +30,7 @@ phases.driftRan = true
 missing, phases.driftFailed = detectDrift(ctx, applyRM, impErr, &mi, applyList)
 ...
 if isNoOp {
-    v := judgeNoOpHealth(ctx, params, &mi, applyClient, impErr)   // reuses the client
+    v := judgeHealthAs(ctx, params, &mi, applyClient, impErr, entries)   // reuses the client
     ...
 }
 if impErr != nil { /* stall with ImpersonationFailed, as today */ }
@@ -58,6 +58,10 @@ The existing reason is reused: it is the same cause the apply phase reports on `
 
 A dry-run that fails for another reason (a timeout, a server error) keeps today's behaviour: the counter moves and the `Drifted` condition is left as it was. The task names the refusal only.
 
+### The ADR is not edited
+
+ADR-012 is accepted and its Decision section stays as it was. It gains a "See also" line under Status that points to `docs/RENDERING.md`, the way ADR-019 was linked.
+
 ## Reconcile phase impact
 
 - Source, Render: none.
@@ -67,7 +71,7 @@ A dry-run that fails for another reason (a timeout, a server error) keeps today'
 
 ## Risks / Trade-offs
 
-- A ServiceAccount that may `patch` but not `get` an object: `Diff` ignores the failed read and compares the dry-run result with an empty object, so drift is reported for an object that did not drift. The apply path has the same blind read. Mitigation: none in this change; the tenancy docs ask for `get` beside `patch`. Recorded as a follow-up.
+- A ServiceAccount that may `patch` but not `get` an object: `Diff` ignores the failed read and compares the dry-run result with an empty object, so drift would be reported for an object that did not drift. Mitigation (added after review): `apply.DetectDrift` reads each object through the same client before `Diff` and returns a `Forbidden` read as an error, which lands on `DriftCheckForbidden`. Cost: one more read per rendered object on a reconcile that renders. The apply path keeps Flux's blind read; it writes the rendered state either way.
 - An instance whose ServiceAccount was deleted while its digests are unchanged stays `Ready=True` and reads `Drifted=Unknown`. That is today's `Ready` behaviour; whether such an instance stalls is an owner decision and not taken here.
 - The dry-run of the first failing object ends the detection, as today: one forbidden object hides the drift of the others for that reconcile.
 

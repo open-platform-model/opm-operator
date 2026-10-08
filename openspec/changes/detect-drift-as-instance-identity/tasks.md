@@ -8,5 +8,11 @@
 
 ## 2. Docs
 
-- [x] 2.1 `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md`, the tenancy page and `adr/012-drift-detection-only.md`: state which identity runs drift detection and list `Drifted=Unknown` with its two reasons; verify with `grep -n DriftCheckForbidden` over the files and `task docs:bundle:check`
+- [x] 2.1 `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md`, `docs/site/start/install-the-operator.md` and `adr/012-drift-detection-only.md`: state which identity runs drift detection and list `Drifted=Unknown` with its two reasons; verify with `grep -n DriftCheckForbidden` over the files and `task docs:bundle:check`
 - [x] 2.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: state which identity runs drift detection`
+
+## 3. Review fixes
+
+- [x] 3.1 `internal/apply/drift.go`: read each object through the client of the dry-run before `Diff` and return a `Forbidden` read as an error; verify with an envtest spec for a ServiceAccount with `patch` and without `get` (`Drifted=Unknown`/`DriftCheckForbidden`, never `True`) that fails without the read
+- [x] 3.2 `adr/012-drift-detection-only.md`: take the added sentences out of the Decision section and add a "See also" line under Status; correct the permission list (`get`, `create`, `patch`) on the three doc pages; name the real file and function in the change artifacts; verify with `openspec validate detect-drift-as-instance-identity --strict` and `task docs:bundle:check`
+- [x] 3.3 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(apply): report a refused read in drift detection as a refused drift check`

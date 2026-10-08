@@ -272,6 +272,36 @@ var _ = Describe("Drift detection identity", func() {
 		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
 	})
 
+	// Flux's diff drops the error of its own read, so a ServiceAccount that
+	// may patch and not get would be told that an object it never saw drifted.
+	It("gives no verdict against an object the ServiceAccount may not read", func() {
+		params, _, nn, saName := setup("drift-id-noget", true)
+
+		setVerbs("drift-id-noget-role", []string{"list", "watch", "create", "update", "patch", "delete"})
+		Eventually(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			mi := instance(nn)
+			drifted := apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)
+			g.Expect(drifted).NotTo(BeNil())
+			g.Expect(drifted.Status).To(Equal(metav1.ConditionUnknown))
+			g.Expect(drifted.Reason).To(Equal(status.DriftCheckForbiddenReason))
+			g.Expect(drifted.Message).To(ContainSubstring("system:serviceaccount:" + namespace + ":" + saName))
+			g.Expect(drifted.Message).To(ContainSubstring("cannot get"))
+			g.Expect(apimeta.IsStatusConditionTrue(mi.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
+
+		// Nothing drifted, and the authorizer has settled: the condition
+		// must never have turned True on the way.
+		Consistently(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			drifted := apimeta.FindStatusCondition(instance(nn).Status.Conditions, status.DriftedCondition)
+			g.Expect(drifted).NotTo(BeNil())
+			g.Expect(drifted.Status).To(Equal(metav1.ConditionUnknown))
+		}, time.Second, 200*time.Millisecond).Should(Succeed())
+	})
+
 	It("sends no dry-run when the ServiceAccount is gone, and says so", func() {
 		params, recorder, nn, saName := setup("drift-id-gone", true)
 		modifyConfigMap("drifted-without-identity")

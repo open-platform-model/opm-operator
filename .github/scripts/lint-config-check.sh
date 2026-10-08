@@ -27,9 +27,19 @@
 # The linter runs with its proxy variables set to a closed local port, so a
 # run that reaches for the network fails at once.
 #
-# The schema is jsonschema/golangci.jsonschema.json of the Go module
-# github.com/golangci/golangci-lint/v2 at the version the file names. To
-# move the linter: AGENTS.md, "Moving the golangci-lint version".
+# The file and workflow rules are line patterns, and comment lines are
+# skipped. They do not see a step that is present but disabled (if: false),
+# a command split over two lines, a --schema argument that is a URL, or an
+# install of @latest. The binary version compare catches a second version
+# that reaches the linter binary.
+#
+# The schema is jsonschema/golangci.next.jsonschema.json of the Go module
+# github.com/golangci/golangci-lint/v2 at the version the file names: the
+# schema as it was when vX.Y.0 was tagged, which later module versions
+# carry as jsonschema/golangci.vX.Y.jsonschema.json. It is not
+# jsonschema/golangci.jsonschema.json, which at a release tag still holds
+# the line before. To move the linter: AGENTS.md, "Moving the golangci-lint
+# version".
 #
 # Usage: [GOLANGCI_LINT=path] lint-config-check.sh [--root DIR]
 #

@@ -58,7 +58,11 @@ The check SHALL refuse, with one line per problem and a non-zero exit, a tree wh
 - **THEN** the check reports both versions
 
 ### Requirement: The check has a scenario test in the Lint job
-A scenario test SHALL run the check on a copy of the tree (pass) and on one copy per defect (refusal with the expected message). It SHALL run offline, in the `Lint` job and through `task dev:lint:config:test`.
+A scenario test SHALL run the check on a copy of the tree (pass) and on one copy per defect (refusal with the expected message). The test itself SHALL make no network request. It SHALL run in the `Lint` job, with the linter that the configuration check step installed, and through `task dev:lint:config:test`, which installs the linter first.
+
+#### Scenario: Schema is the one of the named line
+- **WHEN** `.golangci.yml` uses a value that the `vX.Y` line of the linter added
+- **THEN** the check exits 0
 
 #### Scenario: Scenario test passes on the tree
 - **WHEN** `task dev:lint:config:test` runs on an unmodified tree

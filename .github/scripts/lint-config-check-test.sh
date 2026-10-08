@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Scenario test of lint-config-check.sh: the pass case on a copy of this
 # tree, then one defect per scenario, each of which the check must refuse
-# with the named message. Offline; needs the linter binary (the Lint job and
-# task dev:lint:config:test pass bin/golangci-lint as GOLANGCI_LINT).
+# with the named message. This script is offline; it needs the linter binary
+# (the Lint job and task dev:lint:config:test pass bin/golangci-lint as
+# GOLANGCI_LINT). The task is not offline: it installs the linter first.
 #
 # Usage: [GOLANGCI_LINT=path] lint-config-check-test.sh
 set -euo pipefail
@@ -69,6 +70,14 @@ version=$(tr -d '[:space:]' <"$repo/.golangci-lint-version")
 
 d=$(fresh pass)
 expect pass 0 "lint-config: ok"
+
+# The committed schema is the one of the line the version file names, not
+# of the line before: a value the v2.8 line added passes. The linter
+# project's jsonschema/golangci.jsonschema.json at tag v2.8.0 refuses it.
+d=$(fresh value-of-this-line)
+sed -i 's|^\( *\)- omitzero$|\1- omitzero\n\1- stringscut|' "$d/.golangci.yml"
+grep -q -- '- stringscut$' "$d/.golangci.yml"
+expect value-of-this-line 0 "lint-config: ok"
 
 # The tree as it was before the check existed: the task and the Makefile
 # run the downloading command, and three files name the version.

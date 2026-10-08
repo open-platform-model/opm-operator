@@ -20,15 +20,15 @@ How the operator runs the linter (observed in the tree at 45c6a12):
 ### The hidden `--schema` flag works with the custom binary
 
 **Context**: the cli uses a stock binary; the operator's is a custom build with a plugin linter (`logcheck`, `type: module`) in its settings.
-**Explored**: in the worktree, with `bin/golangci-lint` (v2.8.0-custom-gcl): `unshare -rn bin/golangci-lint config verify` fails with `failing loading "https://golangci-lint.run/jsonschema/golangci.v2.8.jsonschema.json"`; `unshare -rn bin/golangci-lint config verify --schema <module cache>/jsonschema/golangci.jsonschema.json` exits 0.
+**Explored**: in the worktree, with `bin/golangci-lint` (v2.8.0-custom-gcl): `unshare -rn bin/golangci-lint config verify` fails with `failing loading "https://golangci-lint.run/jsonschema/golangci.v2.8.jsonschema.json"`; `unshare -rn bin/golangci-lint config verify --schema <schema file from the module cache>` exits 0.
 **Decision**: the check MUST run `config verify --schema <committed file>`.
-**Rationale**: same command, same schema content, no download. No spike section is needed: the assumption is verified.
+**Rationale**: same command, no download; the next decision covers the schema content. No spike section is needed: the assumption is verified.
 
 ### Where the schema comes from
 
 **Context**: the brief allows no fetch, and a schema copied from a website has no checksum to compare with.
-**Explored**: the Go module `github.com/golangci/golangci-lint/v2@v2.8.0`, which the install task already downloads and the Go checksum database verifies, holds `jsonschema/golangci.jsonschema.json` (sha256 `204952a9...c59c`). At a release tag that file is the schema of that release; the website serves it as `golangci.v2.8.jsonschema.json`.
-**Decision**: commit that file as `.github/golangci-lint/golangci.v2.8.jsonschema.json` with a one-line `SHA256SUMS`. `AGENTS.md` names `go mod download` as the way to get the next one.
+**Explored**: the Go module `github.com/golangci/golangci-lint/v2@v2.8.0`, which the install task already downloads and the Go checksum database verifies, holds two candidates. `jsonschema/golangci.jsonschema.json` (sha256 `204952a9...c59c`) is the wrong one: the linter project copies `golangci.next.jsonschema.json` over it only in its post-release workflow (`.github/workflows/post-release.yml:53` in the module), so at tag `v2.8.0` it still holds the v2.7 line and refuses values v2.8 added (`stringscut` under `modernize.disable`, found in review). `jsonschema/golangci.next.jsonschema.json` (sha256 `36dd9e88...df12`) is the schema as of the tag, and it is byte-equal to `jsonschema/golangci.v2.8.jsonschema.json` in the module at `v2.11.3`, the name the website serves.
+**Decision**: commit `golangci.next.jsonschema.json` of the module at `v2.8.0` as `.github/golangci-lint/golangci.v2.8.jsonschema.json` with a one-line `SHA256SUMS`. `AGENTS.md` names `go mod download` as the way to get the next one.
 **Rationale**: a reviewer can reproduce the checksum from a source the Go toolchain already authenticates.
 
 ### One version file; `.custom-gcl.yml` keeps a checked literal

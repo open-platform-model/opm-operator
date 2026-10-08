@@ -18,13 +18,6 @@ package opm_operator
 			]
 		}, {
 			apiGroups: [""]
-			resources: [
-				"groups",
-				"users",
-			]
-			verbs: ["impersonate"]
-		}, {
-			apiGroups: [""]
 			resources: ["serviceaccounts"]
 			verbs: [
 				"get",

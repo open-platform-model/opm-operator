@@ -62,18 +62,14 @@ func NewImpersonatedClient(
 }
 
 // buildImpersonationConfig returns the ImpersonationConfig for a ServiceAccount
-// identity, matching what the apiserver's serviceaccount.TokenAuthenticator
-// would inject for a token authenticating as the same SA. Without Groups, RBAC
-// bindings whose subjects target system:serviceaccounts[:ns] or
-// system:authenticated silently fail under impersonation even though the same
-// SA succeeds with token auth.
+// identity. It names the user only. For a ServiceAccount user name with no
+// group sent, the apiserver itself adds the groups a token of that
+// ServiceAccount carries (system:serviceaccounts, system:serviceaccounts:<ns>,
+// system:authenticated), so RBAC bindings to those groups hold. Sending a
+// group would need the impersonate verb on groups, which cannot be limited to
+// a namespace's ServiceAccount group and so lets the holder claim any group.
 func buildImpersonationConfig(namespace, saName string) rest.ImpersonationConfig {
 	return rest.ImpersonationConfig{
 		UserName: fmt.Sprintf("system:serviceaccount:%s:%s", namespace, saName),
-		Groups: []string{
-			"system:serviceaccounts",
-			"system:serviceaccounts:" + namespace,
-			"system:authenticated",
-		},
 	}
 }

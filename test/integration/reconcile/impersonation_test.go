@@ -186,8 +186,8 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			saName := "group-sa"
 
 			// Create SA but bind permissions to the SA's implicit namespace group,
-			// not directly to the SA. This exercises the Groups field on the
-			// impersonation config — without it the apply fails with Forbidden.
+			// not directly to the SA. The controller sends no group; the
+			// apiserver derives the SA's groups from the impersonated user name.
 			sa := &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      saName,
@@ -259,7 +259,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			ready := apimeta.FindStatusCondition(updated.Status.Conditions, status.ReadyCondition)
 			Expect(ready).NotTo(BeNil())
 			Expect(ready.Status).To(Equal(metav1.ConditionTrue),
-				"group-subject RoleBinding must authorize apply once impersonation carries Groups")
+				"group-subject RoleBinding must authorize apply: the apiserver derives the ServiceAccount groups")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{

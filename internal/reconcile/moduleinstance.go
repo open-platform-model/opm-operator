@@ -602,9 +602,7 @@ func ReconcileModuleInstance(
 		apply.ApplyOptions{Force: force, DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		phases.applyFailed = true
-		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", err)
-		outcome = markApplyFailure(&mi, err, effectiveSA)
-		errMsg = err.Error()
+		outcome, errMsg = reportApplyFailure(params.EventRecorder, &mi, err, effectiveSA)
 		retryAfter = retryIntervalFor(outcome, reconcileFailureCount(mi.Status.FailureCounters))
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
@@ -806,6 +804,39 @@ func markApplyFailure(mi *releasesv1alpha1.ModuleInstance, err error, effectiveS
 	}
 	status.MarkNotReady(mi, status.ApplyFailedReason, "%s", err)
 	return FailedTransient
+}
+
+// reportApplyFailure records a failed apply on the instance, emits its
+// Warning event, and returns the outcome and the message to report.
+//
+// An apply that kept a PersistentVolumeClaim is reported under its own reason
+// and is transient, not stalled: deleting or changing the claim by hand
+// resolves it without a change to this object, and no watch reports that.
+// The backoff finds it.
+func reportApplyFailure(
+	recorder events.EventRecorder, mi *releasesv1alpha1.ModuleInstance, err error, effectiveSA string,
+) (Outcome, string) {
+	if note, kept := claimConflictNote(err); kept {
+		recorder.Eventf(mi, nil, corev1.EventTypeWarning, status.ClaimConflictReason, "Apply", "%s", note)
+		status.MarkNotReady(mi, status.ClaimConflictReason, "%s", note)
+		return FailedTransient, note
+	}
+	recorder.Eventf(mi, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", err)
+	return markApplyFailure(mi, err, effectiveSA), err.Error()
+}
+
+// claimConflictNote returns the message to report when err says that an
+// apply kept a PersistentVolumeClaim a forced recreate would have deleted.
+func claimConflictNote(err error) (string, bool) {
+	conflict, ok := errors.AsType[*apply.ClaimConflictError](err)
+	if !ok {
+		return "", false
+	}
+	refusal := ""
+	if conflict.Cause != nil {
+		refusal = conflict.Cause.Error()
+	}
+	return status.ClaimConflictNote(conflict.Namespace, conflict.Name, conflict.Fields, refusal), true
 }
 
 // retryIntervalFor maps a failed outcome to the interval it should be retried

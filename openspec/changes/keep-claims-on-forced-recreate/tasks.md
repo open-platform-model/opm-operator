@@ -7,10 +7,10 @@
 
 ## 2. The reconcilers report the conflict
 
-- [ ] 2.1 Add `ClaimConflictReason = "ClaimConflict"` to `internal/status/conditions.go` and one helper that formats the message of `design.md` decision 5 from the typed error. Verify: a unit test of the text.
-- [ ] 2.2 ModuleInstance and ModulePackage: on a `ClaimConflictError` from `Apply`, set `Ready=False` with `ClaimConflict`, emit one `Warning` event with reason `ClaimConflict` and action `Apply`, no `ApplyFailed` event, outcome transient with the backoff. Verify with specs in `test/integration/reconcile`, one per scenario of the `status-conditions`, `events-emission`, `modulepackage-reconcile-loop` deltas and the new `prune-stale-resources` scenario; search `test/integration` and `test/e2e` for assertions this change makes stale.
-- [ ] 2.3 Add an e2e spec beside the two claim specs of `test/e2e/podinfo_test.go` if the redis fixture can express it (a `storageClass` change under `forceConflicts`). It is not run in this change. Verify: `go vet -tags=e2e ./test/e2e/` passes.
-- [ ] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(reconcile): report a refused claim recreate as ClaimConflict`
+- [x] 2.1 Add `ClaimConflictReason = "ClaimConflict"` to `internal/status/conditions.go` and one helper that formats the message of `design.md` decision 5 from the typed error. Verify: a unit test of the text.
+- [x] 2.2 ModuleInstance and ModulePackage: on a `ClaimConflictError` from `Apply`, set `Ready=False` with `ClaimConflict`, emit one `Warning` event with reason `ClaimConflict` and action `Apply`, no `ApplyFailed` event, outcome transient with the backoff. Verify with specs in `test/integration/reconcile`, one per scenario of the `status-conditions`, `events-emission`, `modulepackage-reconcile-loop` deltas and the new `prune-stale-resources` scenario; search `test/integration` and `test/e2e` for assertions this change makes stale.
+- [x] 2.3 Add an e2e spec beside the two claim specs of `test/e2e/podinfo_test.go` if the redis fixture can express it (a `storageClass` change under `forceConflicts`). It is not run in this change. Verify: `go vet -tags=e2e ./test/e2e/` passes.
+- [x] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(reconcile): report a refused claim recreate as ClaimConflict`
 
 ## 3. API texts
 

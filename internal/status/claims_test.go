@@ -87,3 +87,55 @@ func TestClaimsKeptNote(t *testing.T) {
 		}
 	})
 }
+
+func TestClaimConflictNote(t *testing.T) {
+	t.Run("names the claim, the field, the refusal and the ways out", func(t *testing.T) {
+		note := ClaimConflictNote("media", "config", []string{"spec"},
+			"PersistentVolumeClaim \"config\" is invalid: spec: Forbidden: spec is immutable after creation\n  a diff\n  of many lines")
+		want := "PersistentVolumeClaim media/config: the API server refused the update of spec " +
+			"(PersistentVolumeClaim \"config\" is invalid: spec: Forbidden: spec is immutable after creation). " +
+			"Nothing was applied. The claim and its data are kept. "
+		if !strings.HasPrefix(note, want) {
+			t.Fatalf("unexpected note: %s", note)
+		}
+		for _, part := range []string{"Revert the change", "delete the claim yourself", "set spec.dataPolicy to Delete"} {
+			if !strings.Contains(note, part) {
+				t.Errorf("note lacks %q: %s", part, note)
+			}
+		}
+		if strings.Contains(note, "a diff") {
+			t.Errorf("note must keep only the first line of the refusal: %s", note)
+		}
+	})
+
+	t.Run("a long refusal is cut and the note fits an event", func(t *testing.T) {
+		note := ClaimConflictNote(strings.Repeat("n", 63), strings.Repeat("c", 253),
+			[]string{"spec"}, strings.Repeat("x", 5000))
+		if len(note) > eventNoteLimit {
+			t.Fatalf("note is %d characters, over the event limit %d", len(note), eventNoteLimit)
+		}
+		if !strings.Contains(note, strings.Repeat("x", claimRefusalLimit)+"...") {
+			t.Errorf("the refusal was not cut at %d characters: %s", claimRefusalLimit, note)
+		}
+		if !strings.Contains(note, "set spec.dataPolicy to Delete") {
+			t.Errorf("a cut note must still name the ways out: %s", note)
+		}
+	})
+
+	t.Run("no field is named when the API server named none", func(t *testing.T) {
+		note := ClaimConflictNote("media", "config", nil, "the object has been modified")
+		if !strings.Contains(note, "refused the update (the object has been modified).") {
+			t.Fatalf("unexpected note: %s", note)
+		}
+	})
+
+	t.Run("a claim kept without a refusal does not say that nothing was applied", func(t *testing.T) {
+		note := ClaimConflictNote("media", "config", nil, "")
+		if !strings.HasPrefix(note, "PersistentVolumeClaim media/config: the update needs the claim deleted and created again. The claim and its data are kept.") {
+			t.Fatalf("unexpected note: %s", note)
+		}
+		if strings.Contains(note, "Nothing was applied") {
+			t.Errorf("the delete guard stops a stage that is already under way: %s", note)
+		}
+	})
+}

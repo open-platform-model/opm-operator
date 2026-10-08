@@ -1,8 +1,8 @@
 ## 1. Release the finalizer of a deleting CLI-owned instance
 
-- [ ] 1.1 Add a spec to `internal/controller/moduleinstance_reconcile_test.go` (context "CLI-owned instance"): a CLI-owned instance with the finalizer, `spec.prune: true` and an inventory naming a managed ConfigMap is deleted and reconciled; the instance goes away, the ConfigMap stays, the result is empty. Add a spec that a live CLI-owned instance keeps a leftover finalizer. Verify: on the unchanged tree the first spec fails (the instance stays) and the second passes
-- [ ] 1.2 Release the finalizer in `handleCLIOwned` (`internal/reconcile/moduleinstance.go`) for a deleting instance, without pruning or a status write, and correct the comments of `handleCLIOwned` and `handleNotReconciled`. Verify: both specs pass
-- [ ] 1.3 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(controller): release the cleanup finalizer of a deleting cli-owned instance`
+- [x] 1.1 Add a spec to `internal/controller/moduleinstance_reconcile_test.go` (context "CLI-owned instance"): a CLI-owned instance with the finalizer, `spec.prune: true` and an inventory naming a managed ConfigMap is deleted and reconciled; the instance goes away, the ConfigMap stays, the result is empty. Add a spec that a live CLI-owned instance keeps a leftover finalizer. Verify: on the unchanged tree both specs fail where they wait for the deleted instance to go away
+- [x] 1.2 Release the finalizer in `handleCLIOwned` (`internal/reconcile/moduleinstance.go`) for a deleting instance, without pruning or a status write, and correct the comments of `handleCLIOwned` and `handleNotReconciled`. Verify: both specs pass
+- [x] 1.3 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(controller): release the cleanup finalizer of a deleting cli-owned instance`
 
 ## 2. Reconcile a deleting instance when the orphan annotation is set
 

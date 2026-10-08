@@ -1018,11 +1018,12 @@ func handleNotReconciled(
 ) (bool, error) {
 	// Owner-skip gate: CLI-owned instances are managed externally. The operator
 	// stays entirely hands-off — no render, apply, prune, deletion cleanup, and
-	// crucially no finalizer. The check sits before finalizer registration so a
-	// CLI-owned CR never carries opmodel.dev/cleanup (whose deletion path would
-	// prune resources the CLI owns). Only an explicit owner == cli skips; absent,
-	// empty, and operator all fall through to the normal operator-managed path,
-	// except on the operator's own instance, which is refused below.
+	// crucially no finalizer. The check sits before finalizer registration so
+	// the operator never adds opmodel.dev/cleanup to a CLI-owned CR (its
+	// deletion path would prune resources the CLI owns). Only an explicit
+	// owner == cli skips; absent, empty, and operator all fall through to the
+	// normal operator-managed path, except on the operator's own instance,
+	// which is refused below.
 	if mi.Spec.Owner == releasesv1alpha1.OwnerCLI {
 		return true, handleCLIOwned(ctx, params, mi)
 	}
@@ -1036,9 +1037,12 @@ func handleNotReconciled(
 }
 
 // handleCLIOwned implements the owner-skip gate for CLI-owned instances. The
-// operator is hands-off: no render, apply, prune, deletion cleanup, or
-// finalizer. For a deleting instance it returns immediately — no finalizer was
-// ever added, so there is nothing to clean up or unblock. Otherwise it records
+// operator is hands-off: no render, apply, prune or deletion cleanup, and it
+// adds no finalizer. A deleting instance can still carry the cleanup
+// finalizer, from a time when the operator owned it (spec.owner is mutable).
+// Nothing else would ever remove it, so the gate releases it, without pruning
+// and without a status write: the objects belong to the CLI. A live instance
+// keeps such a finalizer. On a live instance the gate records
 // a single Ready=Unknown/ManagedExternally acknowledgement and nothing else: no
 // observedGeneration (no reconcile happened) and no CLI-written status
 // (inventory, lastApplied*, instanceUUID). The patcher snapshots the object
@@ -1053,6 +1057,14 @@ func handleCLIOwned(
 	log := logf.FromContext(ctx)
 
 	if !mi.DeletionTimestamp.IsZero() {
+		params.Warnings.Forget(keyOf(mi))
+		if !controllerutil.ContainsFinalizer(mi, FinalizerName) {
+			return nil
+		}
+		log.Info("Releasing the cleanup finalizer from a deleting CLI-owned instance without pruning")
+		if err := removeFinalizer(ctx, params.Client, mi); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("removing finalizer: %w", err)
+		}
 		return nil
 	}
 

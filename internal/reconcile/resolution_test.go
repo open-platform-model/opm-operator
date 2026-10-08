@@ -190,6 +190,20 @@ func TestClassifyRenderError(t *testing.T) {
 			wantReason:  status.RenderFailedReason,
 		},
 		{
+			name: "author-defect resolution failure under acquire stalls",
+			err: acquireErr(&oerrors.ResolutionError{Kind: oerrors.ResolutionImportUnprovided,
+				Err: errors.New("cannot find module providing package test.example/absent/pkg")}),
+			wantOutcome: FailedStalled,
+			wantReason:  status.ResolutionFailedReason,
+		},
+		{
+			name: "author-defect resolution failure during synthesis is a render failure",
+			err: fmt.Errorf("synthesizing release: %w", &oerrors.ResolutionError{Kind: oerrors.ResolutionImportUnprovided,
+				Err: errors.New("cannot find module providing package test.example/absent/pkg")}),
+			wantOutcome: FailedStalled,
+			wantReason:  status.RenderFailedReason,
+		},
+		{
 			name:        "registry failure under acquire is transient",
 			err:         acquireErr(registryUnavailable()),
 			wantOutcome: FailedTransient,

@@ -13,8 +13,8 @@ A Job without a TTL that does not exist, and every other missing object, SHALL b
 - **THEN** `Healthy` stays `True` with reason `RolledOut` and the message counts the ConfigMap only
 - **AND** the reconcile requeues on the instance reconcile interval, not on the health requeue
 
-#### Scenario: A missing Job without a TTL after a failed drift detection
+#### Scenario: An absent Job after a failed drift detection
 
-- **GIVEN** a ModuleInstance whose Job without a TTL was deleted
+- **GIVEN** a ModuleInstance whose inventory Job does not exist
 - **WHEN** drift detection fails on the reconcile that renders for it
-- **THEN** `Healthy` is `False` with reason `NotRolledOut` and names the Job as `Missing`
+- **THEN** the Job stays in `status.inventory`, and `Healthy` is `False` with reason `NotRolledOut` and names the Job as `Missing`

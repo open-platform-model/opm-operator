@@ -5,7 +5,7 @@ The operator pins library v1.0.0-beta.6. The release cascade proposed the bump t
 ## What Changes
 
 - `go.mod` and `go.sum` move `github.com/open-platform-model/library` from v1.0.0-beta.6 to v1.0.0-beta.7, the same two-file diff as the cascade's branch. No other pin moves.
-- **BREAKING**: a ModulePackage whose values leave a required `#config` value unset, where no component reads that value, is now refused when the package loads. The object reports `Ready=False` and `Stalled=True` with reason `ResolutionFailed` and the message `loading package: Kernel.AcquireInstanceFromDir: instance "<name>": not fully concrete: values.<field>: incomplete value <type>`. On beta.6 such a package rendered and applied. The kernel forces this; the operator has no check of its own on that path to keep the old behaviour with.
+- **BREAKING**: a ModulePackage whose values leave a required `#config` value unset, where no component reads that value, is now refused when the package loads. The object reports `Ready=False` and `Stalled=True` with reason `ResolutionFailed` and the message `loading package: Kernel.AcquireInstanceFromDir: instance "<name>": not fully concrete: values.<field>: incomplete value <type>`. The same holds for a value no component reads that the package gives a default other than the `#config` default (`tier: string | *"b"` against `string | *"a"`). On beta.6 such a package rendered and applied. The kernel forces this; the operator has no check of its own on that path to keep the old behaviour with.
 - A ModuleInstance in the same state keeps its condition and its message, unchanged: the renderer's own check of `spec.values` against `#config` runs before synthesis and stays in this change. Tests pin both paths.
 - No other breaking change of beta.7 reaches the operator today (design.md gives the evidence for each): the kind weights, the adopt rule and the lifecycle package, and the typed resolution errors.
 - A comment that said synthesis does not refuse an unset required value is corrected, and the conditions page names the new ModulePackage refusal.
@@ -32,4 +32,4 @@ None.
 - Dependencies: one direct Go dependency moves; no new module enters `go.sum`.
 - Tests: `internal/render/required_values_test.go`, two rows in `internal/reconcile/resolution_test.go`.
 - Docs: `docs/site/diagnostics/operator-conditions.md`.
-- Users: a ModulePackage author sets the value, gives the `#config` field a default, or marks it optional with `?`.
+- Users: for an unset value, a ModulePackage author sets it, gives the `#config` field a default, or marks it optional with `?`. For a disagreeing default, the author makes the value concrete or makes the two defaults agree.

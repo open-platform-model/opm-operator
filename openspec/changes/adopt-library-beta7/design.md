@@ -36,6 +36,8 @@ See proposal.md for the motivation. The operator uses these library packages: `o
 | `SynthesizeInstance` alone, without the pre-check | no error | `Kernel.SynthesizeInstance: instance "needy": not fully concrete: values.note: incomplete value string` |
 | ModulePackage (`AcquireInstanceFromDir`) | loads; the render goes on | `loading package: Kernel.AcquireInstanceFromDir: instance "needy": not fully concrete: values.note: incomplete value string` |
 
+The kernel's check also refuses a value no component reads whose default disagrees with the `#config` default: a package with `values: tier: string | *"b"` against `#config: tier: string | *"a"` fails on beta.7 with `not fully concrete: values.tier: incomplete value string | "a" | "b"`. Only the ModulePackage path can reach this state: `spec.values` is JSON and carries no default.
+
 **Decision**: Keep the pre-check as it is. Accept the new ModulePackage refusal as the breaking change of this bump and pin both paths with tests.
 **Rationale**: On the ModuleInstance path the pre-check runs first, so the condition (`RenderFailed`, stalled) and the message do not move. On the ModulePackage path there is no operator check and no way to keep accepting the package short of not taking the release. The refusal is marked `ErrAcquire` like every package load failure, so its reason is `ResolutionFailed` and it stalls (it holds no `*FetchError`).
 **Alternative considered**: Classify the ModulePackage refusal as `RenderFailed` to match the ModuleInstance reason. Rejected here: it needs message matching or a typed kernel error that beta.7 does not give, and a non-concrete package already reports `ResolutionFailed` today.
@@ -91,4 +93,4 @@ func (r *KernelModuleRenderer) synthesize(ctx, name, namespace, modulePath, modu
 
 ## Migration Plan
 
-A ModulePackage author whose package is refused sets the value, gives the `#config` field a default, or marks it optional with `?`. Rollback is a revert of the bump commit.
+A ModulePackage author whose package is refused for an unset value sets it, gives the `#config` field a default, or marks it optional with `?`. For a default that disagrees with the `#config` default, the author makes the value concrete or makes the two defaults agree. Rollback is a revert of the bump commit.

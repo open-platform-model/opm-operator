@@ -100,8 +100,8 @@ func TestKernelModuleRenderer_UnsetRequiredValueKeepsItsMessage(t *testing.T) {
 }
 
 // needyInstancePackage writes an authored #ModuleInstance package whose
-// module declares a required #config value that no component reads, and
-// whose values are valuesCUE. Its dependencies are the hello fixture's, so
+// module declares two #config values that no component reads, one required
+// (note) and one with a default (tier), and whose values are valuesCUE. Its dependencies are the hello fixture's, so
 // the core and catalog pins follow the fixtures.
 func needyInstancePackage(t *testing.T, valuesCUE string) string {
 	t.Helper()
@@ -138,6 +138,7 @@ metadata: {
 	#config: {
 		message: string | *"hello"
 		note:    string
+		tier:    string | *"a"
 	}
 	#components: hello: {
 		res.#ConfigMaps
@@ -172,6 +173,16 @@ func TestKernelPackageRenderer_UnsetRequiredValueIsRefused(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAcquire)
 	_, isFetch := errors.AsType[*oerrors.FetchError](err)
 	assert.False(t, isFetch, "an unset value must not retry as a registry fetch failure")
+
+	// A value no component reads that carries a default other than the
+	// #config default is not concrete once the two unify, so the kernel
+	// refuses it the same way.
+	_, _, err = r.Render(context.Background(),
+		needyInstancePackage(t, `{note: "set", tier: string | *"b"}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `loading package: Kernel.AcquireInstanceFromDir: instance "needy": `+
+		`not fully concrete: values.tier: incomplete value `)
+	assert.ErrorIs(t, err, ErrAcquire)
 
 	// With the value set the package loads; the empty store then stops the
 	// render at the platform gate, after the load.

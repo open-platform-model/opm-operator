@@ -178,9 +178,9 @@ func (r *KernelModuleRenderer) synthesizeFrom(
 	// runs; the kernel's layered validation reports it at the source's
 	// positions instead, so the error names spec.values. It also refuses a
 	// required #config value left unset that no component reads. Synthesis
-	// refuses that too since library v1.0.0-beta.7 (library#211), in other
-	// words (`not fully concrete: values.<field>: ...`); this check runs
-	// first, so the message a user reads is this one.
+	// refuses that too since library v1.0.0-beta.7 (library#211), with a
+	// different message (`not fully concrete: values.<field>: ...`); this
+	// check runs first, so the message a user reads is this one.
 	if _, err := r.Kernel.ValidateConfigDetailed(mod.ConfigSchema(), sources); err != nil {
 		return nil, fmt.Errorf("validating values against the module's #config: %s", cueFindings(err))
 	}

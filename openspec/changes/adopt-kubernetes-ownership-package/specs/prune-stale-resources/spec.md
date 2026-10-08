@@ -13,19 +13,19 @@
 **Migration**: An object whose `opmodel.dev/adopt` annotation names another instance is left in the cluster. Every other outcome of the earlier guard is kept: a missing or foreign managed-by label and a UUID label of another instance skip the delete, and an object without a UUID label is deleted on its managed-by label.
 
 ### Requirement: Release UUID persisted on ModuleReleaseStatus
-**Reason**: It names a kind and a field that no longer exist, and it lets the identity be written before an apply succeeded. The requirements "The instance identity is recorded with a successful apply" and "Prune judges with the recorded identity" replace it.
-**Migration**: None. `status.instanceUUID` keeps its name and meaning on ModuleInstance.
+**Reason**: It names a kind and a field that no longer exist. The requirement "The prune judges with the recorded identities" here and the requirement "The instance identities are stored before the first write of an apply" of `reconcile-loop-assembly` replace it.
+**Migration**: None. `status.instanceUUID` keeps its name on ModuleInstance.
 
 ## ADDED Requirements
 
 ### Requirement: Prune asks the library's delete verdict
-For every entry it may delete, the prune MUST read the live object with the client that would delete it and MUST ask the library's delete verdict (`opm/k8s/ownership`) with that object and the judging identity. It MUST delete the object only when the verdict says proceed, and it MUST NOT decide ownership with a label or annotation comparison of its own. Source: 0012:D4:R1, 0012:D8:R8.
+For every entry it may delete, the prune MUST read the live object with the client that would delete it and MUST ask the library's delete verdict (`opm/k8s/ownership`) with that object and an identity of the instance. When the instance has more than one identity to judge with, it MUST ask with each in turn, and the object counts as the instance's own when the verdict says proceed for one of them. It MUST delete the object only then, and it MUST NOT decide ownership with a label or annotation comparison of its own. Source: 0012:D4:R1, 0012:D8:R8.
 
 The prune MUST act on each answer as follows:
 
 - Proceed: the object is deleted, unless it is a PersistentVolumeClaim that `spec.dataPolicy` keeps. A claim counts as kept only after the verdict said proceed.
 - The object does not exist: success, as before.
-- The object is not managed by OPM, belongs to another instance, or carries an adopt annotation that names another instance: the object is left in the cluster, counted as skipped and named in the prune result with the library's reason and message. It is not an error.
+- For every identity, the object is not managed by OPM, belongs to another instance, or carries an adopt annotation that names another instance: the object is left in the cluster, counted as skipped and named in the prune result with the library's reason and message. It is not an error.
 - The read fails with an error other than NotFound: the entry is a failed prune and the remaining entries are still attempted, as before. A PersistentVolumeClaim that cannot be read while `spec.dataPolicy` keeps claims is kept without an error, as before.
 
 An object without a UUID label MUST still be deleted when OPM manages it, and every OPM manager label value MUST be accepted, as before.
@@ -99,43 +99,48 @@ Every DELETE the prune sends MUST carry a precondition on the UID of the live ob
 - **THEN** the new ConfigMap still exists
 - **AND** the prune returns an error for that entry and counts nothing as deleted for it
 
-### Requirement: The instance identity is recorded with a successful apply
-The controller MUST record the identity of the rendered instance in `status.instanceUUID` of a ModuleInstance in the status commit of a reconcile whose apply and prune succeeded, together with `status.inventory`. A reconcile that fails before or during the apply or the prune MUST leave `status.instanceUUID` as it was. A reconcile that finds nothing to apply MUST write the field only when it is empty.
+### Requirement: The prune judges with the recorded identities
+The prune of stale resources MUST judge with the identities the status held when the apply of the same reconcile started: `status.instanceUUID`, and `status.previousInstanceUUID` when it is set. A stale object that carries either identity, and that the verdict lets the operator delete under it, MUST be deleted. Source: owner decisions of 2026-10-08 (prune judges with the identity stored in the instance's record, also after the instance identity changed; the status keeps both identities until the prune succeeded).
 
-#### Scenario: First successful reconcile records the identity
-- **GIVEN** a new ModuleInstance that renders and applies with success
-- **WHEN** the status is committed
-- **THEN** `status.instanceUUID` holds the UUID label value of the rendered objects
-
-#### Scenario: A failed apply after an identity change keeps the earlier identity
-- **GIVEN** a ModuleInstance with `status.instanceUUID` `A` whose `spec.module.path` changes, so that its render carries identity `B`
-- **WHEN** the apply fails
-- **THEN** `status.instanceUUID` is still `A` and `status.inventory` is unchanged
-
-#### Scenario: An object without the field gains it without an apply
-- **GIVEN** a ModuleInstance with an inventory and an empty `status.instanceUUID`, whose render equals what was applied
-- **WHEN** the controller reconciles and applies nothing
-- **THEN** `status.instanceUUID` holds the render's identity
-
-### Requirement: Prune judges with the recorded identity
-The prune of stale resources MUST hand the delete verdict the identity that `status.instanceUUID` held when the reconcile started, not the identity of the new render. When the field was empty, it MUST hand it the render's identity. Source: owner decision of 2026-10-08 (prune judges with the identity stored in the instance's record, also after the instance identity changed).
+When `status.instanceUUID` was empty when the reconcile started, the prune MUST ask the verdict with the render's identity first and then with no identity, so that it deletes what the managed-by label alone let it delete before.
 
 #### Scenario: Stale object after the instance identity changed
 - **GIVEN** a ModuleInstance with `status.instanceUUID` `A` and `spec.prune=true`, whose `spec.module.path` changes so that its render carries identity `B` and no longer holds ConfigMap `team-a/old`, which carries the UUID label `A`
 - **WHEN** the reconcile applies and prunes
 - **THEN** ConfigMap `team-a/old` is deleted
-- **AND** `status.instanceUUID` is `B` after the reconcile
+- **AND** after the reconcile `status.instanceUUID` is `B` and `status.previousInstanceUUID` is empty
 
-#### Scenario: A failed prune is retried with the earlier identity
-- **GIVEN** the same change of identity, and a prune whose DELETE of `team-a/old` fails
-- **WHEN** the next reconcile runs
-- **THEN** `status.instanceUUID` is still `A` when it starts
-- **AND** its prune deletes `team-a/old`
+#### Scenario: A failed prune leaves nothing orphaned on the retry
+- **GIVEN** the same change of identity, a second stale ConfigMap `team-a/older` with the UUID label `A`, and a prune whose DELETE of `team-a/old` fails
+- **WHEN** the reconcile ends and the next reconcile runs
+- **THEN** after the first reconcile `status.instanceUUID` is `B`, `status.previousInstanceUUID` is `A` and `status.inventory` is unchanged
+- **AND** the second reconcile deletes `team-a/old`, and `team-a/older` if it still exists
+- **AND** after it `status.previousInstanceUUID` is empty
+
+#### Scenario: A stale object that was already relabelled
+- **GIVEN** an identity change from `A` to `B` that is not settled, and a later render of identity `B` that drops Deployment `team-a/app`, which the earlier apply relabelled to `B`
+- **WHEN** the reconcile applies and prunes
+- **THEN** Deployment `team-a/app` is deleted
 
 #### Scenario: Stale object that carries a third identity
-- **GIVEN** a stale ConfigMap whose live UUID label is neither the recorded identity nor empty
+- **GIVEN** a stale ConfigMap whose live UUID label is neither of the recorded identities nor empty
 - **WHEN** the controller prunes the stale set
 - **THEN** the ConfigMap still exists and the prune result names it with the reason `owner-mismatch`
+
+#### Scenario: No recorded identity, object of an unknown earlier identity
+- **GIVEN** an object with an inventory and an empty `status.instanceUUID`, whose render carries identity `B`, and a stale ConfigMap that is managed by OPM, carries the UUID label `X` and has no adopt annotation
+- **WHEN** the reconcile applies and prunes
+- **THEN** the ConfigMap is deleted
+
+#### Scenario: No recorded identity, object annotated for this instance
+- **GIVEN** the same object, and a stale ConfigMap that is managed by OPM, carries no UUID label and carries the annotation `opmodel.dev/adopt` with the value `B`
+- **WHEN** the reconcile applies and prunes
+- **THEN** the ConfigMap is deleted
+
+#### Scenario: No recorded identity, object annotated for another instance
+- **GIVEN** the same object, and a stale ConfigMap that carries the annotation `opmodel.dev/adopt` with the value `C`
+- **WHEN** the reconcile applies and prunes
+- **THEN** the ConfigMap still exists and the prune result names it with the reason `adopted-elsewhere`
 
 ### Requirement: The prune result names what was left behind
 The prune result MUST name every entry the prune left in the cluster because the verdict skipped it, a safety-excluded kind included, with the library's reason and message for it. An entry that was already absent and a kept PersistentVolumeClaim MUST NOT be named there. An entry left behind MUST leave `status.inventory` as a deleted entry does, and MUST NOT make the reconcile fail.

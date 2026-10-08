@@ -4,22 +4,23 @@ The library holds one ownership rule for Kubernetes objects (`opm/k8s/ownership`
 
 ## What Changes
 
-The operator's adoption is cut into two changes, as the cli's was. This change is the delete half. The apply half is the change `guard-every-apply-by-ownership`; `design.md` records its decisions so that both halves follow one design, and it gets its own change folder after this proposal is accepted.
+This change is an API addition. It adds three optional status fields: `status.instanceUUID` and `status.previousInstanceUUID` on ModulePackage, and `status.previousInstanceUUID` on ModuleInstance. The PR therefore regenerates the CRDs, the resource reference and the operator module data (`modules/opm_operator/zz_generated_*`), and opens a release PR of the operator module, as the repo rules state for every CRD change.
 
-Why this half is safe to ship alone: it only narrows what the operator deletes and makes each delete exact. Until the apply half lands, the apply keeps taking over what it takes over today.
+The operator's adoption is cut into two changes, as the cli's was. This change is the delete half. The apply half is the change `guard-every-apply-by-ownership`; `design.md` records its decisions so that both halves follow one design, and it gets its own change folder after this one.
+
+Why this half is safe to ship alone: it narrows what the operator deletes, makes each delete exact, and deletes more only in the two cases the owner decided (stale objects after an identity change; a same-named kind in another group). Until the apply half lands, the apply keeps taking over what it takes over today.
 
 This change:
 
-- **BREAKING** Every delete the operator makes on behalf of a ModuleInstance or a ModulePackage is judged by `ownership.CanDelete`: the prune of stale objects, the deletion cleanup, and the delete inside a forced recreate (`spec.rollout.forceConflicts`). The label checks in `internal/apply/prune.go` go.
+- **BREAKING** Every delete of a prune of stale objects and of a deletion cleanup, for a ModuleInstance or a ModulePackage, is judged by `ownership.CanDelete`. The label checks in `internal/apply/prune.go` go.
 - **BREAKING** An object whose `opmodel.dev/adopt` annotation names another instance is never deleted. It is left in the cluster and leaves `status.inventory` (0012:D8:R8).
-- **BREAKING** A Namespace or a CustomResourceDefinition is matched by group and kind, as the library does, not by kind alone. A kind named `Namespace` in another API group is no longer protected.
-- Every delete after a verdict carries the UID precondition of the object that was judged. A delete the API server refuses on that precondition is a failed delete and is retried.
-- **BREAKING** Prune judges with the recorded identity, `status.instanceUUID` as it was when the reconcile started, not with the identity of the new render. After a module path change the stale objects of the earlier identity are deleted; today they are skipped and abandoned.
-- `status.instanceUUID` of a ModuleInstance is written with a successful apply only, so a failed apply after an identity change does not move the recorded identity.
-- A ModulePackage gains the additive field `status.instanceUUID` (0012:D8:R4, owner decision of 2026-10-03), so its prune and deletion compare identities as a ModuleInstance's do. Today they compare none.
-- **BREAKING** A forced recreate deletes an object only when the delete verdict lets it. When it does not, the apply is refused before its first write.
-- A prune or a deletion cleanup that leaves objects behind emits one `Warning` event with reason `LeftBehind`, with the library's message for each object. Today a skip is a log line only.
-- A test lists the allowed delete call sites, so a new delete cannot bypass the verdict unseen.
+- **BREAKING** A Namespace or a CustomResourceDefinition is matched by group and kind, as the library does, not by kind alone.
+- Every delete carries the UID precondition of the object that was read: in a prune, in a deletion cleanup and in the forced recreate of `spec.rollout.forceConflicts`. The forced recreate asks no ownership question (owner decision of 2026-10-08); it deletes exactly the object that was read. A delete the API server refuses on the precondition is a failed delete and is retried.
+- **BREAKING** After an identity change (a changed `spec.module.path`), the status holds the earlier and the new identity until a reconcile has applied and pruned with success (owner decision of 2026-10-08). The stale prune and the deletion cleanup accept an object that carries either. So the stale objects of the earlier identity are deleted, where today they are abandoned, and an instance deleted in that window leaves nothing behind.
+- **BREAKING** A second identity change before the first is settled is refused: `Ready=False`, `Stalled`, reason `IdentityChangeUnsettled`.
+- A ModulePackage records its instance identity (0012:D8:R4, owner decision of 2026-10-03), so its prune and deletion compare identities as a ModuleInstance's do. Today they compare none.
+- A prune or a deletion cleanup that leaves objects behind emits one event with reason `LeftBehind`, with the library's message for each object: `Normal` when only Namespaces or CustomResourceDefinitions were left, `Warning` otherwise. Today a skip is a log line only.
+- The resource manager's client refuses a delete of a collection, and a test lists the allowed delete call sites, so no delete can go out without a precondition unseen.
 
 Not in this change: the apply guard, the hand-over on apply and the drop of an adopted object from the inventory on apply (the apply half); the deletion protocol (order, finalizer holds, propagation: the change that adopts `opm/k8s/lifecycle`); RBAC; the cli.
 
@@ -35,17 +36,20 @@ None.
 
 ### Modified Capabilities
 
-- `prune-stale-resources`: the live-state ownership guard becomes the library's delete verdict; kinds OPM never deletes are matched by group and kind; deletes carry the UID precondition; prune judges with the recorded identity; the recorded identity is written with a successful apply; the prune reports what it left behind.
-- `finalizer-and-deletion`: the deletion cleanup judges every inventory entry with the delete verdict, with the recorded identity; a skipped object does not hold the finalizer, a delete refused on its precondition does.
-- `ssa-apply`: the delete of a forced recreate is judged by the delete verdict and carries the UID precondition.
-- `modulepackage-reconcile-loop`: a ModulePackage records its instance identity in `status.instanceUUID` and prunes and deletes with it.
-- `events-emission`: the `LeftBehind` event.
-- `kubernetes-tier-adoption`: the operator decides deletes only through the library's ownership package and keeps no copy of the rule.
+- `prune-stale-resources`: the live-state ownership guard becomes the library's delete verdict; kinds OPM never deletes are matched by group and kind; deletes carry the UID precondition; the prune judges with the recorded identities; the prune reports what it left behind.
+- `finalizer-and-deletion`: the deletion cleanup deletes what the delete verdict lets it delete, with the recorded identities; a skipped object does not hold the finalizer, a delete refused on its precondition does.
+- `reconcile-loop-assembly`: the identities are stored before the first write of an apply and the earlier one is cleared on full success; a second unsettled identity change is refused.
+- `ssa-apply`: the delete of a forced recreate carries the UID precondition; the resource manager refuses a delete of a collection.
+- `modulepackage-reconcile-loop`: a ModulePackage records its instance identity and prunes and deletes with it.
+- `status-conditions`: the reason `IdentityChangeUnsettled`.
+- `events-emission`: the `LeftBehind` event and the `IdentityChangeUnsettled` event.
+- `kubernetes-tier-adoption`: the operator decides the deletes of a prune and a cleanup only through the library's ownership package, and the list of delete call sites is closed.
 
 ## Impact
 
-- API: `ModulePackageStatus.InstanceUUID` (`status.instanceUUID`), additive and optional. No spec field changes. The CRD, the generated operator module data (`modules/opm_operator/zz_generated_*`) and the resource reference change with it, so the PR also opens a release PR of the operator module, as the repo rules state for every CRD change.
+- API: `ModulePackageStatus.InstanceUUID`, `ModulePackageStatus.PreviousInstanceUUID`, `ModuleInstanceStatus.PreviousInstanceUUID`; all additive and optional. No spec field changes.
 - Controllers: ModuleInstance and ModulePackage. Platform and TransformerRegistration apply and delete no cluster object and are not touched.
-- Code: `internal/apply` (`prune.go`, `claims.go`, `apply.go`, `manager.go`), `internal/reconcile` (`moduleinstance.go`, `modulepackage.go`), `internal/status` (one reason), `api/v1alpha1/modulepackage_types.go`, `docs/site/`.
+- Code: `internal/apply` (`prune.go`, `claims.go`), `internal/reconcile` (`moduleinstance.go`, `modulepackage.go`), `internal/status` (two reasons), `api/v1alpha1`, `docs/site/`.
 - Enhancement: implements part of 0012 (`enhancement.yaml`). No decision is claimed until both frontends have adopted both packages.
-- RBAC: none. The verdict reads each object with the identity that deletes it, which already needs `get` for the prune's read today.
+- RBAC: none. The verdict reads each object with the identity that deletes it, which already needs `get` for the prune's read today; the forced recreate adds no read.
+- cli: none needed. The cli does not know `status.previousInstanceUUID`; a follow-up can teach it (see `design.md`, the handover section).

@@ -22,7 +22,7 @@ Automatic correction is dangerous in early controller iterations. Mutating webho
 
 In v1alpha1, the controller detects drift but does not automatically correct it.
 
-Detection mechanism: during the `PlanActions` phase, the controller may use an SSA dry-run to compare live state against desired state for fields owned by `opm-controller`.
+Detection mechanism: during the `PlanActions` phase, the controller may use an SSA dry-run to compare live state against desired state for fields owned by `opm-controller`. The dry-run is sent by the identity that applies the instance (the impersonated ServiceAccount, or the controller when none is set), never by the controller in place of a ServiceAccount. A dry-run that identity may not send is reported as `Drifted=Unknown`, not as drift and not as its absence.
 
 Reporting: if drift is found, the controller sets a `Drifted=True` condition on the `ModuleRelease` status. The reconcile loop completes normally without re-applying.
 

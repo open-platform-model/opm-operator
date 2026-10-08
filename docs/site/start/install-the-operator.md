@@ -116,7 +116,7 @@ The operator is itself an OPM module, `opmodel.dev/modules/opm_operator`, publis
 
 4. Give the operator an identity to apply with.
 
-   The operator applies a module's resources as a ServiceAccount in the instance's own namespace, by impersonation. Its own ClusterRole, `opm-operator-manager-role`, grants nothing on workload kinds such as Deployments and Services. With no ServiceAccount named, the operator applies as itself, the apply is forbidden, and the instance reports reason `ApplyFailed`.
+   The operator applies a module's resources as a ServiceAccount in the instance's own namespace, by impersonation. Its own ClusterRole, `opm-operator-manager-role`, grants nothing on workload kinds such as Deployments and Services. With no ServiceAccount named, the operator applies as itself, the apply is forbidden, and the instance reports reason `ApplyFailed`. Drift detection runs as the same ServiceAccount, so its Role needs `get` and `patch` on every kind the module renders; without `patch` the instance reports `Drifted` as `Unknown` with reason `DriftCheckForbidden`.
 
    In each namespace that holds instances, create a ServiceAccount and bind it to a role that covers what the modules render. Then name it in the `spec.serviceAccountName` of each ModuleInstance or ModulePackage. For example, the built-in `edit` ClusterRole, bound in one namespace, covers common namespaced kinds such as Deployments, StatefulSets, Services, ConfigMaps and Secrets:
 

@@ -8,5 +8,5 @@
 
 ## 2. Docs
 
-- [ ] 2.1 `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md`, the tenancy page and `adr/012-drift-detection-only.md`: state which identity runs drift detection and list `Drifted=Unknown` with its two reasons; verify with `grep -n DriftCheckForbidden` over the files and `task docs:bundle:check`
-- [ ] 2.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: state which identity runs drift detection`
+- [x] 2.1 `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md`, the tenancy page and `adr/012-drift-detection-only.md`: state which identity runs drift detection and list `Drifted=Unknown` with its two reasons; verify with `grep -n DriftCheckForbidden` over the files and `task docs:bundle:check`
+- [x] 2.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: state which identity runs drift detection`

@@ -349,10 +349,10 @@ package opm_operator
 								}
 								instanceUUID: {
 									description: """
-	InstanceUUID is the globally-unique identity of the rendered ModuleInstance,
-	read from the `module-instance.opmodel.dev/uuid` label on rendered resources.
-	Populated on the first successful render; consumed by the prune ownership
-	guard (including the deletion path where a fresh render is not available).
+	InstanceUUID is the identity of the instance the operator last rendered and
+	began to apply: the value of the module-instance.opmodel.dev/uuid label on
+	its objects. The prune and the deletion cleanup use it to tell the
+	instance's own objects from another instance's.
 	"""
 									type: "string"
 								}
@@ -466,6 +466,16 @@ package opm_operator
 								observedGeneration: {
 									format: "int64"
 									type:   "integer"
+								}
+								previousInstanceUUID: {
+									description: """
+	PreviousInstanceUUID is the identity the instance had before its identity
+	last changed. It is set only while that change is not settled: from the
+	apply that starts to relabel the instance's objects until a reconcile has
+	applied and pruned with success. While it is set, an object that carries
+	either identity counts as the instance's own.
+	"""
+									type: "string"
 								}
 								requiredContracts: {
 									description: """
@@ -879,6 +889,15 @@ package opm_operator
 									}
 									type: "array"
 								}
+								instanceUUID: {
+									description: """
+	InstanceUUID is the identity of the instance the operator last rendered and
+	began to apply: the value of the module-instance.opmodel.dev/uuid label on
+	its objects. The prune and the deletion cleanup use it to tell the
+	instance's own objects from another instance's.
+	"""
+									type: "string"
+								}
 								inventory: {
 									description: "Inventory stores the current set of owned resources."
 									properties: {
@@ -986,6 +1005,16 @@ package opm_operator
 								observedGeneration: {
 									format: "int64"
 									type:   "integer"
+								}
+								previousInstanceUUID: {
+									description: """
+	PreviousInstanceUUID is the identity the instance had before its identity
+	last changed. It is set only while that change is not settled: from the
+	apply that starts to relabel the instance's objects until a reconcile has
+	applied and pruned with success. While it is set, an object that carries
+	either identity counts as the instance's own.
+	"""
+									type: "string"
 								}
 								source: {
 									description: "Source is the resolved Flux source artifact metadata."

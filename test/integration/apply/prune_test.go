@@ -70,7 +70,7 @@ var _ = Describe("Prune", func() {
 			}}
 
 			By("pruning the stale set")
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(1))
 			Expect(result.Skipped).To(Equal(0))
@@ -94,7 +94,7 @@ var _ = Describe("Prune", func() {
 				Name:    "prune-test-ns",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(0))
 			Expect(result.Skipped).To(Equal(1))
@@ -110,7 +110,7 @@ var _ = Describe("Prune", func() {
 				Name:      "prune-already-gone-cm",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(0))
 			Expect(result.Skipped).To(Equal(0))
@@ -119,7 +119,7 @@ var _ = Describe("Prune", func() {
 
 	Context("When stale set is empty", func() {
 		It("should be a no-op and return zero counts", func() {
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, nil, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, nil, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(0))
 			Expect(result.Skipped).To(Equal(0))
@@ -135,7 +135,7 @@ var _ = Describe("Prune", func() {
 				Name:    "prune-test-crd.example.com",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(0))
 			Expect(result.Skipped).To(Equal(1))
@@ -171,7 +171,7 @@ var _ = Describe("Prune", func() {
 			}
 
 			By("pruning the mixed stale set")
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(1))
 			Expect(result.Skipped).To(Equal(1))
@@ -239,7 +239,7 @@ var _ = Describe("Prune", func() {
 			}
 
 			By("pruning with the failing client")
-			result, err := apply.Prune(ctx, failingClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, failingClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("injected delete failure"))
 			Expect(result.Deleted).To(Equal(1))
@@ -281,7 +281,7 @@ var _ = Describe("Prune", func() {
 				Name:      "prune-foreign-cm",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(0))
 			Expect(result.Skipped).To(Equal(1))
@@ -321,7 +321,7 @@ var _ = Describe("Prune", func() {
 				Name:      "prune-cross-mr-cm",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(0))
 			Expect(result.Skipped).To(Equal(1))
@@ -357,7 +357,7 @@ var _ = Describe("Prune", func() {
 				Name:      "prune-owned-cm",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(1))
 			Expect(result.Skipped).To(Equal(0))
@@ -394,7 +394,7 @@ var _ = Describe("Prune", func() {
 				Name:      "prune-legacy-cm",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(1))
 			Expect(result.Skipped).To(Equal(0))
@@ -423,7 +423,7 @@ var _ = Describe("Prune", func() {
 				Name:      "prune-cli-handoff-cm",
 			}}
 
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Deleted).To(Equal(1))
 			Expect(result.Skipped).To(Equal(0))

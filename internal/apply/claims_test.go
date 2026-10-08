@@ -10,9 +10,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func unstructuredOf(group, kind, name string) *unstructured.Unstructured {
@@ -48,7 +50,7 @@ func TestClaimGuardDelete(t *testing.T) {
 				ctx = allowClaimDeletion(ctx)
 			}
 
-			err := claimGuard{inner}.Delete(ctx, tt.obj)
+			err := deleteGuard{inner}.Delete(ctx, tt.obj)
 			conflict, isConflict := errors.AsType[*ClaimConflictError](err)
 			if isConflict != tt.refused {
 				t.Fatalf("Delete error = %v, refused = %v, want refused = %v", err, isConflict, tt.refused)
@@ -69,27 +71,98 @@ func TestClaimGuardDelete(t *testing.T) {
 	}
 }
 
-func TestClaimGuardDeleteAllOf(t *testing.T) {
+// A delete of a collection cannot name the objects that were read, so the
+// resource manager's client refuses it for every kind, also under a context
+// that allows the deletion of claims.
+func TestDeleteGuardRefusesDeleteAllOf(t *testing.T) {
 	deletes := 0
-	guard := claimGuard{countingDeletes{Client: fake.NewClientBuilder().Build(), deletes: &deletes}}
+	guard := deleteGuard{countingDeletes{Client: fake.NewClientBuilder().Build(), deletes: &deletes}}
 
-	err := guard.DeleteAllOf(context.Background(), &corev1.PersistentVolumeClaim{}, client.InNamespace("default"))
-	if _, ok := errors.AsType[*ClaimConflictError](err); !ok {
-		t.Fatalf("DeleteAllOf of claims = %v, want a ClaimConflictError", err)
+	for _, tt := range []struct {
+		name string
+		ctx  context.Context
+		obj  client.Object
+	}{
+		{"claims", context.Background(), &corev1.PersistentVolumeClaim{}},
+		{"claims under a context that allows their deletion", allowClaimDeletion(context.Background()), &corev1.PersistentVolumeClaim{}},
+		{"config maps", context.Background(), &corev1.ConfigMap{}},
+		{"an unstructured kind", context.Background(), unstructuredOf("example.com", "Widget", "")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := guard.DeleteAllOf(tt.ctx, tt.obj, client.InNamespace("default"))
+			if !errors.Is(err, ErrCollectionDelete) {
+				t.Fatalf("DeleteAllOf = %v, want ErrCollectionDelete", err)
+			}
+		})
 	}
 	if deletes != 0 {
 		t.Fatalf("a refused DeleteAllOf reached the API %d time(s)", deletes)
 	}
-	if err := guard.DeleteAllOf(allowClaimDeletion(context.Background()),
-		&corev1.PersistentVolumeClaim{}, client.InNamespace("default")); err != nil {
-		t.Fatalf("DeleteAllOf under a context that allows it: %v", err)
+}
+
+// The guard sends a delete with a precondition on the UID of the object it
+// is handed, after the claim rule, and without one for an object that has no
+// UID. A Conflict answer is the refusal on that precondition.
+func TestDeleteGuardUIDPrecondition(t *testing.T) {
+	withUID := func(obj *unstructured.Unstructured, uid string) *unstructured.Unstructured {
+		obj.SetUID(types.UID(uid))
+		return obj
 	}
-	if err := guard.DeleteAllOf(context.Background(), &corev1.ConfigMap{}, client.InNamespace("default")); err != nil {
-		t.Fatalf("DeleteAllOf of another kind: %v", err)
+	tests := []struct {
+		name    string
+		obj     client.Object
+		ctx     context.Context
+		wantUID string
+	}{
+		{"config map", withUID(unstructuredOf("", "ConfigMap", "settings"), "u-1"), context.Background(), "u-1"},
+		{"claim under a context that allows it", withUID(unstructuredOf("", "PersistentVolumeClaim", "data"), "u-2"),
+			allowClaimDeletion(context.Background()), "u-2"},
+		{"object without a UID", unstructuredOf("", "ConfigMap", "settings"), context.Background(), ""},
 	}
-	if deletes != 2 {
-		t.Fatalf("the allowed calls reached the API %d time(s), want 2", deletes)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got *client.DeleteOptions
+			inner := interceptor.NewClient(fake.NewClientBuilder().Build(), interceptor.Funcs{
+				Delete: func(_ context.Context, _ client.WithWatch, _ client.Object, opts ...client.DeleteOption) error {
+					got = (&client.DeleteOptions{}).ApplyOptions(opts)
+					return nil
+				},
+			})
+			// A caller's own precondition never replaces the guard's.
+			other := types.UID("someone-else")
+			if err := (deleteGuard{inner}).Delete(tt.ctx, tt.obj, client.Preconditions{UID: &other},
+				client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if got == nil {
+				t.Fatal("the delete did not reach the API")
+			}
+			if got.PropagationPolicy == nil || *got.PropagationPolicy != metav1.DeletePropagationBackground {
+				t.Fatalf("the caller's propagation policy was lost: %+v", got)
+			}
+			if tt.wantUID == "" {
+				if got.Preconditions == nil || got.Preconditions.UID == nil || *got.Preconditions.UID != other {
+					t.Fatalf("preconditions = %+v, want the caller's options unchanged", got.Preconditions)
+				}
+				return
+			}
+			if got.Preconditions == nil || got.Preconditions.UID == nil || string(*got.Preconditions.UID) != tt.wantUID {
+				t.Fatalf("preconditions = %+v, want UID %s", got.Preconditions, tt.wantUID)
+			}
+		})
 	}
+
+	t.Run("a Conflict answer is ErrReplaced", func(t *testing.T) {
+		inner := interceptor.NewClient(fake.NewClientBuilder().Build(), interceptor.Funcs{
+			Delete: func(context.Context, client.WithWatch, client.Object, ...client.DeleteOption) error {
+				return apierrors.NewConflict(schema.GroupResource{Resource: "configmaps"}, "settings", errors.New("precondition failed"))
+			},
+		})
+		err := deleteGuard{inner}.Delete(context.Background(), withUID(unstructuredOf("", "ConfigMap", "settings"), "u-1"))
+		if !errors.Is(err, ErrReplaced) || !apierrors.IsConflict(err) {
+			t.Fatalf("Delete = %v, want ErrReplaced with the API status", err)
+		}
+	})
 }
 
 // countingDeletes counts the delete calls that reach it and deletes nothing.

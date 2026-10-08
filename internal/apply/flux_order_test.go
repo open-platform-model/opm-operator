@@ -345,6 +345,25 @@ func TestFluxOrderComparisonCanFail(t *testing.T) {
 		}
 	})
 
+	t.Run("a Flux order that names a new kind", func(t *testing.T) {
+		original := fluxssa.ReconcileOrder.First
+		fluxssa.ReconcileOrder.First = append([]string{"Gadget"}, original...)
+		t.Cleanup(func() { fluxssa.ReconcileOrder.First = original })
+
+		// The universe is built after the change: the new kind enters it
+		// from Flux's order alone, and it has no group of its own here.
+		universe, withoutOwnGroup := fluxOrderUniverse()
+		if !slices.Contains(withoutOwnGroup, "Gadget") {
+			t.Fatalf("want Gadget reported as a kind without its own group, got %v", withoutOwnGroup)
+		}
+		gadget := schema.GroupKind{Group: groupBefore, Kind: "Gadget"}
+		binding := schema.GroupKind{Group: "rbac.authorization.k8s.io", Kind: "ClusterRoleBinding"}
+		got := compareOrders(stagedOrder(universe, fluxssa.DefaultApplyOptions()), libobject.Weight)
+		if !hasPair(got.contradictions, gadget, binding) {
+			t.Fatalf("want the pair Gadget before ClusterRoleBinding, got %v", got.contradictions)
+		}
+	})
+
 	t.Run("a custom stage", func(t *testing.T) {
 		universe, _ := fluxOrderUniverse()
 		job := schema.GroupKind{Group: "batch", Kind: "Job"}

@@ -33,6 +33,6 @@ None.
 - Code: `internal/reconcile/moduleinstance.go` (owner-skip gate), `internal/controller/moduleinstance_controller.go` (predicate, ServiceAccount watch, RBAC marker).
 - Generated: `config/rbac/role.yaml`, `dist/install.yaml`, `modules/opm_operator/zz_generated_rbac.cue`.
 - Controllers: `ModuleInstance` only. API types: none.
-- Deployment: an operator of this release needs the new ClusterRole. With the old role the ServiceAccount informer cannot sync and the `ModuleInstance` controller does not start. Every shipped form of the role (kustomize, install manifest, operator module) carries the rule.
+- Deployment: an operator of this release needs the new ClusterRole. With the old role the ServiceAccount informer cannot sync, the `ModuleInstance` controller fails to start after the cache sync timeout (2 minutes), the manager returns that error and the operator process exits. It then restarts and fails the same way, so no controller of the operator works until the role is updated. Every shipped form of the role (kustomize, install manifest, operator module) carries the rule.
 - SemVer: PATCH (a bug fix with no API change); the beta line ships it as the next `-beta.N`.
 - Docs: the deletion pages under `docs/site/operating/` and `docs/RENDERING.md` or the ADR index where they name the wait.

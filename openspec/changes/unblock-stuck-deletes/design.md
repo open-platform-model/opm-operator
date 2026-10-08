@@ -71,6 +71,8 @@ Watches(&corev1.ServiceAccount{},
 
 The reconcile that follows reads the ServiceAccount with the uncached reader, so it cannot run ahead of the cache.
 
+The trigger is the ServiceAccount alone. When a user creates the ServiceAccount before the RBAC that lets it delete the inventory, the woken prune is forbidden and the delete stalls again, with `ImpersonationFailed`, until the stalled recheck. The order "RBAC first, ServiceAccount last" recovers at once; the docs name it. A retry after a forbidden prune is requeue logic and is not part of this change.
+
 At start every existing ServiceAccount arrives as a create. Each costs one cached list of its namespace; the instances it enqueues are in the queue already from their own initial list, and the workqueue deduplicates.
 
 ### RBAC: `list` and `watch` on `serviceaccounts`
@@ -93,11 +95,11 @@ This is a security trade-off for the owner (see Risks). The read is of ServiceAc
 **Context**: opm-operator#261 (ADR-019) added a periodic reconcile. The brief asks what it covers here.
 **Explored**: `instanceRequeue` and its callers, the returns of `handleNotReconciled`, `handleDeletion` and `handleDeletionImpersonationFailure` in `internal/reconcile/moduleinstance.go`.
 **Decision**: nothing in this change can be dropped because of it.
-**Rationale**: `instanceRequeue` is applied to a reconcile that ended well (apply, NoOp, skipped render). A CLI-owned instance returns `ctrl.Result{}` from the gate, and a reconcile would release nothing anyway. A stalled delete returns `StalledRecheckInterval` (30 minutes), not the 10 minute instance interval. What #261 does give: an instance stalled on the apply path is not helped either (it also returns the stalled recheck), so the ServiceAccount watch is the only prompt trigger there too.
+**Rationale**: `instanceRequeue` is applied to a reconcile that ended well (apply, NoOp, skipped render). A CLI-owned instance returns `ctrl.Result{}` from the gate, and a reconcile would release nothing anyway. A stalled delete returns `StalledRecheckInterval` (30 minutes), not the 10 minute instance interval. An instance stalled on the apply path is not helped by #261 either: it also returns the stalled recheck, so the ServiceAccount watch is the only prompt trigger there too.
 
 ## Risks / Trade-offs
 
-- [An operator of this release running under the old ClusterRole cannot sync the ServiceAccount informer; the `ModuleInstance` controller then fails to start] → every shipped form of the role carries the rule in the same commit, and the operator module's RBAC is generated from `config/`. An install that pins the image and hand-maintains RBAC must add the rule. Named in the PR body.
+- [An operator of this release running under the old ClusterRole cannot sync the ServiceAccount informer. The `ModuleInstance` controller fails to start after the 2 minute cache sync timeout, `mgr.Start` returns the error and the process exits (`cmd/main.go`). The pod restarts and repeats this, so all four controllers stop, not only this one] → every shipped form of the role carries the rule in the same commit, and the operator module's RBAC is generated from `config/`. An install that pins the image and hand-maintains RBAC must add the rule. Named in the PR body.
 - [The operator can now list ServiceAccount metadata cluster-wide] → no write verb, metadata only in the cache; weaker than the `impersonate` it already holds. Owner question in the swarm report.
 - [A user who can edit `spec.owner` and delete the instance orphans its objects] → the same user can already set `spec.prune: false` and delete; no new power.
 - [Memory for the ServiceAccount cache on a large cluster] → metadata only; a ServiceAccount's metadata is small.

@@ -26,8 +26,10 @@ func IsServiceAccountNotFound(err error) bool {
 // can stall the reconcile.
 //
 // reader is used only for the SA existence check. Pass an uncached reader
-// (e.g. manager.GetAPIReader()) so that a single Get does not provision a
-// cluster-wide ServiceAccount informer and thereby require list/watch RBAC.
+// (e.g. manager.GetAPIReader()): the check then reads the apiserver, so a
+// reconcile woken by the creation of the ServiceAccount cannot run ahead of a
+// cache, and a typed Get does not open a second, full-object ServiceAccount
+// informer beside the metadata-only one of the ModuleInstance controller.
 // scheme is used to build the impersonated client.
 //
 // The returned client is suitable for Apply and Prune operations scoped to

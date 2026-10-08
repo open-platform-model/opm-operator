@@ -18,7 +18,7 @@ Rationale: only the operator removes its finalizer, and the owner-skip gate is t
 
 #### Scenario: Deleting a CLI-owned instance is a no-op for the operator
 
-- **GIVEN** a `ModuleInstance` with `spec.owner == cli` and a non-zero `DeletionTimestamp`
+- **GIVEN** a `ModuleInstance` with `spec.owner == cli`, no `opmodel.dev/cleanup` finalizer and a non-zero `DeletionTimestamp`
 - **WHEN** the controller reconciles it
 - **THEN** the controller prunes no resources
 - **AND** the controller does not block deletion (no finalizer was ever added)

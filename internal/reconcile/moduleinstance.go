@@ -1290,7 +1290,7 @@ func handleDeletion(
 		deleteClient = impClient
 	}
 
-	pruneResult, err := apply.Prune(ctx, deleteClient, mi.Status.InstanceUUID, mi.Status.Inventory.Entries,
+	pruneResult, err := apply.Prune(ctx, deleteClient, recordedIdentities(mi.Status.InstanceUUID), mi.Status.Inventory.Entries,
 		apply.PruneOptions{DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		if effectiveSA != "" && isForbidden(err) {
@@ -1466,7 +1466,7 @@ func pruneStaleResources(
 		return Applied, true, 0, nil
 	}
 	log := logf.FromContext(ctx)
-	pruneResult, err := apply.Prune(ctx, c, mi.Status.InstanceUUID, staleSet,
+	pruneResult, err := apply.Prune(ctx, c, recordedIdentities(mi.Status.InstanceUUID), staleSet,
 		apply.PruneOptions{DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		recorder.Eventf(mi, nil, corev1.EventTypeWarning, status.PruneFailedReason, "Prune", "%s", err)

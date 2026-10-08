@@ -759,7 +759,7 @@ func applyAndPruneModulePackage(
 	if pkg.Spec.Prune && len(staleSet) > 0 {
 		// ModulePackage does not persist an instance UUID on Status; pass empty and rely
 		// on the managed-by check in the prune guard.
-		pruneResult, pruneErr := apply.Prune(ctx, applyClient, "", staleSet,
+		pruneResult, pruneErr := apply.Prune(ctx, applyClient, nil, staleSet,
 			apply.PruneOptions{DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
 		if pruneErr != nil {
 			phases.pruneFailed = true
@@ -942,7 +942,7 @@ func handleModulePackageDeletion(ctx context.Context, params *ModulePackageParam
 		deleteClient = impClient
 	}
 
-	pruneResult, err := apply.Prune(ctx, deleteClient, "", pkg.Status.Inventory.Entries,
+	pruneResult, err := apply.Prune(ctx, deleteClient, nil, pkg.Status.Inventory.Entries,
 		apply.PruneOptions{DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		if effectiveSA != "" && isForbidden(err) {

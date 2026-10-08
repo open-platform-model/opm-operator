@@ -212,7 +212,9 @@ func nameObjects(names []string) string {
 // apply, between healthRequeueFloor and healthRequeueCeiling: quickly just
 // after an apply, and settling at the ceiling for a long rollout. It needs no
 // counter, so it survives a restart. A stalled Deployment waits the stalled
-// recheck interval, and a rolled-out or empty inventory does not requeue.
+// recheck interval, and a rolled-out or empty inventory asks for no requeue:
+// the caller then requeues on its own interval (instanceRequeue,
+// packageRequeue).
 func healthRequeue(v healthVerdict, lastAppliedAt *metav1.Time, now time.Time) time.Duration {
 	switch v.requeue {
 	case healthStalled:

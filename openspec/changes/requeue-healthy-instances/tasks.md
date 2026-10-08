@@ -1,10 +1,10 @@
 ## 1. Periodic requeue of a healthy ModuleInstance
 
-- [ ] 1.1 Add `instanceRequeue` and `requeueJitter` in `internal/reconcile/moduleinstance.go`, `ReconcileInterval` on `ModuleInstanceParams`, and use it on the three healthy returns (NoOp, apply, skipped render); verify with a unit test of `instanceRequeue` (health requeue wins, `0` disables, the result is in `[interval, 1.1 x interval]`)
-- [ ] 1.2 Add `ReconcileInterval` to `ModuleInstanceReconciler`, pass it in `Reconcile`, add the flag `--instance-reconcile-interval` (default 10m, negative refused, logged at start) in `cmd/main.go`; verify with a flag test in `cmd/flags_test.go` beside the drift render interval one
-- [ ] 1.3 Add envtest specs in `internal/controller`: the apply, the NoOp and the skipped render requeue within `[interval, 1.1 x interval]`; a suspended and a CLI-owned instance return no requeue with the interval set; a skipped periodic reconcile sends no write (`patchCountingClient`) and calls no render; verify they fail without 1.1
-- [ ] 1.4 Update the comments that say ModuleInstance is watch-only on the happy path (`internal/reconcile/outcome.go`, `healthRequeue` doc, the `--drift-render-interval` help text)
-- [ ] 1.5 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): requeue a healthy module instance on a fixed interval`
+- [x] 1.1 Add `instanceRequeue` and `requeueJitter` in `internal/reconcile/moduleinstance.go`, `ReconcileInterval` on `ModuleInstanceParams`, and use it on the three healthy returns (NoOp, apply, skipped render); verify with a unit test of `instanceRequeue` (health requeue wins, `0` disables, the result is in `[interval, 1.1 x interval]`)
+- [x] 1.2 Add `ReconcileInterval` to `ModuleInstanceReconciler`, pass it in `Reconcile`, add the flag `--instance-reconcile-interval` (default 10m, negative refused, logged at start) in `cmd/main.go`; verify with a flag test in `cmd/flags_test.go` beside the drift render interval one
+- [x] 1.3 Add envtest specs in `internal/controller`: the apply, the NoOp and the skipped render requeue within `[interval, 1.1 x interval]`; a suspended and a CLI-owned instance return no requeue with the interval set; a skipped periodic reconcile sends no write (`patchCountingClient`) and calls no render; verify they fail without 1.1
+- [x] 1.4 Update the comments that say ModuleInstance is watch-only on the happy path (`internal/reconcile/outcome.go`, `healthRequeue` doc, the `--drift-render-interval` help text)
+- [x] 1.5 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): requeue a healthy module instance on a fixed interval`
 
 ## 2. Restore of missing objects
 

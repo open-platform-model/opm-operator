@@ -100,6 +100,11 @@ type ModuleInstanceReconciler struct {
 	// disables the render skip and the record of the key on a NoOp.
 	DriftRenderInterval time.Duration
 
+	// ReconcileInterval is the manager's --instance-reconcile-interval: a
+	// healthy instance is reconciled again after it. Zero disables the
+	// periodic requeue.
+	ReconcileInterval time.Duration
+
 	// warnings remembers each instance's last render warnings so RenderWarning
 	// events are emitted on transition only (0019:D18).
 	warnings opmreconcile.WarningTracker
@@ -135,10 +140,15 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		OperatorVersion:       r.OperatorVersion,
 		LibraryVersion:        r.LibraryVersion,
 		DriftRenderInterval:   r.DriftRenderInterval,
+		ReconcileInterval:     r.ReconcileInterval,
 	}, req)
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+// Nothing watches the objects an instance applied: a healthy instance is
+// reconciled again on ReconcileInterval, which the reconcile returns as its
+// requeue (ADR-019).
 //
 // Watches:
 //   - ModuleInstance CRs (primary, generation-change predicate)

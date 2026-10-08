@@ -12,6 +12,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -82,6 +83,11 @@ type ModuleInstanceParams struct {
 	// the render that recorded them. Zero disables the skip and the record
 	// of the key on a NoOp.
 	DriftRenderInterval time.Duration
+
+	// ReconcileInterval is the manager's --instance-reconcile-interval: how
+	// long after a reconcile that ended well, and whose health asks for no
+	// requeue, the instance is reconciled again. Zero disables that requeue.
+	ReconcileInterval time.Duration
 
 	// convert exports a render result for apply. Nil, as in production,
 	// means convertRender; tests in this package set it to observe the
@@ -538,7 +544,7 @@ func ReconcileModuleInstance(
 		// Judged before the deferred NoOp commit, which patches it.
 		v := judgeInstanceHealth(ctx, params, &mi, inventoryEntries(mi.Status.Inventory))
 		applyHealth(&mi, v)
-		return ctrl.Result{RequeueAfter: healthRequeue(v, mi.Status.LastAppliedAt, time.Now())}, nil
+		return ctrl.Result{RequeueAfter: instanceRequeue(healthRequeue(v, mi.Status.LastAppliedAt, time.Now()), params.ReconcileInterval)}, nil
 	}
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
@@ -650,7 +656,7 @@ func ReconcileModuleInstance(
 	v := judgeHealth(ctx, appliedReader(effectiveSA, applyClient, params.APIReader, params.Client), newEntries)
 	applyHealth(&mi, v)
 	now := metav1.Now()
-	return ctrl.Result{RequeueAfter: healthRequeue(v, &now, now.Time)}, nil
+	return ctrl.Result{RequeueAfter: instanceRequeue(healthRequeue(v, &now, now.Time), params.ReconcileInterval)}, nil
 }
 
 // judgeInstanceHealth judges entries through the reader of the identity that
@@ -691,7 +697,25 @@ func judgeSkippedInstance(
 	); err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to patch the Healthy condition of a skipped render")
 	}
-	return ctrl.Result{RequeueAfter: healthRequeue(v, mi.Status.LastAppliedAt, time.Now())}
+	return ctrl.Result{RequeueAfter: instanceRequeue(healthRequeue(v, mi.Status.LastAppliedAt, time.Now()), params.ReconcileInterval)}
+}
+
+// requeueJitter is the largest share of the instance reconcile interval that
+// is added to it at random, so instances that reconciled in one burst (an
+// operator start, a Platform change) do not come due together for ever.
+const requeueJitter = 0.1
+
+// instanceRequeue is a ModuleInstance's requeue after a reconcile that ended
+// well: the health requeue when health asks for one, otherwise the instance
+// reconcile interval with up to requeueJitter of it added. A zero or negative
+// interval disables the periodic requeue. Nothing watches the objects an
+// instance applied, so this requeue is what keeps Healthy and Drifted current
+// and lets a deleted object be found (ADR-019).
+func instanceRequeue(healthAfter, interval time.Duration) time.Duration {
+	if healthAfter > 0 || interval <= 0 {
+		return healthAfter
+	}
+	return wait.Jitter(interval, requeueJitter)
 }
 
 // markApplyFailure records a failed apply on the instance and returns the

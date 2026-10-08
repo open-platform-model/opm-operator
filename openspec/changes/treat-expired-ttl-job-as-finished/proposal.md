@@ -7,7 +7,8 @@ A `batch/v1` Job that sets `ttlSecondsAfterFinished` is removed by the cluster a
 - A ModuleInstance reconcile that renders with unchanged digests and learns from the drift dry-run that a rendered Job with a TTL does not exist treats that Job as finished: it is not restored (as before), and it is removed from the entries of `status.inventory`, so no later health judgement reads it. `Healthy` is judged over the remaining entries.
 - A reconcile that would skip its render and reads an inventory Job as absent renders instead, because only the render says whether the Job has a TTL. So an expired Job is classified at the first periodic reconcile after it expired, and a deleted Job without a TTL is created again at that reconcile, not up to one drift render interval later.
 - A Job without a TTL that is missing is restored, as before.
-- A Job with a TTL that was removed before it ran cannot be told from one that finished: the operator records no completion. It is treated as finished and is not created again until the instance's digests change.
+- A Job with a TTL that was removed before it ran, and one that failed before the cluster removed it, cannot be told from one that completed: the operator records no outcome of a Job. Both are treated as finished and are not created again until the instance's digests change. A failed Job therefore stops being reported once it expired.
+- An instance whose only inventory entries were expired Jobs reads `Healthy=Unknown` (`HealthUnknown`, the inventory is empty), as any empty inventory does.
 - `status.inventory.digest` stays the digest of the rendered set, so the removal does not make the next reconcile apply.
 - Docs and ADR-019 state the rule; the sentences that say an expired Job reads `Missing` are corrected.
 
@@ -26,6 +27,7 @@ None.
 - `drift-detection`: the requirement "A missing object is restored" states that an expired Job with a TTL is finished and leaves the inventory, and that an absent inventory Job is classified by a render.
 - `instance-health`: a new requirement that an expired Job with a TTL does not make the instance unhealthy.
 - `render-input-key`: the skip conditions gain one: no inventory Job of a ModuleInstance is absent, unless the last drift detection failed.
+- `inventory-bridge`: the stored inventory digest is the digest of the rendered set, which is not the digest of the listed entries after an expired Job left them.
 - `reconcile-loop-assembly`: "Status always patched" and "Inventory updated only on full success" allow the removal of expired Job entries on a `NoOp` and on a restore.
 
 ## Impact

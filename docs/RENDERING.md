@@ -331,12 +331,18 @@ set is unknown and a render cannot decide; the reconcile then skips, reports
 the Job as `Missing`, and decides at the next render the drift render
 interval forces.
 
-What the operator cannot know: whether the Job completed. It records no
-completion, because a Job can complete and expire between two health checks.
-A Job with a TTL that someone deletes before it ran therefore also counts as
-finished and is not run. Change the instance's values, or delete and create
+What the operator cannot know: how the Job ended. It records no outcome of
+a Job, because a Job can end and expire between two health checks. Two cases
+follow. A Job with a TTL that failed makes the instance `Healthy=False` only
+while the Job exists: when the cluster removes it, the instance no longer
+reports the failure, and the Job is not run again. Read the Job's events and
+logs before its TTL passes, or raise the TTL. A Job with a TTL that someone
+deletes before it ran also counts as finished and is not run. Change the instance's values, or delete and create
 the instance, to run it. A Job without a TTL that is missing is created
-again, and so runs again. A ModulePackage does not have this rule.
+again, and so runs again. An instance that renders nothing but Jobs with a
+TTL has an empty inventory after they expired and reads `Healthy=Unknown`
+with reason `HealthUnknown` ("the inventory is empty"). A ModulePackage does
+not have this rule.
 
 ### Load with one render slot
 

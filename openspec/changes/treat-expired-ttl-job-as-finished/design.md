@@ -30,7 +30,7 @@ See proposal.md for the motivation. The facts that shape the design:
 **Context**: The operator must tell an expired Job from a deleted one.
 **Explored**: (a) Record that a health judgement saw the Job complete. This needs a place to store it (an API field) and misses a Job that completes and expires between two judgements: the health requeue settles at 2 minutes and the catalog TTL is 100 seconds. (b) Use the rendered spec and the cluster state only.
 **Decision**: (b). A Job is expired when the rendered Job sets `spec.ttlSecondsAfterFinished`, the drift dry-run reports that it does not exist, and every digest is unchanged (the reconcile is a `NoOp` or a restore).
-**Rationale**: It needs no stored state and never runs a finished Job twice. What it cannot know: whether the Job completed, failed, or was deleted by hand before it ran. All three read as finished. A Job with a TTL that someone deletes before it ran is therefore not created again until a digest changes. That is the safe direction: the other error runs a migration twice.
+**Rationale**: It needs no stored state and never runs a finished Job twice. What it cannot know: whether the Job completed, failed, or was deleted by hand before it ran. All three read as finished. For a failed Job this means `Healthy` turns from `False` to `True` when the cluster removes the Job (the TTL applies to a failed Job too), and nothing on the instance then says that it failed. Before this change such an instance stayed `Healthy=False`, for the wrong reason (`Missing`). Keeping it `False` needs a record of the Job's last state, which is an API field; the owner decides whether that is wanted. A Job with a TTL that someone deletes before it ran is therefore not created again until a digest changes. That is the safe direction: the other error runs a migration twice.
 
 ### Where the knowledge is kept
 
@@ -82,4 +82,5 @@ kept := withoutExpired(converted.entries, expired)
 - [`inventory.digest` is no longer the digest of `inventory.entries` after a removal] → Stated in the spec. The only readers of the digest compare it with a render (the no-op check, the registration re-judge), which is what it still is.
 - [A Job with a TTL deleted by hand before it ran is not run] → Stated in docs. A spec or values change, or deleting and creating the instance, runs it.
 - [A failed status patch on the `NoOp` leaves the entry] → The next reconcile sees the absent Job and renders again. Bounded by the health requeue (2 minutes).
+- [An instance that renders only Jobs with a TTL has an empty inventory after they expired and reads `Healthy=Unknown`, "the inventory is empty"] → Stated in docs and pinned by a test. It asks for no health requeue. Reading it as rolled out needs the judgement to tell this empty inventory from one that never held anything.
 - [A ModulePackage that applies Jobs still reads `Missing`] → Not in scope; noted in docs as before.

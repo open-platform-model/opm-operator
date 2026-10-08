@@ -369,6 +369,82 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		Expect(get(ctx, nn).Status.History).To(HaveLen(1), "the shortened inventory does not cause an apply")
 	})
 
+	It("treats a Job with a TTL that failed and expired as finished too", func() {
+		ctx := context.Background()
+		createSkipPlatform(ctx)
+		const jobName = "restore-ttl-failed-job"
+		nn, renderer, fresh := jobInstance(ctx, "restore-ttl-failed-mi", jobName, true)
+		r := periodicReconciler(renderer, 30*time.Minute)
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply, records the key
+
+		By("the Job fails and a skipped reconcile reports it")
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: periodicNamespace}, &job)).To(Succeed())
+		now := metav1.Now()
+		job.Status.StartTime = &now
+		job.Status.Failed = 1
+		job.Status.Conditions = []batchv1.JobCondition{
+			{Type: batchv1.JobFailureTarget, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded", LastProbeTime: now, LastTransitionTime: now},
+			{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded", LastProbeTime: now, LastTransitionTime: now},
+		}
+		Expect(k8sClient.Status().Update(ctx, &job)).To(Succeed())
+		reconcileOnce(ctx, r, nn)
+		h := healthy(get(ctx, nn))
+		Expect(h.Status).To(Equal(metav1.ConditionFalse))
+		Expect(h.Message).To(ContainSubstring("Job " + periodicNamespace + "/" + jobName))
+
+		By("the cluster removes the failed Job after its TTL")
+		removeJob(ctx, jobName)
+		fresh()
+		reconcileOnce(ctx, r, nn)
+
+		// The operator records no outcome of a Job, so the failure is no
+		// longer reported once the Job is gone. The Job's own events and
+		// logs are the record of it.
+		Expect(jobExists(ctx, jobName)).To(BeFalse(), "a failed Job is not run again")
+		after := get(ctx, nn)
+		Expect(listsJob(after, jobName)).To(BeFalse())
+		Expect(healthy(after).Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("reads an instance whose only object was an expired Job as HealthUnknown with an empty inventory", func() {
+		ctx := context.Background()
+		const jobName = "restore-only-job"
+		nn := createPeriodicInstance(ctx, "restore-only-job-mi")
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: periodicNamespace},
+			}, client.PropagationPolicy(metav1.DeletePropagationBackground)))).To(Succeed())
+		})
+		renderer := &callCountingRenderer{}
+		renderer.result = &render.RenderResult{
+			Resources:        []*object.Resource{jobResource(jobName, true)},
+			ModuleVersion:    stubModuleVersion,
+			PlatformIdentity: stubPlatformIdentity,
+			SkewPolicy:       stubSkewPolicy,
+		}
+		r := periodicReconciler(renderer, 0)
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply
+		removeJob(ctx, jobName)
+		renderer.result.Resources = []*object.Resource{jobResource(jobName, true)}
+		res := reconcileOnce(ctx, r, nn)
+
+		Expect(jobExists(ctx, jobName)).To(BeFalse())
+		after := get(ctx, nn)
+		Expect(after.Status.Inventory.Entries).To(BeEmpty())
+		Expect(after.Status.Inventory.Count).To(BeZero())
+		h := healthy(after)
+		Expect(h.Status).To(Equal(metav1.ConditionUnknown), "nothing is left to judge")
+		Expect(h.Reason).To(Equal(status.HealthUnknownReason))
+		Expect(h.Message).To(ContainSubstring("the inventory is empty"))
+		Expect(apimeta.IsStatusConditionTrue(after.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		Expect(res.RequeueAfter).To(beThePeriodicRequeue(), "an empty inventory asks for no health requeue")
+	})
+
 	It("creates a missing Job without a TTL again, without waiting for the drift render interval", func() {
 		ctx := context.Background()
 		createSkipPlatform(ctx)

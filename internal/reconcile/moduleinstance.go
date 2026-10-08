@@ -107,7 +107,8 @@ func (p *ModuleInstanceParams) convertFn() func(*render.RenderResult) (*converte
 // commitNoOpStatus is the deferred status commit of a NoOp reconcile. Drift
 // detection ran and may have set or cleared the Drifted condition, and phase
 // counters may need an increment or reset, so they are persisted through a
-// bounded patch; lastAttempted, history and inventory are not touched. A
+// bounded patch; lastAttempted, history and inventory are not touched, except
+// that the entries of expired Jobs leave the inventory (forgetExpiredJobs). A
 // non-nil renderedInputs is recorded as lastAppliedInputs: the NoOp re-proves
 // that the cluster holds what those inputs produce. The caller passes nil
 // when the skip is disabled (noOpInputs).

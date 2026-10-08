@@ -12,6 +12,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
@@ -1257,7 +1258,8 @@ func handleDeletion(
 		deleteClient = impClient
 	}
 
-	pruneResult, err := apply.Prune(ctx, deleteClient, mi.Status.InstanceUUID, mi.Status.Inventory.Entries)
+	pruneResult, err := apply.Prune(ctx, deleteClient, mi.Status.InstanceUUID, mi.Status.Inventory.Entries,
+		apply.PruneOptions{DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		if effectiveSA != "" && isForbidden(err) {
 			log.Error(err, "Impersonation denied during deletion cleanup",
@@ -1278,7 +1280,10 @@ func handleDeletion(
 		return ctrl.Result{}, err
 	}
 	log.Info("Deletion cleanup pruned resources",
-		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)
+		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped, "keptClaims", len(pruneResult.Kept))
+	// Reported before the finalizer goes: afterwards the object, and with it
+	// the inventory that named the claims, no longer exists.
+	reportKeptClaims(params.EventRecorder, mi, "Delete", pruneResult.Kept)
 
 	if err := removeFinalizer(ctx, params.Client, mi); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
@@ -1429,7 +1434,8 @@ func pruneStaleResources(
 		return Applied, true, 0, nil
 	}
 	log := logf.FromContext(ctx)
-	pruneResult, err := apply.Prune(ctx, c, mi.Status.InstanceUUID, staleSet)
+	pruneResult, err := apply.Prune(ctx, c, mi.Status.InstanceUUID, staleSet,
+		apply.PruneOptions{DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		recorder.Eventf(mi, nil, corev1.EventTypeWarning, status.PruneFailedReason, "Prune", "%s", err)
 		if effectiveSA != "" && isForbidden(err) {
@@ -1443,8 +1449,30 @@ func pruneStaleResources(
 		recorder.Eventf(mi, nil, corev1.EventTypeNormal, status.PrunedReason, "Prune",
 			"Pruned %d stale resources", pruneResult.Deleted)
 	}
-	log.Info("Pruned stale resources", "deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)
-	return AppliedAndPruned, true, pruneResult.Deleted, nil
+	reportKeptClaims(recorder, mi, "Prune", pruneResult.Kept)
+	log.Info("Pruned stale resources",
+		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped, "keptClaims", len(pruneResult.Kept))
+	return pruneOutcome(pruneResult), true, pruneResult.Deleted, nil
+}
+
+// pruneOutcome is the outcome of a reconcile whose prune succeeded. A prune
+// that only kept PersistentVolumeClaims deleted nothing, so the reconcile
+// applied and did not prune.
+func pruneOutcome(result *apply.PruneResult) Outcome {
+	if result.Deleted == 0 && len(result.Kept) > 0 {
+		return Applied
+	}
+	return AppliedAndPruned
+}
+
+// reportKeptClaims emits the one ClaimsKept event of a prune (action Prune)
+// or a deletion cleanup (action Delete) that kept PersistentVolumeClaims. It
+// emits nothing when none was kept.
+func reportKeptClaims(recorder events.EventRecorder, obj runtime.Object, action string, kept []releasesv1alpha1.InventoryEntry) {
+	if len(kept) == 0 {
+		return
+	}
+	recorder.Eventf(obj, nil, corev1.EventTypeNormal, status.ClaimsKeptReason, action, "%s", status.ClaimsKeptNote(kept))
 }
 
 // classifyRenderError maps a render error to its status condition and event,

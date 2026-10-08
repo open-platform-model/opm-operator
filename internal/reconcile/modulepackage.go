@@ -754,7 +754,8 @@ func applyAndPruneModulePackage(
 	if pkg.Spec.Prune && len(staleSet) > 0 {
 		// ModulePackage does not persist an instance UUID on Status; pass empty and rely
 		// on the managed-by check in the prune guard.
-		pruneResult, pruneErr := apply.Prune(ctx, applyClient, "", staleSet)
+		pruneResult, pruneErr := apply.Prune(ctx, applyClient, "", staleSet,
+			apply.PruneOptions{DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
 		if pruneErr != nil {
 			phases.pruneFailed = true
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.PruneFailedReason, "Prune", "%s", pruneErr)
@@ -765,7 +766,8 @@ func applyAndPruneModulePackage(
 			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeNormal, status.PrunedReason, "Prune",
 				"Pruned %d stale resources", pruneResult.Deleted)
 		}
-		outcome = AppliedAndPruned
+		reportKeptClaims(params.EventRecorder, pkg, "Prune", pruneResult.Kept)
+		outcome = pruneOutcome(pruneResult)
 	}
 
 	sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
@@ -935,7 +937,8 @@ func handleModulePackageDeletion(ctx context.Context, params *ModulePackageParam
 		deleteClient = impClient
 	}
 
-	pruneResult, err := apply.Prune(ctx, deleteClient, "", pkg.Status.Inventory.Entries)
+	pruneResult, err := apply.Prune(ctx, deleteClient, "", pkg.Status.Inventory.Entries,
+		apply.PruneOptions{DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		if effectiveSA != "" && isForbidden(err) {
 			log.Error(err, "Impersonation denied during deletion cleanup",
@@ -956,7 +959,8 @@ func handleModulePackageDeletion(ctx context.Context, params *ModulePackageParam
 		return ctrl.Result{}, err
 	}
 	log.Info("Deletion cleanup pruned resources",
-		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped)
+		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped, "keptClaims", len(pruneResult.Kept))
+	reportKeptClaims(params.EventRecorder, pkg, "Delete", pruneResult.Kept)
 
 	if err := removeModulePackageFinalizer(ctx, params.Client, pkg); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)

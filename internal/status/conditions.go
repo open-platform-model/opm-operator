@@ -268,8 +268,12 @@ const (
 	// Event-only reasons (no corresponding condition).
 	AppliedReason = "Applied"
 	PrunedReason  = "Pruned"
-	ResumedReason = "Resumed"
-	NoOpReason    = "NoOp"
+	// ClaimsKeptReason is the Normal event of a prune or a deletion cleanup
+	// that left PersistentVolumeClaims in the cluster because spec.dataPolicy
+	// is not Delete.
+	ClaimsKeptReason = "ClaimsKept"
+	ResumedReason    = "Resumed"
+	NoOpReason       = "NoOp"
 	// RenderWarningReason is the Warning event a successful render's advisory
 	// messages (catalog skew under Warn, unhandled optional traits) are
 	// emitted under, once per distinct message when the object's warning set

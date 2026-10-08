@@ -56,9 +56,32 @@ type ModulePackageSpec struct {
 	DependsOn []fluxmeta.NamespacedObjectReference `json:"dependsOn,omitempty"`
 
 	// Prune enables deletion of stale resources on reconcile and of all owned
-	// resources on ModulePackage deletion.
+	// resources on ModulePackage deletion. Namespaces and
+	// CustomResourceDefinitions are never deleted, and PersistentVolumeClaims
+	// are kept unless spec.dataPolicy is Delete.
 	// +optional
 	Prune bool `json:"prune,omitempty"`
+
+	// DataPolicy says what the operator does with the PersistentVolumeClaims it
+	// would otherwise delete under spec.prune. With Keep, or when the field is
+	// absent, the operator does not delete a PersistentVolumeClaim when it
+	// prunes or when the ModulePackage is deleted: a claim that a new render
+	// no longer produces stays in the cluster and is no longer tracked, and
+	// deleting the ModulePackage leaves its claims in place. With
+	// Delete, claims are pruned and deleted like any other object, and the data
+	// on their volumes goes with them under the reclaim policy of the volume.
+	// The field has no effect unless spec.prune is true: Delete without
+	// spec.prune is accepted and deletes nothing. Claims that a StatefulSet
+	// creates from its volumeClaimTemplates are never tracked and never
+	// deleted by the operator, whatever this field says.
+	//
+	// The field covers pruning and deletion only. With
+	// spec.rollout.forceConflicts, an apply that the API server refuses as a
+	// change to an immutable field deletes the object and creates it again, a
+	// PersistentVolumeClaim included, whatever this field says.
+	// +kubebuilder:validation:Enum=Keep;Delete
+	// +optional
+	DataPolicy DataPolicy `json:"dataPolicy,omitempty"`
 
 	// Suspend halts reconciliation when true.
 	// +optional

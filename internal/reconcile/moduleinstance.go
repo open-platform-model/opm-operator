@@ -12,6 +12,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -83,6 +84,11 @@ type ModuleInstanceParams struct {
 	// of the key on a NoOp.
 	DriftRenderInterval time.Duration
 
+	// ReconcileInterval is the manager's --instance-reconcile-interval: how
+	// long after a reconcile that ended well, and whose health asks for no
+	// requeue, the instance is reconciled again. Zero disables that requeue.
+	ReconcileInterval time.Duration
+
 	// convert exports a render result for apply. Nil, as in production,
 	// means convertRender; tests in this package set it to observe the
 	// conversion, for example that it runs while the render slot is held.
@@ -101,7 +107,8 @@ func (p *ModuleInstanceParams) convertFn() func(*render.RenderResult) (*converte
 // commitNoOpStatus is the deferred status commit of a NoOp reconcile. Drift
 // detection ran and may have set or cleared the Drifted condition, and phase
 // counters may need an increment or reset, so they are persisted through a
-// bounded patch; lastAttempted, history and inventory are not touched. A
+// bounded patch; lastAttempted, history and inventory are not touched, except
+// that the entries of expired Jobs leave the inventory (forgetExpiredJobs). A
 // non-nil renderedInputs is recorded as lastAppliedInputs: the NoOp re-proves
 // that the cluster holds what those inputs produce. The caller passes nil
 // when the skip is disabled (noOpInputs).
@@ -260,8 +267,11 @@ func ReconcileModuleInstance(
 	// deferred status commit is armed: a skip is not an attempt, emits no
 	// event and records no reconcile metric. It judges health, so a requeue
 	// waiting for a rollout can observe it, and patches that one condition.
-	if instanceRenderSkippable(ctx, params, &mi) {
-		return judgeSkippedInstance(ctx, params, patcher, &mi), nil
+	//
+	// One judgement cannot be finished without a render: an inventory Job
+	// that is absent. Then the reconcile renders after all.
+	if res, skipped := skipInstanceRender(ctx, params, patcher, &mi); skipped {
+		return res, nil
 	}
 
 	// Track digests and outcome across phases for deferred status commit.
@@ -299,7 +309,8 @@ func ReconcileModuleInstance(
 	// failure counter deltas, clearing nextRetryAt, requiredContracts and,
 	// when this attempt rendered, lastAppliedVersion and (while the skip is
 	// enabled) lastAppliedInputs; lastAttempted/history/inventory are not
-	// touched (they describe meaningful outcomes).
+	// touched (they describe meaningful outcomes), except that the entries
+	// of expired Jobs leave the inventory (forgetExpiredJobs).
 	// Storm-safe: GenerationChangedPredicate on the controller's event filter
 	// prevents status-only patches from triggering watch-driven reconciles.
 	//
@@ -340,8 +351,11 @@ func ReconcileModuleInstance(
 			mi.Status.LastAppliedRenderDigest = digests.Render
 			recordInputs(&mi.Status.LastAppliedInputs, renderedInputs, now)
 
+			// The digest stays that of the rendered set: a restore leaves
+			// expired Jobs out of newEntries, and the next no-op check
+			// compares this digest with the next render.
 			mi.Status.Inventory = nextInventory(mi.Status.Inventory, newEntries)
-			digests.Inventory = mi.Status.Inventory.Digest
+			mi.Status.Inventory.Digest = digests.Inventory
 
 			entry := status.NewSuccessEntry(reconcileAction, "complete", digests, int64(len(newEntries)))
 			status.RecordHistory(&mi.Status, entry)
@@ -529,16 +543,30 @@ func ReconcileModuleInstance(
 	// refusal carries that signal instead. A resource that stops being
 	// withheld re-enters the apply list and is compared again from then on.
 	phases.driftRan = true
-	phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, applyList)
+	var missing []*unstructured.Unstructured
+	missing, phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, applyList)
+
+	// The same dry-run names the rendered objects the cluster lacks. With
+	// unchanged digests they are the only thing to do: restoring applies
+	// them and nothing else, so an object that exists is never rewritten and
+	// the drift just computed stays reported, not corrected (ADR-012,
+	// ADR-019).
+	//
+	// A missing Job with a TTL is not restored: it counts as finished, and
+	// it leaves the inventory so that no health judgement reads it as
+	// Missing.
+	expired := expiredJobs(isNoOp, missing)
+	applyList, isNoOp, restoring := planRestore(ctx, isNoOp, missing, applyList)
 
 	if isNoOp {
 		log.Info("No changes detected, skipping apply")
 		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeNormal, status.NoOpReason, "Reconcile", "No changes detected")
 		outcome = NoOp
+		forgetExpiredJobs(ctx, &mi, expired)
 		// Judged before the deferred NoOp commit, which patches it.
 		v := judgeInstanceHealth(ctx, params, &mi, inventoryEntries(mi.Status.Inventory))
 		applyHealth(&mi, v)
-		return ctrl.Result{RequeueAfter: healthRequeue(v, mi.Status.LastAppliedAt, time.Now())}, nil
+		return ctrl.Result{RequeueAfter: instanceRequeue(healthRequeue(v, mi.Status.LastAppliedAt, time.Now()), params.ReconcileInterval)}, nil
 	}
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
@@ -615,10 +643,13 @@ func ReconcileModuleInstance(
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 
-	// Successful apply resolves any drift.
-	status.ClearDrifted(&mi)
+	// A successful apply of the rendered set resolves any drift. A restore
+	// applied only what was missing, so what drift detection found stands.
+	clearDriftAfterApply(&mi, restoring)
 
-	newEntries = converted.entries
+	// Only a restore has expired Jobs: it records the rendered inventory
+	// without them.
+	newEntries = withoutEntries(converted.entries, expired)
 
 	// Phase 6: Prune stale resources (only if spec.prune=true and apply succeeded).
 	phases.pruneRan = true
@@ -650,7 +681,7 @@ func ReconcileModuleInstance(
 	v := judgeHealth(ctx, appliedReader(effectiveSA, applyClient, params.APIReader, params.Client), newEntries)
 	applyHealth(&mi, v)
 	now := metav1.Now()
-	return ctrl.Result{RequeueAfter: healthRequeue(v, &now, now.Time)}, nil
+	return ctrl.Result{RequeueAfter: instanceRequeue(healthRequeue(v, &now, now.Time), params.ReconcileInterval)}, nil
 }
 
 // judgeInstanceHealth judges entries through the reader of the identity that
@@ -673,25 +704,71 @@ func judgeInstanceHealth(
 	return judgeHealth(ctx, impClient, entries)
 }
 
+// skipInstanceRender skips the render of mi when its inputs are unchanged
+// (instanceRenderSkippable) and the health judgement can be finished without
+// one (judgeSkippedInstance). It reports whether the reconcile is done.
+func skipInstanceRender(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	patcher *patch.SerialPatcher,
+	mi *releasesv1alpha1.ModuleInstance,
+) (ctrl.Result, bool) {
+	if !instanceRenderSkippable(ctx, params, mi) {
+		return ctrl.Result{}, false
+	}
+	return judgeSkippedInstance(ctx, params, patcher, mi)
+}
+
 // judgeSkippedInstance judges the health of a ModuleInstance whose render was
 // skipped and patches the Healthy condition alone; the patch is empty when
 // the judgement did not change it. Nothing else is written: no
 // observedGeneration, no lastAttempted*, no history, no event. A failed
 // patch is logged, and the health requeue is returned either way.
+//
+// It returns false, with nothing written, when the judgement read an
+// inventory Job as absent: the inventory does not say whether the Job sets a
+// TTL, so the caller renders, and the render removes an expired Job from the
+// inventory or restores a deleted one. After either, the next skip finds no
+// absent Job, so this costs one render per Job. While the last drift
+// detection failed a render cannot classify the Job (the missing set is
+// unknown), so the skip stands and the Job is reported Missing; without that
+// bound a failing dry-run would render on every health requeue.
 func judgeSkippedInstance(
 	ctx context.Context,
 	params *ModuleInstanceParams,
 	patcher *patch.SerialPatcher,
 	mi *releasesv1alpha1.ModuleInstance,
-) ctrl.Result {
+) (ctrl.Result, bool) {
 	v := judgeInstanceHealth(ctx, params, mi, inventoryEntries(mi.Status.Inventory))
+	if v.absentJob && driftFailureCount(mi.Status.FailureCounters) == 0 {
+		logf.FromContext(ctx).Info("An inventory Job is absent, rendering to classify it")
+		return ctrl.Result{}, false
+	}
 	applyHealth(mi, v)
 	if err := patcher.Patch(ctx, mi,
 		patch.WithOwnedConditions{Conditions: []string{status.HealthyCondition}},
 	); err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to patch the Healthy condition of a skipped render")
 	}
-	return ctrl.Result{RequeueAfter: healthRequeue(v, mi.Status.LastAppliedAt, time.Now())}
+	return ctrl.Result{RequeueAfter: instanceRequeue(healthRequeue(v, mi.Status.LastAppliedAt, time.Now()), params.ReconcileInterval)}, true
+}
+
+// requeueJitter is the largest share of the instance reconcile interval that
+// is added to it at random, so instances that reconciled in one burst (an
+// operator start, a Platform change) do not come due together for ever.
+const requeueJitter = 0.1
+
+// instanceRequeue is a ModuleInstance's requeue after a reconcile that ended
+// well: the health requeue when health asks for one, otherwise the instance
+// reconcile interval with up to requeueJitter of it added. A zero or negative
+// interval disables the periodic requeue. Nothing watches the objects an
+// instance applied, so this requeue is what keeps Healthy and Drifted current
+// and lets a deleted object be found (ADR-019).
+func instanceRequeue(healthAfter, interval time.Duration) time.Duration {
+	if healthAfter > 0 || interval <= 0 {
+		return healthAfter
+	}
+	return wait.Jitter(interval, requeueJitter)
 }
 
 // markApplyFailure records a failed apply on the instance and returns the
@@ -783,7 +860,9 @@ func updateFailureCounters(
 }
 
 // detectDrift runs SSA dry-run drift detection and updates status accordingly.
-// Returns true if drift detection failed (API error).
+// It returns the resources that do not exist on the cluster, and true if
+// drift detection failed (API error); a failure leaves the missing set
+// unknown, so it returns none.
 // On drift: sets Drifted=True. On no drift: clears Drifted condition.
 // Counter updates are deferred to Phase 7 based on the returned bool.
 // Drift detection failure is non-blocking.
@@ -792,12 +871,12 @@ func detectDrift(
 	rm *fluxssa.ResourceManager,
 	mi *releasesv1alpha1.ModuleInstance,
 	resources []*unstructured.Unstructured,
-) bool {
+) (missing []*unstructured.Unstructured, failed bool) {
 	log := logf.FromContext(ctx)
 	driftResult, err := apply.DetectDrift(ctx, rm, resources)
 	if err != nil {
 		log.Error(err, "Drift detection failed, continuing reconcile")
-		return true
+		return nil, true
 	}
 	if driftResult.Drifted {
 		log.Info("Drift detected", "driftedResources", len(driftResult.Resources))
@@ -805,7 +884,97 @@ func detectDrift(
 	} else {
 		status.ClearDrifted(mi)
 	}
-	return false
+	return driftResult.Missing, false
+}
+
+// planRestore turns a reconcile with unchanged digests into a restore when
+// rendered resources are missing from the cluster. It returns the list to
+// apply, whether the reconcile is still a no-op, and whether it restores: a
+// restore applies the restorable missing resources (apply.Restorable) and
+// nothing else. A
+// reconcile that was not a no-op, or that misses nothing restorable, is
+// returned as it came.
+func planRestore(
+	ctx context.Context,
+	isNoOp bool,
+	missing, applyList []*unstructured.Unstructured,
+) (toApply []*unstructured.Unstructured, noOp, restoring bool) {
+	if !isNoOp {
+		return applyList, false, false
+	}
+	restore := apply.Restorable(missing)
+	if len(restore) == 0 {
+		return applyList, true, false
+	}
+	logf.FromContext(ctx).Info("Restoring missing resources", "missing", len(restore))
+	return restore, false, true
+}
+
+// expiredJobs returns the missing Jobs that count as finished
+// (apply.Expired) on a reconcile with unchanged digests. With changed digests
+// there are none: the apply creates every rendered object.
+func expiredJobs(digestsUnchanged bool, missing []*unstructured.Unstructured) []*unstructured.Unstructured {
+	if !digestsUnchanged {
+		return nil
+	}
+	return apply.Expired(missing)
+}
+
+// withoutEntries returns entries without those that name one of objs, in
+// order. It returns entries itself when objs is empty.
+func withoutEntries(entries []releasesv1alpha1.InventoryEntry, objs []*unstructured.Unstructured) []releasesv1alpha1.InventoryEntry {
+	if len(objs) == 0 {
+		return entries
+	}
+	type key struct{ group, kind, namespace, name string }
+	drop := make(map[key]struct{}, len(objs))
+	for _, obj := range objs {
+		e := entryOf(obj)
+		drop[key{e.Group, e.Kind, e.Namespace, e.Name}] = struct{}{}
+	}
+	kept := make([]releasesv1alpha1.InventoryEntry, 0, len(entries))
+	for _, e := range entries {
+		if _, ok := drop[key{e.Group, e.Kind, e.Namespace, e.Name}]; !ok {
+			kept = append(kept, e)
+		}
+	}
+	return kept
+}
+
+// forgetExpiredJobs removes the expired Jobs from the entries of mi's
+// inventory on a NoOp, so that no later health judgement reads them as
+// Missing. The digest and the revision stay: the digest is that of the
+// rendered set, which the next no-op check compares with the next render, and
+// nothing was applied.
+func forgetExpiredJobs(ctx context.Context, mi *releasesv1alpha1.ModuleInstance, expired []*unstructured.Unstructured) {
+	inv := mi.Status.Inventory
+	if inv == nil {
+		return
+	}
+	kept := withoutEntries(inv.Entries, expired)
+	if len(kept) == len(inv.Entries) {
+		return
+	}
+	logf.FromContext(ctx).Info("Removing finished Jobs from the inventory", "jobs", len(inv.Entries)-len(kept))
+	inv.Entries = kept
+	inv.Count = int64(len(kept))
+}
+
+// driftFailureCount returns the current drift failure count, or 0 if counters are nil.
+func driftFailureCount(counters *releasesv1alpha1.FailureCounters) int64 {
+	if counters == nil {
+		return 0
+	}
+	return counters.Drift
+}
+
+// clearDriftAfterApply clears the Drifted condition after a successful apply
+// of the rendered set. A restore leaves it: the drifted resources were not
+// applied.
+func clearDriftAfterApply(mi *releasesv1alpha1.ModuleInstance, restoring bool) {
+	if !restoring {
+		status.ClearDrifted(mi)
+	}
 }
 
 // reconcileFailureCount returns the current reconcile failure count, or 0 if counters are nil.

@@ -7,8 +7,9 @@ type Outcome int
 const (
 	// NoOp — all four digests match last applied. Ready=True, Reconciling=False.
 	// Requeue: watch-driven, plus the controller's periodic interval where one
-	// applies (ModulePackage requeues on spec.interval; ModuleInstance and
-	// Platform are watch-only on the happy path today).
+	// applies (ModulePackage requeues on spec.interval, ModuleInstance on the
+	// operator's --instance-reconcile-interval; Platform is watch-only on the
+	// happy path).
 	NoOp Outcome = iota
 
 	// Applied — resources applied successfully (no prune needed or prune disabled).

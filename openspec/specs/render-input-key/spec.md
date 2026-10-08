@@ -72,7 +72,10 @@ Before rendering, a ModuleInstance or ModulePackage reconcile SHALL compute the 
 - `Ready` is `True` with reason `ReconciliationSucceeded`;
 - `status.observedGeneration` equals `metadata.generation`;
 - the key is complete and its digest equals `status.lastAppliedInputs.digest`;
-- for a ModulePackage, the source just resolved (ref, artifact revision, digest and URL) equals `status.source`.
+- for a ModulePackage, the source just resolved (ref, artifact revision, digest and URL) equals `status.source`;
+- for a ModuleInstance, the health judgement of this reconcile read no `batch` Job of `status.inventory` as absent, or `status.failureCounters.drift` is greater than zero.
+
+The last condition exists because only a render tells whether an absent Job is expired or must be restored (`drift-detection`, "A missing object is restored"). A reconcile that renders for it has judged health once without a patch; the render then judges again. While the last drift detection failed, the missing set is unknown and a render cannot classify the Job, so the reconcile skips and reports the Job as `Missing`.
 
 A skipped reconcile SHALL NOT take a render slot, lease the platform, fetch the source artifact, render, run drift detection, apply, prune or emit an event. It is not a reconcile attempt: it records no outcome, no history and no `lastAttempted*`, and it SHALL NOT move `renderedAt`. It SHALL judge health over `status.inventory` (`instance-health`), and its only status patch SHALL be a changed `Healthy` condition. A skipped ModuleInstance reconcile SHALL return without a requeue unless health asks for one; a skipped ModulePackage reconcile SHALL requeue after `spec.interval`, as a `NoOp` does, or sooner when health asks for it.
 
@@ -114,6 +117,16 @@ Rationale: a render is the most expensive step of a reconcile, and when every in
 
 - **WHEN** a Ready ModuleInstance whose recorded key matches its current inputs is `NotRolledOut` and its render is skipped
 - **THEN** the renderer is not called, health is judged, and the reconcile requeues after the health requeue
+
+#### Scenario: An absent inventory Job forces a render
+
+- **WHEN** a Ready ModuleInstance whose recorded key matches its current inputs has a Job in `status.inventory` that does not exist, and `status.failureCounters.drift` is zero
+- **THEN** the reconcile renders and runs drift detection, although the drift render interval has not passed
+
+#### Scenario: An absent inventory Job after a failed drift detection
+
+- **WHEN** the same instance has `status.failureCounters.drift` greater than zero
+- **THEN** the reconcile skips its render, and `Healthy` is `False` with reason `NotRolledOut` and names the Job as `Missing`
 
 ### Requirement: The drift render interval bounds how long a render is skipped
 

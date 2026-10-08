@@ -174,11 +174,12 @@ event; it logs `Render inputs unchanged, skipping render` with the time from
 which the object renders again. Its only status write is the `Healthy`
 judgement: it reads the objects in `status.inventory` (and, under
 impersonation, the ServiceAccount) through the identity that applied them,
-and patches the `Healthy` condition alone, only when the judgement changed it. A skipped ModuleInstance requeues only when health asks
+and patches the `Healthy` condition alone, only when the judgement changed it. A skipped ModuleInstance requeues when health asks
 for it (half the time since `lastAppliedAt`, 5 seconds to 2 minutes, while it
-has not rolled out; 30 minutes after a Deployment's progress deadline); a
-skipped ModulePackage requeues on its `spec.interval`, or sooner when health
-asks for it.
+has not rolled out; 30 minutes after a Deployment's progress deadline), and
+otherwise on `--instance-reconcile-interval` (see "What reconciles a healthy
+ModuleInstance"); a skipped ModulePackage requeues on its `spec.interval`, or
+sooner when health asks for it.
 
 Every health requeue of an object that has not rolled out renders when the
 skip cannot apply: with `--drift-render-interval=0`, and while
@@ -195,6 +196,7 @@ newer than the ones the cluster holds. A failed, refused or panicking attempt
 leaves it.
 
 The interval is the bound, not a schedule: it starts no reconcile of its own.
+For a healthy ModuleInstance `--instance-reconcile-interval` is the schedule.
 While the inputs do not change, drift is re-evaluated at most once per
 interval per object, on the first reconcile after it. The interval also
 bounds the inputs the key does not name: the operator's `--registry`
@@ -243,6 +245,118 @@ Rules for later changes:
   would not run within the interval. The `Healthy` judgement is such a check:
   it runs in the skip itself, so a requeue waiting for a rollout observes it
   without rendering.
+
+## What reconciles a healthy ModuleInstance
+
+The ModuleInstance controller watches the ModuleInstance (spec changes only)
+and the Platform. It does not watch the objects an instance applied. A
+reconcile that ended well (an apply, a `NoOp` or a skipped render) with
+nothing still rolling out therefore requeues itself after
+`--instance-reconcile-interval` (default `10m`, with up to 10 percent added at
+random so instances that reconciled in one burst spread out). `0` disables
+the periodic reconcile: the instance is then reconciled only by a spec
+change, a Platform change or an operator start. A negative value stops the
+operator at start. The interval is one value for the operator; a
+ModuleInstance has no `spec.interval` (ADR-019). Suspended instances,
+CLI-owned instances and the operator's own instance are not requeued, and a
+failed, stalled or still rolling out instance keeps the requeue of that
+state.
+
+What the periodic reconcile does depends on the render skip above:
+
+| Since the last render | The periodic reconcile | Cost |
+| --- | --- | --- |
+| Less than `--drift-render-interval` | Skips the render and judges health | One uncached read per inventory object; no render slot; a status write only when `Healthy` changed |
+| More | Renders, runs drift detection, restores missing objects, judges health | One render slot for one render, one dry-run per rendered object, one status write (`renderedAt`), one `Normal` event |
+
+So `Healthy` of an unchanged instance is at most one reconcile interval old.
+`Drifted` is at most the drift render interval plus one reconcile interval
+old, because the render happens on the first periodic reconcile after the
+drift render interval: about 41 minutes at the defaults.
+
+### A missing object is created again
+
+A reconcile that renders and finds its digests unchanged does not apply. The
+dry-run of drift detection also tells which rendered objects do not exist on
+the cluster. The reconcile applies those objects, and only those, through
+the identity that applies the instance. It is recorded as an apply: outcome
+`Applied`, a history entry, a new `lastAppliedAt` and inventory revision,
+and health checked from that moment. An object that exists is not applied,
+so drift on it stays reported in `Drifted` and is never corrected (ADR-012).
+
+An object deleted by hand therefore comes back on the first reconcile that
+renders: at the defaults at most about 30 minutes later (the missing object
+keeps the instance on the 2-minute health requeue, so the render is not
+delayed by the reconcile interval). A Job comes back sooner: a reconcile
+that reads an inventory Job as absent does not skip its render (see below),
+so a deleted Job without a TTL is created again on the next reconcile. If the apply of the missing object
+fails, the reconcile is a failed apply like any other: `Ready` turns `False`
+with reason `ApplyFailed` and the instance retries on the backoff. Until then
+`Healthy` is `False` with reason `NotRolledOut` and names the object as
+`Missing`. Lower `--drift-render-interval` for a faster restore, and set
+`spec.suspend` to stop the operator from acting on an instance.
+
+Three cases restore nothing:
+
+- A Job that sets `ttlSecondsAfterFinished` (the opm catalog's Job
+  transformer sets 100 seconds by default). The cluster deletes it after it
+  finished, and to create it again would run it again. See "A Job with a
+  TTL is finished when it is gone" below.
+- A reconcile whose dry-run failed: the missing set is unknown.
+- A ModulePackage. Its `NoOp` does not re-apply a missing object.
+
+With `--drift-render-interval=0` every reconcile renders, so an object that
+something else deletes again after each restore is applied on every health
+requeue, as often as every 5 seconds. Keep the skip enabled where another
+controller may remove rendered objects.
+
+### A Job with a TTL is finished when it is gone
+
+A rendered Job that sets `ttlSecondsAfterFinished` and does not exist, on a
+reconcile whose digests are unchanged, counts as finished and removed by the
+cluster. The reconcile does not create it, and removes it from
+`status.inventory.entries`, so `Healthy` is judged over the objects that are
+left and the instance stays on its reconcile interval. `inventory.digest`
+stays the digest of the rendered set (after the removal it is not the digest
+of the entries listed), and `inventory.revision` does not move. An apply
+after a spec, values or Platform change creates the Job again, runs it, and
+lists it in the inventory again.
+
+The skipped render cannot do this: an inventory entry does not say whether
+the Job sets a TTL. So a reconcile that could skip its render, and reads an
+inventory Job as absent, renders. That costs one render for each Job that
+expired, on the first periodic reconcile after it. If drift detection failed
+on the last render (`status.failureCounters.drift` above zero), the missing
+set is unknown and a render cannot decide; the reconcile then skips, reports
+the Job as `Missing`, and decides at the next render the drift render
+interval forces.
+
+What the operator cannot know: how the Job ended. It records no outcome of
+a Job, because a Job can end and expire between two health checks. Two cases
+follow. A Job with a TTL that failed makes the instance `Healthy=False` only
+while the Job exists: when the cluster removes it, the instance no longer
+reports the failure, and the Job is not run again. Read the Job's events and
+logs before its TTL passes, or raise the TTL. A Job with a TTL that someone
+deletes before it ran also counts as finished and is not run. Change the instance's values, or delete and create
+the instance, to run it. A Job without a TTL that is missing is created
+again, and so runs again. An instance that renders nothing but Jobs with a
+TTL has an empty inventory after they expired and reads `Healthy=Unknown`
+with reason `HealthUnknown` ("the inventory is empty"). A ModulePackage does
+not have this rule.
+
+### Load with one render slot
+
+With the defaults, N healthy instances cost N health judgements per 10
+minutes and N renders per 30 minutes. A Job with a TTL adds one render, on
+the first periodic reconcile after it expired. An instance with a missing
+object that is not restored (the dry-run fails) costs a health judgement
+every 2 minutes instead. With `--max-concurrent-renders=1` the
+renders run one after another, so they fit while N times the render time of
+a module is below the drift render interval: 360 instances at 5 seconds per
+render. Past that the queue of periodic renders does not drain and a render
+for a spec change waits behind it. The remedies are a longer
+`--drift-render-interval`, more render slots (see the memory budget above),
+or `--instance-reconcile-interval=0`.
 
 ## `Platform.spec.skewPolicy`
 

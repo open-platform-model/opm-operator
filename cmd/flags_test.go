@@ -68,3 +68,30 @@ var _ = Describe("--render-timeout", func() {
 		Expect(d).To(Equal(10 * time.Minute))
 	})
 })
+
+var _ = Describe("validateInstanceReconcileInterval", func() {
+	DescribeTable("accepts zero and positive intervals, refuses negative ones",
+		func(d time.Duration, wantErr bool) {
+			err := validateInstanceReconcileInterval(d)
+			if wantErr {
+				Expect(err).To(MatchError(ContainSubstring("--instance-reconcile-interval")))
+				return
+			}
+			Expect(err).NotTo(HaveOccurred())
+		},
+		Entry("the default", defaultInstanceReconcileInterval, false),
+		Entry("zero disables the periodic reconcile", time.Duration(0), false),
+		Entry("negative", -time.Second, true),
+	)
+})
+
+var _ = Describe("--instance-reconcile-interval", func() {
+	It("defaults to ten minutes", func() {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		var d time.Duration
+		registerInstanceReconcileIntervalFlag(fs, &d)
+		Expect(fs.Lookup("instance-reconcile-interval").DefValue).To(Equal("10m0s"))
+		Expect(fs.Parse(nil)).To(Succeed())
+		Expect(d).To(Equal(10 * time.Minute))
+	})
+})

@@ -84,6 +84,7 @@ func main() {
 	var defaultServiceAccount string
 	var maxConcurrentRenders int
 	var driftRenderInterval time.Duration
+	var instanceReconcileInterval time.Duration
 	var renderTimeout time.Duration
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
@@ -139,8 +140,9 @@ func main() {
 			"values, platform package identity, catalog skew policy, operator and library versions) and the "+
 			"object is Ready and has observed its generation. A skipped reconcile renders nothing, runs no "+
 			"drift detection and patches no status, so drift is re-evaluated at most once per interval per "+
-			"unchanged object. The interval schedules no reconcile of its own. 0 disables the skip: every "+
-			"reconcile renders.")
+			"unchanged object. The interval schedules no reconcile of its own (--instance-reconcile-interval "+
+			"does, for a healthy ModuleInstance). 0 disables the skip: every reconcile renders.")
+	registerInstanceReconcileIntervalFlag(flag.CommandLine, &instanceReconcileInterval)
 	registerRenderTimeoutFlag(flag.CommandLine, &renderTimeout)
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
@@ -160,6 +162,10 @@ func main() {
 		setupLog.Error(err, "Invalid flag value", "value", driftRenderInterval.String())
 		os.Exit(1)
 	}
+	if err := validateInstanceReconcileInterval(instanceReconcileInterval); err != nil {
+		setupLog.Error(err, "Invalid flag value", "value", instanceReconcileInterval.String())
+		os.Exit(1)
+	}
 	if err := validateRenderTimeout(renderTimeout); err != nil {
 		setupLog.Error(err, "Invalid flag value", "value", renderTimeout.String())
 		os.Exit(1)
@@ -171,7 +177,8 @@ func main() {
 	operatorVersion := opmversion.Full()
 	libraryVersion := opmversion.Library()
 	setupLog.Info("Starting opm-operator", "version", operatorVersion, "libraryVersion", libraryVersion,
-		"driftRenderInterval", driftRenderInterval.String(), "renderTimeout", renderTimeout.String())
+		"driftRenderInterval", driftRenderInterval.String(), "renderTimeout", renderTimeout.String(),
+		"instanceReconcileInterval", instanceReconcileInterval.String())
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -349,6 +356,7 @@ func main() {
 		OperatorVersion:       operatorVersion,
 		LibraryVersion:        libraryVersion,
 		DriftRenderInterval:   driftRenderInterval,
+		ReconcileInterval:     instanceReconcileInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "ModuleInstance")
 		os.Exit(1)
@@ -448,6 +456,35 @@ func resolveRegistry(flagValue string) (registry, src string) {
 func validateDriftRenderInterval(d time.Duration) error {
 	if d < 0 {
 		return fmt.Errorf("--drift-render-interval must not be negative (0 disables the render skip), got %s", d)
+	}
+	return nil
+}
+
+// defaultInstanceReconcileInterval is the default of
+// --instance-reconcile-interval: the bound on how stale the Healthy condition
+// of an unchanged ModuleInstance can be. Between two renders the periodic
+// reconcile only reads the inventory, so ten minutes is cheap (ADR-019).
+const defaultInstanceReconcileInterval = 10 * time.Minute
+
+// registerInstanceReconcileIntervalFlag registers
+// --instance-reconcile-interval on fs.
+func registerInstanceReconcileIntervalFlag(fs *flag.FlagSet, p *time.Duration) {
+	fs.DurationVar(p, "instance-reconcile-interval", defaultInstanceReconcileInterval,
+		"How long after a ModuleInstance reconcile that ended well (applied, no change, or a skipped "+
+			"render) with nothing still rolling out the instance is reconciled again, with up to 10 "+
+			"percent added at random. Nothing watches the objects an instance applied, so this is what "+
+			"keeps its Healthy and Drifted conditions current and creates an object deleted by hand "+
+			"again. While the render inputs are unchanged the periodic reconcile only judges health; it "+
+			"renders, detects drift and restores missing objects once per --drift-render-interval. "+
+			"Suspended and CLI-owned instances are not requeued. 0 disables the periodic reconcile.")
+}
+
+// validateInstanceReconcileInterval refuses a negative
+// --instance-reconcile-interval; zero disables the periodic reconcile and is
+// valid.
+func validateInstanceReconcileInterval(d time.Duration) error {
+	if d < 0 {
+		return fmt.Errorf("--instance-reconcile-interval must not be negative (0 disables the periodic reconcile), got %s", d)
 	}
 	return nil
 }

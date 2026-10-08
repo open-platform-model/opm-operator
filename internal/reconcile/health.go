@@ -66,6 +66,10 @@ type healthVerdict struct {
 	reason  string
 	message string
 	requeue healthRequeueClass
+	// absentJob is true when an entry of group batch, kind Job was read as
+	// missing. The entry does not say whether the Job sets a TTL, so only a
+	// render can tell an expired Job from a deleted one.
+	absentJob bool
 }
 
 // healthRead is the result of reading one inventory entry.
@@ -87,6 +91,7 @@ func judgeHealth(ctx context.Context, r client.Reader, entries []releasesv1alpha
 		stalled    []string
 		notReady   []string
 		absent     int
+		absentJob  bool
 		unreadable []string
 	)
 	for i, rd := range reads {
@@ -94,6 +99,7 @@ func judgeHealth(ctx context.Context, r client.Reader, entries []releasesv1alpha
 		switch {
 		case rd.missing:
 			absent++
+			absentJob = absentJob || isJobEntry(entries[i])
 			notReady = append(notReady, fmt.Sprintf("%s (%s)", name, health.Missing))
 		case rd.err != nil:
 			unreadable = append(unreadable, fmt.Sprintf("reading %s: %v", name, rd.err))
@@ -115,18 +121,18 @@ func judgeHealth(ctx context.Context, r client.Reader, entries []releasesv1alpha
 	switch {
 	case len(stalled) > 0:
 		return healthVerdict{metav1.ConditionFalse, status.ProgressDeadlineExceededReason,
-			counts + ": " + nameObjects(append(stalled, notReady...)), healthStalled}
+			counts + ": " + nameObjects(append(stalled, notReady...)), healthStalled, absentJob}
 	case len(notReady) > 0:
 		return healthVerdict{metav1.ConditionFalse, status.NotRolledOutReason,
-			counts + ": " + nameObjects(notReady), healthBackoff}
+			counts + ": " + nameObjects(notReady), healthBackoff, absentJob}
 	case len(unreadable) > 0:
 		return healthVerdict{metav1.ConditionUnknown, status.HealthUnknownReason,
-			counts + ": " + unreadable[0], healthBackoff}
+			counts + ": " + unreadable[0], healthBackoff, absentJob}
 	case agg == health.Unknown:
 		return healthVerdict{metav1.ConditionUnknown, status.HealthUnknownReason,
-			counts + ": the inventory is empty", healthNoRequeue}
+			counts + ": the inventory is empty", healthNoRequeue, false}
 	default:
-		return healthVerdict{metav1.ConditionTrue, status.RolledOutReason, counts, healthNoRequeue}
+		return healthVerdict{metav1.ConditionTrue, status.RolledOutReason, counts, healthNoRequeue, false}
 	}
 }
 
@@ -136,7 +142,7 @@ func judgeHealth(ctx context.Context, r client.Reader, entries []releasesv1alpha
 func unreadableVerdict(entries []releasesv1alpha1.InventoryEntry, err error) healthVerdict {
 	_, ready, total := health.Aggregate(nil, len(entries))
 	return healthVerdict{metav1.ConditionUnknown, status.HealthUnknownReason,
-		fmt.Sprintf("%d/%d objects ready: building the health reader: %v", ready, total, err), healthBackoff}
+		fmt.Sprintf("%d/%d objects ready: building the health reader: %v", ready, total, err), healthBackoff, false}
 }
 
 // readEntries reads every entry, at most healthReadParallelism at a time, all
@@ -188,6 +194,11 @@ func readEntry(ctx context.Context, r client.Reader, e releasesv1alpha1.Inventor
 	}
 }
 
+// isJobEntry reports whether e records a batch Job.
+func isJobEntry(e releasesv1alpha1.InventoryEntry) bool {
+	return e.Group == "batch" && e.Kind == "Job"
+}
+
 // describeEntry names an entry as "Kind namespace/name", or "Kind name" for a
 // cluster-scoped object.
 func describeEntry(e releasesv1alpha1.InventoryEntry) string {
@@ -212,7 +223,9 @@ func nameObjects(names []string) string {
 // apply, between healthRequeueFloor and healthRequeueCeiling: quickly just
 // after an apply, and settling at the ceiling for a long rollout. It needs no
 // counter, so it survives a restart. A stalled Deployment waits the stalled
-// recheck interval, and a rolled-out or empty inventory does not requeue.
+// recheck interval, and a rolled-out or empty inventory asks for no requeue:
+// the caller then requeues on its own interval (instanceRequeue,
+// packageRequeue).
 func healthRequeue(v healthVerdict, lastAppliedAt *metav1.Time, now time.Time) time.Duration {
 	switch v.requeue {
 	case healthStalled:

@@ -35,11 +35,16 @@ The reconciler MUST skip reconciliation when `spec.suspend` is true.
 - **THEN** the controller sets condition reason `Suspended` and returns without requeue
 
 ### Requirement: No-op detection
-The reconciler MUST detect no-op reconciliations and skip apply/prune when nothing changed.
+The reconciler MUST detect no-op reconciliations and skip apply/prune when nothing changed. A reconcile is a no-op only when every digest matches and no restorable rendered object is missing from the cluster (`drift-detection`, "A missing object is restored").
 
 #### Scenario: All digests match
 - **WHEN** source, config, render, and inventory digests all match the last applied values
+- **AND** no restorable rendered object is missing from the cluster
 - **THEN** the controller skips apply and prune, keeps `Ready=True`, and does not record a new history entry
+
+#### Scenario: All digests match and an object is missing
+- **WHEN** all four digests match the last applied values and a restorable rendered object does not exist on the cluster
+- **THEN** the controller applies the missing object, prunes nothing, and records a history entry
 
 ### Requirement: Outcome classification
 The reconciler MUST classify each reconcile attempt as one of: `NoOp`, `Applied`, `AppliedAndPruned`, `FailedTransient`, `FailedStalled`.
@@ -61,8 +66,10 @@ history, failure counters, and `nextRetryAt`. On `NoOp`, the patch is bounded
 to: drift condition (`Drifted`), the `Healthy` condition (`instance-health`),
 failure counter deltas (incl. drift counter), `nextRetryAt` clearing,
 `requiredContracts`, and `lastAppliedVersion` and `lastAppliedInputs` when the
-attempt rendered. `lastAttempted*`, `inventory`,
-and history MUST NOT be modified on `NoOp` — those fields describe meaningful
+attempt rendered, and the removal of expired Job entries from
+`inventory.entries` (`drift-detection`, "A missing object is restored").
+`lastAttempted*` and history MUST NOT be modified on `NoOp`, and `inventory`
+MUST NOT be modified in any other way: those fields describe meaningful
 reconcile outcomes.
 
 A reconcile that skips its render because its inputs are unchanged
@@ -77,7 +84,7 @@ was.
 
 `requiredContracts` is in the `NoOp` set deliberately, and it is the one field
 there that does not describe an outcome. It describes what the instance
-demands, which a reconcile can observe as changed without any digest changing —
+demands, which a reconcile can observe as changed without any digest changing:
 a regenerated platform re-enqueues every instance, and the render that follows
 may be a no-op for apply while being the only evidence that the demand moved.
 Bounding it out of the `NoOp` patch would leave the field describing a render
@@ -112,8 +119,17 @@ on the controller. Status subresource patches do not bump
 - **AND** `status.failureCounters` reflects phase counter deltas
   (incl. `drift` counter increment on dry-run failure)
 - **AND** `status.nextRetryAt` is cleared
-- **AND** `status.lastAttempted*`, `status.inventory`, and `status.history`
-  are NOT modified
+- **AND** `status.lastAttempted*` and `status.history` are NOT modified
+- **AND** `status.inventory` is NOT modified, except that an expired Job entry
+  is removed
+
+#### Scenario: NoOp removes an expired Job entry
+- **WHEN** the outcome is `NoOp` and a rendered Job that sets
+  `ttlSecondsAfterFinished` does not exist on the cluster
+- **THEN** the patch removes that Job from `status.inventory.entries` and sets
+  `status.inventory.count` to the number of entries left
+- **AND** `status.inventory.digest` and `status.inventory.revision` keep their
+  values
 
 #### Scenario: NoOp refreshes the demand the render just reported
 - **WHEN** the outcome is `NoOp` and the render that preceded it reported a
@@ -140,11 +156,16 @@ on the controller. Status subresource patches do not bump
   `status.lastAppliedInputs.renderedAt` keep their values
 
 ### Requirement: Inventory updated only on full success
-The `status.inventory` MUST only be replaced after a fully successful apply (and prune, if enabled).
+The `status.inventory` MUST only be replaced after a fully successful apply (and prune, if enabled). One narrower write is allowed: a ModuleInstance reconcile whose digests are unchanged MUST remove the entries of expired Jobs (`drift-detection`, "A missing object is restored") from `status.inventory.entries`, on a `NoOp` and on a restore. `status.inventory.digest` MUST stay the digest of the rendered set, so after such a removal it is not the digest of the entries listed.
 
 #### Scenario: Partial failure preserves inventory
 - **WHEN** apply succeeds but prune fails
 - **THEN** `status.inventory` remains at the previous successful value
+
+#### Scenario: An expired Job leaves the inventory without an apply
+- **WHEN** a reconcile renders with unchanged digests, sends no apply, and a rendered Job that sets `ttlSecondsAfterFinished` does not exist
+- **THEN** `status.inventory.entries` no longer lists the Job
+- **AND** the next reconcile with unchanged digests is a `NoOp`
 
 ### Requirement: Temp directory cleanup
 The reconciler MUST clean up any temporary directories used for artifact extraction, even on error.
@@ -290,3 +311,49 @@ Source: owner decision j5 of the kernel-plan walkthrough (2026-10-03): "Operator
 
 - **WHEN** an instance that recorded `lastAppliedVersion` `0.1.0` renders a changed set whose module version cannot be read, and the apply succeeds
 - **THEN** `status.lastAppliedVersion` is absent from the object
+
+### Requirement: A healthy ModuleInstance is reconciled periodically
+
+The operator SHALL take an instance reconcile interval from the flag `--instance-reconcile-interval` (default 10 minutes). When a ModuleInstance reconcile ends with outcome `NoOp`, `Applied` or `AppliedAndPruned`, or skips its render because its inputs are unchanged, and the health judgement asks for no requeue, the reconcile SHALL requeue after the interval plus a random addition of at most 10 percent of it. When the health judgement asks for a requeue, that requeue SHALL apply unchanged. The periodic requeue SHALL NOT set `status.nextRetryAt` and SHALL NOT count as a failure.
+
+An interval of `0` SHALL disable the periodic requeue. The operator MUST refuse to start with a negative interval. The interval is operator-wide: the ModuleInstance API SHALL NOT gain a field for it.
+
+A suspended ModuleInstance, a CLI-owned ModuleInstance and the operator's own instance SHALL NOT be requeued by the interval. A failed reconcile SHALL keep the requeue of its failure class.
+
+The periodic reconcile of an instance whose inputs and objects are unchanged SHALL end as a skipped render or as a `NoOp`: it sends no apply, records no history entry and changes no condition.
+
+#### Scenario: A rolled-out instance requeues on the interval
+
+- **WHEN** an operator-owned ModuleInstance reconcile ends `Applied` with `Healthy=True` and the interval is 10 minutes
+- **THEN** the reconcile requeues after at least 10 and at most 11 minutes
+- **AND** `status.nextRetryAt` is unset
+
+#### Scenario: A NoOp and a skipped render requeue on the interval
+
+- **WHEN** a later reconcile of the same unchanged instance ends as a `NoOp` or skips its render
+- **THEN** it requeues after at least 10 and at most 11 minutes
+
+#### Scenario: A skipped periodic reconcile writes nothing
+
+- **WHEN** the periodic reconcile of an unchanged, rolled-out instance skips its render
+- **THEN** no patch and no status patch is sent for the instance
+
+#### Scenario: A suspended instance is not requeued
+
+- **WHEN** a ModuleInstance has `spec.suspend: true` and the interval is 10 minutes
+- **THEN** its reconcile returns without a requeue
+
+#### Scenario: A CLI-owned instance is not requeued
+
+- **WHEN** a ModuleInstance has `spec.owner: cli` and the interval is 10 minutes
+- **THEN** its reconcile returns without a requeue
+
+#### Scenario: The interval is disabled
+
+- **WHEN** the interval is `0` and a ModuleInstance reconcile ends rolled out
+- **THEN** the reconcile returns without a requeue
+
+#### Scenario: A negative interval stops the operator
+
+- **WHEN** the operator starts with `--instance-reconcile-interval=-1s`
+- **THEN** it logs the invalid value and exits with a non-zero status

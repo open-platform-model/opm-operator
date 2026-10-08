@@ -4,6 +4,8 @@
 
 Accepted
 
+See also [ADR-019](019-fixed-requeue-interval-for-module-instances.md): an object that no longer exists is not drift, and the controller creates it again. Drift on an object that exists is still detected only.
+
 ## Context
 
 Configuration drift occurs when the live state of a resource diverges from the rendered desired state for fields managed by `opm-controller`. This can happen through manual `kubectl` edits, mutating admission webhooks, or other controllers modifying the same resources.

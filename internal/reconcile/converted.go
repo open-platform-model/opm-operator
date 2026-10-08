@@ -66,7 +66,7 @@ func convertRender(result *render.RenderResult) (*convertedRender, error) {
 	entries := make([]releasesv1alpha1.InventoryEntry, len(exported))
 	for i := range exported {
 		resources[i] = exported[i].Object
-		entries[i] = inventory.FromEntry(k8sinventory.NewEntry(exported[i].Object))
+		entries[i] = entryOf(exported[i].Object)
 	}
 	digest, err := k8sinventory.RenderDigest(exported)
 	if err != nil {
@@ -78,6 +78,11 @@ func convertRender(result *render.RenderResult) (*convertedRender, error) {
 		resources: resources,
 		entries:   entries,
 	}, nil
+}
+
+// entryOf is the inventory entry of obj.
+func entryOf(obj *unstructured.Unstructured) releasesv1alpha1.InventoryEntry {
+	return inventory.FromEntry(k8sinventory.NewEntry(obj))
 }
 
 // renderDigestFailure maps a failure of the library's RenderDigest to its

@@ -104,9 +104,9 @@ An object that the render produces and that does not exist on the cluster is not
 
 A reconcile that restores an object is an apply: its outcome is `Applied`, it records a history entry, moves `status.lastAppliedAt` and judges health from that moment. A failed restore SHALL be classified and retried as a failed apply.
 
-A `batch/v1` Job whose rendered spec sets `ttlSecondsAfterFinished` SHALL NOT be restored: the cluster deletes such a Job after it finished, and to create it again would run it again.
+A `batch/v1` Job whose rendered spec sets `ttlSecondsAfterFinished` SHALL NOT be restored: the cluster deletes such a Job after it finished, and to create it again would run it again. Such a Job that does not exist while every digest is unchanged is an expired Job, and the controller SHALL treat it as finished: the reconcile SHALL remove it from the entries of `status.inventory`, so that `instance-health` does not read it, and SHALL leave `status.inventory.digest` as the digest of the rendered set, so that the next reconcile with unchanged digests is still a `NoOp`. The controller records no outcome of a Job. A Job with a TTL that was removed before it ran, and one that failed before the cluster removed it, therefore read as expired too: neither is created again until a digest changes, and the failure is no longer reported on the instance once the Job is gone. A reconcile whose digests changed applies every rendered object, the Job included, and records the full rendered inventory.
 
-A reconcile that skips its render has no rendered objects and SHALL NOT restore anything; the drift render interval (`--drift-render-interval`) bounds how long a missing object waits. A failed dry-run SHALL leave the missing set unknown, and nothing is restored on that reconcile.
+A reconcile that skips its render has no rendered objects and SHALL NOT restore anything; the drift render interval (`--drift-render-interval`) bounds how long a missing object waits. A missing Job waits less: a ModuleInstance reconcile that reads an inventory Job as absent does not skip its render (`render-input-key`), so the Job is restored, or removed from the inventory as expired, on that reconcile. A failed dry-run SHALL leave the missing set unknown, and nothing is restored on that reconcile.
 
 #### Scenario: A deleted object is created again
 
@@ -127,7 +127,35 @@ A reconcile that skips its render has no rendered objects and SHALL NOT restore 
 - **GIVEN** a Ready ModuleInstance whose rendered Job sets `ttlSecondsAfterFinished` and no longer exists
 - **WHEN** the controller reconciles and renders with unchanged digests
 - **THEN** the Job is not created and the outcome is `NoOp`
-- **AND** `Healthy` stays `False` with reason `NotRolledOut` and names the Job as `Missing`, as `instance-health` judges any missing inventory object
+- **AND** `status.inventory.entries` no longer lists the Job, and `status.inventory.digest` and `status.inventory.revision` keep their values
+- **AND** `Healthy` is `True` with reason `RolledOut` when the other inventory objects are healthy
+
+#### Scenario: A Job with a TTL that was removed before it ran
+
+- **GIVEN** a Ready ModuleInstance whose rendered Job sets `ttlSecondsAfterFinished` and was deleted before any Pod of it ran
+- **WHEN** the controller reconciles and renders with unchanged digests
+- **THEN** the Job is not created, because the controller cannot tell it from a Job that finished
+- **AND** the Job leaves `status.inventory.entries` and does not make the instance unhealthy
+
+#### Scenario: A Job with a TTL that failed and expired
+
+- **GIVEN** a ModuleInstance with `Healthy=False` because its rendered Job with `ttlSecondsAfterFinished` has condition `Failed`
+- **WHEN** the cluster removes the Job and the controller reconciles with unchanged digests
+- **THEN** the Job is not created, it leaves `status.inventory.entries`, and `Healthy` is judged over the remaining entries
+
+#### Scenario: A missing Job without a TTL is created again
+
+- **GIVEN** a Ready ModuleInstance whose rendered Job sets no `ttlSecondsAfterFinished` and was deleted
+- **WHEN** the controller reconciles
+- **THEN** the reconcile renders, the Job is created again and the outcome is `Applied`
+- **AND** `status.inventory.entries` still lists the Job
+
+#### Scenario: An expired Job beside a deleted object
+
+- **GIVEN** a Ready ModuleInstance whose Job with a TTL expired and whose ConfigMap `foo` was deleted by hand
+- **WHEN** the controller reconciles and renders with unchanged digests
+- **THEN** `foo` is created again, the Job is not, and the outcome is `Applied`
+- **AND** the new `status.inventory` lists `foo` and not the Job, with the digest of the rendered set
 
 #### Scenario: A restore that fails
 

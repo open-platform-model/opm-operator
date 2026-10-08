@@ -66,8 +66,10 @@ history, failure counters, and `nextRetryAt`. On `NoOp`, the patch is bounded
 to: drift condition (`Drifted`), the `Healthy` condition (`instance-health`),
 failure counter deltas (incl. drift counter), `nextRetryAt` clearing,
 `requiredContracts`, and `lastAppliedVersion` and `lastAppliedInputs` when the
-attempt rendered. `lastAttempted*`, `inventory`,
-and history MUST NOT be modified on `NoOp` — those fields describe meaningful
+attempt rendered, and the removal of expired Job entries from
+`inventory.entries` (`drift-detection`, "A missing object is restored").
+`lastAttempted*` and history MUST NOT be modified on `NoOp`, and `inventory`
+MUST NOT be modified in any other way: those fields describe meaningful
 reconcile outcomes.
 
 A reconcile that skips its render because its inputs are unchanged
@@ -82,7 +84,7 @@ was.
 
 `requiredContracts` is in the `NoOp` set deliberately, and it is the one field
 there that does not describe an outcome. It describes what the instance
-demands, which a reconcile can observe as changed without any digest changing —
+demands, which a reconcile can observe as changed without any digest changing:
 a regenerated platform re-enqueues every instance, and the render that follows
 may be a no-op for apply while being the only evidence that the demand moved.
 Bounding it out of the `NoOp` patch would leave the field describing a render
@@ -117,8 +119,17 @@ on the controller. Status subresource patches do not bump
 - **AND** `status.failureCounters` reflects phase counter deltas
   (incl. `drift` counter increment on dry-run failure)
 - **AND** `status.nextRetryAt` is cleared
-- **AND** `status.lastAttempted*`, `status.inventory`, and `status.history`
-  are NOT modified
+- **AND** `status.lastAttempted*` and `status.history` are NOT modified
+- **AND** `status.inventory` is NOT modified, except that an expired Job entry
+  is removed
+
+#### Scenario: NoOp removes an expired Job entry
+- **WHEN** the outcome is `NoOp` and a rendered Job that sets
+  `ttlSecondsAfterFinished` does not exist on the cluster
+- **THEN** the patch removes that Job from `status.inventory.entries` and sets
+  `status.inventory.count` to the number of entries left
+- **AND** `status.inventory.digest` and `status.inventory.revision` keep their
+  values
 
 #### Scenario: NoOp refreshes the demand the render just reported
 - **WHEN** the outcome is `NoOp` and the render that preceded it reported a
@@ -145,11 +156,16 @@ on the controller. Status subresource patches do not bump
   `status.lastAppliedInputs.renderedAt` keep their values
 
 ### Requirement: Inventory updated only on full success
-The `status.inventory` MUST only be replaced after a fully successful apply (and prune, if enabled).
+The `status.inventory` MUST only be replaced after a fully successful apply (and prune, if enabled). One narrower write is allowed: a ModuleInstance reconcile whose digests are unchanged MUST remove the entries of expired Jobs (`drift-detection`, "A missing object is restored") from `status.inventory.entries`, on a `NoOp` and on a restore. `status.inventory.digest` MUST stay the digest of the rendered set, so after such a removal it is not the digest of the entries listed.
 
 #### Scenario: Partial failure preserves inventory
 - **WHEN** apply succeeds but prune fails
 - **THEN** `status.inventory` remains at the previous successful value
+
+#### Scenario: An expired Job leaves the inventory without an apply
+- **WHEN** a reconcile renders with unchanged digests, sends no apply, and a rendered Job that sets `ttlSecondsAfterFinished` does not exist
+- **THEN** `status.inventory.entries` no longer lists the Job
+- **AND** the next reconcile with unchanged digests is a `NoOp`
 
 ### Requirement: Temp directory cleanup
 The reconciler MUST clean up any temporary directories used for artifact extraction, even on error.

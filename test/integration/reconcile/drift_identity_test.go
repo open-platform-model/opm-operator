@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -39,37 +40,57 @@ import (
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
-// dryRunRecorder records the Impersonate-User header of every server-side
-// dry-run apply sent through the rest config it wraps. client-go puts
+// recordedRequest is what dryRunRecorder keeps of one request.
+type recordedRequest struct {
+	method, path, dryRun, user string
+}
+
+// dryRunRecorder records every request sent through the rest config it
+// wraps, with its Impersonate-User header. client-go puts
 // Config.WrapTransport inside its impersonating round tripper, so the header
 // read here is the one the API server receives.
 type dryRunRecorder struct {
-	mu    sync.Mutex
-	users []string
+	mu       sync.Mutex
+	requests []recordedRequest
 }
 
 func (r *dryRunRecorder) wrap(cfg *rest.Config) *rest.Config {
 	out := rest.CopyConfig(cfg)
 	out.Wrap(func(rt http.RoundTripper) http.RoundTripper {
 		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			if req.Method == http.MethodPatch && req.URL.Query().Get("dryRun") == metav1.DryRunAll {
-				r.mu.Lock()
-				r.users = append(r.users, req.Header.Get("Impersonate-User"))
-				r.mu.Unlock()
-			}
+			r.mu.Lock()
+			r.requests = append(r.requests, recordedRequest{
+				method: req.Method,
+				path:   req.URL.Path,
+				dryRun: req.URL.Query().Get("dryRun"),
+				user:   req.Header.Get("Impersonate-User"),
+			})
+			r.mu.Unlock()
 			return rt.RoundTrip(req)
 		})
 	})
 	return out
 }
 
-// take returns the recorded users and forgets them.
-func (r *dryRunRecorder) take() []string {
+// takeAll returns the recorded requests and forgets them.
+func (r *dryRunRecorder) takeAll() []recordedRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := r.users
-	r.users = nil
+	out := r.requests
+	r.requests = nil
 	return out
+}
+
+// take returns the users of the recorded server-side dry-run applies and
+// forgets every recorded request.
+func (r *dryRunRecorder) take() []string {
+	var users []string
+	for _, req := range r.takeAll() {
+		if req.method == http.MethodPatch && req.dryRun == metav1.DryRunAll {
+			users = append(users, req.user)
+		}
+	}
+	return users
 }
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -300,6 +321,78 @@ var _ = Describe("Drift detection identity", func() {
 			g.Expect(drifted).NotTo(BeNil())
 			g.Expect(drifted.Status).To(Equal(metav1.ConditionUnknown))
 		}, time.Second, 200*time.Millisecond).Should(Succeed())
+	})
+
+	// The restore list comes from the dry-run, and the restore is an apply:
+	// both must be the ServiceAccount's, or the operator would create a
+	// tenant's objects with its own rights.
+	It("restores a missing object as the ServiceAccount, on every request", func() {
+		params, recorder, nn, saName := setup("drift-id-restore", true)
+		Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace},
+		})).To(Succeed())
+
+		_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+
+		var reads, dryRuns, writes int
+		for _, req := range recorder.takeAll() {
+			if !strings.HasSuffix(req.path, "/configmaps/"+cmName) {
+				continue
+			}
+			Expect(req.user).To(Equal("system:serviceaccount:"+namespace+":"+saName),
+				"%s %s dryRun=%q", req.method, req.path, req.dryRun)
+			switch {
+			case req.method == http.MethodGet:
+				reads++
+			case req.method == http.MethodPatch && req.dryRun != "":
+				dryRuns++
+			case req.method == http.MethodPatch:
+				writes++
+			}
+		}
+		Expect(reads).To(BeNumerically(">", 0), "the object is read through the impersonating config")
+		Expect(dryRuns).To(BeNumerically(">", 0), "the dry-runs go through the impersonating config")
+		Expect(writes).To(BeNumerically(">", 0), "the restore is applied through the impersonating config")
+
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &cm)).To(Succeed())
+		Expect(apimeta.IsStatusConditionTrue(instance(nn).Status.Conditions, status.ReadyCondition)).To(BeTrue())
+	})
+
+	// The dry-run of an object that does not exist is authorized as a create.
+	It("restores nothing the ServiceAccount may not create, and says so", func() {
+		params, _, nn, saName := setup("drift-id-nocreate", true)
+		cmKey := types.NamespacedName{Name: cmName, Namespace: namespace}
+
+		setVerbs("drift-id-nocreate-role", []string{"get", "list", "watch", "update", "patch", "delete"})
+		// The authorizer sees the role change asynchronously. Until it has, a
+		// reconcile restores the object, so each try deletes it again.
+		Eventually(func(g Gomega) {
+			g.Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace},
+			}))).To(Succeed())
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+
+			mi := instance(nn)
+			drifted := apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)
+			g.Expect(drifted).NotTo(BeNil())
+			g.Expect(drifted.Status).To(Equal(metav1.ConditionUnknown))
+			g.Expect(drifted.Reason).To(Equal(status.DriftCheckForbiddenReason))
+			g.Expect(drifted.Message).To(ContainSubstring("system:serviceaccount:" + namespace + ":" + saName))
+			g.Expect(drifted.Message).To(ContainSubstring("cannot create"))
+			var cm corev1.ConfigMap
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, cmKey, &cm))).To(BeTrue(),
+				"the operator must not create what the ServiceAccount may not")
+			g.Expect(apimeta.IsStatusConditionTrue(mi.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		}, 20*time.Second, 300*time.Millisecond).Should(Succeed())
+
+		// With the refusal settled, a further reconcile still restores nothing.
+		_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		var cm corev1.ConfigMap
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, cmKey, &cm))).To(BeTrue())
 	})
 
 	It("sends no dry-run when the ServiceAccount is gone, and says so", func() {

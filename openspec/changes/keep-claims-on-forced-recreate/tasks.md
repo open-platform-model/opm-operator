@@ -19,5 +19,5 @@
 
 ## 4. Docs and the decision record
 
-- [ ] 4.1 `docs/site/operating/deletion-and-pruning.md`: replace the "forced recreate" exception by the rule, the `ClaimConflict` report and the ways out. `docs/site/diagnostics/operator-conditions.md`: add the `ClaimConflict` row. Amend `adr/020-data-claims-kept-by-default.md` (the exception paragraph and its negative consequence). Search `docs/`, `adr/`, `modules/opm_operator/` and `README.md` for other texts that name the exception. Verify: `task docs:bundle:check` passes.
-- [ ] 4.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `docs: describe the forced recreate of claims under spec.dataPolicy`
+- [x] 4.1 `docs/site/operating/deletion-and-pruning.md`: replace the "forced recreate" exception by the rule, the `ClaimConflict` report and the ways out. `docs/site/diagnostics/operator-conditions.md`: add the `ClaimConflict` row. Amend `adr/020-data-claims-kept-by-default.md` (the exception paragraph and its negative consequence). Search `docs/`, `adr/`, `modules/opm_operator/` and `README.md` for other texts that name the exception. Verify: `task docs:bundle:check` passes.
+- [x] 4.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `docs: describe the forced recreate of claims under spec.dataPolicy`

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/runtime/patch"
@@ -33,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -160,6 +162,13 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 			return r.refuse(ctx, patcher, &claim, status.CatalogWrongKindReason,
 				fmt.Sprintf("Claimed artifact %s at %s is not a catalog: %v",
 					claim.Spec.Catalog, claim.Spec.Version, err))
+		}
+		if claim.Status.Accepted && keepsVerdict(err) {
+			// The registry did not answer. That is no answer about the
+			// claim, so an accepted claim keeps its verdict and the fetch is
+			// retried. A claim that is not accepted has no verdict to keep
+			// and takes the refusal below.
+			return r.holdVerdict(ctx, patcher, &claim, err)
 		}
 		// Nothing resolved. A registry or coordinate problem, which a
 		// claimant fixes somewhere else entirely, so it gets its own reason.
@@ -536,6 +545,92 @@ func (r *TransformerRegistrationReconciler) deferVerdict(
 	claim.Status.ObservedGeneration = claim.Generation
 	status.MarkReconciling(claim, reason, "%s", msg)
 	return ctrl.Result{RequeueAfter: opmreconcile.StalledRecheckInterval}, r.patchStatus(ctx, patcher, claim)
+}
+
+// keepsVerdict reports whether a catalog acquisition failure leaves an
+// accepted claim's verdict standing: the library's transient registry failure
+// (oerrors.ErrTransient: no HTTP response, or a 5xx answer) with no typed
+// terminal cause in the chain. It is narrower than
+// opmreconcile.IsTransientFailure on purpose. That one is true for every
+// typed fetch failure, and a catalog the registry no longer holds or a
+// refused credential is an answer about the claim, so it still un-accepts.
+// It reads types only, never message text.
+func keepsVerdict(err error) bool {
+	return opmreconcile.IsTransientFailure(err) && errors.Is(err, oerrors.ErrTransient)
+}
+
+// holdJitter is the fraction of the backoff added at random, so claims held
+// by one registry outage do not all retry in the same instant.
+const holdJitter = 0.1
+
+// holdBackoff is the delay before the next acquisition attempt for a claim
+// held since the given time: as long as the hold has lasted, never under
+// BackoffBaseDelay and never over BackoffMaxDelay. Waiting as long as the
+// failure has lasted doubles the delay at each attempt, and it needs no
+// counter: the start of the hold is on the claim's status, so the backoff
+// survives a restart and a reconcile triggered by a watch does not inflate it.
+func holdBackoff(since, now time.Time) time.Duration {
+	delay := now.Sub(since)
+	if delay < opmreconcile.BackoffBaseDelay {
+		return opmreconcile.BackoffBaseDelay
+	}
+	if delay > opmreconcile.BackoffMaxDelay {
+		return opmreconcile.BackoffMaxDelay
+	}
+	return delay
+}
+
+// holdVerdict keeps an accepted claim's verdict through a transient registry
+// failure and retries the acquisition on holdBackoff. The registry not
+// answering says nothing about the claim, and clearing status.accepted would
+// take the provider's catalog out of the next generated platform, failing
+// every dependent instance until the claim was judged again.
+//
+// Nothing that records the verdict is written: status.accepted,
+// status.active, the Active condition, observedGeneration, and a Ready
+// condition that carries the acceptance. A Ready left Unknown by an earlier
+// deferral carries no verdict, so it is updated to name this cause instead of
+// a stale one.
+//
+// The failure is reported as Reconciling=True, and as one warning event when
+// the claim enters the state. The condition message is the same on every
+// attempt, with the registry error in the event and the log only: a repeated
+// attempt is then an empty patch, and the condition's lastTransitionTime
+// stays at the start of the hold, which is what holdBackoff measures from.
+func (r *TransformerRegistrationReconciler) holdVerdict(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	claim *releasesv1alpha1.TransformerRegistration,
+	cause error,
+) (ctrl.Result, error) {
+	const reason = status.CatalogUnresolvedReason
+	msg := fmt.Sprintf(
+		"Claimed catalog %s at %s could not be fetched because of a transient registry failure; "+
+			"the claim keeps its last verdict and the fetch is retried",
+		claim.Spec.Catalog, claim.Spec.Version)
+
+	prior := apimeta.FindStatusCondition(claim.Status.Conditions, status.ReconcilingCondition)
+	entering := prior == nil ||
+		prior.Status != metav1.ConditionTrue ||
+		prior.Reason != reason ||
+		prior.Message != msg
+	if entering {
+		r.EventRecorder.Eventf(claim, nil, corev1.EventTypeWarning, reason, "Accept", "%s: %v", msg, cause)
+	}
+	logf.FromContext(ctx).Info("Keeping the claim's verdict through a transient registry failure",
+		"name", claim.Name, "catalog", claim.Spec.Catalog, "version", claim.Spec.Version, "cause", cause.Error())
+
+	conditions.MarkReconciling(claim, reason, "%s", msg)
+	if !conditions.IsTrue(claim, status.ReadyCondition) {
+		conditions.MarkUnknown(claim, status.ReadyCondition, reason, "%s", msg)
+	}
+
+	since := time.Now()
+	if held := apimeta.FindStatusCondition(claim.Status.Conditions, status.ReconcilingCondition); held != nil {
+		since = held.LastTransitionTime.Time
+	}
+	retryAfter := wait.Jitter(holdBackoff(since, time.Now()), holdJitter)
+	return ctrl.Result{RequeueAfter: retryAfter}, r.patchStatus(ctx, patcher, claim)
 }
 
 // patchStatus commits the claim's status via the serial patcher, declaring the

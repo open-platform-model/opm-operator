@@ -18,7 +18,7 @@ Acceptance SHALL acquire the artifact named by `spec.catalog` at `spec.version` 
 
 ### Requirement: An accepted claim keeps its verdict through a transient registry failure
 
-When the acquisition of the claimed catalog fails with a transient registry failure, a claim whose `status.accepted` is true SHALL keep its verdict: `status.accepted`, `status.active`, the `Ready` condition and the `Active` condition SHALL stay as they were. A transient registry failure is the one the library classifies as transient: the registry gave no HTTP response, or it answered with a 5xx status. The operator SHALL NOT classify by message text.
+When the acquisition of the claimed catalog fails with a transient registry failure, a claim whose `status.accepted` is true SHALL keep its verdict: `status.accepted`, `status.active`, the `Active` condition and a `Ready` condition that reports the acceptance SHALL stay as they were. A `Ready` condition that is not `True` reports no verdict (an earlier reconcile deferred it, as the first reconcile after an operator restart does); it SHALL become `Unknown` with reason `CatalogUnresolved`, so it names the current cause. A transient registry failure is the one the library classifies as transient: the registry gave no HTTP response, or it answered with a 5xx status. The operator SHALL NOT classify by message text.
 
 The operator SHALL report the failure without changing the verdict: the claim SHALL carry `Reconciling=True` with reason `CatalogUnresolved`, and the operator SHALL emit one Warning event that carries the registry error when the claim enters this state. The condition message SHALL NOT change between attempts, so repeated attempts write no status and emit no further event.
 
@@ -31,6 +31,12 @@ Every other acquisition failure SHALL refuse the claim, accepted or not: a catal
 - **WHEN** an accepted and active claim is reconciled while the registry cannot be reached and the catalog is not in the module cache
 - **THEN** `status.accepted` and `status.active` stay true, `Ready` stays `True` with reason `Accepted`, and `Active` stays `True`
 - **AND** the claim reports `Reconciling=True` with reason `CatalogUnresolved`, a Warning event carries the registry error, and the claim is requeued after about 5 seconds
+
+#### Scenario: A claim deferred after an operator restart stays accepted
+
+- **WHEN** an accepted and active claim reports `Ready=Unknown` because an earlier reconcile found no generated platform, and its next reconcile cannot reach the registry
+- **THEN** `status.accepted` and `status.active` stay true and `Active` stays `True`
+- **AND** `Ready` is `Unknown` with reason `CatalogUnresolved`
 
 #### Scenario: A 5xx answer is transient
 

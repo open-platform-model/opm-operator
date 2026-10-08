@@ -6,7 +6,7 @@ The failure needs a cold CUE module cache: the library serves an already fetched
 
 ## What Changes
 
-- A claim that is accepted keeps `status.accepted`, `status.active`, its `Ready` condition and its `Active` condition when the catalog acquisition fails with the library's typed transient registry failure (`ErrTransient`: no HTTP response, or a 5xx answer).
+- A claim that is accepted keeps `status.accepted`, `status.active`, its `Active` condition and a `Ready` condition that reports the acceptance when the catalog acquisition fails with the library's typed transient registry failure (`ErrTransient`: no HTTP response, or a 5xx answer).
 - The failure is reported without touching the verdict: `Reconciling=True` with reason `CatalogUnresolved`, and one Warning event that carries the registry error.
 - The acquisition is retried on a capped, jittered exponential backoff (5 seconds doubling to 5 minutes), not on the 30-minute stalled recheck.
 - Every other acquisition failure refuses the claim as today: a catalog the registry does not hold, refused credentials, a wrong-kind artifact, an unclassified error.

@@ -5,9 +5,9 @@
 
 ## 2. Keep an accepted claim through a transient failure
 
-- [ ] 2.1 Add the specs of the delta spec (stub and real-Kernel, cold cache) and a unit test of the backoff function; verify that the specs for the kept verdict fail on the unchanged controller
-- [ ] 2.2 Add `holdVerdict` and `holdBackoff` and the transient branch in `Reconcile`; verify that every new spec passes and no existing spec changes
-- [ ] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): keep an accepted claim through a transient registry failure`
+- [x] 2.1 Add the specs of the delta spec (stub and real-Kernel, cold cache) and a unit test of the backoff function; verify that the specs for the kept verdict fail on the unchanged controller
+- [x] 2.2 Add `holdVerdict` and `holdBackoff` and the transient branch in `Reconcile`; verify that every new spec passes and no existing spec changes
+- [x] 2.3 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): keep an accepted claim through a transient registry failure`
 
 ## 3. Docs
 

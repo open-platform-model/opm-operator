@@ -89,6 +89,7 @@ func TestCatalogAcquisitionClassification(t *testing.T) {
 			require.True(t, typed, "want a *FetchError, got %T: %v", err, err)
 			assert.True(t, opmreconcile.IsTransientFailure(err), "a typed fetch failure with no terminal cause: %v", err)
 			assert.Equal(t, tc.transient, errors.Is(err, oerrors.ErrTransient), "ErrTransient: %v", err)
+			assert.Equal(t, tc.transient, keepsVerdict(err), "keepsVerdict: %v", err)
 		})
 	}
 }

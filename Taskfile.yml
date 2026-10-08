@@ -15,7 +15,11 @@ vars:
   GOLANGCI_LINT: '{{.LOCALBIN}}/golangci-lint'
   KUSTOMIZE_VERSION: v5.8.1
   CONTROLLER_TOOLS_VERSION: v0.20.1
-  GOLANGCI_LINT_VERSION: v2.8.0
+  # .golangci-lint-version is the only place that names the linter version;
+  # task dev:lint:config refuses a second one (AGENTS.md, "Moving the
+  # golangci-lint version").
+  GOLANGCI_LINT_VERSION:
+    sh: tr -d '[:space:]' <"{{.ROOT_DIR}}/.golangci-lint-version"
   ENVTEST_VERSION:
     sh: |
       v=$(go list -m -f '{{`{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}`}}' sigs.k8s.io/controller-runtime 2>/dev/null)

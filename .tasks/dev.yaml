@@ -24,10 +24,16 @@ tasks:
       - '"{{.GOLANGCI_LINT}}" run --fix'
 
   lint:config:
-    desc: Verify golangci-lint configuration
+    desc: Verify the golangci-lint configuration against the committed schema, and that the linter version, the schema, its checksum and the Lint job agree (offline once the linter is installed)
     deps: [":tool:golangci-lint"]
     cmds:
-      - '"{{.GOLANGCI_LINT}}" config verify'
+      - GOLANGCI_LINT="{{.GOLANGCI_LINT}}" bash .github/scripts/lint-config-check.sh
+
+  lint:config:test:
+    desc: Scenario test of the linter configuration check (offline once the linter is installed)
+    deps: [":tool:golangci-lint"]
+    cmds:
+      - GOLANGCI_LINT="{{.GOLANGCI_LINT}}" bash .github/scripts/lint-config-check-test.sh
 
   manifests:
     desc: Generate the CRD, RBAC and webhook manifests in config/, then the operator module's data from them

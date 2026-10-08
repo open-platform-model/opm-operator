@@ -174,7 +174,8 @@ var _ = Describe("Impersonation under the shipped manager role", Ordered, Contin
 	It("is refused the apply when the ServiceAccount has no binding", func() {
 		err := applyAs(directNS, "unbound-sa", "never-applied")
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("forbidden"))
+		Expect(err.Error()).To(ContainSubstring(
+			`User "system:serviceaccount:` + directNS + `:unbound-sa" cannot`))
 
 		var cm corev1.ConfigMap
 		err = k8sClient.Get(ctx, client.ObjectKey{Namespace: directNS, Name: "never-applied"}, &cm)

@@ -259,7 +259,7 @@ var _ = Describe("ServiceAccount Impersonation", func() {
 			ready := apimeta.FindStatusCondition(updated.Status.Conditions, status.ReadyCondition)
 			Expect(ready).NotTo(BeNil())
 			Expect(ready.Status).To(Equal(metav1.ConditionTrue),
-				"group-subject RoleBinding must authorize apply once impersonation carries Groups")
+				"group-subject RoleBinding must authorize apply: the apiserver derives the ServiceAccount groups")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{

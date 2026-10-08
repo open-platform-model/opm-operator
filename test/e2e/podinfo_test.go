@@ -318,12 +318,13 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 		Expect(containerPort).To(Equal("9898"))
 	})
 
-	// Deployed-controller lifecycle: live prune on a values update and
-	// prune=false orphan on delete. Uses the redis example fixture because its
+	// Deployed-controller lifecycle: a kept claim and a live prune on a values
+	// update, and prune=false orphan on delete. Uses the redis example fixture because its
 	// persistence.enabled knob is the suite's only value-gated resource — it
 	// swaps the /data volume between a rendered PVC (enabled, the default) and
-	// an emptyDir (disabled), so flipping it drops the PVC from the render and
-	// the deployed controller must prune the live object. These are the halves
+	// an emptyDir (disabled), so flipping it drops the PVC from the render: the
+	// deployed controller must keep the live object by default and prune it
+	// when spec.dataPolicy is Delete. These are the halves
 	// the envtest tier structurally cannot provide: real SSA through the
 	// running manager against a real API server, with impersonated prune.
 	Context("ModuleInstance lifecycle (redis)", Ordered, func() {
@@ -366,28 +367,96 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred(), "rendered PVC should exist")
 		})
 
-		It("prunes the live PVC when a values update drops it from the render", func() {
-			By("disabling persistence via a values update")
-			_, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "redis",
-				"--type=merge", "-p", `{"spec":{"values":{"persistence":{"enabled":false}}}}`))
-			Expect(err).NotTo(HaveOccurred(), "Failed to update the redis values")
-
-			// Deterministic status first (design: inventory/status before live
-			// objects): the inventory must drop the PVC entry and shrink.
-			By("waiting for the inventory to drop the PVC entry")
+		// waitForClaimInInventory waits until the inventory lists a
+		// PersistentVolumeClaim (want) or lists none.
+		waitForClaimInInventory := func(want bool) {
+			GinkgoHelper()
 			Eventually(func(g Gomega) {
 				out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
 					"-o", "jsonpath={.status.inventory.entries[?(@.kind=='PersistentVolumeClaim')].name}"))
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(BeEmpty(), "inventory still lists a PVC")
-
 				count, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
 					"-o", "jsonpath={.status.inventory.count}"))
 				g.Expect(err).NotTo(HaveOccurred())
 				n, err := strconv.Atoi(count)
 				g.Expect(err).NotTo(HaveOccurred())
+				if want {
+					g.Expect(out).To(Equal(redisPVCName), "inventory does not list the PVC")
+					g.Expect(n).To(Equal(initialInventoryCount), "inventory did not grow back")
+					return
+				}
+				g.Expect(out).To(BeEmpty(), "inventory still lists a PVC")
 				g.Expect(n).To(BeNumerically("<", initialInventoryCount), "inventory did not shrink")
 			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+		}
+
+		setPersistence := func(enabled bool, extraSpec string) {
+			GinkgoHelper()
+			patch := fmt.Sprintf(`{"spec":{%s"values":{"persistence":{"enabled":%t}}}}`, extraSpec, enabled)
+			_, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "redis",
+				"--type=merge", "-p", patch))
+			Expect(err).NotTo(HaveOccurred(), "Failed to update the redis ModuleInstance")
+		}
+
+		// The default: spec.dataPolicy is absent, so a claim that leaves the
+		// render is kept with its data, leaves the inventory, and is named by
+		// one ClaimsKept event.
+		It("keeps the live PVC when a values update drops it from the render", func() {
+			By("disabling persistence via a values update")
+			setPersistence(false, "")
+
+			// Deterministic status first (design: inventory/status before live
+			// objects): the inventory must drop the PVC entry and shrink.
+			By("waiting for the inventory to drop the PVC entry")
+			waitForClaimInInventory(false)
+
+			By("confirming the ClaimsKept event names the kept PVC")
+			Eventually(func(g Gomega) {
+				out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "events.events.k8s.io",
+					"--field-selector", "reason=ClaimsKept", "-o", "jsonpath={.items[*].note}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(ContainSubstring(mrNamespace+"/"+redisPVCName), "no ClaimsKept event names the PVC")
+			}, time.Minute, 5*time.Second).Should(Succeed())
+
+			By("confirming the PVC is still in the cluster and no delete reached it")
+			// The inventory dropped the entry in the reconcile that ran the
+			// prune, so the prune is over: a deleted claim would carry a
+			// deletion timestamp by now.
+			deleted, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "pvc", redisPVCName,
+				"-o", "jsonpath={.metadata.deletionTimestamp}"))
+			Expect(err).NotTo(HaveOccurred(), "kept PVC should still exist")
+			Expect(deleted).To(BeEmpty(), "kept PVC must not be marked for deletion")
+
+			By("confirming the instance stayed Ready")
+			// Eventually, because a reconcile in flight shows Ready=Unknown.
+			Eventually(func(g Gomega) {
+				ready, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(Equal("True"), "a kept PVC must not leave the instance not Ready")
+			}, time.Minute, 5*time.Second).Should(Succeed())
+
+			By("confirming the StatefulSet survived the update")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "statefulset", "redis-redis"))
+			Expect(err).NotTo(HaveOccurred(), "redis StatefulSet should still exist")
+		})
+
+		// The opt-out: with spec.dataPolicy Delete the deployed controller
+		// prunes the claim as it did before claims were protected. The claim
+		// first has to be in the inventory again: enabling persistence renders
+		// it, and the apply takes the kept claim back.
+		It("prunes the live PVC when spec.dataPolicy is Delete", func() {
+			By("setting spec.dataPolicy to Delete and enabling persistence again")
+			setPersistence(true, `"dataPolicy":"Delete",`)
+
+			By("waiting for the inventory to list the PVC again")
+			waitForClaimInInventory(true)
+
+			By("disabling persistence via a values update")
+			setPersistence(false, "")
+
+			By("waiting for the inventory to drop the PVC entry")
+			waitForClaimInInventory(false)
 
 			By("waiting for the live PVC to be pruned by the deployed controller")
 			// PVC deletion completes once the StatefulSet rollout replaces the
@@ -398,7 +467,7 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			}, 5*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("confirming the StatefulSet survived the update")
-			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "statefulset", "redis-redis"))
+			_, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "statefulset", "redis-redis"))
 			Expect(err).NotTo(HaveOccurred(), "redis StatefulSet should still exist")
 		})
 

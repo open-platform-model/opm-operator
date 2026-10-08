@@ -19,5 +19,5 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 Update the outlines in `docs/site/operating/deletion-and-pruning.md` and `docs/site/operating/delete-an-instance-safely.md` (the CLI-owned delete after an operator-owned past; the recovery actions take effect at once on a ModuleInstance, at the stalled recheck on a ModulePackage) and the row in `docs/site/diagnostics/operator-conditions.md` if it names the wait. Verify: `task docs:bundle:check` green
-- [ ] 4.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: record the released cli-owned finalizer and the prompt deletion recovery`
+- [x] 4.1 Update the outlines in `docs/site/operating/deletion-and-pruning.md` and `docs/site/operating/delete-an-instance-safely.md` (the CLI-owned delete after an operator-owned past; the recovery actions take effect at once on a ModuleInstance, at the stalled recheck on a ModulePackage) and the row in `docs/site/diagnostics/operator-conditions.md` if it names the wait. Verify: `task docs:bundle:check` green
+- [x] 4.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: record the released cli-owned finalizer and the prompt deletion recovery`

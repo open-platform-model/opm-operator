@@ -104,7 +104,20 @@ jobs:
       - name: docs-kit pins agree
         run: task docs:pins:check
 
+      # golangci-lint config verify against the schema committed under
+      # .github/golangci-lint/, never the one golangci-lint.run serves, and
+      # the agreement of .golangci-lint-version, the schema, its checksum,
+      # .custom-gcl.yml and this step (.github/scripts/lint-config-check.sh).
       - name: Check linter configuration
         run: task dev:lint:config
+
+      # One defect per scenario, each of which the check must refuse. The
+      # script, not task dev:lint:config:test, so that the linter the step
+      # above installed is used and not built once more.
+      - name: Linter configuration check (scenario test)
+        env:
+          GOLANGCI_LINT: bin/golangci-lint
+        run: bash .github/scripts/lint-config-check-test.sh
+
       - name: Run linter
         run: task dev:lint

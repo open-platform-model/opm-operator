@@ -81,6 +81,26 @@ package opm_operator
 						spec: {
 							description: "spec defines the desired state of ModuleInstance"
 							properties: {
+								dataPolicy: {
+									description: """
+	DataPolicy says what the operator does with the PersistentVolumeClaims it
+	would otherwise delete under spec.prune. With Keep, or when the field is
+	absent, the operator never deletes a PersistentVolumeClaim: a claim that
+	a new render no longer produces stays in the cluster and is no longer
+	tracked, and deleting the ModuleInstance leaves its claims in place. With
+	Delete, claims are pruned and deleted like any other object, and the data
+	on their volumes goes with them under the reclaim policy of the volume.
+	The field has no effect unless spec.prune is true: Delete without
+	spec.prune is accepted and deletes nothing. Claims that a StatefulSet
+	creates from its volumeClaimTemplates are never tracked and never
+	deleted by the operator, whatever this field says.
+	"""
+									enum: [
+										"Keep",
+										"Delete",
+									]
+									type: "string"
+								}
 								module: {
 									description: "Module identifies the CUE module to evaluate from the OCI registry."
 									properties: {
@@ -139,7 +159,8 @@ package opm_operator
 	and every applied object when the ModuleInstance is deleted. When false
 	or absent, it leaves them in place: deleting the ModuleInstance leaves
 	its applied objects running. Namespaces and CustomResourceDefinitions
-	are never deleted.
+	are never deleted, and PersistentVolumeClaims are kept unless
+	spec.dataPolicy is Delete.
 	"""
 									type: "boolean"
 								}
@@ -543,6 +564,26 @@ package opm_operator
 						spec: {
 							description: "spec defines the desired state of ModulePackage"
 							properties: {
+								dataPolicy: {
+									description: """
+	DataPolicy says what the operator does with the PersistentVolumeClaims it
+	would otherwise delete under spec.prune. With Keep, or when the field is
+	absent, the operator never deletes a PersistentVolumeClaim: a claim that
+	a new render no longer produces stays in the cluster and is no longer
+	tracked, and deleting the ModulePackage leaves its claims in place. With
+	Delete, claims are pruned and deleted like any other object, and the data
+	on their volumes goes with them under the reclaim policy of the volume.
+	The field has no effect unless spec.prune is true: Delete without
+	spec.prune is accepted and deletes nothing. Claims that a StatefulSet
+	creates from its volumeClaimTemplates are never tracked and never
+	deleted by the operator, whatever this field says.
+	"""
+									enum: [
+										"Keep",
+										"Delete",
+									]
+									type: "string"
+								}
 								dependsOn: {
 									description: """
 	DependsOn references other ModulePackage CRs that must be Ready=True before
@@ -594,7 +635,9 @@ package opm_operator
 								prune: {
 									description: """
 	Prune enables deletion of stale resources on reconcile and of all owned
-	resources on ModulePackage deletion.
+	resources on ModulePackage deletion. Namespaces and
+	CustomResourceDefinitions are never deleted, and PersistentVolumeClaims
+	are kept unless spec.dataPolicy is Delete.
 	"""
 									type: "boolean"
 								}

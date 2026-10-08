@@ -127,6 +127,25 @@ type FailureCounters struct {
 	Drift int64 `json:"drift,omitempty"`
 }
 
+// DataPolicy says what the operator does with PersistentVolumeClaims.
+type DataPolicy string
+
+const (
+	// DataPolicyKeep keeps PersistentVolumeClaims. An absent value means the
+	// same.
+	DataPolicyKeep DataPolicy = "Keep"
+	// DataPolicyDelete lets the operator delete PersistentVolumeClaims under
+	// spec.prune.
+	DataPolicyDelete DataPolicy = "Delete"
+)
+
+// DeletesClaims reports whether the policy lets the operator delete
+// PersistentVolumeClaims. Only Delete does: an absent value, Keep, and any
+// value this operator does not know all keep them.
+func (p DataPolicy) DeletesClaims() bool {
+	return p == DataPolicyDelete
+}
+
 // InventoryEntry identifies one owned Kubernetes resource.
 type InventoryEntry struct {
 	// +optional

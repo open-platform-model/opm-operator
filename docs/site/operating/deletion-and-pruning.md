@@ -56,11 +56,24 @@ Normal  ClaimsKept  Kept 1 PersistentVolumeClaim(s) and the data on them: media/
 
 After that, nothing tracks the claim. A stale claim leaves `status.inventory` with the other stale entries, and a deleted instance has no inventory. The event names the claim, `kubectl get pvc -n <namespace>` lists it, and `kubectl delete pvc` removes it. The claim keeps its labels. If a later render of the same instance produces a claim of the same name, the operator takes the claim back.
 
-To have the operator delete claims, set `spec.dataPolicy: Delete` on the ModuleInstance or ModulePackage. It applies from then on: it does not reach a claim that was kept earlier. Without `spec.prune` it has no effect, because then the operator deletes nothing.
+To have the operator delete claims, set `spec.dataPolicy: Delete` on the ModuleInstance or ModulePackage. It applies from then on: it does not reach a claim that was kept earlier. Without `spec.prune` it has no effect on pruning and deletion, because then the operator prunes nothing.
 
-Four things are not covered:
+The same policy covers a forced recreate. With `spec.rollout.forceConflicts: true`, the operator deletes and creates again an object whose update the API server refuses. It does not do that to a PersistentVolumeClaim. When a new render changes a field of a live claim that Kubernetes does not let change, such as `storageClassName` or `accessModes`, the operator leaves the claim as it is and applies nothing of that render. The object reports `Ready=False` with the reason `ClaimConflict`, and one `Warning` event with the same reason names the claim and the refused field:
 
-- **A forced recreate.** With `spec.rollout.forceConflicts: true`, an apply that the API server refuses as a change to an immutable field deletes the object and creates it again. A claim whose `storageClassName` or `accessModes` a new module version changes is deleted this way, and `spec.dataPolicy` does not prevent it. Do not combine `forceConflicts` with claims whose data you need.
+```text
+Warning  ClaimConflict  PersistentVolumeClaim media/config: the API server refused the update of spec (PersistentVolumeClaim "config" is invalid: spec: Forbidden: spec is immutable after creation except resources.requests and volumeAttributesClassName for bound claims). Nothing was applied. The claim and its data are kept. Revert the change, or move the data and delete the claim yourself, or set spec.dataPolicy to Delete to let the operator delete and recreate the claim.
+```
+
+Nothing is applied because the rest of the render belongs to the new claim: a workload of the new version on the claim of the old one is a state the module never rendered. The operator tries again on its backoff, at most five minutes apart, so the conflict clears soon after you resolve it. There are three ways to resolve it:
+
+- Revert the change, so that the render fits the claim again.
+- Move the data, delete the claim yourself, and let the operator create the new one.
+- Set `spec.dataPolicy: Delete`. The operator then deletes the claim and creates it again, and the data on the volume goes under the reclaim policy of the volume. For this path the field does not need `spec.prune`.
+
+Without `forceConflicts` nothing changes: the apply fails with the reason `ApplyFailed` and the claim stays.
+
+Three things are not covered:
+
 - **Claims that a StatefulSet creates.** A StatefulSet creates one claim per replica from its `volumeClaimTemplates`. They are in no inventory, so the operator never deletes them, with or without `spec.dataPolicy: Delete`. Kubernetes keeps them when the StatefulSet is deleted, unless the StatefulSet sets `persistentVolumeClaimRetentionPolicy`.
 - **Other storage kinds.** Only a `PersistentVolumeClaim` of the core API group is kept.
 - **CLI-managed instances.** The operator does not touch them. The CLI keeps claims too, and its switch is the flag `--delete-data`. One difference remains: after a prune that kept a claim, the CLI still lists the claim in the inventory and the operator does not.
@@ -68,9 +81,9 @@ Four things are not covered:
 > [!WARNING]
 > **The default changed**
 >
-> Earlier operator releases deleted a tracked PersistentVolumeClaim under `spec.prune: true`, on prune and on delete. An instance that relies on that must now set `spec.dataPolicy: Delete`.
+> Earlier operator releases deleted a tracked PersistentVolumeClaim under `spec.prune: true`, on prune and on delete, and recreated one under `spec.rollout.forceConflicts: true`. An instance that relies on either must now set `spec.dataPolicy: Delete`.
 
-<!-- Check against: opm-operator/internal/apply/prune.go, opm-operator/internal/status/claims.go, opm-operator/api/v1alpha1/common_types.go, opm-operator/adr/020-data-claims-kept-by-default.md, cli/docs/site/diagnostics/kept-volume-claims.md -->
+<!-- Check against: opm-operator/internal/apply/prune.go, opm-operator/internal/apply/claims.go, opm-operator/internal/apply/apply.go, opm-operator/internal/status/claims.go, opm-operator/api/v1alpha1/common_types.go, opm-operator/adr/020-data-claims-kept-by-default.md, cli/docs/site/diagnostics/kept-volume-claims.md -->
 
 ### Pruning when a render drops a resource
 

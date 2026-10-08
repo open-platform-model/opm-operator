@@ -733,12 +733,17 @@ func applyAndPruneModulePackage(
 	// Apply.
 	phases.applyRan = true
 	force := pkg.Spec.Rollout != nil && pkg.Spec.Rollout.ForceConflicts
-	applyResult, err := apply.Apply(ctx, applyRM, resources, force)
+	applyResult, err := apply.Apply(ctx, applyRM, resources,
+		apply.ApplyOptions{Force: force, DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		phases.applyFailed = true
-		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", err)
-		status.MarkNotReady(pkg, status.ApplyFailedReason, "%s", err)
-		return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}
+		reason, msg := status.ApplyFailedReason, err.Error()
+		if note, kept := claimConflictNote(err); kept {
+			reason, msg = status.ClaimConflictReason, note
+		}
+		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, reason, "Apply", "%s", msg)
+		status.MarkNotReady(pkg, reason, "%s", msg)
+		return nil, &phaseFail{FailedTransient, msg, modulePackageBackoff(pkg)}
 	}
 	total := applyResult.Created + applyResult.Updated + applyResult.Unchanged
 	params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeNormal, status.AppliedReason, "Apply",

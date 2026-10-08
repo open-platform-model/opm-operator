@@ -42,7 +42,7 @@ var _ = Describe("DetectDrift", func() {
 			}
 
 			By("applying resources to establish desired state")
-			_, err := apply.Apply(ctx, rm, resources, false)
+			_, err := apply.Apply(ctx, rm, resources, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("running drift detection")
@@ -60,7 +60,7 @@ var _ = Describe("DetectDrift", func() {
 			}
 
 			By("applying resources to establish desired state")
-			_, err := apply.Apply(ctx, rm, resources, false)
+			_, err := apply.Apply(ctx, rm, resources, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("modifying the resource directly on the cluster")
@@ -100,7 +100,7 @@ var _ = Describe("DetectDrift", func() {
 			absent := newUnstructuredConfigMap("drift-absent-cm", map[string]string{"key": "value"})
 
 			By("applying only one of the two resources")
-			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{existing}, false)
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{existing}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("running drift detection over both")
@@ -120,7 +120,7 @@ var _ = Describe("DetectDrift", func() {
 			}
 
 			By("applying resources to establish desired state")
-			_, err := apply.Apply(ctx, rm, resources, false)
+			_, err := apply.Apply(ctx, rm, resources, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("modifying only one resource on the cluster")

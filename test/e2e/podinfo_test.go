@@ -398,6 +398,66 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred(), "Failed to update the redis ModuleInstance")
 		}
 
+		// The forced recreate: with spec.rollout.forceConflicts the deployed
+		// controller deletes and recreates an object the API server refuses
+		// to update, but not a claim while spec.dataPolicy is absent. A new
+		// storage class is such a refused update. The spec ends with the
+		// render the claim fits, so the specs after it start from Ready.
+		It("keeps the live PVC when a forced apply would recreate it", func() {
+			pvcField := func(jsonpath string) string {
+				GinkgoHelper()
+				out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "pvc", redisPVCName,
+					"-o", "jsonpath="+jsonpath))
+				Expect(err).NotTo(HaveOccurred(), "the PVC should exist")
+				return out
+			}
+			uid := pvcField("{.metadata.uid}")
+			Expect(uid).NotTo(BeEmpty())
+
+			By("enabling forceConflicts and changing the storage class of the claim")
+			_, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "redis",
+				"--type=merge", "-p",
+				`{"spec":{"rollout":{"forceConflicts":true},"values":{"persistence":{"storageClass":"e2e-other"}}}}`))
+			Expect(err).NotTo(HaveOccurred(), "Failed to update the redis ModuleInstance")
+
+			By("waiting for the instance to report the claim conflict")
+			Eventually(func(g Gomega) {
+				reason, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].reason}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(reason).To(Equal("ClaimConflict"), "the refused claim is not reported")
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("confirming the ClaimConflict event names the PVC and the refused field")
+			Eventually(func(g Gomega) {
+				out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "events.events.k8s.io",
+					"--field-selector", "reason=ClaimConflict", "-o", "jsonpath={.items[*].note}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(ContainSubstring(mrNamespace+"/"+redisPVCName), "no ClaimConflict event names the PVC")
+				g.Expect(out).To(ContainSubstring("refused the update of spec"))
+			}, time.Minute, 5*time.Second).Should(Succeed())
+
+			By("confirming the PVC is the same object and no delete reached it")
+			Expect(pvcField("{.metadata.uid}")).To(Equal(uid), "the PVC must not be recreated")
+			Expect(pvcField("{.metadata.deletionTimestamp}")).To(BeEmpty(), "the PVC must not be marked for deletion")
+			Expect(pvcField("{.spec.storageClassName}")).NotTo(Equal("e2e-other"))
+
+			By("going back to the storage class of the claim, without forceConflicts")
+			_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "redis",
+				"--type=merge", "-p",
+				`{"spec":{"rollout":null,"values":{"persistence":{"storageClass":"`+pvcField("{.spec.storageClassName}")+`"}}}}`))
+			Expect(err).NotTo(HaveOccurred(), "Failed to update the redis ModuleInstance")
+
+			By("waiting for the instance to become Ready again")
+			Eventually(func(g Gomega) {
+				ready, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "redis",
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(Equal("True"), "redis ModuleInstance not Ready again")
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+			Expect(pvcField("{.metadata.uid}")).To(Equal(uid))
+		})
+
 		// The default: spec.dataPolicy is absent, so a claim that leaves the
 		// render is kept with its data, leaves the inventory, and is named by
 		// one ClaimsKept event.

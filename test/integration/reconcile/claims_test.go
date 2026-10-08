@@ -79,10 +79,22 @@ func (r *actionRecorder) withReason(reason string) []recordedEvent {
 // claimResources renders one PersistentVolumeClaim per name, owned by the
 // stub instance like namedConfigMapRenderResult's ConfigMaps.
 func claimResources(names ...string) []*object.Resource {
-	cueCtx := cuecontext.New()
 	out := make([]*object.Resource, 0, len(names))
 	for _, name := range names {
-		v := cueCtx.CompileString(fmt.Sprintf(`{
+		out = append(out, classedClaimResource(name, ""))
+	}
+	return out
+}
+
+// classedClaimResource renders one PersistentVolumeClaim. A storageClass that is
+// not empty sets spec.storageClassName, which the API server refuses to
+// change on a live claim.
+func classedClaimResource(name, storageClass string) *object.Resource {
+	class := ""
+	if storageClass != "" {
+		class = fmt.Sprintf("storageClassName: %q", storageClass)
+	}
+	v := cuecontext.New().CompileString(fmt.Sprintf(`{
 	apiVersion: "v1"
 	kind:       "PersistentVolumeClaim"
 	metadata: {
@@ -97,17 +109,85 @@ func claimResources(names ...string) []*object.Resource {
 	spec: {
 		accessModes: ["ReadWriteOnce"]
 		resources: requests: storage: "1Gi"
+		%s
 	}
 }`, name, namespace,
-			labels.ManagedBy, labels.ManagedByController,
-			labels.ModuleInstanceNamespace, namespace,
-			labels.ModuleInstanceUUID, stubInstanceUUID))
-		if v.Err() != nil {
-			panic(fmt.Sprintf("compiling stub PersistentVolumeClaim: %v", v.Err()))
-		}
-		out = append(out, &object.Resource{Value: v, Instance: name, Component: name, Transformer: "kubernetes#simple"})
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceNamespace, namespace,
+		labels.ModuleInstanceUUID, stubInstanceUUID,
+		class))
+	if v.Err() != nil {
+		panic(fmt.Sprintf("compiling stub PersistentVolumeClaim: %v", v.Err()))
 	}
-	return out
+	return &object.Resource{Value: v, Instance: name, Component: name, Transformer: "kubernetes#simple"}
+}
+
+// renderWithClassedClaim is a render of the named ConfigMaps and one
+// PersistentVolumeClaim of the given storage class.
+func renderWithClassedClaim(configMaps []string, claim, storageClass string) *render.RenderResult {
+	result := namedConfigMapRenderResult(configMaps...)
+	result.Resources = append(result.Resources, classedClaimResource(claim, storageClass))
+	return result
+}
+
+// settledClaim returns the claim as the cluster holds it, without its
+// pvc-protection finalizer. envtest runs no controller that clears the
+// finalizer, so without this a delete of the claim never completes and an
+// apply that recreates the claim waits for ever.
+func settledClaim(name string) *corev1.PersistentVolumeClaim {
+	GinkgoHelper()
+	var pvc corev1.PersistentVolumeClaim
+	nn := types.NamespacedName{Name: name, Namespace: namespace}
+	Expect(k8sClient.Get(ctx, nn, &pvc)).To(Succeed())
+	pvc.Finalizers = nil
+	Expect(k8sClient.Update(ctx, &pvc)).To(Succeed())
+	Expect(k8sClient.Get(ctx, nn, &pvc)).To(Succeed())
+	return &pvc
+}
+
+// expectSameClaim asserts that the claim is the object it was: same UID, same
+// storage class, and no delete reached it.
+func expectSameClaim(before *corev1.PersistentVolumeClaim) {
+	GinkgoHelper()
+	var after corev1.PersistentVolumeClaim
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: before.Name, Namespace: namespace}, &after)).To(Succeed())
+	Expect(after.UID).To(Equal(before.UID), "claim %s must not be recreated", before.Name)
+	Expect(after.DeletionTimestamp.IsZero()).To(BeTrue(), "no delete may reach claim %s", before.Name)
+	Expect(after.Spec.StorageClassName).To(Equal(before.Spec.StorageClassName))
+}
+
+// expectClaimRecreated asserts that a new claim of the given storage class
+// took the place of before.
+func expectClaimRecreated(before *corev1.PersistentVolumeClaim, storageClass string) {
+	GinkgoHelper()
+	var after corev1.PersistentVolumeClaim
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: before.Name, Namespace: namespace}, &after)).To(Succeed())
+	Expect(after.UID).NotTo(Equal(before.UID), "claim %s must be a new object", before.Name)
+	Expect(after.Spec.StorageClassName).To(HaveValue(Equal(storageClass)))
+}
+
+// expectClaimConflict asserts the Ready condition and the one event of an
+// apply that kept the claim.
+func expectClaimConflict(conds []metav1.Condition, rec *actionRecorder, claim string) {
+	GinkgoHelper()
+	ready := apimeta.FindStatusCondition(conds, status.ReadyCondition)
+	Expect(ready).NotTo(BeNil())
+	Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+	Expect(ready.Reason).To(Equal(status.ClaimConflictReason))
+	Expect(ready.Message).To(ContainSubstring("PersistentVolumeClaim " + namespace + "/" + claim))
+	Expect(ready.Message).To(ContainSubstring("refused the update of spec"))
+	Expect(ready.Message).To(ContainSubstring("immutable"), "the API server's reason must be in the message")
+	Expect(ready.Message).To(ContainSubstring("set spec.dataPolicy to Delete"))
+	Expect(apimeta.FindStatusCondition(conds, status.StalledCondition)).To(BeNil(),
+		"a claim conflict retries on the backoff and is not stalled")
+
+	events := rec.withReason(status.ClaimConflictReason)
+	Expect(events).To(HaveLen(1))
+	Expect(events[0].eventType).To(Equal(corev1.EventTypeWarning))
+	Expect(events[0].action).To(Equal("Apply"))
+	Expect(events[0].note).To(Equal(ready.Message))
+	Expect(rec.withReason(status.ApplyFailedReason)).To(BeEmpty(), "the conflict is reported once, under its own reason")
+	Expect(rec.withReason(status.AppliedReason)).To(BeEmpty())
 }
 
 // renderOf is a render of the named ConfigMaps and PersistentVolumeClaims.
@@ -538,6 +618,113 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 		expectClaimUntouched("cdf-data")
 		Expect(rec.withReason(status.ClaimsKeptReason)).To(BeEmpty(), "the cleanup has not completed")
 	})
+
+	// forceInstance creates an instance with spec.rollout.forceConflicts and
+	// without spec.prune: the forced recreate follows the policy alone.
+	forceInstance := func(name string, policy releasesv1alpha1.DataPolicy) types.NamespacedName {
+		GinkgoHelper()
+		nn := createClaimInstance(name, false, policy, params)
+		var mi releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		mi.Spec.Rollout = &releasesv1alpha1.RolloutSpec{ForceConflicts: true}
+		Expect(k8sClient.Update(ctx, &mi)).To(Succeed())
+		return nn
+	}
+
+	It("keeps a claim with a changed immutable field under forceConflicts and reports a conflict", func() {
+		nn := forceInstance("claims-force-keep", "")
+		DeferCleanup(func() {
+			removeClaims("cfk-data")
+			removeConfigMaps("cfk-a", "cfk-b")
+			cleanupInstance(nn)
+		})
+
+		params.Renderer = &stubRenderer{result: renderWithClassedClaim([]string{"cfk-a"}, "cfk-data", "fast")}
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+		before := settledClaim("cfk-data")
+		rec.events = nil
+
+		By("the render changes the storage class of the claim and adds a ConfigMap")
+		params.Renderer = &stubRenderer{result: renderWithClassedClaim([]string{"cfk-a", "cfk-b"}, "cfk-data", "slow")}
+		result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred(), "a claim conflict is reported in the status, not as a reconcile error")
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0), "the conflict is retried on the backoff")
+		Expect(result.RequeueAfter).To(BeNumerically("<=", 5*time.Minute))
+
+		expectSameClaim(before)
+		Expect(configMapExists("cfk-b")).To(BeFalse(), "no object of the refused render may be applied")
+
+		var mi releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		expectClaimConflict(mi.Status.Conditions, rec, "cfk-data")
+		Expect(inventoryNames(mi.Status.Inventory)).To(ConsistOf("ConfigMap/cfk-a", "PersistentVolumeClaim/cfk-data"),
+			"the inventory stays that of the last applied render")
+		Expect(mi.Status.FailureCounters).NotTo(BeNil())
+		Expect(mi.Status.FailureCounters.Apply).To(BeNumerically(">", 0))
+
+		By("the next reconcile decides the conflict again and still keeps the claim")
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+		expectSameClaim(before)
+		Expect(rec.withReason(status.NoOpReason)).To(BeEmpty(), "a refused render is never a no-op")
+		Expect(rec.withReason(status.ClaimConflictReason)).To(HaveLen(2))
+
+		By("the render goes back to the storage class of the claim")
+		params.Renderer = &stubRenderer{result: renderWithClassedClaim([]string{"cfk-a", "cfk-b"}, "cfk-data", "fast")}
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+		expectSameClaim(before)
+		Expect(configMapExists("cfk-b")).To(BeTrue())
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("keeps the claim under forceConflicts when spec.dataPolicy is Keep", func() {
+		nn := forceInstance("claims-force-keep-explicit", releasesv1alpha1.DataPolicyKeep)
+		DeferCleanup(func() {
+			removeClaims("cfe-data")
+			cleanupInstance(nn)
+		})
+
+		params.Renderer = &stubRenderer{result: renderWithClassedClaim(nil, "cfe-data", "fast")}
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+		before := settledClaim("cfe-data")
+		rec.events = nil
+
+		params.Renderer = &stubRenderer{result: renderWithClassedClaim(nil, "cfe-data", "slow")}
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+
+		expectSameClaim(before)
+		var mi releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		expectClaimConflict(mi.Status.Conditions, rec, "cfe-data")
+	})
+
+	It("recreates the claim under forceConflicts when spec.dataPolicy is Delete, without spec.prune", func() {
+		nn := forceInstance("claims-force-delete", releasesv1alpha1.DataPolicyDelete)
+		DeferCleanup(func() {
+			removeClaims("cfd-data")
+			removeConfigMaps("cfd-a")
+			cleanupInstance(nn)
+		})
+
+		params.Renderer = &stubRenderer{result: renderWithClassedClaim([]string{"cfd-a"}, "cfd-data", "fast")}
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+		before := settledClaim("cfd-data")
+		rec.events = nil
+
+		params.Renderer = &stubRenderer{result: renderWithClassedClaim([]string{"cfd-a"}, "cfd-data", "slow")}
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+
+		expectClaimRecreated(before, "slow")
+		var mi releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		Expect(rec.withReason(status.ClaimConflictReason)).To(BeEmpty())
+		Expect(rec.withReason(status.AppliedReason)).To(HaveLen(1))
+	})
 })
 
 // readySource serves one ready OCIRepository named name from memory, so that a
@@ -736,5 +923,62 @@ var _ = Describe("PersistentVolumeClaims of a ModulePackage", func() {
 		expectPackageGone(nn)
 		expectClaimDeleted("pdd-data")
 		Expect(rec.withReason(status.ClaimsKeptReason)).To(BeEmpty())
+	})
+
+	forcePackage := func(name string, policy releasesv1alpha1.DataPolicy) types.NamespacedName {
+		GinkgoHelper()
+		nn := createPackage(name, policy)
+		var pkg releasesv1alpha1.ModulePackage
+		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())
+		pkg.Spec.Rollout = &releasesv1alpha1.RolloutSpec{ForceConflicts: true}
+		Expect(k8sClient.Update(ctx, &pkg)).To(Succeed())
+		return nn
+	}
+
+	It("keeps a claim with a changed immutable field under forceConflicts and reports a conflict", func() {
+		nn := forcePackage("pkg-claims-force-keep", "")
+		DeferCleanup(func() {
+			removeClaims("pfk-data")
+			removeConfigMaps("pfk-a", "pfk-b")
+			cleanupPackage(nn)
+		})
+
+		reconcilePackage(nn, renderWithClassedClaim([]string{"pfk-a"}, "pfk-data", "fast"))
+		before := settledClaim("pfk-data")
+		rec.events = nil
+
+		params.Renderer = &stubPackageRenderer{result: renderWithClassedClaim([]string{"pfk-a", "pfk-b"}, "pfk-data", "slow")}
+		result, err := opmreconcile.ReconcileModulePackage(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0), "the conflict is retried on the backoff")
+
+		expectSameClaim(before)
+		Expect(configMapExists("pfk-b")).To(BeFalse(), "no object of the refused render may be applied")
+		var pkg releasesv1alpha1.ModulePackage
+		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())
+		expectClaimConflict(pkg.Status.Conditions, rec, "pfk-data")
+		Expect(inventoryNames(pkg.Status.Inventory)).To(ConsistOf("ConfigMap/pfk-a", "PersistentVolumeClaim/pfk-data"))
+	})
+
+	It("recreates the claim under forceConflicts when spec.dataPolicy is Delete", func() {
+		nn := forcePackage("pkg-claims-force-delete", releasesv1alpha1.DataPolicyDelete)
+		DeferCleanup(func() {
+			removeClaims("pfd-data")
+			cleanupPackage(nn)
+		})
+
+		reconcilePackage(nn, renderWithClassedClaim(nil, "pfd-data", "fast"))
+		before := settledClaim("pfd-data")
+		rec.events = nil
+
+		reconcilePackage(nn, renderWithClassedClaim(nil, "pfd-data", "slow"))
+
+		expectClaimRecreated(before, "slow")
+		var pkg releasesv1alpha1.ModulePackage
+		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())
+		ready := apimeta.FindStatusCondition(pkg.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		Expect(rec.withReason(status.ClaimConflictReason)).To(BeEmpty())
 	})
 })

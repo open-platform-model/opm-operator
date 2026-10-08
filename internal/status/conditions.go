@@ -64,7 +64,14 @@ const (
 	// or renames a component.
 	DuplicateIdentitiesReason = "DuplicateIdentities"
 
-	ApplyFailedReason             = "ApplyFailed"
+	ApplyFailedReason = "ApplyFailed"
+	// ClaimConflictReason: Ready=False, not stalled, spec.rollout.forceConflicts
+	// is set and the API server refuses the update of a PersistentVolumeClaim.
+	// The operator does not delete and recreate the claim, because
+	// spec.dataPolicy is not Delete, and applies nothing. It retries on the
+	// backoff: the conflict can be resolved on the claim alone. Also the
+	// reason of the Warning event of that apply.
+	ClaimConflictReason           = "ClaimConflict"
 	PruneFailedReason             = "PruneFailed"
 	ImpersonationFailedReason     = "ImpersonationFailed"
 	DeletionSAMissingReason       = "DeletionSAMissing"

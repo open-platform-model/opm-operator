@@ -72,7 +72,7 @@ var _ = Describe("Impersonation under the shipped manager role", Ordered, Contin
 		impClient, err := apply.NewImpersonatedClient(ctx, operatorCfg, operatorClient, scheme.Scheme, namespace, saName)
 		Expect(err).NotTo(HaveOccurred())
 		rm := apply.NewResourceManager(impClient, "opm-controller")
-		_, err = apply.Apply(ctx, rm, []*unstructured.Unstructured{configMap(namespace, cmName)}, false)
+		_, err = apply.Apply(ctx, rm, []*unstructured.Unstructured{configMap(namespace, cmName)}, apply.ApplyOptions{})
 		return err
 	}
 

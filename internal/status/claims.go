@@ -28,6 +28,13 @@ const (
 	claimsKeptMaxNames = 10
 	// eventNoteLimit is the longest note events.k8s.io/v1 accepts.
 	eventNoteLimit = 1024
+	// claimRefusalLimit is the most of the API server's refusal a
+	// ClaimConflict note repeats. The refusal of a claim update carries a
+	// diff of the whole spec after its first line.
+	claimRefusalLimit = 300
+	// claimConflictAdvice closes every ClaimConflict note.
+	claimConflictAdvice = " The claim and its data are kept. Revert the change, or move the data and delete " +
+		"the claim yourself, or set spec.dataPolicy to Delete to let the operator delete and recreate the claim."
 	// claimsKeptAdvice closes every ClaimsKept note.
 	claimsKeptAdvice = " They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. " +
 		"To let the operator delete claims from now on, set spec.dataPolicy to Delete."
@@ -73,5 +80,34 @@ func ClaimsKeptNote(kept []releasesv1alpha1.InventoryEntry) string {
 		fmt.Fprintf(&b, " and %d more.", rest)
 	}
 	b.WriteString(claimsKeptAdvice)
+	return b.String()
+}
+
+// ClaimConflictNote is the message of the ClaimConflict reason, on the Ready
+// condition and on the event: which PersistentVolumeClaim an apply left as it
+// is where a forced recreate would have deleted it, which fields the API
+// server refused to update and why, and the ways out. fields and refusal are
+// what the API server reported; both are empty when the claim was kept
+// without a refusal at hand. Of the refusal the note keeps the first line,
+// cut to a fixed length.
+func ClaimConflictNote(namespace, name string, fields []string, refusal string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "PersistentVolumeClaim %s/%s: ", namespace, name)
+	if refusal == "" {
+		b.WriteString("the update needs the claim deleted and created again.")
+		b.WriteString(claimConflictAdvice)
+		return b.String()
+	}
+
+	b.WriteString("the API server refused the update")
+	if len(fields) > 0 {
+		b.WriteString(" of " + strings.Join(fields, ", "))
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(refusal), "\n")
+	if len(line) > claimRefusalLimit {
+		line = line[:claimRefusalLimit] + "..."
+	}
+	fmt.Fprintf(&b, " (%s). Nothing was applied.", line)
+	b.WriteString(claimConflictAdvice)
 	return b.String()
 }

@@ -18,11 +18,11 @@ Unlike a Namespace or a CRD, a claim is often meant to go with its instance: a t
 
 The controller keeps every PersistentVolumeClaim of the core API group that it would otherwise delete, on the prune of stale resources and on deletion cleanup, for ModuleInstance and ModulePackage alike. The claim and its labels are left unchanged.
 
-One optional field opts out: `spec.dataPolicy`, an enum with the values `Keep` and `Delete`. An absent value means `Keep`. `Delete` lets the controller delete claims under `spec.prune`; without `spec.prune` it has no effect, and the API server accepts the pair. The CRD sets no default, so an object stored before the field existed is protected as it is.
+One optional field opts out: `spec.dataPolicy`, an enum with the values `Keep` and `Delete`. An absent value means `Keep`. `Delete` lets the controller delete claims under `spec.prune`; without `spec.prune` it has no effect on pruning and deletion, and the API server accepts the pair. The CRD sets no default, so an object stored before the field existed is protected as it is.
 
 The check lives in the one prune function behind the stale prune and the deletion cleanup of both kinds, and its option protects at the zero value, so a caller cannot forget it.
 
-The decision covers pruning and deletion cleanup. It does not cover the apply: with `spec.rollout.forceConflicts`, an apply that the API server refuses as a change to an immutable field deletes the live object and creates it again, and that includes a claim whose `storageClassName` or `accessModes` a new module version changes. `spec.dataPolicy` is not read there.
+The decision also covers the apply. With `spec.rollout.forceConflicts`, an apply that the API server refuses as a change to an immutable field deletes the live object and creates it again. For a claim that would delete the data, so the apply does not do it unless `spec.dataPolicy` is `Delete`: it checks every rendered claim before it changes anything, and when the API server refuses the update of one it applies nothing and reports `Ready=False` with reason `ClaimConflict` and a Warning event that names the claim and the refused field. Applying nothing is the safe half of the choice: the apply library deletes the refused objects of a stage before it applies any, and a workload of the new render on the claim of the old one is a state no module version rendered. The client the apply works through also refuses to delete a claim on its own, which covers a claim that changes between the check and the apply. On this path the field is read without `spec.prune`: a forced recreate is not a prune. The first release of the field (opm-operator#267) left this path out and documented it as an exception; this amendment of 2026-10-08, decided by the project owner, closes it.
 
 A kept claim is not a failure. The reconcile ends Ready, deletion cleanup removes the finalizer, and one Normal event with reason `ClaimsKept` names the claims. A stale claim that the prune keeps leaves `status.inventory` with the rest of the stale set, as a skipped Namespace or CRD does: the recorded inventory is the rendered set. From then on nothing tracks the claim.
 
@@ -42,7 +42,9 @@ Keeping the kept claim in the inventory, as the CLI does, was also considered. I
 
 **Negative:** The controller names the policy `spec.dataPolicy` and the CLI names its flag `--delete-data`. Documentation has to name both.
 
-**Negative:** A claim can still be deleted with `Keep`: by the forced recreate of `spec.rollout.forceConflicts` described above. The field description and the documentation name this exception; closing it is a separate decision.
+**Negative:** A forced recreate that used to succeed now stops with `ClaimConflict` until someone reverts the change, moves the data, or sets `spec.dataPolicy: Delete`. The whole render waits for that, not only the claim.
+
+**Negative:** `spec.dataPolicy: Delete` now has an effect without `spec.prune`, on the forced recreate. The field description says so.
 
 **Trade-off:** Only `PersistentVolumeClaim` in the core group is kept. A PersistentVolume, a VolumeSnapshot or a claim-like custom resource is pruned as before. Claims that a StatefulSet creates from its `volumeClaimTemplates` are in no inventory, so the controller never deletes them, with or without the field.
 

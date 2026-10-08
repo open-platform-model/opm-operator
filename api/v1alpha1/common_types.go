@@ -74,7 +74,13 @@ type RolloutSpec struct {
 	// +optional
 	Strategy string `json:"strategy,omitempty"`
 
-	// ForceConflicts enables SSA force ownership when desired.
+	// ForceConflicts lets the operator delete and create again an object
+	// whose update the API server refuses, such as an object with a changed
+	// immutable field. A PersistentVolumeClaim is recreated this way only
+	// when spec.dataPolicy is Delete; otherwise the claim is kept and the
+	// apply reports the reason ClaimConflict. The field does not change
+	// field ownership: the operator always takes ownership of the fields it
+	// applies.
 	// +optional
 	ForceConflicts bool `json:"forceConflicts,omitempty"`
 }
@@ -135,7 +141,8 @@ const (
 	// same.
 	DataPolicyKeep DataPolicy = "Keep"
 	// DataPolicyDelete lets the operator delete PersistentVolumeClaims under
-	// spec.prune.
+	// spec.prune, and delete and recreate one under
+	// spec.rollout.forceConflicts.
 	DataPolicyDelete DataPolicy = "Delete"
 )
 

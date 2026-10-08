@@ -20,9 +20,13 @@ const (
 // WaitForSet after applying cluster-scoped resources (CRDs, ClusterRoles,
 // Namespaces); a nil poller there nil-derefs on the first module whose render
 // contains any such resource.
+//
+// The manager works through a client that refuses to delete a
+// PersistentVolumeClaim outside an Apply with ApplyOptions.DeleteData, so its
+// forced recreate cannot delete user data unasked.
 func NewResourceManager(c client.Client, owner string) *fluxssa.ResourceManager {
 	poller := polling.NewStatusPoller(c, c.RESTMapper(), polling.Options{})
-	return fluxssa.NewResourceManager(c, poller, fluxssa.Owner{
+	return fluxssa.NewResourceManager(claimGuard{c}, poller, fluxssa.Owner{
 		Field: FieldManager,
 		Group: owner,
 	})

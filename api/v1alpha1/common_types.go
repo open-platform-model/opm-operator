@@ -141,7 +141,8 @@ const (
 	// same.
 	DataPolicyKeep DataPolicy = "Keep"
 	// DataPolicyDelete lets the operator delete PersistentVolumeClaims under
-	// spec.prune.
+	// spec.prune, and delete and recreate one under
+	// spec.rollout.forceConflicts.
 	DataPolicyDelete DataPolicy = "Delete"
 )
 

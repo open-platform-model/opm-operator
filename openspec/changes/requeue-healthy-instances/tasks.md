@@ -15,6 +15,6 @@
 
 ## 3. Docs and decision record
 
-- [ ] 3.1 Add `adr/019-fixed-requeue-interval-for-module-instances.md` (context, options, decision, consequences); add a status note to ADR-016 that ADR-019 replaces its planned-mechanism sentence, and a pointer in ADR-012 that a missing object is restored; verify the ADR follows `adr/TEMPLATE.md`
-- [ ] 3.2 Update `docs/RENDERING.md` (the drift render interval section: what schedules a reconcile, the restore, the cost with one slot) and `docs/site/diagnostics/operator-conditions.md` (the `Healthy` and `Drifted` rows that say an instance is not requeued); verify with `task docs:bundle:check`
-- [ ] 3.3 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: record the periodic reconcile and the restore of module instances`
+- [x] 3.1 Add `adr/019-fixed-requeue-interval-for-module-instances.md` (context, options, decision, consequences); add a status note to ADR-016 that ADR-019 replaces its planned-mechanism sentence, and a pointer in ADR-012 that a missing object is restored; verify the ADR follows `adr/TEMPLATE.md`
+- [x] 3.2 Update `docs/RENDERING.md` (the drift render interval section: what schedules a reconcile, the restore, the cost with one slot) and `docs/site/diagnostics/operator-conditions.md` (the `Healthy` and `Drifted` rows that say an instance is not requeued); verify with `task docs:bundle:check`
+- [x] 3.3 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: record the periodic reconcile and the restore of module instances`

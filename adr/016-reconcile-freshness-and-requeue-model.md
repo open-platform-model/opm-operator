@@ -4,6 +4,8 @@
 
 Accepted
 
+Amended by [ADR-019](019-fixed-requeue-interval-for-module-instances.md): `ModuleInstance` gets its periodic level-triggering from a fixed operator interval, not from the `spec.interval` field the Decision below names as planned.
+
 ## Context
 
 Every reconcile phase — source resolution, artifact fetch, CUE evaluation, render, SSA apply, prune, status commit — operates on an in-memory copy of the primary object that was read once at the top of the loop. Some of these phases are slow: CUE evaluation and OCI registry pulls can take seconds, occasionally longer. While a loop runs, the underlying object can change: a user edits the spec, a `Platform` materializes, or another writer touches the resource.

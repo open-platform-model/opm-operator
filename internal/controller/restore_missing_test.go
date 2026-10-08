@@ -24,18 +24,22 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/open-platform-model/library/opm/k8s/labels"
 	"github.com/open-platform-model/library/opm/k8s/object"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	"github.com/open-platform-model/opm-operator/internal/apply"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
 	"github.com/open-platform-model/opm-operator/internal/render"
 	"github.com/open-platform-model/opm-operator/internal/status"
 )
@@ -62,6 +66,33 @@ func configMapResource(name, message string) *object.Resource {
 	return &object.Resource{Value: cm, Instance: "test-module", Component: "hello", Transformer: "kubernetes#simple"}
 }
 
+// jobResource is a rendered Job named name that sets ttlSecondsAfterFinished.
+func jobResource(name string) *object.Resource {
+	job := cuecontext.New().CompileString(fmt.Sprintf(`{
+	apiVersion: "batch/v1"
+	kind:       "Job"
+	metadata: {
+		name:      %q
+		namespace: %q
+		labels: {
+			%q: %q
+			%q: %q
+		}
+	}
+	spec: {
+		ttlSecondsAfterFinished: 100
+		template: spec: {
+			restartPolicy: "Never"
+			containers: [{name: "run", image: "busybox"}]
+		}
+	}
+}`, name, periodicNamespace,
+		labels.ManagedBy, labels.ManagedByController,
+		labels.ModuleInstanceNamespace, periodicNamespace))
+	Expect(job.Err()).NotTo(HaveOccurred())
+	return &object.Resource{Value: job, Instance: "test-module", Component: "hello", Transformer: "kubernetes#simple"}
+}
+
 // A rendering reconcile with unchanged digests creates the rendered objects
 // the cluster lacks, and only those.
 var _ = Describe("Restore of a missing ModuleInstance object", func() {
@@ -83,9 +114,10 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		return &cm, err
 	}
 
-	deleteConfigMap := func(ctx context.Context, name string) {
+	// deleteConfigMap deletes the ConfigMap "test-module" as a user would.
+	deleteConfigMap := func(ctx context.Context) {
 		Expect(k8sClient.Delete(ctx, &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: periodicNamespace},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-module", Namespace: periodicNamespace},
 		})).To(Succeed())
 	}
 
@@ -100,7 +132,7 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		applied := get(ctx, nn)
 		Expect(applied.Status.History).To(HaveLen(1))
 
-		deleteConfigMap(ctx, "test-module")
+		deleteConfigMap(ctx)
 		res := reconcileOnce(ctx, r, nn)
 
 		cm, err := configMap(ctx, "test-module")
@@ -158,7 +190,7 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		Expect(err).NotTo(HaveOccurred())
 		kept.Data["message"] = "edited-by-hand"
 		Expect(k8sClient.Update(ctx, kept)).To(Succeed())
-		deleteConfigMap(ctx, "test-module")
+		deleteConfigMap(ctx)
 
 		fresh()
 		reconcileOnce(ctx, r, nn)
@@ -174,6 +206,102 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		Expect(drifted.Status).To(Equal(metav1.ConditionTrue))
 	})
 
+	It("leaves a Job with a TTL absent, ends NoOp and reports it Missing", func() {
+		ctx := context.Background()
+		nn := createPeriodicInstance(ctx, "restore-ttl-job-mi")
+		const jobName = "restore-ttl-job"
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: periodicNamespace},
+			}, client.PropagationPolicy(metav1.DeletePropagationBackground)))).To(Succeed())
+		})
+		renderer := &callCountingRenderer{}
+		resources := func() []*object.Resource {
+			return []*object.Resource{configMapResource("test-module", "hello"), jobResource(jobName)}
+		}
+		renderer.result = &render.RenderResult{
+			Resources:        resources(),
+			ModuleVersion:    stubModuleVersion,
+			PlatformIdentity: stubPlatformIdentity,
+			SkewPolicy:       stubSkewPolicy,
+		}
+		r := periodicReconciler(renderer, 0) // every reconcile renders
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply
+		applied := get(ctx, nn)
+		Expect(applied.Status.History).To(HaveLen(1))
+
+		By("the cluster removes the finished Job")
+		jobKey := types.NamespacedName{Name: jobName, Namespace: periodicNamespace}
+		Expect(k8sClient.Delete(ctx, &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: periodicNamespace},
+		}, client.PropagationPolicy(metav1.DeletePropagationBackground))).To(Succeed())
+		Eventually(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, jobKey, &batchv1.Job{}))
+		}, 5*time.Second, 50*time.Millisecond).Should(BeTrue())
+
+		renderer.result.Resources = resources()
+		calls := renderer.calls.Load()
+		res := reconcileOnce(ctx, r, nn)
+
+		Expect(renderer.calls.Load()).To(Equal(calls+1), "the reconcile rendered")
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, jobKey, &batchv1.Job{}))).To(BeTrue(), "the Job is not created again")
+		after := get(ctx, nn)
+		Expect(after.Status.History).To(HaveLen(1), "the reconcile ended NoOp")
+		Expect(apimeta.IsStatusConditionTrue(after.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		h := apimeta.FindStatusCondition(after.Status.Conditions, status.HealthyCondition)
+		Expect(h).NotTo(BeNil())
+		Expect(h.Status).To(Equal(metav1.ConditionFalse))
+		Expect(h.Reason).To(Equal(status.NotRolledOutReason))
+		Expect(h.Message).To(ContainSubstring("Job " + periodicNamespace + "/" + jobName + " (Missing)"))
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<=", 2*time.Minute), "the missing Job keeps the health requeue")
+	})
+
+	It("records a failed restore as a failed apply and retries on the backoff", func() {
+		ctx := context.Background()
+		nn := createPeriodicInstance(ctx, "restore-fails-mi")
+		r := periodicReconciler(&callCountingRenderer{}, 0)
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply
+		deleteConfigMap(ctx)
+
+		// The dry-run of drift detection passes; every real apply fails.
+		base, err := client.NewWithWatch(cfg, client.Options{})
+		Expect(err).NotTo(HaveOccurred())
+		failing := interceptor.NewClient(base, interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
+				o := &client.PatchOptions{}
+				o.ApplyOptions(opts)
+				if len(o.DryRun) == 0 {
+					return fmt.Errorf("injected apply failure")
+				}
+				return c.Patch(ctx, obj, p, opts...)
+			},
+		})
+		r.ResourceManager = apply.NewResourceManager(failing, "opm-controller")
+		res := reconcileOnce(ctx, r, nn)
+
+		_, err = configMap(ctx, "test-module")
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the restore failed")
+		after := get(ctx, nn)
+		ready := apimeta.FindStatusCondition(after.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(status.ApplyFailedReason))
+		Expect(after.Status.NextRetryAt).NotTo(BeNil(), "a failed restore is a retry")
+		Expect(res.RequeueAfter).To(Equal(opmreconcile.BackoffBaseDelay))
+
+		By("the next reconcile restores once the apply works again")
+		r.ResourceManager = apply.NewResourceManager(k8sClient, "opm-controller")
+		reconcileOnce(ctx, r, nn)
+		_, err = configMap(ctx, "test-module")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(apimeta.IsStatusConditionTrue(get(ctx, nn).Status.Conditions, status.ReadyCondition)).To(BeTrue())
+	})
+
 	It("restores nothing while the render is skipped", func() {
 		ctx := context.Background()
 		createSkipPlatform(ctx)
@@ -185,7 +313,7 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		reconcileOnce(ctx, r, nn) // apply, records the key
 		calls := renderer.calls.Load()
 
-		deleteConfigMap(ctx, "test-module")
+		deleteConfigMap(ctx)
 		res := reconcileOnce(ctx, r, nn)
 
 		Expect(renderer.calls.Load()).To(Equal(calls), "the render is skipped")

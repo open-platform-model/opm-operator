@@ -14,8 +14,8 @@
 
 ## 3. API texts
 
-- [ ] 3.1 Rewrite the last paragraph of the `DataPolicy` doc comment on both kinds and the `spec.prune` sentence it depends on, per the `prune-stale-resources` delta; say in the `ForceConflicts` doc comment what the field does and that claims follow `spec.dataPolicy`. Run `task dev:manifests dev:generate` and `task operator:installer`. Verify: `task operator-module:drift` passes; `dist/install.yaml` differs only in the CRD descriptions (restore any other line, the image included).
-- [ ] 3.2 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(api): describe the forced recreate under spec.dataPolicy`
+- [x] 3.1 Rewrite the last paragraph of the `DataPolicy` doc comment on both kinds and the `spec.prune` sentence it depends on, per the `prune-stale-resources` delta; say in the `ForceConflicts` doc comment what the field does and that claims follow `spec.dataPolicy`. Run `task dev:manifests dev:generate` and `task operator:installer`. Verify: `task operator-module:drift` passes; `dist/install.yaml` differs only in the CRD descriptions (restore any other line, the image included).
+- [x] 3.2 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(api): describe the forced recreate under spec.dataPolicy`
 
 ## 4. Docs and the decision record
 

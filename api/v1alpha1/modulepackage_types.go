@@ -70,15 +70,20 @@ type ModulePackageSpec struct {
 	// deleting the ModulePackage leaves its claims in place. With
 	// Delete, claims are pruned and deleted like any other object, and the data
 	// on their volumes goes with them under the reclaim policy of the volume.
-	// The field has no effect unless spec.prune is true: Delete without
-	// spec.prune is accepted and deletes nothing. Claims that a StatefulSet
-	// creates from its volumeClaimTemplates are never tracked and never
-	// deleted by the operator, whatever this field says.
+	// For pruning and deletion the field has no effect unless spec.prune is
+	// true: Delete without spec.prune is accepted and prunes nothing. Claims
+	// that a StatefulSet creates from its volumeClaimTemplates are never
+	// tracked and never deleted by the operator, whatever this field says.
 	//
-	// The field covers pruning and deletion only. With
-	// spec.rollout.forceConflicts, an apply that the API server refuses as a
-	// change to an immutable field deletes the object and creates it again, a
-	// PersistentVolumeClaim included, whatever this field says.
+	// The field also governs the forced recreate of
+	// spec.rollout.forceConflicts, with or without spec.prune. With Keep, or
+	// when the field is absent, the operator does not delete and recreate a
+	// PersistentVolumeClaim whose update the API server refuses, such as a
+	// change of storageClassName or accessModes: it leaves the claim as it
+	// is, applies nothing of that render, and reports Ready=False with the
+	// reason ClaimConflict until the conflict is resolved. With Delete, the
+	// claim is deleted and created again, and the data on its volume goes
+	// with it.
 	// +kubebuilder:validation:Enum=Keep;Delete
 	// +optional
 	DataPolicy DataPolicy `json:"dataPolicy,omitempty"`

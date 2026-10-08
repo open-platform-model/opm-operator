@@ -195,4 +195,37 @@ var _ = Describe("Recovery of a stalled deletion (manager-driven)", func() {
 		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, cmKey, &pruned))).To(BeTrue(),
 			"the delete must prune the inventory as the returned ServiceAccount")
 	})
+
+	// The trigger is the ServiceAccount alone. Created before its RBAC, it
+	// wakes a prune the apiserver forbids, and the delete stalls again.
+	It("stalls with ImpersonationFailed when the ServiceAccount returns without its RBAC", func() {
+		const saName = "wake-unbound-sa"
+		nn, cmKey := stalledDeletion("wake-unbound-mi", saName)
+		DeferCleanup(func() {
+			var left releasesv1alpha1.ModuleInstance
+			if err := k8sClient.Get(ctx, nn, &left); err != nil {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				return
+			}
+			base := left.DeepCopy()
+			left.Finalizers = nil
+			Expect(k8sClient.Patch(ctx, &left, client.MergeFrom(base))).To(Succeed())
+		})
+
+		sa := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace}}
+		Expect(k8sClient.Create(ctx, sa)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, sa)).To(Succeed()) })
+
+		Eventually(func(g Gomega) {
+			var stalled releasesv1alpha1.ModuleInstance
+			g.Expect(k8sClient.Get(ctx, nn, &stalled)).To(Succeed())
+			ready := apimeta.FindStatusCondition(stalled.Status.Conditions, status.ReadyCondition)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(status.ImpersonationFailedReason))
+			g.Expect(stalled.Finalizers).To(ContainElement(opmreconcile.FinalizerName))
+		}).WithTimeout(wakeWithin).WithPolling(100 * time.Millisecond).Should(Succeed())
+
+		var kept corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, cmKey, &kept)).To(Succeed(), "a forbidden prune deletes nothing")
+	})
 })

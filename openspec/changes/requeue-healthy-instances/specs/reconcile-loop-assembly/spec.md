@@ -45,3 +45,17 @@ The periodic reconcile of an instance whose inputs and objects are unchanged SHA
 
 - **WHEN** the operator starts with `--instance-reconcile-interval=-1s`
 - **THEN** it logs the invalid value and exits with a non-zero status
+
+## MODIFIED Requirements
+
+### Requirement: No-op detection
+The reconciler MUST detect no-op reconciliations and skip apply/prune when nothing changed. A reconcile is a no-op only when every digest matches and no restorable rendered object is missing from the cluster (`drift-detection`, "A missing object is restored").
+
+#### Scenario: All digests match
+- **WHEN** source, config, render, and inventory digests all match the last applied values
+- **AND** no restorable rendered object is missing from the cluster
+- **THEN** the controller skips apply and prune, keeps `Ready=True`, and does not record a new history entry
+
+#### Scenario: All digests match and an object is missing
+- **WHEN** all four digests match the last applied values and a restorable rendered object does not exist on the cluster
+- **THEN** the controller applies the missing object, prunes nothing, and records a history entry

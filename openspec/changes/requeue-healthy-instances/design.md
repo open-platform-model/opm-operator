@@ -114,7 +114,7 @@ Alternative considered: *let a missing object in the health judgement cancel the
 
 - [An object that vanishes again after each restore, with `--drift-render-interval=0`, is applied on every health requeue, as fast as every 5 seconds because each apply moves `lastAppliedAt`] → With the default interval the apply happens at most once per 30 minutes. `0` already means "every reconcile renders" and is documented as such; docs/RENDERING.md names this case.
 - [A restored object surprises someone who deleted it on purpose] → Documented; `spec.suspend` is the way to stop the operator from acting on an instance.
-- [An instance whose rendered Job has a TTL reads `Healthy=False` (`NotRolledOut`, missing) for ever once the Job is gone] → Existing behaviour, not changed here; reported to the supervisor as a follow-up.
+- [An instance whose rendered Job has a TTL reads `Healthy=False` (`NotRolledOut`, missing) for ever once the Job is gone, and is judged every 2 minutes instead of every interval] → The verdict rule is older than this change, but its reach is new: before, only an operator restart, a Platform change or a spec edit reached it; now the first periodic reconcile does, at most about 11 minutes after the Job expired. The opm catalog's Job transformer sets a TTL of 100 seconds by default, so every instance with a catalog Job is affected. This change pins the behaviour with a test and documents it; a health verdict that reads an expired Job as finished is a separate change and an owner decision, reported to the supervisor.
 - [More renders on a large cluster with one slot] → See "What the periodic reconcile costs"; three flags tune it.
 - [The fixed interval is one value for every instance] → Accepted; a `spec.interval` field stays possible.
 

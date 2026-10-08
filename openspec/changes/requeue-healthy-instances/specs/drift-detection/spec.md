@@ -29,9 +29,35 @@ A reconcile that skips its render has no rendered objects and SHALL NOT restore 
 - **GIVEN** a Ready ModuleInstance whose rendered Job sets `ttlSecondsAfterFinished` and no longer exists
 - **WHEN** the controller reconciles and renders with unchanged digests
 - **THEN** the Job is not created and the outcome is `NoOp`
+- **AND** `Healthy` stays `False` with reason `NotRolledOut` and names the Job as `Missing`, as `instance-health` judges any missing inventory object
+
+#### Scenario: A restore that fails
+
+- **GIVEN** a Ready ModuleInstance whose ConfigMap `foo` was deleted by hand
+- **WHEN** the controller reconciles, renders with unchanged digests, and the apply of `foo` fails
+- **THEN** `Ready` is `False` with reason `ApplyFailed`, the reconcile requeues on the transient backoff and `status.nextRetryAt` is set
 
 #### Scenario: Nothing is missing
 
 - **GIVEN** a Ready ModuleInstance whose rendered objects all exist
 - **WHEN** the controller reconciles and renders with unchanged digests
 - **THEN** no apply is sent and the outcome is `NoOp`
+
+## MODIFIED Requirements
+
+### Requirement: Drift detection is informational only
+Drift detection MUST NOT trigger automatic correction in v1alpha1. Creating a rendered object that does not exist ("A missing object is restored") is not a correction of drift: it never applies an object that exists.
+
+#### Scenario: Drifted resources are not re-applied
+- **GIVEN** a ModuleRelease with detected drift and unchanged digests (no-op)
+- **AND** no restorable rendered object is missing from the cluster
+- **WHEN** the controller completes Phase 4
+- **THEN** Phase 5 (Apply) is skipped (no-op behavior preserved)
+- **AND** `Drifted=True` condition remains set
+- **AND** `Ready=True` is preserved (drift is not a failure)
+
+#### Scenario: A restore leaves drifted resources alone
+- **GIVEN** a ModuleInstance with detected drift, unchanged digests and one rendered object missing
+- **WHEN** the controller completes Phase 5 (Apply)
+- **THEN** only the missing object was applied
+- **AND** `Drifted=True` condition remains set

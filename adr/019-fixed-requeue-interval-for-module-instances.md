@@ -33,11 +33,13 @@ Option 3 was not chosen now because it adds an API field before the need for a p
 
 ## Consequences
 
-**Positive:** `Healthy` of an unchanged instance is at most one interval old, `Drifted` at most one drift render interval old, and a deleted object comes back without a spec change. A change missed as a watch edge is now also recovered without a restart, which closes the gap ADR-016 recorded.
+**Positive:** `Healthy` of an unchanged instance is at most one interval old, `Drifted` at most one drift render interval plus one interval old (the render happens on the first periodic reconcile after the drift render interval), and a deleted object comes back without a spec change. A change missed as a watch edge is now also recovered without a restart, which closes the gap ADR-016 recorded.
 
 **Positive:** No API change and no new dependency. The unchanged periodic reconcile sends no write: a skipped render patches `Healthy` only when the verdict changed.
 
 **Negative:** New load. Each healthy instance costs one uncached read per inventory object every interval, and one render, one dry-run per rendered object and one status write every drift render interval. Before this decision an unchanged instance rendered once. With one render slot the periodic renders of N instances run one after another and fit while N times the render time is below the drift render interval; past that, renders for spec changes queue behind periodic ones.
+
+**Negative:** An instance that renders a `Job` with `ttlSecondsAfterFinished` reads `Healthy=False` (`NotRolledOut`, the Job `Missing`) from the first periodic reconcile after the Job expired, and is then judged every 2 minutes. The health verdict that causes this is older than this decision, but the periodic reconcile makes every such instance reach it. A verdict that reads an expired Job as finished is left to a later change.
 
 **Negative:** The interval is one value for the whole operator. A team that wants one instance checked every minute and another every hour cannot say so.
 

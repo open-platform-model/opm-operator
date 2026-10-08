@@ -269,8 +269,10 @@ What the periodic reconcile does depends on the render skip above:
 | Less than `--drift-render-interval` | Skips the render and judges health | One uncached read per inventory object; no render slot; a status write only when `Healthy` changed |
 | More | Renders, runs drift detection, restores missing objects, judges health | One render slot for one render, one dry-run per rendered object, one status write (`renderedAt`), one `Normal` event |
 
-So `Healthy` of an unchanged instance is at most one reconcile interval old,
-and `Drifted` at most one drift render interval old.
+So `Healthy` of an unchanged instance is at most one reconcile interval old.
+`Drifted` is at most the drift render interval plus one reconcile interval
+old, because the render happens on the first periodic reconcile after the
+drift render interval: about 41 minutes at the defaults.
 
 ### A missing object is created again
 
@@ -283,15 +285,25 @@ and health checked from that moment. An object that exists is not applied,
 so drift on it stays reported in `Drifted` and is never corrected (ADR-012).
 
 An object deleted by hand therefore comes back on the first reconcile that
-renders: at the defaults at most about 30 minutes later. Until then
+renders: at the defaults at most about 30 minutes later (the missing object
+keeps the instance on the 2-minute health requeue, so the render is not
+delayed by the reconcile interval). If the apply of the missing object
+fails, the reconcile is a failed apply like any other: `Ready` turns `False`
+with reason `ApplyFailed` and the instance retries on the backoff. Until then
 `Healthy` is `False` with reason `NotRolledOut` and names the object as
 `Missing`. Lower `--drift-render-interval` for a faster restore, and set
 `spec.suspend` to stop the operator from acting on an instance.
 
 Three cases restore nothing:
 
-- A Job that sets `ttlSecondsAfterFinished`. The cluster deletes it after it
-  finished, and to create it again would run it again.
+- A Job that sets `ttlSecondsAfterFinished` (the opm catalog's Job
+  transformer sets 100 seconds by default). The cluster deletes it after it
+  finished, and to create it again would run it again. The health judgement
+  does not know this yet: once the Job is gone, the first periodic reconcile
+  sets `Healthy` to `False` with reason `NotRolledOut` and names the Job as
+  `Missing`, and it stays so until the instance's inputs change. Such an
+  instance is judged every 2 minutes, not every reconcile interval. `Ready`
+  is not affected.
 - A reconcile whose dry-run failed: the missing set is unknown.
 - A ModulePackage. Its `NoOp` does not re-apply a missing object.
 
@@ -303,7 +315,9 @@ controller may remove rendered objects.
 ### Load with one render slot
 
 With the defaults, N healthy instances cost N health judgements per 10
-minutes and N renders per 30 minutes. With `--max-concurrent-renders=1` the
+minutes and N renders per 30 minutes. An instance with a missing object that
+is not restored (an expired Job with a TTL) costs a health judgement every 2
+minutes instead. With `--max-concurrent-renders=1` the
 renders run one after another, so they fit while N times the render time of
 a module is below the drift render interval: 360 instances at 5 seconds per
 render. Past that the queue of periodic renders does not drain and a render

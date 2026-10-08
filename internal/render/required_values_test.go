@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	cueerrors "cuelang.org/go/cue/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -63,13 +64,13 @@ func rawValues(doc string) *releasesv1alpha1.RawValues {
 func TestKernelModuleRenderer_ValuesFailureIsTheKernels(t *testing.T) {
 	registry := requiredValueRegistry(t)
 
-	// The hello fixture with two more #config fields: required, without a
-	// default, and read by no component.
+	// The hello fixture with three more #config fields that no component
+	// reads: two required, without a default, and one constrained.
 	dir := t.TempDir()
 	require.NoError(t, os.CopyFS(dir, os.DirFS(helloFixtureDir)))
 	extra := filepath.Join(dir, "extra.cue")
 	require.NoError(t, os.WriteFile(extra,
-		[]byte("package hello\n\n#config: note: string\n#config: other: int\n"), 0o644))
+		[]byte("package hello\n\n#config: note: string\n#config: other: int\n#config: port: int & >0 | *80\n"), 0o644))
 
 	k := kernel.New(kernel.WithRegistry(registry))
 	mod, err := k.AcquireModuleFromDir(context.Background(), dir)
@@ -127,6 +128,13 @@ func TestKernelModuleRenderer_ValuesFailureIsTheKernels(t *testing.T) {
 			},
 		},
 		{
+			name:   "constraint violated",
+			values: rawValues(`{"note":"n","other":1,"port":-1}`),
+			want: frame + "#module.#config.port: 2 errors in empty disjunction:; " +
+				"#module.#config.port: conflicting values 80 and -1 (" + extra + ":5:28, spec.values:1:1, spec.values:1:30); " +
+				"#module.#config.port: invalid value -1 (out of bound >0) (" + extra + ":5:22, spec.values:1:30)",
+		},
+		{
 			name:   "field not allowed",
 			values: rawValues(`{"note":"n","other":1,"bogus":true}`),
 			want:   frame + "field not allowed (spec.values:1:23)",
@@ -143,6 +151,8 @@ func TestKernelModuleRenderer_ValuesFailureIsTheKernels(t *testing.T) {
 				assert.Contains(t, err.Error(), sub)
 			}
 			assert.NotContains(t, err.Error(), "more errors", "every finding is written out")
+			var ce cueerrors.Error
+			assert.ErrorAs(t, err, &ce, "the wording keeps the kernel's error chain")
 			assert.NotErrorIs(t, err, ErrAcquire, "a values failure is not an acquisition failure")
 			_, isFetch := errors.AsType[*oerrors.FetchError](err)
 			assert.False(t, isFetch, "a values failure must not retry as a registry fetch failure")

@@ -39,6 +39,21 @@ func TestWithFindings_WritesEveryFindingWithItsPositions(t *testing.T) {
 		withFindings(err))
 }
 
+// opaqueError hides its cause's text behind its own.
+type opaqueError struct{ err error }
+
+func (e *opaqueError) Error() string { return "opaque failure" }
+func (e *opaqueError) Unwrap() error { return e.err }
+
+// An error whose text does not hold its first CUE finding keeps its own text.
+func TestWithFindings_TextWithoutTheFindingKeepsItsText(t *testing.T) {
+	ctx := cuecontext.New()
+	cueErr := ctx.CompileString("a: 1\na: 2\n", cue.Filename("x.cue")).Validate()
+	require.Error(t, cueErr)
+
+	assert.Equal(t, "opaque failure", withFindings(&opaqueError{err: cueErr}))
+}
+
 // The wording keeps the error chain: the reconcile classifiers read a
 // registry fetch failure and the typed terminal causes through it.
 func TestFindingsError_KeepsTheChain(t *testing.T) {

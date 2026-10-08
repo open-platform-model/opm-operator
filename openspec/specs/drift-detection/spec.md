@@ -202,7 +202,7 @@ The dry-run of drift detection for a ModuleInstance SHALL be sent through the sa
 
 ### Requirement: A drift check that is refused or has no identity is reported
 
-The controller SHALL read each object through the identity of the dry-run before it sends the dry-run. When the API server refuses that read or the dry-run as `Forbidden`, the controller SHALL set the `Drifted` condition to `Unknown` with reason `DriftCheckForbidden` and a message that carries the API server's refusal, which names the identity. When the effective ServiceAccount cannot be impersonated (it does not exist, or the client cannot be built), drift detection SHALL NOT run and the controller SHALL set `Drifted` to `Unknown` with reason `ImpersonationFailed`.
+The controller SHALL read each object through the identity of the dry-run before it sends the dry-run. When the API server refuses that read or the dry-run as `Forbidden`, the controller SHALL set the `Drifted` condition to `Unknown` with reason `DriftCheckForbidden` and a message that carries the API server's refusal, which names the identity. `Forbidden` is every 403 answer, not only a missing RBAC verb of the identity: an admission control that denies the dry-run with 403, and a controller that may not impersonate the ServiceAccount, give the same reason, and the message says which. When the effective ServiceAccount cannot be impersonated (it does not exist, or the client cannot be built), drift detection SHALL NOT run and the controller SHALL set `Drifted` to `Unknown` with reason `ImpersonationFailed`.
 
 Both cases SHALL count as a failed drift detection, SHALL leave the missing set unknown so that nothing is restored, and SHALL NOT change the `Ready` condition or the outcome of a reconcile with unchanged digests. A later drift detection that succeeds SHALL replace the condition with its verdict, and a successful apply of the rendered set SHALL remove it.
 
@@ -220,6 +220,20 @@ Both cases SHALL count as a failed drift detection, SHALL leave the missing set 
 - **WHEN** the controller reconciles and renders with unchanged digests
 - **THEN** `Drifted` is `Unknown` with reason `DriftCheckForbidden` and the message names the refused `get`
 - **AND** `Drifted` is not `True`: no verdict is given against an object that was not read
+
+#### Scenario: The ServiceAccount may not create a missing object
+
+- **GIVEN** a Ready ModuleInstance whose ServiceAccount `deploy-sa` lost the `create` verb on ConfigMaps, and whose rendered ConfigMap was deleted
+- **WHEN** the controller reconciles and renders with unchanged digests
+- **THEN** `Drifted` is `Unknown` with reason `DriftCheckForbidden`
+- **AND** the ConfigMap is not created, by any identity
+
+#### Scenario: A restore runs as the ServiceAccount
+
+- **GIVEN** a Ready ModuleInstance with `spec.serviceAccountName=deploy-sa` whose rendered ConfigMap was deleted
+- **WHEN** the controller reconciles and renders with unchanged digests
+- **THEN** every read, dry-run and apply of the ConfigMap carries the identity of `deploy-sa`
+- **AND** the ConfigMap exists again
 
 #### Scenario: The refusal ends
 

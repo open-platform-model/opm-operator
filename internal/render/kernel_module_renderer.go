@@ -142,7 +142,18 @@ func (r *KernelModuleRenderer) synthesize(
 	if err != nil {
 		return nil, acquireFailed("acquiring module", err)
 	}
+	return r.synthesizeFrom(ctx, mod, name, namespace, values)
+}
 
+// synthesizeFrom checks the values against the acquired module's #config and
+// synthesizes the instance. It is the part of synthesize that needs no
+// registry fetch of the module itself.
+func (r *KernelModuleRenderer) synthesizeFrom(
+	ctx context.Context,
+	mod *module.Module,
+	name, namespace string,
+	values *releasesv1alpha1.RawValues,
+) (*module.Instance, error) {
 	// The CRD values become one values source whose origin names the CR
 	// field they came from. A ModuleInstance without spec.values supplies the
 	// empty document: the core schema declares the instance's values as an
@@ -166,9 +177,10 @@ func (r *KernelModuleRenderer) synthesize(
 	// path inside the module) before the kernel's own per-source check
 	// runs; the kernel's layered validation reports it at the source's
 	// positions instead, so the error names spec.values. It also refuses a
-	// required #config value left unset that no component reads, which
-	// synthesis does not; it stays until library#211 settles whether the
-	// kernel refuses that itself.
+	// required #config value left unset that no component reads. Synthesis
+	// refuses that too since library v1.0.0-beta.7 (library#211), with a
+	// different message (`not fully concrete: values.<field>: ...`); this
+	// check runs first, so the message a user reads is this one.
 	if _, err := r.Kernel.ValidateConfigDetailed(mod.ConfigSchema(), sources); err != nil {
 		return nil, fmt.Errorf("validating values against the module's #config: %s", cueFindings(err))
 	}

@@ -71,7 +71,11 @@ const (
 	OrphanedOnDeletionReason      = "OrphanedOnDeletion"
 	ReconciliationSucceededReason = "ReconciliationSucceeded"
 	DriftDetectedReason           = "DriftDetected"
-	ManagedExternallyReason       = "ManagedExternally"
+	// DriftCheckForbiddenReason: Drifted=Unknown, the API server refused the
+	// dry-run of drift detection for the identity that applies the instance,
+	// so whether an object drifted is not known. Ready is not moved.
+	DriftCheckForbiddenReason = "DriftCheckForbidden"
+	ManagedExternallyReason   = "ManagedExternally"
 	// SelfManagementRefusedReason: Ready=False, Stalled=True, the instance
 	// deploys the operator itself and its owner is absent or operator. The
 	// operator never applies, prunes or finalizes the instance that deploys
@@ -376,7 +380,17 @@ func MarkDrifted(obj conditions.Setter, count int) {
 		"%d resource(s) drifted from desired state", count)
 }
 
-// ClearDrifted removes the Drifted condition (drift resolved by successful apply).
+// MarkDriftUnknown sets Drifted=Unknown: drift detection could not give a
+// verdict. The reason is DriftCheckForbiddenReason when the dry-run was
+// refused, ImpersonationFailedReason when the identity that applies could not
+// be impersonated and no dry-run was sent. Informational, like MarkDrifted:
+// no other condition is touched.
+func MarkDriftUnknown(obj conditions.Setter, reason, messageFormat string, messageArgs ...any) {
+	conditions.MarkUnknown(obj, DriftedCondition, reason, messageFormat, messageArgs...)
+}
+
+// ClearDrifted removes the Drifted condition: drift detection found none, or
+// a successful apply resolved it.
 func ClearDrifted(obj conditions.Setter) {
 	conditions.Delete(obj, DriftedCondition)
 }

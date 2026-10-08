@@ -542,9 +542,17 @@ func ReconcileModuleInstance(
 	// never clears, burying real drift on the same instance behind it. The
 	// refusal carries that signal instead. A resource that stops being
 	// withheld re-enters the apply list and is compared again from then on.
+	//
+	// The dry-run is sent by the client that applies: the impersonated
+	// ServiceAccount when one is effective, the controller's own otherwise.
+	// It is built once, here, and the health reads of a NoOp, the apply and
+	// the prune below reuse it. A client that cannot be built is reported by
+	// drift detection and does not end the reconcile: with unchanged digests
+	// there is nothing to apply. The apply phase stalls on the same error.
+	applyRM, applyClient, impErr := buildApplyClient(ctx, params, &mi)
 	phases.driftRan = true
 	var missing []*unstructured.Unstructured
-	missing, phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, applyList)
+	missing, phases.driftFailed = detectDrift(ctx, applyRM, impErr, &mi, applyList)
 
 	// The same dry-run names the rendered objects the cluster lacks. With
 	// unchanged digests they are the only thing to do: restoring applies
@@ -564,7 +572,7 @@ func ReconcileModuleInstance(
 		outcome = NoOp
 		forgetExpiredJobs(ctx, &mi, expired)
 		// Judged before the deferred NoOp commit, which patches it.
-		v := judgeInstanceHealth(ctx, params, &mi, inventoryEntries(mi.Status.Inventory))
+		v := judgeHealthAs(ctx, params, &mi, applyClient, impErr, inventoryEntries(mi.Status.Inventory))
 		applyHealth(&mi, v)
 		return ctrl.Result{RequeueAfter: instanceRequeue(healthRequeue(v, mi.Status.LastAppliedAt, time.Now()), params.ReconcileInterval)}, nil
 	}
@@ -575,9 +583,8 @@ func ReconcileModuleInstance(
 	}
 	staleSet := staleEntries(previousEntries, converted.entries)
 
-	// Build impersonated client and resource manager if serviceAccountName is set.
-	// Apply and prune use the impersonated identity; all other phases use the controller's own client.
-	applyRM, applyClient, impErr := buildApplyClient(ctx, params, &mi)
+	// Apply and prune use the identity built for drift detection above. An
+	// identity that could not be built stalls here, where it is needed.
 	if impErr != nil {
 		status.MarkStalled(&mi, status.ImpersonationFailedReason, "%s", impErr)
 		outcome = FailedStalled
@@ -694,14 +701,27 @@ func judgeInstanceHealth(
 	mi *releasesv1alpha1.ModuleInstance,
 	entries []releasesv1alpha1.InventoryEntry,
 ) healthVerdict {
-	if sa, _ := resolveEffectiveSA(mi.Spec.ServiceAccountName, params.DefaultServiceAccount); sa == "" {
-		return judgeHealth(ctx, managerReader(params.APIReader, params.Client), entries)
-	}
 	_, impClient, err := buildApplyClient(ctx, params, mi)
-	if err != nil {
-		return unreadableVerdict(entries, err)
+	return judgeHealthAs(ctx, params, mi, impClient, err, entries)
+}
+
+// judgeHealthAs judges entries through an apply client that buildApplyClient
+// already returned for mi, with the error it returned. The reader is the one
+// of the identity that applies: that client when a ServiceAccount is
+// effective, the manager's uncached reader otherwise.
+func judgeHealthAs(
+	ctx context.Context,
+	params *ModuleInstanceParams,
+	mi *releasesv1alpha1.ModuleInstance,
+	applyClient client.Client,
+	buildErr error,
+	entries []releasesv1alpha1.InventoryEntry,
+) healthVerdict {
+	if buildErr != nil {
+		return unreadableVerdict(entries, buildErr)
 	}
-	return judgeHealth(ctx, impClient, entries)
+	effectiveSA, _ := resolveEffectiveSA(mi.Spec.ServiceAccountName, params.DefaultServiceAccount)
+	return judgeHealth(ctx, appliedReader(effectiveSA, applyClient, params.APIReader, params.Client), entries)
 }
 
 // skipInstanceRender skips the render of mi when its inputs are unchanged
@@ -859,7 +879,12 @@ func updateFailureCounters(
 	}
 }
 
-// detectDrift runs SSA dry-run drift detection and updates status accordingly.
+// detectDrift runs SSA dry-run drift detection through rm, the resource
+// manager of the identity that applies mi, and updates status accordingly.
+// identityErr is the error of building that identity: when it is set no
+// dry-run is sent, by any identity, and Drifted is Unknown with
+// ImpersonationFailed. A dry-run the API server refuses as Forbidden sets
+// Drifted to Unknown with DriftCheckForbidden. Both count as a failure.
 // It returns the resources that do not exist on the cluster, and true if
 // drift detection failed (API error); a failure leaves the missing set
 // unknown, so it returns none.
@@ -869,13 +894,22 @@ func updateFailureCounters(
 func detectDrift(
 	ctx context.Context,
 	rm *fluxssa.ResourceManager,
+	identityErr error,
 	mi *releasesv1alpha1.ModuleInstance,
 	resources []*unstructured.Unstructured,
 ) (missing []*unstructured.Unstructured, failed bool) {
 	log := logf.FromContext(ctx)
+	if identityErr != nil {
+		log.Error(identityErr, "Drift detection did not run, the identity that applies could not be built")
+		status.MarkDriftUnknown(mi, status.ImpersonationFailedReason, "drift detection did not run: %s", identityErr)
+		return nil, true
+	}
 	driftResult, err := apply.DetectDrift(ctx, rm, resources)
 	if err != nil {
 		log.Error(err, "Drift detection failed, continuing reconcile")
+		if isForbidden(err) {
+			status.MarkDriftUnknown(mi, status.DriftCheckForbiddenReason, "%s", err)
+		}
 		return nil, true
 	}
 	if driftResult.Drifted {

@@ -274,6 +274,28 @@ So `Healthy` of an unchanged instance is at most one reconcile interval old.
 old, because the render happens on the first periodic reconcile after the
 drift render interval: about 41 minutes at the defaults.
 
+### Which identity runs drift detection
+
+The dry-run of drift detection is sent by the client that applies the
+instance: as the ServiceAccount of `spec.serviceAccountName`, else as the
+ServiceAccount of `--default-service-account` in the instance's namespace,
+else as the operator itself. The answer is therefore the one an apply by
+that identity gets, and the operator's own role needs no access to the
+objects of an instance that names a ServiceAccount.
+
+Two cases give no verdict. Both set `Drifted` to `Unknown`, add one to
+`status.failureCounters.drift`, restore nothing and leave `Ready` as it is:
+
+| Reason on `Drifted` | Cause | Fix |
+| --- | --- | --- |
+| `DriftCheckForbidden` | The API server answered `403 Forbidden` to the read or the dry-run of an object. Most often the identity lacks an RBAC verb; the message then names the identity, the verb and the resource. An admission control (a quota, Pod Security, a webhook) that denies the dry-run with 403 gives the same reason, and so does an operator that may not impersonate the ServiceAccount; the message says which. | For RBAC: give the ServiceAccount `get` and `patch` on every kind the module renders, and `create` so that the dry-run of a missing object is allowed. For an admission denial: read the message; more verbs do not clear it. |
+| `ImpersonationFailed` | The ServiceAccount does not exist, or its client could not be built. No dry-run is sent. | Create the ServiceAccount. |
+
+The operator does not send the dry-run as itself when the ServiceAccount
+fails. A dry-run that fails for another reason (a timeout, a server error)
+adds one to the counter and leaves `Drifted` as it was. The first drift
+detection that succeeds replaces `Unknown` with its verdict.
+
 ### A missing object is created again
 
 A reconcile that renders and finds its digests unchanged does not apply. The

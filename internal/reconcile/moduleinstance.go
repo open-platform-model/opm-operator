@@ -598,7 +598,8 @@ func ReconcileModuleInstance(
 	phases.applyRan = true
 	force := mi.Spec.Rollout != nil && mi.Spec.Rollout.ForceConflicts
 	effectiveSA, _ := resolveEffectiveSA(mi.Spec.ServiceAccountName, params.DefaultServiceAccount)
-	applyResult, err := apply.Apply(ctx, applyRM, applyList, force)
+	applyResult, err := apply.Apply(ctx, applyRM, applyList,
+		apply.ApplyOptions{Force: force, DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		phases.applyFailed = true
 		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", err)

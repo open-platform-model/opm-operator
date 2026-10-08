@@ -68,8 +68,7 @@ type PruneOptions struct {
 // nothing is going to be deleted, so the failed read must not fail the prune
 // or hold a finalizer.
 //
-// The protection is this function's only: Apply with force deletes and
-// recreates an object the API server refuses to update, a claim included.
+// Apply protects claims in the same way on a forced recreate (ApplyOptions).
 //
 // If a stale resource is already gone (NotFound), it is treated as success.
 // Individual failures (Get or Delete) are collected and returned as a joined
@@ -185,5 +184,5 @@ func isSafeToDelete(entry releasesv1alpha1.InventoryEntry) bool {
 // isDataClaim reports whether entry is a PersistentVolumeClaim of the core
 // API group, the one kind whose deletion also deletes user data.
 func isDataClaim(entry releasesv1alpha1.InventoryEntry) bool {
-	return entry.Group == "" && entry.Kind == "PersistentVolumeClaim"
+	return isCoreClaim(entry.Group, entry.Kind)
 }

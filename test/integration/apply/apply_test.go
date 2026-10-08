@@ -139,7 +139,7 @@ var _ = Describe("Apply", func() {
 				newUnstructuredConfigMap("apply-test-cm2", map[string]string{"key": "value2"}),
 			}
 
-			result, err := apply.Apply(ctx, rm, resources, false)
+			result, err := apply.Apply(ctx, rm, resources, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Created).To(Equal(2))
 			Expect(result.Updated).To(Equal(0))
@@ -168,12 +168,12 @@ var _ = Describe("Apply", func() {
 			}
 
 			By("applying the first time")
-			result, err := apply.Apply(ctx, rm, resources, false)
+			result, err := apply.Apply(ctx, rm, resources, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Created).To(Equal(1))
 
 			By("re-applying the same resources")
-			result, err = apply.Apply(ctx, rm, resources, false)
+			result, err = apply.Apply(ctx, rm, resources, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Unchanged).To(Equal(1))
 			Expect(result.Created).To(Equal(0))
@@ -195,7 +195,7 @@ var _ = Describe("Apply", func() {
 			cm := newUnstructuredConfigMap("ownership-test-cm", map[string]string{"key": "original"})
 
 			By("applying with the default field manager")
-			result, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{cm}, false)
+			result, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{cm}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Created).To(Equal(1))
 
@@ -203,7 +203,7 @@ var _ = Describe("Apply", func() {
 			conflictRM := apply.NewResourceManager(k8sClient, "conflict-owner")
 			cmUpdated := newUnstructuredConfigMap("ownership-test-cm", map[string]string{"key": "overwritten"})
 
-			result, err = apply.Apply(ctx, conflictRM, []*unstructured.Unstructured{cmUpdated}, false)
+			result, err = apply.Apply(ctx, conflictRM, []*unstructured.Unstructured{cmUpdated}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Updated).To(Equal(1))
 
@@ -220,7 +220,7 @@ var _ = Describe("Apply", func() {
 			cm := newUnstructuredConfigMap("force-test-cm", map[string]string{"key": "original"})
 
 			By("applying with the default field manager")
-			result, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{cm}, false)
+			result, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{cm}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Created).To(Equal(1))
 
@@ -231,7 +231,7 @@ var _ = Describe("Apply", func() {
 			cmUpdated := newUnstructuredConfigMap("force-test-cm", map[string]string{"key": "conflicting"})
 
 			By("applying with force=true to resolve conflict")
-			result, err = apply.Apply(ctx, conflictRM, []*unstructured.Unstructured{cmUpdated}, true)
+			result, err = apply.Apply(ctx, conflictRM, []*unstructured.Unstructured{cmUpdated}, apply.ApplyOptions{Force: true})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Updated).To(Equal(1))
 
@@ -296,7 +296,7 @@ var _ = Describe("Apply", func() {
 			_ = unstructured.SetNestedField(widget.Object, int64(3), "spec", "size")
 
 			By("applying with the custom resource listed before its CRD")
-			result, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{widget, crd}, false)
+			result, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{widget, crd}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Created).To(Equal(2))
 
@@ -330,7 +330,7 @@ var _ = Describe("Apply", func() {
 
 			By("applying the custom resource and its CRD while discovery lags the CRD")
 			start := time.Now()
-			result, err := apply.Apply(ctx, lagRM, []*unstructured.Unstructured{gadget, crd}, false)
+			result, err := apply.Apply(ctx, lagRM, []*unstructured.Unstructured{gadget, crd}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(time.Since(start)).To(BeNumerically(">=", lag))
 			Expect(result.Created).To(Equal(2))
@@ -346,12 +346,12 @@ var _ = Describe("Apply", func() {
 			DeferCleanup(deleteCRDsAndWait, unrelated)
 
 			By("establishing the unrelated CRD first, so only the failure path is timed")
-			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{unrelated}, false)
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{unrelated}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("applying a custom resource whose kind no CRD in the set defines")
 			start := time.Now()
-			_, err = apply.Apply(ctx, rm, []*unstructured.Unstructured{gizmo, unrelated}, false)
+			_, err = apply.Apply(ctx, rm, []*unstructured.Unstructured{gizmo, unrelated}, apply.ApplyOptions{})
 			Expect(err).To(HaveOccurred())
 			Expect(meta.IsNoMatchError(err)).To(BeTrue(), "error: %v", err)
 			Expect(time.Since(start)).To(BeNumerically("<", 5*time.Second))
@@ -364,14 +364,14 @@ var _ = Describe("Apply", func() {
 			DeferCleanup(deleteCRDsAndWait, crd)
 
 			By("establishing the CRD first, so the deadline only covers the retry")
-			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{crd}, false)
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{crd}, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("applying under a deadline that falls between two retries while discovery never serves the kind")
 			lagRM := newLaggingResourceManager(gk, time.Hour)
 			applyCtx, cancelApply := context.WithTimeout(ctx, 4750*time.Millisecond)
 			defer cancelApply()
-			_, err = apply.Apply(applyCtx, lagRM, []*unstructured.Unstructured{doohickey, crd}, false)
+			_, err = apply.Apply(applyCtx, lagRM, []*unstructured.Unstructured{doohickey, crd}, apply.ApplyOptions{})
 			Expect(err).To(HaveOccurred())
 			Expect(meta.IsNoMatchError(err)).To(BeTrue(), "error: %v", err)
 			kindErr, ok := errors.AsType[*meta.NoKindMatchError](err)
@@ -396,7 +396,7 @@ var _ = Describe("Apply", func() {
 			DeferCleanup(func() { deleteCRDsAndWait(crds...) })
 
 			By("applying the CRDs and their instances in one call through the real mapper")
-			result, err := apply.Apply(ctx, rm, objs, false)
+			result, err := apply.Apply(ctx, rm, objs, apply.ApplyOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Created).To(Equal(2 * n))
 		})

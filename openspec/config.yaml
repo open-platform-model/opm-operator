@@ -139,7 +139,7 @@ rules:
     - "Updates when: Implementation reveals better approach, constraints change"
     - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY).
     - MUST include "Research & Decisions" section when exploration was done.
-    - Format: |
+    - |
         ## Research & Decisions
         
         ### [Topic]

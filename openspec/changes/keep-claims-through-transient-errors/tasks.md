@@ -1,7 +1,7 @@
 ## 1. Pin the library's classification at catalog acquisition
 
-- [ ] 1.1 Add a test that calls the real Kernel's `AcquireCatalogFromRegistry` with an empty `CUE_CACHE_DIR` against a closed port, a 503 registry and a 404 registry, and asserts `ErrTransient` for the first two and not for the third; verify with `go test ./internal/controller -run TestCatalogAcquisitionClassification`
-- [ ] 1.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(controller): pin the fetch classification of catalog acquisition`
+- [x] 1.1 Add a test that calls the real Kernel's `AcquireCatalogFromRegistry` with an empty `CUE_CACHE_DIR` against a closed port, a 503 registry and a 404 registry, and asserts `ErrTransient` for the first two and not for the third; verify with `go test ./internal/controller -run TestCatalogAcquisitionClassification`
+- [x] 1.2 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(controller): pin the fetch classification of catalog acquisition`
 
 ## 2. Keep an accepted claim through a transient failure
 

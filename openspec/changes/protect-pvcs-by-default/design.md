@@ -156,7 +156,7 @@ The cost of the chosen row is that the operator and the CLI differ in one respec
 **The event.**
 
 ```text
-Normal  ClaimsKept  Kept 2 PersistentVolumeClaim(s) and the data on them: media/config, media/cache. They are no longer tracked; delete one with kubectl delete pvc <name> -n <namespace>, or set spec.dataPolicy to Delete to delete claims with the instance.
+Normal  ClaimsKept  Kept 2 PersistentVolumeClaim(s) and the data on them: media/config, media/cache. They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. Set spec.dataPolicy to Delete to let the operator delete claims.
 ```
 
 At most ten names are listed, and fewer when long names would take the note past the 1024-character limit of `events.k8s.io/v1`; the rest is "and N more". The event carries no enhancement reference.

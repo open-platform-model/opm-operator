@@ -82,7 +82,7 @@ type faults struct {
 	deleteCalls     int
 }
 
-func (f *faults) client() client.Client {
+func (f *faults) client() client.WithWatch {
 	realClient, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
 	Expect(err).NotTo(HaveOccurred())
 	return interceptor.NewClient(realClient, interceptor.Funcs{
@@ -309,6 +309,39 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 		expectIdentities(nn, identityB, identityA)
 		Expect(instanceStatus(nn).Inventory.Entries).To(Equal(before.Entries))
 		Expect(ready(nn).Status).To(Equal(metav1.ConditionFalse))
+	})
+
+	It("keeps both identities when the apply succeeds and the reconcile is refused afterwards", func() {
+		providerName := "id-refused"
+		claimName := namespace + "." + providerName
+		consumer := demandContracts("id-refused-consumer", contractBackup)
+		storeClaim(claimName, providerName, contractStorage, contractBackup)
+		createModuleInstance(providerName)
+		nn := types.NamespacedName{Name: providerName, Namespace: namespace}
+		DeferCleanup(func() {
+			removeConfigMaps("idrf-marker")
+			cleanupShrinkFixtures(claimName, providerName, nn, consumer)
+		})
+		params.APIReader = k8sClient
+
+		first := providerRenderResult(claimName, providerName, contractStorage, contractBackup)
+		params.Renderer = &stubRenderer{result: first}
+		ensureFinalizer(params, nn)
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+		expectIdentities(nn, stubInstanceUUID, "")
+		inventory := instanceStatus(nn).Inventory.DeepCopy()
+
+		By("a render of another identity that also shrinks the claim: applied, then refused")
+		shrinking := providerRenderResult(claimName, providerName, contractStorage)
+		shrinking.Resources = append(identityRender(identityB, "idrf-marker").Resources, shrinking.Resources...)
+		requeue, err := reconcileWith(nn, shrinking)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(requeue).To(BeNumerically(">", 0))
+		Expect(ready(nn).Reason).To(Equal(status.DependentsRemainReason))
+		Expect(configMapExists("idrf-marker")).To(BeTrue(), "the apply ran")
+		expectIdentities(nn, identityB, stubInstanceUUID)
+		Expect(instanceStatus(nn).Inventory.Entries).To(Equal(inventory.Entries))
 	})
 
 	It("keeps both identities when the reconcile panics after they were stored", func() {

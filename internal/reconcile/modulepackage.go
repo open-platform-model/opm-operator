@@ -753,7 +753,7 @@ func applyAndPruneModulePackage(
 	// A changed identity is stored before the first write of the apply: no
 	// apply without the record.
 	if err := identities.store(&pkg.Status.InstanceUUID, &pkg.Status.PreviousInstanceUUID,
-		func() error { return patchModulePackageDeletionStatus(ctx, patcher, pkg) }); err != nil {
+		func() error { return patchModulePackageIdentityStatus(ctx, patcher, pkg) }); err != nil {
 		status.MarkNotReady(pkg, status.ApplyFailedReason, "%s", err)
 		return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}
 	}
@@ -805,6 +805,14 @@ func applyAndPruneModulePackage(
 	sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
 	reader := appliedReader(sa, applyClient, params.APIReader, params.Client)
 	return &applyPruneResult{outcome: outcome, entries: converted.entries, healthReader: reader}, nil
+}
+
+// patchModulePackageIdentityStatus commits the two identity fields before an
+// apply, without marking the generation as observed.
+func patchModulePackageIdentityStatus(
+	ctx context.Context, patcher *patch.SerialPatcher, pkg *releasesv1alpha1.ModulePackage,
+) error {
+	return patchModulePackageDeletionStatus(ctx, patcher, pkg)
 }
 
 func modulePackageBackoff(pkg *releasesv1alpha1.ModulePackage) time.Duration {

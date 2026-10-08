@@ -1534,6 +1534,13 @@ func reportKeptClaims(recorder events.EventRecorder, obj runtime.Object, action 
 	recorder.Eventf(obj, nil, corev1.EventTypeNormal, status.ClaimsKeptReason, action, "%s", status.ClaimsKeptNote(kept))
 }
 
+// patchIdentityStatus commits the two identity fields before an apply. It
+// sends what the deletion path sends: the status as it stands, without
+// marking the generation as observed, which only the end of the attempt does.
+func patchIdentityStatus(ctx context.Context, patcher *patch.SerialPatcher, mi *releasesv1alpha1.ModuleInstance) error {
+	return patchDeletionStatus(ctx, patcher, mi)
+}
+
 // applyInstance is the apply phase of a ModuleInstance: it stores a changed
 // identity in the status, and applies only when that write succeeded.
 func applyInstance(
@@ -1546,7 +1553,7 @@ func applyInstance(
 	opts apply.ApplyOptions,
 ) (*apply.ApplyResult, error) {
 	if err := identities.store(&mi.Status.InstanceUUID, &mi.Status.PreviousInstanceUUID,
-		func() error { return patchDeletionStatus(ctx, patcher, mi) }); err != nil {
+		func() error { return patchIdentityStatus(ctx, patcher, mi) }); err != nil {
 		return nil, err
 	}
 	return apply.Apply(ctx, rm, resources, opts)

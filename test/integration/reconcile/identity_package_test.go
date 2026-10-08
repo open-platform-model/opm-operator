@@ -28,16 +28,17 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 	const sourceName = "identity-src"
 	var (
 		rec    *actionRecorder
+		f      *faults
 		params *opmreconcile.ModulePackageParams
 	)
 
 	BeforeEach(func() {
 		rec = &actionRecorder{}
-		realClient, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
-		Expect(err).NotTo(HaveOccurred())
+		f = &faults{}
+		c := readySource(f.client(), sourceName)
 		params = &opmreconcile.ModulePackageParams{
-			Client:          readySource(realClient, sourceName),
-			ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+			Client:          c,
+			ResourceManager: apply.NewResourceManager(c, "opm-controller"),
 			EventRecorder:   rec,
 			Fetcher:         packageDirFetcher{path: "releases/app"},
 		}
@@ -160,6 +161,77 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 		Expect(configMapExists("pic-old")).To(BeFalse())
 		Expect(liveConfigMapLabels("pic-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityB))
 		expectPackageIdentities(nn, identityB, "")
+	})
+
+	It("keeps both identities and the inventory when the prune fails, and settles on the retry", func() {
+		nn := start("pkg-id-retry", "pir-app", "pir-old")
+		DeferCleanup(func() { removeConfigMaps("pir-app", "pir-old"); removePackage(nn) })
+		before := packageStatus(nn).Inventory.DeepCopy()
+
+		f.failDelete = "pir-old"
+		reconcilePackage(nn, identityRender(identityB, "pir-app"))
+
+		expectPackageIdentities(nn, identityB, identityA)
+		st := packageStatus(nn)
+		Expect(st.Inventory.Entries).To(Equal(before.Entries), "a failed prune keeps the inventory")
+		Expect(apimeta.FindStatusCondition(st.Conditions, status.ReadyCondition).Reason).To(Equal(status.PruneFailedReason))
+		Expect(configMapExists("pir-old")).To(BeTrue())
+		Expect(rec.withReason(status.LeftBehindReason)).To(BeEmpty())
+
+		By("a deletion in the window would accept both; the retry settles")
+		f.failDelete = ""
+		reconcilePackage(nn, identityRender(identityB, "pir-app"))
+		Expect(configMapExists("pir-old")).To(BeFalse())
+		expectPackageIdentities(nn, identityB, "")
+	})
+
+	It("stores both identities before an apply that then fails", func() {
+		nn := start("pkg-id-applyfail", "pia-app")
+		DeferCleanup(func() { removeConfigMaps("pia-app"); removePackage(nn) })
+		before := packageStatus(nn).Inventory.DeepCopy()
+
+		f.failApply = true
+		reconcilePackage(nn, identityRender(identityB, "pia-app"))
+
+		expectPackageIdentities(nn, identityB, identityA)
+		st := packageStatus(nn)
+		Expect(st.Inventory.Entries).To(Equal(before.Entries))
+		Expect(apimeta.FindStatusCondition(st.Conditions, status.ReadyCondition).Reason).To(Equal(status.ApplyFailedReason))
+		Expect(liveConfigMapLabels("pia-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA))
+	})
+
+	It("applies nothing when the identities cannot be stored", func() {
+		nn := start("pkg-id-nostore", "pis-app")
+		DeferCleanup(func() { removeConfigMaps("pis-app", "pis-new"); removePackage(nn) })
+
+		f.failStatus = true
+		f.applied = 0
+		res := reconcilePackage(nn, identityRender(identityB, "pis-app", "pis-new"))
+
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0), "the reconcile is retried")
+		Expect(f.applied).To(BeZero(), "no object of the render is applied")
+		Expect(configMapExists("pis-new")).To(BeFalse())
+		Expect(liveConfigMapLabels("pis-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA))
+		expectPackageIdentities(nn, identityA, "")
+
+		f.failStatus = false
+		reconcilePackage(nn, identityRender(identityB, "pis-app", "pis-new"))
+		expectPackageIdentities(nn, identityB, "")
+		Expect(configMapExists("pis-new")).To(BeTrue())
+	})
+
+	It("removes the live workload when the package is deleted before an identity change is settled", func() {
+		nn := start("pkg-id-window", "piw-app", "piw-old")
+		DeferCleanup(func() { removeConfigMaps("piw-app", "piw-old"); removePackage(nn) })
+		f.failDelete = "piw-old"
+		reconcilePackage(nn, identityRender(identityB, "piw-app"))
+		expectPackageIdentities(nn, identityB, identityA)
+		f.failDelete = ""
+
+		deletePackage(nn)
+
+		Expect(configMapExists("piw-app")).To(BeFalse(), "relabelled to the new identity")
+		Expect(configMapExists("piw-old")).To(BeFalse(), "still labelled with the earlier identity")
 	})
 
 	It("does not prune another instance's object once an identity is recorded", func() {

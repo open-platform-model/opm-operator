@@ -49,11 +49,12 @@ type listedPackage struct {
 }
 
 // findDeleteCalls type-checks the non-test files of the packages the
-// patterns name and returns every call that deletes a cluster object. A call
-// counts by the type of its receiver, never by the method name alone: the
-// receiver is a controller-runtime client (it implements client.Writer, as a
-// type that embeds one does), or the method belongs to a client-go client or
-// to the Flux resource manager.
+// patterns name and returns every use of a method that deletes a cluster
+// object, called or taken as a value. A use counts by types, never by the
+// method name alone: the receiver is a controller-runtime client (it
+// implements client.Writer, as a type that embeds one does), or the method
+// takes a client.Object (an interface narrowed to the delete), or it belongs
+// to a client-go client or to the Flux resource manager.
 func findDeleteCalls(t *testing.T, patterns ...string) []deleteCall {
 	t.Helper()
 	root, err := filepath.Abs(moduleRoot)
@@ -109,6 +110,8 @@ func findDeleteCalls(t *testing.T, patterns ...string) []deleteCall {
 		t.Fatalf("%s.Writer is no interface", clientPkg)
 	}
 
+	clientObject := clientLib.Scope().Lookup("Object").Type()
+
 	var calls []deleteCall
 	for _, pkg := range targets {
 		files := make([]*ast.File, 0, len(pkg.GoFiles))
@@ -125,21 +128,19 @@ func findDeleteCalls(t *testing.T, patterns ...string) []deleteCall {
 		}
 		for _, file := range files {
 			ast.Inspect(file, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
+				// Every selector of a delete method counts, called or not:
+				// a method value (del := c.Delete) deletes as a call does.
+				sel, ok := n.(*ast.SelectorExpr)
 				if !ok || !deleteMethods[sel.Sel.Name] {
 					return true
 				}
 				// A package-level function, such as conditions.Delete, is
 				// no selection: it has no receiver.
 				selection := info.Selections[sel]
-				if selection == nil || !deletesClusterObjects(selection, writer) {
+				if selection == nil || !deletesClusterObjects(selection, writer, clientObject) {
 					return true
 				}
-				pos := fset.Position(call.Pos())
+				pos := fset.Position(sel.Sel.Pos())
 				rel, err := filepath.Rel(root, pos.Filename)
 				if err != nil {
 					t.Fatal(err)
@@ -159,11 +160,20 @@ func findDeleteCalls(t *testing.T, patterns ...string) []deleteCall {
 }
 
 // deletesClusterObjects reports whether a selected method is a delete of a
-// Kubernetes client.
-func deletesClusterObjects(selection *types.Selection, writer *types.Interface) bool {
+// Kubernetes client: its receiver is a controller-runtime client, or it takes
+// a client.Object, as the same method does on an interface narrowed to it, or
+// it belongs to a client-go client or the Flux resource manager.
+func deletesClusterObjects(selection *types.Selection, writer *types.Interface, clientObject types.Type) bool {
 	recv := selection.Recv()
 	if types.Implements(recv, writer) || types.Implements(types.NewPointer(recv), writer) {
 		return true
+	}
+	if sig, ok := selection.Obj().Type().(*types.Signature); ok {
+		for param := range sig.Params().Variables() {
+			if types.Identical(param.Type(), clientObject) {
+				return true
+			}
+		}
 	}
 	pkg := selection.Obj().Pkg()
 	if pkg == nil {
@@ -214,6 +224,8 @@ func TestDeleteCallMatcher(t *testing.T) {
 		"Delete", "DeleteAllOf", "Delete", "Delete", "DeleteAllOf", // controller-runtime, in source order
 		"Delete", "DeleteCollection", "Delete", // client-go typed and dynamic
 		"Delete", // the Flux resource manager
+		"Delete", // an interface narrowed to the delete
+		"Delete", // a method value
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("matched %v, want %v", got, want)

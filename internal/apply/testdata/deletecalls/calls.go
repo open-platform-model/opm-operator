@@ -29,7 +29,12 @@ type registry struct{}
 func (registry) Delete(string)      {}
 func (registry) DeleteAllOf(string) {}
 
-// Deletes holds the calls the matcher must count: nine.
+// deleter is a controller-runtime client narrowed to its delete.
+type deleter interface {
+	Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error
+}
+
+// Deletes holds the uses the matcher must count: eleven.
 func Deletes(
 	ctx context.Context,
 	c client.Client,
@@ -48,6 +53,11 @@ func Deletes(
 	_ = typed.CoreV1().ConfigMaps("ns").DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 	_ = dyn.Resource(schema.GroupVersionResource{}).Delete(ctx, "name", metav1.DeleteOptions{}) // client-go dynamic
 	_, _ = rm.Delete(ctx, obj, fluxssa.DeleteOptions{})                                         // the resource manager
+
+	var narrow deleter = c
+	_ = narrow.Delete(ctx, obj) // an interface narrowed to the delete
+	del := w.Delete             // a method value
+	_ = del(ctx, obj)
 }
 
 // NotDeletes holds calls of the same names the matcher must not count.

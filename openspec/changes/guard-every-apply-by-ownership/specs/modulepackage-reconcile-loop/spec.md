@@ -16,7 +16,9 @@ The `ReleaseReconciler` MUST detect no-op reconciliations when source artifact r
 ## ADDED Requirements
 
 ### Requirement: A ModulePackage guards every apply by ownership
-A ModulePackage reconcile that renders MUST judge every rendered object with the library's apply verdict before its first write, with the package's recorded instance identities, exactly as a ModuleInstance reconcile does (`ssa-apply`, "An apply is judged by the ownership verdict before its first write"; `reconcile-loop-assembly`, "A reconcile the apply verdict refuses is retried and not stalled"). The read MUST be made by the client that applies. A reconcile that skips its render MUST NOT read the objects. Source: 0012:D8:R4.
+A ModulePackage reconcile that renders MUST judge every rendered object with the library's apply verdict before its first write, with the identities that capability `ssa-apply` defines (the instance's identity, then the earlier one while a change is not settled; never an empty identity, also when the package has none recorded), exactly as a ModuleInstance reconcile does (`ssa-apply`, "An apply is judged by the ownership verdict before its first write"; `reconcile-loop-assembly`, "A reconcile the apply verdict refuses is retried and not stalled"). The read MUST be made by the client that applies. A reconcile that skips its render MUST NOT read the objects. Source: 0012:D8:R4.
+
+A ModulePackage has no drift check to report a verdict that could not be asked. So a reconcile that renders MUST fail, also when every digest matches, when the client that applies cannot be built or the read of a rendered object fails for a reason other than that the object does not exist: `Stalled=True` with reason `ImpersonationFailed` when the ServiceAccount is missing or the read is Forbidden under an effective ServiceAccount, `Ready=False` with reason `ApplyFailed` on the backoff otherwise. It MUST write nothing and MUST keep `status.inventory`.
 
 #### Scenario: A package is refused on another instance's object
 - **GIVEN** a ModulePackage whose render names a ConfigMap that a ModuleInstance holds and that is not in the package's inventory
@@ -32,3 +34,13 @@ A ModulePackage reconcile that renders MUST judge every rendered object with the
 - **GIVEN** a ModulePackage whose render inputs are unchanged inside the drift render interval
 - **WHEN** the controller reconciles
 - **THEN** no rendered object is read for the verdict
+
+#### Scenario: Matching digests and an unreadable object
+- **GIVEN** a Ready ModulePackage with matching digests whose effective ServiceAccount may no longer get ConfigMaps
+- **WHEN** a reconcile renders
+- **THEN** nothing is written, `status.inventory` keeps its entries, and the package reports `Stalled=True` with reason `ImpersonationFailed`
+
+#### Scenario: Matching digests and a missing ServiceAccount
+- **GIVEN** a Ready ModulePackage with matching digests whose effective ServiceAccount was deleted
+- **WHEN** a reconcile renders
+- **THEN** the package reports `Stalled=True` with reason `ImpersonationFailed` and is not a `NoOp`

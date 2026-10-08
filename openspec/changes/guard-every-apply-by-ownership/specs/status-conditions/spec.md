@@ -13,3 +13,16 @@ The status package SHALL define the reason constant `ApplyRefused`. A ModuleInst
 - **GIVEN** a reconcile whose only refused object is adopted by another instance
 - **WHEN** the reconcile completes
 - **THEN** `Ready` is `True`
+
+### Requirement: The Ready message counts the objects adopted by another instance
+When a ModuleInstance or ModulePackage reconcile renders, ends `Ready=True` (after an apply, a restore or a no-op) and found one or more rendered objects that the apply verdict refuses as `adopted-elsewhere`, the message of the `Ready` condition MUST state how many rendered objects are adopted by another instance and are not applied. When it found none, the message MUST NOT mention such objects. A reconcile that skips its render MUST leave the message as the last render wrote it. The message MUST NOT carry an enhancement reference. Source: 0012:D8:R8.
+
+#### Scenario: The count after a let-go
+- **GIVEN** a Ready instance, two of whose rendered objects are annotated for another instance
+- **WHEN** a reconcile renders with unchanged digests
+- **THEN** `Ready` is `True` and its message states that 2 rendered objects are adopted by another instance and not applied
+
+#### Scenario: The count goes away
+- **GIVEN** the instance above
+- **WHEN** both objects are annotated back for the instance and a reconcile renders
+- **THEN** `Ready` is `True` and its message no longer mentions adopted objects

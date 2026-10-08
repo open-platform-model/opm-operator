@@ -65,14 +65,14 @@ Reversibility: costly two-way for the code. No stored state depends on it, so a 
 | 12 | Annotated for another instance | yes | `adopted-elsewhere` (`apply.go:139-146`; "an inventoried object annotated for another instance is refused") | Let go. |
 | 13 | Annotated for another instance, OPM-managed, UUID label ours, the annotated one or none | no | `adopted-elsewhere` (`apply.go:114-117`, `:122-125`; "a dropped object is not taken back on the next apply", "a handed-over object stays adopted-elsewhere after the adopter applies") | Let go (it is already out of the inventory). |
 | 14 | Annotated for another instance, not OPM-managed, or UUID label of a third instance | no | `foreign-object` or `other-instance` ("an annotation naming another instance lifts nothing", "... does not lift other-instance") | Refuse the reconcile. |
-| 15 | Being deleted | either, any label or annotation | `terminating` (`apply.go:99-101`; five tests) | Refuse a reconcile that would write the object. |
+| 15 | Being deleted | either, any label or annotation | `terminating` (`apply.go:99-101`; five tests) | Refuse a reconcile that would write the object, and any reconcile when the object exists outside the inventory (an object this instance let go, while its adopter deletes it, refuses until it is gone). |
 | 16 | Read fails, not "not found" | | no verdict | Fail safe: see "A failed read". |
 
 What the two outcomes mean:
 
 **Refuse the reconcile.** Nothing is written: no identity is stored, no object is applied, nothing is pruned. `Ready=False` with reason `ApplyRefused`; `Stalled` is not set; one `Warning` event `ApplyRefused` with action `Apply`. The condition message and the event carry the count and the library's message for each refused object, unchanged (at most ten, fewer past 1024 characters, then the number of the rest: the shape of `LeftBehind`). The attempt counts as a failed apply and is retried on the bounded backoff. `status.inventory`, the applied digests and both identity fields keep their values, so the next reconcile judges again. The refused object is untouched.
 
-**Let go.** The object is left out of the apply list, of drift detection and of the restore. Its entry is left out of the inventory this reconcile records. The stale set is computed from the full render, so the prune never sees it; if it did, the delete verdict would skip it (`adopted-elsewhere`), which is the second lock. The other objects are applied and the reconcile can end `Ready=True`. One `Warning` event `AdoptedElsewhere`, action `Apply`, with the count and the library's messages. It is emitted by every reconcile that renders and finds such an object, so a let-go object stays visible for as long as the module renders it.
+**Let go.** The object is left out of the apply list, of drift detection and of the restore. Its entry is left out of the inventory this reconcile records. The stale set is computed from the full render, so the prune never sees it; if it did, the delete verdict would skip it (`adopted-elsewhere`), which is the second lock. The other objects are applied and the reconcile can end `Ready=True`. The message of `Ready=True` states how many rendered objects are adopted by another instance and not applied, on every reconcile that renders, so the state is in the object's status for as long as the module renders such an object. One `Warning` event `AdoptedElsewhere`, action `Apply`, with the count and the library's messages, is emitted when that count changes and is not zero: when an object is first let go, and when one more is.
 
 ### Where the guard runs
 
@@ -85,8 +85,10 @@ type GuardInput struct {
     Resources []*unstructured.Unstructured
     // Inventory is status.inventory as read at the start of the reconcile.
     Inventory []releasesv1alpha1.InventoryEntry
-    // Identities are the render's identity, then the earlier one while an
-    // identity change is not settled.
+    // Identities are the instance's identity (the render's), then the earlier
+    // one while an identity change is not settled. Never an empty element,
+    // and never the legacy fallback of the prune: Guard returns an error
+    // for an empty list or an empty element.
     Identities []string
 }
 
@@ -117,18 +119,18 @@ ModuleInstance flow after the change (`moduleinstance.go:484-712` today):
 
 ```text
 render -> plan identities (refuse a third) -> withhold refused registrations
-  -> build the client that applies
+  -> build the client that applies (a client that cannot be built: as today for a ModuleInstance)
   -> Guard(apply list, inventory, identities)          one GET per object, as the identity that applies
-  -> drift detection over Allowed                      reuses the guard's read result; no GET of its own
+  -> drift detection over Allowed minus TakenIn        reuses the guard's read result; no GET of its own
   -> plan: no-op, restore (missing + TakenIn), or apply (changed digests, or an unsettled identity change)
   -> refuse when Refused holds an object of the write list, or one that exists outside the inventory
   -> store a changed identity -> Apply(write list) -> prune(stale set of the full render)
   -> commit: inventory = rendered - expired Jobs - LetGo
 ```
 
-ModulePackage flow: the same guard, before the no-op decision of `modulepackage.go:364`, which means the client that applies is built before that decision and no longer inside `applyAndPruneModulePackage` (`modulepackage.go:747`). A ModulePackage has no drift detection and no restore, so `TakenIn` and a let-go object not yet out of the inventory make the reconcile an apply of `Allowed`.
+ModulePackage flow: the same guard, before the no-op decision of `modulepackage.go:364`, which means the client that applies is built before that decision and no longer inside `applyAndPruneModulePackage` (`modulepackage.go:747`). A ModulePackage has no drift detection and no restore, so `TakenIn` and a let-go object not yet out of the inventory make the reconcile an apply of `Allowed`. A ModulePackage has no `Drifted` signal to carry a guard that could not run, so a reconcile that renders and cannot build the client that applies, or cannot read an object, fails also when its digests match: `Stalled` `ImpersonationFailed` for a missing ServiceAccount or a Forbidden read under one, `Ready=False` `ApplyFailed` on the backoff otherwise. Nothing is written and the inventory stays. Today such a package with matching digests is a silent no-op.
 
-Reconcile phase impact: Source and Render: none. Apply: the guard before the first write; the write list excludes let-go objects. Prune: none (the stale set and the delete verdict are the delete half's). Status: the reason `ApplyRefused`; an inventory without let-go objects, also on a no-op. Events: two reasons.
+Reconcile phase impact: Source and Render: none. Apply: the guard before the first write; the write list excludes let-go objects. Prune: none (the stale set and the delete verdict are the delete half's). Status: the reason `ApplyRefused`; an inventory without let-go objects, also on a no-op; the count of let-go objects in the message of `Ready=True`. Events: two reasons.
 
 ### Research & Decisions
 
@@ -157,14 +159,27 @@ Reconcile phase impact: Source and Render: none. Apply: the guard before the fir
 **Context**: An allowed object that exists and is not in the inventory (rows 2, 4, 9, 10 outside the inventory) must be applied and recorded: an adopted object, an object taken back after a hand-over, a kept claim the render names again. With unchanged digests today's code is a no-op, so the object would never be recorded.
 **Options considered**: (1) turn the reconcile into a full apply, which rewrites every drifted object and so corrects drift the operator only reports (ADR-012, ADR-019); (2) treat the object as a restore does a missing one.
 **Decision**: Option 2. For a ModuleInstance with unchanged digests the restore list is the restorable missing objects plus `TakenIn`. The restore applies exactly those and records the inventory of the rendered set, without expired Jobs and let-go objects. For a ModulePackage, which has no restore, the reconcile applies `Allowed`.
-**Rationale**: It reuses the one path that already applies a part of the render with unchanged digests, and it keeps "an object that exists and is in the inventory is never rewritten on unchanged digests".
+**Rationale**: It reuses the one path that already applies a part of the render with unchanged digests, and it keeps "an object that exists and is in the inventory is never rewritten on unchanged digests". The main requirement "A missing object is restored" says the step applies the missing objects "and only those"; the `drift-detection` delta modifies it to name the taken-in objects.
+
+What `Drifted` says: a taken-in object is left out of the dry-run diff of the reconcile that takes it in. That reconcile applies it, so a difference between it and the render is about to be closed and is not drift; without this rule a restore would keep `Drifted=True` on an object the operator has just written, until the next render. From the next render on the object is in the inventory and is compared like any other.
+
+A taken-in object is never deleted and created again. With `spec.rollout.forceConflicts`, Flux recreates an object whose update the API server refuses, and the adopt annotation exists so that a user need not delete an object to bring it under OPM. So before the first write of a forced apply the controller sends the dry-run for each taken-in object, as `checkClaims` does for claims (`internal/apply/claims.go:70-97`), and when the API server refuses the update as immutable the reconcile fails with nothing written: `Ready=False` `ApplyFailed`, on the backoff, with a message that names the object and the refused fields and says that OPM does not recreate an object it is taking in. The way out is the user's: change the object so the update is accepted, or delete it. Once the object is in the inventory, `forceConflicts` treats it like every other object of the instance.
 
 #### Which identities the guard asks with
 
 **Context**: The delete half's design recorded "the guard's `InstanceUUID` is the render's; the window of an identity change needs no second identity on the apply side". That holds inside the inventory. It does not hold for row 4 (an object outside the inventory that carries the earlier identity: a kept claim, an object a failed apply created) and row 11 (an object adopted under the earlier identity). The status field's own text says: "While it is set, an object that carries either identity counts as the instance's own."
 **Options considered**: (1) the render's identity alone, as recorded; (2) ask again with the earlier identity while a change is not settled, when the first answer is an ownership refusal (`foreign-object`, `other-instance` or `adopted-elsewhere`). `terminating` is never asked again.
-**Decision**: Option 2. The identities are the render's, then `status.previousInstanceUUID` when set, or the recorded `status.instanceUUID` when this render starts the change. An object is allowed when either answer allows it; otherwise the first answer's reason and message are reported. This replaces the note in the archived design.
-**Rationale**: It is the rule `judgeDelete` has (`internal/apply/prune.go:196-212`), so apply and prune agree on what is the instance's own during the window. Every answer is still the library's. With no change pending there is one identity and one question.
+**Decision**: Option 2, with one list that every spec and task uses:
+
+| State | The guard asks with |
+| --- | --- |
+| No identity change pending (also: nothing recorded yet, for a ModuleInstance and a ModulePackage alike) | the instance's identity, once |
+| An identity change is not settled | the new identity, then the earlier one |
+
+"The instance's identity" is `identityPlan.InstanceUUID`: the render's, or the recorded one when the render carries none. "The earlier one" is `identityPlan.PreviousInstanceUUID`. The guard is never handed `identityPlan.Prune`: for a ModulePackage with nothing recorded that list ends with the empty identity (`internal/reconcile/identity.go:66-71`), a fallback that exists for the prune alone. The guard MUST never ask with an empty identity: the library answers an empty identity with "apply" for an inventoried object whose adopt annotation names another instance (`apply.go:139-141`), so the package would write over an object it must let go. `Guard` returns an error for an empty list or an empty element, and a reconcile that has no identity at all (nothing recorded and a render without the UUID label) fails as a failed apply with nothing written. An object is allowed when either answer allows it; otherwise the first answer's reason and message are reported. This replaces the note in the archived design.
+**Rationale**: The second question can only reach an object whose annotation names the earlier identity, or an OPM object outside the inventory whose UUID label is the earlier identity; a third instance's label or annotation is still refused. Every answer is the library's. With no change pending there is one question.
+
+Apply and prune do not judge every object alike during the window, and need not. The prune asks with both identities too (`internal/apply/prune.go:196-212`), and for an object that carries either UUID label the two agree. For an object adopted under the earlier identity they differ, in the safe direction on both sides: the guard applies it (the annotation names the earlier identity), and a deletion cleanup leaves it behind as `adopted-elsewhere` once it is relabelled (`TestPruneAdoptAnnotationAndIdentities`). The object is rendered, so it is never in the stale set. It is never deleted, in the window or after it.
 
 #### The annotation that names the earlier identity
 
@@ -176,7 +191,7 @@ Reconcile phase impact: Source and Render: none. Apply: the guard before the fir
 4. The operator removes the annotation once the object is in its inventory. The library's hand-over then breaks: the instance that let the object go no longer sees `adopted-elsewhere` and refuses its whole reconcile as `other-instance`.
 5. The library learns an instance's earlier identities and judges the annotation against them, for apply and delete.
 **Decision**: Option 2. The operator MUST NOT write the adopt annotation.
-**Rationale**: Options 3 and 4 make a frontend write the annotation, which 0012:D8:R6 forbids ("Neither frontend sets the adopt annotation on the user's behalf"), and the annotation is the user's record of consent on the object; a rewrite would also make the operator a field manager of it. Option 5 is the real fix and is not the operator's to make: it changes the verdict's input and the contract's text, for both frontends. Option 2 costs nothing and gives the user the length of the window, and after it the `AdoptedElsewhere` event prints the exact annotation to set (`... to take it back, annotate it opmodel.dev/adopt=B`), so the way back is one command and nothing is deleted. What stays open: after the change is settled the instance stops managing an object it adopted, with a warning and `Ready=True`. That is put to the owner below.
+**Rationale**: Options 3 and 4 make a frontend write the annotation, which 0012:D8:R6 forbids ("Neither frontend sets the adopt annotation on the user's behalf"), and the annotation is the user's record of consent on the object; a rewrite would also make the operator a field manager of it. Option 5 is the real fix and is not the operator's to make: it changes the verdict's input and the contract's text, for both frontends. What option 2 gives is small and is stated as it is: on the healthy path the window is one reconcile, because the earlier identity is cleared in the commit of the reconcile that applies and prunes with success (`moduleinstance.go:361-363`). So the object is applied once under the new identity, which relabels it, and is let go at the next render. Only when the apply or the prune of the change fails does the window last longer. The value of option 2 is that the guard has one rule for the window (either identity is the instance's own) and never refuses or drops the instance's own object in the middle of an unsettled change. After the window the `AdoptedElsewhere` event prints the exact annotation to set (`... to take it back, annotate it opmodel.dev/adopt=B`), so the way back is one command, and nothing is deleted. The delete half agrees on the outcome: it never deletes this object, in the window or after it. Ruled at the supervisor's gate on 2026-10-09: no revision of 0012:D8:R6 and no library change.
 
 #### The class of a refusal
 
@@ -187,7 +202,7 @@ Reconcile phase impact: Source and Render: none. Apply: the guard before the fir
 #### A failed read
 
 **Context**: Today Flux tolerates a failed read before its apply, so a ServiceAccount that may patch a kind and not read it applies. Drift detection already fails on a Forbidden read (`drift.go:96-109`, #265).
-**Decision**: A reconcile that would write MUST NOT write when the guard could not read an object for a reason other than "not found": it fails as a failed apply does today (`markApplyFailure`, `moduleinstance.go:820-827`): `Stalled` with `ImpersonationFailed` when the read is Forbidden under an effective ServiceAccount, `Ready=False` `ApplyFailed` with backoff otherwise. A reconcile with unchanged digests whose guard read fails restores nothing and takes nothing in; it reports the failed read as the drift check does today (`Drifted=Unknown` with `DriftCheckForbidden` on Forbidden, a counted drift failure otherwise) and lets nothing go.
+**Decision**: A reconcile that would write MUST NOT write when the guard could not read an object for a reason other than "not found": it fails as a failed apply does today (`markApplyFailure`, `moduleinstance.go:820-827`): `Stalled` with `ImpersonationFailed` when the read is Forbidden under an effective ServiceAccount, `Ready=False` `ApplyFailed` with backoff otherwise. A reconcile with unchanged digests whose guard read fails restores nothing and takes nothing in; it reports the failed read as the drift check does today (`Drifted=Unknown` with `DriftCheckForbidden` on Forbidden, a counted drift failure otherwise) and lets nothing go. That is a ModuleInstance. A ModulePackage has no drift check: its reconcile fails, as stated under "Where the guard runs".
 One read answer counts as "no live object": the API server does not serve the kind yet and a CustomResourceDefinition of the same apply list defines it (`pendingCRDKind`, `apply.go:167-187`). Such an object cannot exist. Every other "kind not served" answer fails the read.
 **Rationale**: A verdict on a read that failed would be a guess. Keeping the outcome of a no-write reconcile as it is today keeps #265 unchanged.
 
@@ -201,13 +216,15 @@ One read answer counts as "no live object": the API server does not serve the ki
 
 **Context**: On a reconcile that renders, a ModuleInstance today reads each object of the apply list twice and sends one dry-run patch for it: `refusedRead` (`drift.go:63`), then Flux's `Diff` (`drift.go:67`). A changed render adds Flux's own reads in the staged apply.
 **Decision**: The guard's GET replaces `refusedRead`'s GET: `DetectDrift` takes the guard's result and makes no read of its own before `Diff`. A ModuleInstance therefore makes no extra request. A ModulePackage, which has no drift detection, makes one GET per rendered object on each reconcile that renders. A reconcile that skips its render because its inputs are unchanged (`moduleinstance.go:750-761`, `modulepackage.go:311`) runs no guard, as it runs no drift detection: a new adopt annotation is seen at the next render, at the latest after `--drift-render-interval`.
-**Rationale**: The periodic reconcile of a healthy instance stays what it costs today. The guard's reads go through the client that applies, uncached, because a cached read could hide a new annotation and the impersonated client has no cache.
+**Rationale**: The periodic reconcile of a healthy instance stays what it costs today. The guard's reads are live reads as the identity that applies: the impersonated client when a ServiceAccount is effective (it has no cache), and the manager's uncached reader (`APIReader`) otherwise, the reader the health judgement names for the same reason (`appliedReader`, `moduleinstance.go:708`). A cached read could hide a new annotation.
+
+Not counted above: an instance that stays refused renders on every retry of the backoff (capped at five minutes), where a healthy one renders once per drift render interval. Many long-lived refusals after an upgrade cost that many renders; the render slot pool bounds them.
 
 #### How a let-go object stays visible
 
-**Options considered**: (1) one event when the object is first let go; (2) an event on every reconcile that renders it; (3) a condition; (4) a status field that lists let-go objects (a CRD change).
-**Decision**: Option 2. The API server folds repeated events into one series.
-**Rationale**: After the first let-go the object is in no status field, so a single event that expires would leave no trace. The cli warns on every apply. Options 3 and 4 add vocabulary or API for a state the user chose; if the owner wants a count in status, that is a later, additive change.
+**Options considered**: (1) one event when the object is first let go, and nothing after; (2) an event on every reconcile that renders it; (3) the count in the message of `Ready=True`, and an event when the count changes; (4) a condition of its own; (5) a status field that lists let-go objects (a CRD change).
+**Decision**: Option 3 (supervisor's gate, 2026-10-09; the count is what the design review of the delete half asked for).
+**Rationale**: An event is not durable: the API server drops it after its retention time, and the client folds repeats only when they are at most six minutes apart, so option 2 writes a new Event at every render and still leaves gaps (a long drift render interval, a suspended instance, a render that fails). The `Ready` message is in the object's status and is rewritten by every reconcile that renders, so `kubectl get` and `kubectl describe` show the state without an event. The state is not always one the user chose: a principal with patch rights on one object can set it (Security), which is why it must not depend on events. Option 4 adds a condition type and option 5 an API field for what one sentence carries. Limits, stated: the message holds the count, not the names; the names are in the event and in the log line of each reconcile. A reconcile that skips its render keeps the message of the last render.
 
 ### Where the operator differs from the cli
 
@@ -232,6 +249,9 @@ Different, with the reason:
 | Leftovers of a deleted instance (kept claims, Namespaces, CRDs, everything when `spec.prune` is false or after an orphan exit) met by an instance with another name, namespace or module path | applied over | `ApplyRefused`, `other-instance` | Annotate each, or delete the leftovers. |
 | An object of the apply list is being deleted and the reconcile would write it | the patch is accepted | `ApplyRefused`, `terminating`, until the object is gone | Release the object outside OPM; the retry applies. |
 | A tenant ServiceAccount may patch a kind and not `get` it | applied | `Stalled`, `ImpersonationFailed` | Grant `get` on the kind. |
+| A ModulePackage with matching digests whose ServiceAccount is missing or may not read a rendered kind | no-op, `Ready=True` | `Stalled`, `ImpersonationFailed`; nothing written | Restore the ServiceAccount or grant `get`. |
+| A module renders an object Kubernetes creates by itself (the `default` ServiceAccount of a namespace), not in the inventory | applied over | `ApplyRefused`, `foreign-object` | Annotate it, or do not render it. |
+| `forceConflicts` and an adopted object whose immutable fields differ from the render | not applicable | `ApplyFailed`, nothing written; the object is not recreated | Change the object, or delete it. |
 | An object's adopt annotation names another instance | applied over | let go, `AdoptedElsewhere`, out of the inventory, not deleted | Intended. To take it back, set the annotation to this instance's UUID. |
 | An object adopted under an earlier identity, after the identity change is settled | not applicable (no annotation was read) | let go, as the row above | Set the annotation to the new UUID. |
 
@@ -248,11 +268,14 @@ This is the threat statement the delete half's design review asked this change t
   - Deciding on a read that failed: fails closed.
   - Learning the owner of an object the tenant may not read: the read is made as the identity that applies.
   - A write that bypasses the guard: the closed list of write call sites.
-- Residual risk, owner: the operator maintainers.
-  - A principal with patch rights on one object can set the adopt annotation to another UUID. The instance then stops applying that object while it stays `Ready=True`, and unlike removed labels the next apply does not undo it. Patch rights do not include the right to change the instance, so for some principals this is more than they could do before. Detection: the `AdoptedElsewhere` warning on every reconcile that renders.
-  - The same principal can set the annotation to this instance's UUID on a foreign object, and the instance then takes it over. That is the contract's adopt, and it needs patch rights on the object taken.
-  - A principal who may write `status` of the instance can add an entry to `status.inventory`; the guard then judges that object as inventoried and applies over it. Such a principal can already name any object for deletion (the delete half's residual risk). No new right is gained.
-  - The window between the guard's read and the patch is not closed: server-side apply has no precondition on labels. The cli has the same window. Accepted.
+  - Writing over an object that must be let go because the question was asked with no identity: the guard never asks with an empty identity.
+  - Deleting an object the user handed over, through a forced recreate: a taken-in object is never recreated ("Taking an object in").
+- Residual risks. Owner: the operator maintainers. Each was accepted at the supervisor's gate on 2026-10-09 and has a revisit trigger.
+  - A principal with patch rights on one object can set the adopt annotation to another UUID. The instance then stops applying that object while it stays `Ready=True`, and unlike removed labels the next apply does not undo it. Patch rights do not include the right to change the instance, so for some principals this is more than they could do before. Detection: the count in the `Ready` message and the `AdoptedElsewhere` event. Revisit when a tenant reports an object let go that nobody handed over, or when the platform gains admission control for the annotation.
+  - The same principal can set the annotation to this instance's UUID on a foreign object, and the instance then takes it over. That is the contract's adopt, and it needs patch rights on the object taken. Revisit with any revision of 0012:D8:R2.
+  - A principal who may create an object under a name the instance renders, while that object is not in the inventory, turns a Ready instance to `Ready=False` `ApplyRefused`, also with unchanged digests, and the instance restores nothing while it is refused. Before this change the same act changed no condition and the next apply took the object over. A rendered Job with a TTL leaves the inventory when it expires, so its name is always open to this. The refusal stays: the operator does not write over an object it cannot prove is its own, and a refusal that names the object is the fail-safe answer. Way out: delete the object, or annotate it for the instance. Revisit when an instance is refused this way in a namespace its tenants share with others, or when a Job with a TTL is refused in practice.
+  - A principal who may write `status` of the instance can add an entry to `status.inventory`; the guard then judges that object as inventoried and applies over it. Such a principal can already name any object for deletion (the delete half's residual risk). No new right is gained. Revisit if write access to the status subresource is ever granted to tenants.
+  - The window between the guard's read and the patch is not closed: server-side apply has no precondition on labels. The cli has the same window. Revisit when the library or Flux offers an apply that pins the UID of the object that was judged; that would narrow the window to a relabel.
 - Messages carry object names and instance UUIDs. Neither is a secret. No message carries an enhancement reference.
 
 ## Risks / Trade-offs
@@ -264,7 +287,8 @@ This is the threat statement the delete half's design review asked this change t
 - [A let-go entry stays in the inventory while the reconcile fails for another reason] -> The inventory is replaced only by a commit that records one. Until then the delete verdict skips the object on a deletion (`adopted-elsewhere`).
 - [An instance with no UUID in its render] -> The library compares no identity inside the inventory and refuses every labelled object outside it. The operator passes what it has and adds no rule.
 - [The fake client and labels] -> The guard's tests of the refusal and of the two identities run against the library's verdict with real objects in envtest; unit tests cover the plan.
-- [More event volume] -> One `AdoptedElsewhere` series per instance with let-go objects. Bounded by the number of instances.
+- [A module that renders an object Kubernetes creates by itself] -> For example the `default` ServiceAccount of its namespace. A new instance, or a first apply that failed after the Namespace stage, is refused as `foreign-object` until the object is annotated. It follows from 0012:D8:R1 and is in the docs page.
+- [A ModulePackage that was a silent no-op now stalls] -> When its ServiceAccount is missing or may not read. Named in the migration note.
 
 ## Migration Plan
 
@@ -275,18 +299,17 @@ Migration note for the PR body and the release:
 - The operator now checks who holds each object before it applies. A reconcile is refused, with nothing changed, when an object it renders exists and is not managed by OPM, belongs to another instance, or is being deleted. The object reports `Ready=False` with reason `ApplyRefused`.
 - To let an instance take an existing object: `kubectl annotate <kind> <name> opmodel.dev/adopt=<instance UUID>`. The refusal prints the exact annotation; the UUID is `status.instanceUUID`.
 - Two instances can no longer start to share an object. Render a shared Namespace or CRD in one instance.
-- An object whose `opmodel.dev/adopt` annotation names another instance is no longer applied and leaves the inventory. It is not deleted. The operator reports it with an `AdoptedElsewhere` event.
+- An object whose `opmodel.dev/adopt` annotation names another instance is no longer applied and leaves the inventory. It is not deleted. The `Ready` message counts such objects and an `AdoptedElsewhere` event names them.
+- With `spec.rollout.forceConflicts`, an object the instance adopts is not deleted and created again. When its immutable fields differ from the render, the apply fails and names them.
 - After `spec.module.path` changes, set the adopt annotation of each object the instance once adopted to the new UUID, or the instance lets it go once the change is settled.
-- A ServiceAccount the operator impersonates needs `get` on every kind it applies.
+- A ServiceAccount the operator impersonates needs `get` on every kind it applies. A ModulePackage whose ServiceAccount is missing or lacks `get` now reports it also when nothing changed.
 
 ## Open Questions
 
-For the owner, with a recommendation; the change is built for the recommended option in each.
+None is open. Ruled at the supervisor's gate on 2026-10-09:
 
-1. **The adopt annotation that names an instance's earlier identity.** Options: (a) the operator never writes the annotation; it accepts the earlier identity until the change is settled and then lets the object go with a warning that prints the annotation to set (this proposal); (b) the operator rewrites the annotation to the new identity, which needs a dated revision of 0012:D8:R6 and binds the cli too; (c) a library change: the verdicts take an instance's earlier identities, for apply and delete, with a revision of 0012:D8:R8. Recommendation: (a) now, and (c) as a follow-up in the library if the leftover is met in practice. (b) is not recommended: the annotation is the user's record.
-2. **A count or list of let-go objects in status.** Options: (a) none, events only (this proposal); (b) an additive status field, which is a CRD change and releases the operator module. Recommendation: (a).
+1. **The adopt annotation that names an instance's earlier identity.** The operator never writes the annotation. It is accepted while the change is not settled; after that the object is let go and the event prints the annotation to set. On the healthy path that window is one reconcile. No revision of 0012:D8:R6 and no library change. The options that were not taken: the operator rewrites the annotation; a library change so the verdicts know an instance's earlier identities; one identity on the apply side, so the object is let go at once as the cli does (it cannot be built by asking the library twice, because an annotation that names the asked identity lifts every refusal).
+2. **Visibility of let-go objects.** No CRD field. The count in the message of `Ready=True` and an `AdoptedElsewhere` event when the count changes.
+3. **The two changes to what the archived design recorded** (both identities on the apply side; a refusal and a take-in on unchanged digests) stand.
 
-For the supervisor's gate:
-
-- The archived design recorded "the guard's `InstanceUUID` is the render's" for the apply side. This proposal asks with both identities during the window ("Which identities the guard asks with"). It widens what is allowed in the window and narrows nothing.
-- The docs page: this change adds an "Ownership on apply" page under `docs/site/operating/` with the refusal table, the adopt annotation and the shared-object case, and links it from `deletion-and-pruning.md`.
+The docs page: this change adds an "Ownership on apply" page under `docs/site/operating/` with the refusal table, the adopt annotation and the shared-object case, and links it from `deletion-and-pruning.md`.

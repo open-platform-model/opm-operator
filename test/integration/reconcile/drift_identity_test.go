@@ -1,0 +1,298 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package reconcile_test
+
+import (
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/events"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
+	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/status"
+)
+
+// dryRunRecorder records the Impersonate-User header of every server-side
+// dry-run apply sent through the rest config it wraps. client-go puts
+// Config.WrapTransport inside its impersonating round tripper, so the header
+// read here is the one the API server receives.
+type dryRunRecorder struct {
+	mu    sync.Mutex
+	users []string
+}
+
+func (r *dryRunRecorder) wrap(cfg *rest.Config) *rest.Config {
+	out := rest.CopyConfig(cfg)
+	out.Wrap(func(rt http.RoundTripper) http.RoundTripper {
+		return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodPatch && req.URL.Query().Get("dryRun") == metav1.DryRunAll {
+				r.mu.Lock()
+				r.users = append(r.users, req.Header.Get("Impersonate-User"))
+				r.mu.Unlock()
+			}
+			return rt.RoundTrip(req)
+		})
+	})
+	return out
+}
+
+// take returns the recorded users and forgets them.
+func (r *dryRunRecorder) take() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.users
+	r.users = nil
+	return out
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+// Drift detection runs as the identity that applies the instance
+// (drift-detection, serviceaccount-impersonation): the dry-run is sent as the
+// effective ServiceAccount, and a dry-run that identity may not send is
+// stated on the Drifted condition.
+var _ = Describe("Drift detection identity", func() {
+	const cmName = "test-module"
+	allVerbs := []string{"get", "list", "watch", "create", "update", "patch", "delete"}
+
+	// setup creates a ServiceAccount that may manage ConfigMaps and an
+	// instance that the returned params reconcile once, to Ready. specSA
+	// decides whether the instance names the ServiceAccount or leaves it to
+	// the manager's default.
+	setup := func(
+		prefix string, specSA bool,
+	) (*opmreconcile.ModuleInstanceParams, *dryRunRecorder, types.NamespacedName, string) {
+		GinkgoHelper()
+		saName := prefix + "-sa"
+		roleName := prefix + "-role"
+		nn := types.NamespacedName{Name: prefix + "-mi", Namespace: namespace}
+
+		Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace},
+		})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName},
+			Rules:      []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: allVerbs}},
+		})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: roleName},
+			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: saName, Namespace: namespace}},
+		})).To(Succeed())
+		DeferCleanup(func() {
+			for _, obj := range []client.Object{
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace}},
+				&releasesv1alpha1.ModuleInstance{ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: namespace}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace}},
+				&rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: roleName}},
+				&rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: roleName}},
+			} {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, obj))).To(Succeed())
+			}
+		})
+
+		mi := &releasesv1alpha1.ModuleInstance{
+			ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: namespace},
+			Spec: releasesv1alpha1.ModuleInstanceSpec{
+				Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+			},
+		}
+		recorder := &dryRunRecorder{}
+		params := reconcileParamsWithConfig()
+		params.RestConfig = recorder.wrap(cfg)
+		// The specs reconcile until the authorizer has seen a role change;
+		// the default buffer of ten events would block the reconciler.
+		params.EventRecorder = events.NewFakeRecorder(1024)
+		if specSA {
+			mi.Spec.ServiceAccountName = saName
+		} else {
+			params.DefaultServiceAccount = saName
+		}
+		Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+		ensureFinalizer(params, nn)
+
+		_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		var applied releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &applied)).To(Succeed())
+		Expect(apimeta.IsStatusConditionTrue(applied.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		recorder.take()
+		return params, recorder, nn, saName
+	}
+
+	instance := func(nn types.NamespacedName) *releasesv1alpha1.ModuleInstance {
+		GinkgoHelper()
+		var mi releasesv1alpha1.ModuleInstance
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		return &mi
+	}
+
+	modifyConfigMap := func(message string) {
+		GinkgoHelper()
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &cm)).To(Succeed())
+		cm.Data["message"] = message
+		Expect(k8sClient.Update(ctx, &cm)).To(Succeed())
+	}
+
+	setVerbs := func(roleName string, verbs []string) {
+		GinkgoHelper()
+		Eventually(func() error {
+			var role rbacv1.ClusterRole
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: roleName}, &role); err != nil {
+				return err
+			}
+			role.Rules[0].Verbs = verbs
+			return k8sClient.Update(ctx, &role)
+		}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+	}
+
+	DescribeTable("sends the dry-run as the effective ServiceAccount",
+		func(prefix string, specSA bool) {
+			params, recorder, nn, saName := setup(prefix, specSA)
+			modifyConfigMap("drifted-by-hand")
+
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			users := recorder.take()
+			Expect(users).NotTo(BeEmpty(), "the dry-run of drift detection goes through the impersonated client")
+			Expect(users).To(HaveEach("system:serviceaccount:" + namespace + ":" + saName))
+
+			mi := instance(nn)
+			drifted := apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)
+			Expect(drifted).NotTo(BeNil())
+			Expect(drifted.Status).To(Equal(metav1.ConditionTrue))
+			Expect(drifted.Reason).To(Equal(status.DriftDetectedReason))
+			Expect(apimeta.IsStatusConditionTrue(mi.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		},
+		Entry("named by spec.serviceAccountName", "drift-id-spec", true),
+		Entry("named by --default-service-account", "drift-id-flag", false),
+	)
+
+	It("sends the dry-run as the controller when no ServiceAccount is effective", func() {
+		nn := types.NamespacedName{Name: "drift-id-none-mi", Namespace: namespace}
+		createModuleInstance(nn.Name)
+		DeferCleanup(func() {
+			for _, obj := range []client.Object{
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace}},
+				&releasesv1alpha1.ModuleInstance{ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: namespace}},
+			} {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, obj))).To(Succeed())
+			}
+		})
+		recorder := &dryRunRecorder{}
+		params := reconcileParamsWithConfig()
+		params.RestConfig = recorder.wrap(cfg)
+		ensureFinalizer(params, nn)
+		_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		modifyConfigMap("drifted-by-hand")
+
+		_, err = opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The rest config is used only to impersonate: nothing went through it.
+		Expect(recorder.take()).To(BeEmpty())
+		drifted := apimeta.FindStatusCondition(instance(nn).Status.Conditions, status.DriftedCondition)
+		Expect(drifted).NotTo(BeNil())
+		Expect(drifted.Status).To(Equal(metav1.ConditionTrue), "the controller's own client gave the verdict")
+	})
+
+	It("states a dry-run the ServiceAccount may not send, and the verdict returns with the verb", func() {
+		params, _, nn, saName := setup("drift-id-forbidden", true)
+		modifyConfigMap("drifted-while-forbidden")
+
+		By("without patch, the dry-run is refused and Drifted is Unknown")
+		setVerbs("drift-id-forbidden-role", []string{"get", "list", "watch", "create", "update", "delete"})
+		// The authorizer sees the role change asynchronously; each NoOp
+		// reconcile runs drift detection again.
+		Eventually(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			mi := instance(nn)
+			drifted := apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)
+			g.Expect(drifted).NotTo(BeNil())
+			g.Expect(drifted.Status).To(Equal(metav1.ConditionUnknown))
+			g.Expect(drifted.Reason).To(Equal(status.DriftCheckForbiddenReason))
+			g.Expect(drifted.Message).To(ContainSubstring("system:serviceaccount:" + namespace + ":" + saName))
+			g.Expect(strings.ToLower(drifted.Message)).To(ContainSubstring("forbidden"))
+			g.Expect(mi.Status.FailureCounters).NotTo(BeNil())
+			g.Expect(mi.Status.FailureCounters.Drift).To(BeNumerically(">", 0))
+			g.Expect(apimeta.IsStatusConditionTrue(mi.Status.Conditions, status.ReadyCondition)).To(BeTrue(),
+				"a refused drift check does not move Ready")
+			g.Expect(apimeta.FindStatusCondition(mi.Status.Conditions, status.StalledCondition)).To(BeNil())
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
+
+		By("the object the ServiceAccount may not patch was left alone")
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &cm)).To(Succeed())
+		Expect(cm.Data["message"]).To(Equal("drifted-while-forbidden"))
+
+		By("with patch again, the dry-run gives its verdict")
+		setVerbs("drift-id-forbidden-role", allVerbs)
+		Eventually(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			mi := instance(nn)
+			drifted := apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)
+			g.Expect(drifted).NotTo(BeNil())
+			g.Expect(drifted.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(drifted.Reason).To(Equal(status.DriftDetectedReason))
+			g.Expect(mi.Status.FailureCounters.Drift).To(BeZero())
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
+	})
+
+	It("sends no dry-run when the ServiceAccount is gone, and says so", func() {
+		params, recorder, nn, saName := setup("drift-id-gone", true)
+		modifyConfigMap("drifted-without-identity")
+		Expect(k8sClient.Delete(ctx, &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace},
+		})).To(Succeed())
+
+		_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(recorder.take()).To(BeEmpty(), "no dry-run through the impersonating config")
+		mi := instance(nn)
+		drifted := apimeta.FindStatusCondition(mi.Status.Conditions, status.DriftedCondition)
+		Expect(drifted).NotTo(BeNil(), "the operator's own identity must not give the verdict")
+		Expect(drifted.Status).To(Equal(metav1.ConditionUnknown))
+		Expect(drifted.Reason).To(Equal(status.ImpersonationFailedReason))
+		Expect(drifted.Message).To(ContainSubstring("drift detection did not run"))
+		Expect(drifted.Message).To(ContainSubstring(saName))
+		Expect(mi.Status.FailureCounters).NotTo(BeNil())
+		Expect(mi.Status.FailureCounters.Drift).To(BeNumerically(">", 0))
+		Expect(apimeta.IsStatusConditionTrue(mi.Status.Conditions, status.ReadyCondition)).To(BeTrue(),
+			"a reconcile with unchanged digests stays a NoOp")
+	})
+})

@@ -254,3 +254,23 @@ func TestOwnerHelpers_RemoveHealthy(t *testing.T) {
 	MarkSelfManagementRefused(obj, "this ModuleInstance deploys the operator")
 	assert.False(t, conditions.Has(obj, HealthyCondition))
 }
+
+func TestMarkDriftUnknown(t *testing.T) {
+	obj := newModuleInstance()
+	MarkReady(obj, "reconciled")
+
+	MarkDriftUnknown(obj, DriftCheckForbiddenReason, "dry-run refused for %s", "deploy-sa")
+
+	drifted := conditions.Get(obj, DriftedCondition)
+	if assert.NotNil(t, drifted) {
+		assert.Equal(t, metav1.ConditionUnknown, drifted.Status)
+		assert.Equal(t, DriftCheckForbiddenReason, drifted.Reason)
+		assert.Equal(t, "dry-run refused for deploy-sa", drifted.Message)
+	}
+	assert.True(t, conditions.IsTrue(obj, ReadyCondition), "drift is informational: Ready is not moved")
+	assert.False(t, conditions.Has(obj, StalledCondition))
+	assert.False(t, conditions.Has(obj, ReconcilingCondition))
+
+	ClearDrifted(obj)
+	assert.False(t, conditions.Has(obj, DriftedCondition), "a verdict replaces Unknown")
+}

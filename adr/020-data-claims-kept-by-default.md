@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted on 2026-10-08. The project owner chose the field and its shape; the record was drafted for that decision.
 
 ## Context
 
@@ -20,7 +20,9 @@ The controller keeps every PersistentVolumeClaim of the core API group that it w
 
 One optional field opts out: `spec.dataPolicy`, an enum with the values `Keep` and `Delete`. An absent value means `Keep`. `Delete` lets the controller delete claims under `spec.prune`; without `spec.prune` it has no effect, and the API server accepts the pair. The CRD sets no default, so an object stored before the field existed is protected as it is.
 
-The check lives in the one prune function behind every delete the controller makes, and its option protects at the zero value, so a caller cannot forget it.
+The check lives in the one prune function behind the stale prune and the deletion cleanup of both kinds, and its option protects at the zero value, so a caller cannot forget it.
+
+The decision covers pruning and deletion cleanup. It does not cover the apply: with `spec.rollout.forceConflicts`, an apply that the API server refuses as a change to an immutable field deletes the live object and creates it again, and that includes a claim whose `storageClassName` or `accessModes` a new module version changes. `spec.dataPolicy` is not read there.
 
 A kept claim is not a failure. The reconcile ends Ready, deletion cleanup removes the finalizer, and one Normal event with reason `ClaimsKept` names the claims. A stale claim that the prune keeps leaves `status.inventory` with the rest of the stale set, as a skipped Namespace or CRD does: the recorded inventory is the rendered set. From then on nothing tracks the claim.
 
@@ -39,6 +41,8 @@ Keeping the kept claim in the inventory, as the CLI does, was also considered. I
 **Negative:** Kept claims accumulate and hold storage until someone deletes them. The only record is the `ClaimsKept` event, which expires, and the instance labels that stay on the claim. `spec.dataPolicy: Delete` does not reach a claim that was kept earlier, because no inventory lists it.
 
 **Negative:** The controller names the policy `spec.dataPolicy` and the CLI names its flag `--delete-data`. Documentation has to name both.
+
+**Negative:** A claim can still be deleted with `Keep`: by the forced recreate of `spec.rollout.forceConflicts` described above. The field description and the documentation name this exception; closing it is a separate decision.
 
 **Trade-off:** Only `PersistentVolumeClaim` in the core group is kept. A PersistentVolume, a VolumeSnapshot or a claim-like custom resource is pruned as before. Claims that a StatefulSet creates from its `volumeClaimTemplates` are in no inventory, so the controller never deletes them, with or without the field.
 

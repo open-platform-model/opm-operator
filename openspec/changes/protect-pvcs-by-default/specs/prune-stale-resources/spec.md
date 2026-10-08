@@ -50,7 +50,7 @@ Only the kind `PersistentVolumeClaim` in the core group is kept. A PersistentVol
 
 `spec.dataPolicy` MUST have no effect unless `spec.prune` is true, and the pair `dataPolicy: Delete` without `spec.prune` MUST be admitted, with a field description that says it has no effect: with `spec.prune` false or absent the controller deletes nothing, as before. `spec.prune` MUST keep its meaning for every kind other than PersistentVolumeClaim.
 
-The field's description, which `kubectl explain` and the resource reference show, MUST say that claims a StatefulSet creates from its `volumeClaimTemplates` are never tracked and never deleted by the operator.
+The field's description, which `kubectl explain` and the resource reference show, MUST say that claims a StatefulSet creates from its `volumeClaimTemplates` are never tracked and never deleted by the operator. It MUST also say that the field covers pruning and deletion only: the forced recreate of `spec.rollout.forceConflicts` is outside it.
 
 #### Scenario: An object without the field is admitted and protected
 - **GIVEN** a ModuleInstance manifest with `spec.prune: true` and no `spec.dataPolicy`

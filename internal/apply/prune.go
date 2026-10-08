@@ -68,6 +68,9 @@ type PruneOptions struct {
 // nothing is going to be deleted, so the failed read must not fail the prune
 // or hold a finalizer.
 //
+// The protection is this function's only: Apply with force deletes and
+// recreates an object the API server refuses to update, a claim included.
+//
 // If a stale resource is already gone (NotFound), it is treated as success.
 // Individual failures (Get or Delete) are collected and returned as a joined
 // error; remaining entries continue (design decision 2: continue-on-error /

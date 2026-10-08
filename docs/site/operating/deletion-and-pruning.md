@@ -46,20 +46,21 @@ Check against: opm-operator/internal/reconcile/moduleinstance.go, opm-operator/i
 
 ### PersistentVolumeClaims are kept
 
-The operator does not delete a PersistentVolumeClaim, because deleting a claim deletes the data on its volume. With `spec.prune: true`, a claim that a new render no longer produces stays in the cluster, and deleting the ModuleInstance or ModulePackage leaves its claims in place. Everything else is pruned and deleted as before.
+The operator does not delete a PersistentVolumeClaim when it prunes or when an instance is deleted, because deleting a claim deletes the data on its volume. With `spec.prune: true`, a claim that a new render no longer produces stays in the cluster, and deleting the ModuleInstance or ModulePackage leaves its claims in place. Everything else is pruned and deleted as before.
 
 A kept claim is not an error. The object stays `Ready`, a delete completes, and the operator emits one `Normal` event with the reason `ClaimsKept` that names the claims:
 
 ```text
-Normal  ClaimsKept  Kept 1 PersistentVolumeClaim(s) and the data on them: media/config. They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. Set spec.dataPolicy to Delete to let the operator delete claims.
+Normal  ClaimsKept  Kept 1 PersistentVolumeClaim(s) and the data on them: media/config. They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. To let the operator delete claims from now on, set spec.dataPolicy to Delete.
 ```
 
-After that, nothing tracks the claim. A stale claim leaves `status.inventory` with the other stale entries, and a deleted instance has no inventory. The claim keeps its instance labels, so `kubectl get pvc -n <namespace> -l module-instance.opmodel.dev/name=<name>` finds it, and `kubectl delete pvc` removes it. If a later render of the same instance produces a claim of the same name, the operator takes the claim back.
+After that, nothing tracks the claim. A stale claim leaves `status.inventory` with the other stale entries, and a deleted instance has no inventory. The event names the claim, `kubectl get pvc -n <namespace>` lists it, and `kubectl delete pvc` removes it. The claim keeps its labels. If a later render of the same instance produces a claim of the same name, the operator takes the claim back.
 
 To have the operator delete claims, set `spec.dataPolicy: Delete` on the ModuleInstance or ModulePackage. It applies from then on: it does not reach a claim that was kept earlier. Without `spec.prune` it has no effect, because then the operator deletes nothing.
 
-Three things are not covered:
+Four things are not covered:
 
+- **A forced recreate.** With `spec.rollout.forceConflicts: true`, an apply that the API server refuses as a change to an immutable field deletes the object and creates it again. A claim whose `storageClassName` or `accessModes` a new module version changes is deleted this way, and `spec.dataPolicy` does not prevent it. Do not combine `forceConflicts` with claims whose data you need.
 - **Claims that a StatefulSet creates.** A StatefulSet creates one claim per replica from its `volumeClaimTemplates`. They are in no inventory, so the operator never deletes them, with or without `spec.dataPolicy: Delete`. Kubernetes keeps them when the StatefulSet is deleted, unless the StatefulSet sets `persistentVolumeClaimRetentionPolicy`.
 - **Other storage kinds.** Only a `PersistentVolumeClaim` of the core API group is kept.
 - **CLI-managed instances.** The operator does not touch them. The CLI keeps claims too, and its switch is the flag `--delete-data`. One difference remains: after a prune that kept a claim, the CLI still lists the claim in the inventory and the operator does not.

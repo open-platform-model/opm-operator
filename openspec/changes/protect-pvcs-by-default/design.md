@@ -2,7 +2,7 @@
 
 See `proposal.md` for the motivation. The facts of the code at 45c6a12 that shape the design:
 
-- Every delete the operator makes goes through one function, `apply.Prune` (`internal/apply/prune.go:62`). It has four callers: the stale prune and the deletion cleanup of ModuleInstance (`internal/reconcile/moduleinstance.go:1432` and `:1260`) and of ModulePackage (`internal/reconcile/modulepackage.go:757` and `:938`).
+- Every delete of the prune and of the deletion cleanup goes through one function, `apply.Prune` (`internal/apply/prune.go:62`). One other delete exists, outside this change: with `spec.rollout.forceConflicts`, `apply.Apply` sets the `Force` option of the Flux SSA manager, which deletes and recreates an object when the API server refuses the update as an immutable change (found by the review of this change). It has four callers: the stale prune and the deletion cleanup of ModuleInstance (`internal/reconcile/moduleinstance.go:1432` and `:1260`) and of ModulePackage (`internal/reconcile/modulepackage.go:757` and `:938`).
 - `apply.Prune` already skips two kinds without an error (`isSafeToDelete`, Namespace and CustomResourceDefinition, ADR-011) and skips a live object whose labels say another owner. A skipped entry is counted in `PruneResult.Skipped` and never fails the prune.
 - After a successful apply the recorded inventory is the rendered set, nothing else (`newEntries = withoutEntries(converted.entries, expired)`, `moduleinstance.go:656`; `entries: converted.entries`, `modulepackage.go:773`). A stale entry leaves the inventory whether it was deleted, skipped as a Namespace, or not pruned because `spec.prune` is false. The inventory digest is part of no-op detection (`noOp`, `lastApplied.Inventory`), and the health judgement reads every inventory entry.
 - Deletion cleanup removes the finalizer when `apply.Prune` returns no error (`moduleinstance.go:1283`). The ModuleInstance and its `status.inventory` are then gone.
@@ -15,7 +15,7 @@ Reversibility of the field: a costly two-way door while the line is in beta (a r
 
 **Goals:**
 
-- With no new input from the user, the operator never deletes a tracked PersistentVolumeClaim.
+- With no new input from the user, the prune and the deletion cleanup never delete a tracked PersistentVolumeClaim.
 - One explicit, optional field restores the old behaviour.
 - A kept claim never blocks a reconcile or a deletion.
 - The user can see which claims were kept.
@@ -48,15 +48,21 @@ const (
 
 // DataPolicy says what the operator does with the PersistentVolumeClaims it
 // would otherwise delete under spec.prune. With Keep, or when the field is
-// absent, the operator never deletes a PersistentVolumeClaim: a claim that
-// a new render no longer produces stays in the cluster and is no longer
-// tracked, and deleting the ModuleInstance leaves its claims in place. With
+// absent, the operator does not delete a PersistentVolumeClaim when it
+// prunes or when the ModuleInstance is deleted: a claim that a new render
+// no longer produces stays in the cluster and is no longer tracked, and
+// deleting the ModuleInstance leaves its claims in place. With
 // Delete, claims are pruned and deleted like any other object, and the data
 // on their volumes goes with them under the reclaim policy of the volume.
 // The field has no effect unless spec.prune is true: Delete without
 // spec.prune is accepted and deletes nothing. Claims that a StatefulSet
 // creates from its volumeClaimTemplates are never tracked and never
 // deleted by the operator, whatever this field says.
+//
+// The field covers pruning and deletion only. With
+// spec.rollout.forceConflicts, an apply that the API server refuses as a
+// change to an immutable field deletes the object and creates it again, a
+// PersistentVolumeClaim included, whatever this field says.
 // +kubebuilder:validation:Enum=Keep;Delete
 // +optional
 DataPolicy DataPolicy `json:"dataPolicy,omitempty"`
@@ -156,7 +162,7 @@ The cost of the chosen row is that the operator and the CLI differ in one respec
 **The event.**
 
 ```text
-Normal  ClaimsKept  Kept 2 PersistentVolumeClaim(s) and the data on them: media/config, media/cache. They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. Set spec.dataPolicy to Delete to let the operator delete claims.
+Normal  ClaimsKept  Kept 2 PersistentVolumeClaim(s) and the data on them: media/config, media/cache. They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. To let the operator delete claims from now on, set spec.dataPolicy to Delete.
 ```
 
 At most ten names are listed, and fewer when long names would take the note past the 1024-character limit of `events.k8s.io/v1`; the rest is "and N more". The event carries no enhancement reference.
@@ -190,6 +196,7 @@ Release note (the PR body carries it; the CHANGELOG entry links the PR):
 ### 6. What is not protected, and what is not touched
 
 - **Claims of a StatefulSet's `volumeClaimTemplates`.** The StatefulSet controller creates them; they are in no render and in no inventory. The operator never tracked them, so it never deleted them, and `dataPolicy: Delete` does not delete them either. Kubernetes keeps them when the StatefulSet is deleted unless the StatefulSet sets `persistentVolumeClaimRetentionPolicy`. The field's doc comment and the docs page say this, so that nobody reads `dataPolicy: Delete` as "removes all data of the instance".
+- **A claim under `spec.rollout.forceConflicts`.** The apply, not the prune, deletes and recreates an object whose update the API server refuses as an immutable change. A claim whose `storageClassName` or `accessModes` a new module version changes is deleted this way, with `Keep` too. This change does not alter the apply; the field description, the docs page and ADR-020 name the exception. Making the apply honour `spec.dataPolicy` is a scope change for the owner.
 - **A claim of another API group or another kind** (PersistentVolume, VolumeSnapshot, a CRD-backed volume claim): pruned as before. Only `PersistentVolumeClaim` of the core group is kept.
 - **A claim the instance does not own** (not OPM-managed, or another instance's UUID): skipped by the existing ownership guard and not reported as kept.
 - **`spec.prune` false or absent:** nothing is deleted at all, as before; no `ClaimsKept` event, because nothing was up for deletion.
@@ -248,7 +255,7 @@ A new ADR, `adr/020-data-claims-kept-by-default.md`, records the decision beside
 
 - [A user relied on the operator to delete claims] → the `!` title, the release note and the docs page; `dataPolicy: Delete` restores it.
 - [Kept claims pile up and cost storage] → the `ClaimsKept` event names them; the docs give the `kubectl` command. No status list (owner decision 5).
-- [The event expires and nothing in status says a claim was kept] → accepted; the claim itself carries the instance labels, so `kubectl get pvc -l module-instance.opmodel.dev/name=<name>` finds it. The docs give that command.
+- [The event expires and nothing in status says a claim was kept] → accepted; the claim keeps its labels and is still in its namespace; the docs point to the event and to `kubectl get pvc`.
 - [The operator and the CLI differ: after a kept prune the CLI still lists the claim, the operator does not] → stated in the docs.
 - [The CLI prompt over-warns until the CLI follow-up ships] → safe direction; named as a follow-up.
 - [A new caller of `apply.Prune` passes `DeleteData: true` by mistake] → the option has one source, a method on the spec field that is true only for `Delete`; an integration test per call site.

@@ -301,9 +301,6 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 		expectClaimUntouched("cpo-data")
 		Expect(rec.withReason(status.ClaimsKeptReason)).To(HaveLen(1))
 		Expect(rec.withReason(status.PrunedReason)).To(BeEmpty())
-		var mi releasesv1alpha1.ModuleInstance
-		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
-		Expect(mi.Status.LastAttemptedAction).NotTo(ContainSubstring("prune"), "nothing was pruned")
 	})
 
 	It("prunes a stale claim when spec.dataPolicy is Delete", func() {

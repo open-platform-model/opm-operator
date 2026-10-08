@@ -42,7 +42,7 @@ func TestClaimsKeptNote(t *testing.T) {
 		if !strings.HasPrefix(note, "Kept 1 PersistentVolumeClaim(s) and the data on them: media/claim-00. ") {
 			t.Fatalf("unexpected note: %s", note)
 		}
-		for _, want := range []string{"no longer tracked", "kubectl delete pvc", "spec.dataPolicy to Delete"} {
+		for _, want := range []string{"no longer tracked", "kubectl delete pvc", "from now on, set spec.dataPolicy to Delete"} {
 			if !strings.Contains(note, want) {
 				t.Errorf("note lacks %q: %s", want, note)
 			}

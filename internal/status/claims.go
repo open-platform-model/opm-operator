@@ -30,7 +30,7 @@ const (
 	eventNoteLimit = 1024
 	// claimsKeptAdvice closes every ClaimsKept note.
 	claimsKeptAdvice = " They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. " +
-		"Set spec.dataPolicy to Delete to let the operator delete claims."
+		"To let the operator delete claims from now on, set spec.dataPolicy to Delete."
 )
 
 // ClaimsKeptNote is the note of a ClaimsKept event: how many

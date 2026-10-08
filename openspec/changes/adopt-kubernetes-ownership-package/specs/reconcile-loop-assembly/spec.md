@@ -11,6 +11,8 @@ When a render's identity differs from `status.instanceUUID`, the reconciler MUST
 
 `status.previousInstanceUUID` MUST be cleared in the status commit of a reconcile whose apply and prune succeeded, together with the new inventory, and MUST NOT be cleared by any other outcome: a failed or refused apply, a failed prune, a reconcile that applies nothing, or a recovered panic. A reconcile that applies nothing MUST write `status.instanceUUID` when it is empty and MUST leave both fields alone otherwise.
 
+While `status.previousInstanceUUID` is set, or a render is about to set it, a reconcile MUST NOT end as one that applies nothing, also when the render equals what was last applied: it MUST apply and prune, so that the objects an unsettled apply relabelled are relabelled back and the change is settled.
+
 #### Scenario: First reconcile records the identity
 - **GIVEN** a new ModuleInstance whose render carries identity `A`
 - **WHEN** the reconcile applies with success
@@ -41,6 +43,12 @@ When a render's identity differs from `status.instanceUUID`, the reconciler MUST
 - **GIVEN** a ModuleInstance with `status.instanceUUID` `B` and `status.previousInstanceUUID` `A`, whose `spec.module.path` is set back so that its render carries `A`
 - **WHEN** the apply starts
 - **THEN** `status.instanceUUID` is `A` and `status.previousInstanceUUID` is `B`
+
+#### Scenario: Going back renders what was last applied
+- **GIVEN** a ModuleInstance whose last successful apply carried identity `A`, with `status.instanceUUID` `B` and `status.previousInstanceUUID` `A` after an apply of `B` whose prune failed, and whose `spec.module.path` is set back so that its render equals what was last applied
+- **WHEN** the controller reconciles
+- **THEN** the render is applied, and the objects that carry `B` carry `A` again
+- **AND** after the reconcile `status.instanceUUID` is `A`, `status.previousInstanceUUID` is empty and `Ready` is `True`
 
 #### Scenario: An object without the field gains it without an apply
 - **GIVEN** a ModuleInstance with an inventory and an empty `status.instanceUUID`, whose render equals what was applied

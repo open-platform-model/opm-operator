@@ -18,12 +18,12 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 )
 
-// These tests pin what each render path says about a required #config value
-// the values leave unset and no component reads. Since library v1.0.0-beta.7
-// the kernel refuses it in both instance verbs. On the ModuleInstance path
-// the renderer's own check of spec.values runs first, so its message is the
-// one a user reads; on the ModulePackage path the kernel's refusal is the
-// only one.
+// These tests pin what each render path says about values that do not
+// satisfy the module's #config. The kernel is the one check on both paths
+// (it refuses an unset required value since library v1.0.0-beta.7): the
+// ModuleInstance path reports the kernel's synthesis error with every finding
+// and its positions written out, the ModulePackage path the kernel's package
+// load error as it is.
 //
 // Both build a module in a temporary directory, so they need opmodel.dev/core
 // and the opm catalog from CUE_REGISTRY (GHCR under `task dev:test`).
@@ -54,46 +54,103 @@ func rawValues(doc string) *releasesv1alpha1.RawValues {
 	return v
 }
 
-// A ModuleInstance whose spec.values leave a required #config value unset is
-// refused by the renderer's check of spec.values against #config, before
-// synthesis: the message keeps its prefix and names the #config field and
-// its position, and the failure is not an acquisition failure, so the Ready
-// reason stays RenderFailed.
-func TestKernelModuleRenderer_UnsetRequiredValueKeepsItsMessage(t *testing.T) {
+// A ModuleInstance whose spec.values do not satisfy the module's #config is
+// refused by instance synthesis, the only check of the values. The message is
+// the kernel's error with every finding and its positions written out: no
+// finding is shortened to a count, and a finding caused by a value names its
+// position in spec.values. The failure is not an acquisition failure, so the
+// Ready reason stays RenderFailed.
+func TestKernelModuleRenderer_ValuesFailureIsTheKernels(t *testing.T) {
 	registry := requiredValueRegistry(t)
 
-	// The hello fixture with one more #config field: required, without a
+	// The hello fixture with two more #config fields: required, without a
 	// default, and read by no component.
 	dir := t.TempDir()
 	require.NoError(t, os.CopyFS(dir, os.DirFS(helloFixtureDir)))
 	extra := filepath.Join(dir, "extra.cue")
-	require.NoError(t, os.WriteFile(extra, []byte("package hello\n\n#config: note: string\n"), 0o644))
+	require.NoError(t, os.WriteFile(extra,
+		[]byte("package hello\n\n#config: note: string\n#config: other: int\n"), 0o644))
 
 	k := kernel.New(kernel.WithRegistry(registry))
 	mod, err := k.AcquireModuleFromDir(context.Background(), dir)
 	require.NoError(t, err)
 	r := &KernelModuleRenderer{Kernel: k, Store: platformstore.NewStore(), RuntimeName: "opm-controller"}
 
-	want := "validating values against the module's #config: " +
-		"#config.note: incomplete value string (" + extra + ":3:16)"
+	const frame = `synthesizing release: Kernel.SynthesizeInstance: instance "needy": `
+	noteUnset := "values.note: incomplete value string (" + extra + ":3:16)"
+	otherUnset := "values.other: incomplete value int (" + extra + ":4:17)"
 
-	for name, values := range map[string]*releasesv1alpha1.RawValues{
-		"no spec.values":            nil,
-		"spec.values without field": rawValues(`{"message": "set"}`),
+	for _, tc := range []struct {
+		name   string
+		values *releasesv1alpha1.RawValues
+		// want is the whole message; contains are substrings, for a message
+		// whose positions inside the fixture's own files are not pinned here.
+		want     string
+		contains []string
+	}{
+		{
+			name:   "no spec.values",
+			values: nil,
+			want:   frame + "not fully concrete: " + noteUnset + "; " + otherUnset,
+		},
+		{
+			name:   "one required value unset",
+			values: rawValues(`{"other": 1}`),
+			want:   frame + "not fully concrete: " + noteUnset,
+		},
+		{
+			name:   "two required values unset",
+			values: rawValues(`{"message": "set"}`),
+			want:   frame + "not fully concrete: " + noteUnset + "; " + otherUnset,
+		},
+		{
+			name:   "wrong type no component reads",
+			values: rawValues(`{"note":7,"other":1}`),
+			want: frame + "#module.#config.note: conflicting values string and 7 " +
+				"(mismatched types string and int) (" + extra + ":3:16, spec.values:1:1, spec.values:1:9)",
+		},
+		{
+			name:   "two wrong types",
+			values: rawValues(`{"note":7,"other":"x"}`),
+			want: frame + "#module.#config.note: conflicting values string and 7 " +
+				"(mismatched types string and int) (" + extra + ":3:16, spec.values:1:1, spec.values:1:9); " +
+				`#module.#config.other: conflicting values int and "x" ` +
+				"(mismatched types int and string) (" + extra + ":4:17, spec.values:1:1, spec.values:1:19)",
+		},
+		{
+			name:   "wrong type a component reads",
+			values: rawValues(`{"note":"n","other":1,"message":42}`),
+			contains: []string{
+				frame + "#module.#config.message: ",
+				"conflicting values 42 and string (mismatched types int and string)",
+				"spec.values:1:33",
+			},
+		},
+		{
+			name:   "field not allowed",
+			values: rawValues(`{"note":"n","other":1,"bogus":true}`),
+			want:   frame + "field not allowed (spec.values:1:23)",
+		},
 	} {
-		t.Run(name, func(t *testing.T) {
-			inst, err := r.synthesizeFrom(context.Background(), mod, "needy", "default", values)
+		t.Run(tc.name, func(t *testing.T) {
+			inst, err := r.synthesizeFrom(context.Background(), mod, "needy", "default", tc.values)
 			require.Error(t, err)
 			assert.Nil(t, inst)
-			assert.Equal(t, want, err.Error())
+			if tc.want != "" {
+				assert.Equal(t, tc.want, err.Error())
+			}
+			for _, sub := range tc.contains {
+				assert.Contains(t, err.Error(), sub)
+			}
+			assert.NotContains(t, err.Error(), "more errors", "every finding is written out")
 			assert.NotErrorIs(t, err, ErrAcquire, "a values failure is not an acquisition failure")
 			_, isFetch := errors.AsType[*oerrors.FetchError](err)
 			assert.False(t, isFetch, "a values failure must not retry as a registry fetch failure")
 		})
 	}
 
-	t.Run("spec.values with the field set", func(t *testing.T) {
-		inst, err := r.synthesizeFrom(context.Background(), mod, "needy", "default", rawValues(`{"note": "set"}`))
+	t.Run("every required value set", func(t *testing.T) {
+		inst, err := r.synthesizeFrom(context.Background(), mod, "needy", "default", rawValues(`{"note":"n","other":1}`))
 		require.NoError(t, err)
 		assert.NotNil(t, inst)
 	})

@@ -84,9 +84,10 @@ var _ ModuleRenderer = (*KernelModuleRenderer)(nil)
 // store (returning ErrPlatformNotReady before any I/O when absent), acquires
 // the module, loads the values as one values source with origin spec.values
 // (an empty document when none are supplied, letting the module's #config
-// defaults apply) and checks it against the module's #config, synthesizes
-// the instance, renders it against the platform, and adapts the compiled
-// output to operator resources plus inventory entries.
+// defaults apply), synthesizes the instance, renders it against the platform,
+// and adapts the compiled output to operator resources plus inventory
+// entries. The kernel's synthesis is the one check of the values against the
+// module's #config.
 //
 // Every kernel call shares nothing (library ADR-005, ADR-007): acquisition,
 // synthesis and the render build each evaluate in a context of their own, so
@@ -145,9 +146,12 @@ func (r *KernelModuleRenderer) synthesize(
 	return r.synthesizeFrom(ctx, mod, name, namespace, values)
 }
 
-// synthesizeFrom checks the values against the acquired module's #config and
-// synthesizes the instance. It is the part of synthesize that needs no
-// registry fetch of the module itself.
+// synthesizeFrom synthesizes the instance from the acquired module and the
+// values. It is the part of synthesize that needs no registry fetch of the
+// module itself. Synthesis checks the values against the module's #config
+// (types, constraints, fields the schema does not allow, required values left
+// unset); a failure is worded with every finding and its positions
+// (findingsError).
 func (r *KernelModuleRenderer) synthesizeFrom(
 	ctx context.Context,
 	mod *module.Module,
@@ -169,32 +173,47 @@ func (r *KernelModuleRenderer) synthesizeFrom(
 	if err != nil {
 		return nil, fmt.Errorf("compiling values: %w", err)
 	}
-	sources := []kernel.Source{src}
-
-	// Check the source against the module's #config before synthesis.
-	// Synthesis bakes the values into the module's own build, and a
-	// violation there surfaces where a component consumed the value (a
-	// path inside the module) before the kernel's own per-source check
-	// runs; the kernel's layered validation reports it at the source's
-	// positions instead, so the error names spec.values. It also refuses a
-	// required #config value left unset that no component reads. Synthesis
-	// refuses that too since library v1.0.0-beta.7 (library#211), with a
-	// different message (`not fully concrete: values.<field>: ...`); this
-	// check runs first, so the message a user reads is this one.
-	if _, err := r.Kernel.ValidateConfigDetailed(mod.ConfigSchema(), sources); err != nil {
-		return nil, fmt.Errorf("validating values against the module's #config: %s", cueFindings(err))
-	}
 
 	inst, err := r.Kernel.SynthesizeInstance(ctx, kernel.InstanceInput{
 		Module:    mod,
 		Name:      name,
 		Namespace: namespace,
-		Values:    sources,
+		Values:    []kernel.Source{src},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("synthesizing release: %w", err)
+		return nil, &findingsError{msg: "synthesizing release: " + withFindings(err), err: err}
 	}
 	return inst, nil
+}
+
+// findingsError words err with its CUE findings written out in full
+// (withFindings) and keeps err's chain, so the classifiers still find a typed
+// cause (a registry fetch failure, a terminal cause) under it.
+type findingsError struct {
+	msg string
+	err error
+}
+
+func (e *findingsError) Error() string { return e.msg }
+func (e *findingsError) Unwrap() error { return e.err }
+
+// withFindings returns err's text with its CUE findings written out in full.
+// The text of an error that wraps a CUE error list holds the first finding
+// and a count of the rest, and no position; this keeps the text up to that
+// first finding (the kernel's own frame) and appends every finding with its
+// positions (cueFindings). An error with no CUE error in its chain, or whose
+// text does not hold its first finding, is returned as its own text.
+func withFindings(err error) string {
+	text := err.Error()
+	var ce cueerrors.Error
+	if !errors.As(err, &ce) {
+		return text
+	}
+	i := strings.Index(text, cueerrors.Errors(err)[0].Error())
+	if i < 0 {
+		return text
+	}
+	return text[:i] + cueFindings(err)
 }
 
 // cueFindings words a CUE error tree as one finding per entry, each followed

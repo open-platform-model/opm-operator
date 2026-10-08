@@ -190,6 +190,13 @@ func TestClassifyRenderError(t *testing.T) {
 			wantReason:  status.RenderFailedReason,
 		},
 		{
+			name: "unset required value refused by synthesis is a render failure",
+			err: fmt.Errorf("synthesizing release: %w", errors.New(
+				`Kernel.SynthesizeInstance: instance "demo": not fully concrete: values.note: incomplete value string`)),
+			wantOutcome: FailedStalled,
+			wantReason:  status.RenderFailedReason,
+		},
+		{
 			name: "author-defect resolution failure under acquire stalls",
 			err: acquireErr(&oerrors.ResolutionError{Kind: oerrors.ResolutionImportUnprovided,
 				Err: errors.New("cannot find module providing package test.example/absent/pkg")}),

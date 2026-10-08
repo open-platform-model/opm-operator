@@ -9,5 +9,5 @@
 
 ## 2. Docs: the conditions page names the new wording
 
-- [ ] 2.1 In `docs/site/diagnostics/operator-conditions.md`, `RenderFailed` row: replace `("validating values against the module's #config")` with the kernel's wording (a failed instance synthesis, "synthesizing release: ...", which includes `spec.values` that do not satisfy the module's `#config` and a required value left unset, "not fully concrete: values.<field>"). Verify: `grep -rn "validating values against" docs internal test` prints nothing.
-- [ ] 2.2 `task docs:bundle:check` and `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(diagnostics): name the kernel's values refusal under RenderFailed`
+- [x] 2.1 In `docs/site/diagnostics/operator-conditions.md`, `RenderFailed` row: replace `("validating values against the module's #config")` with the kernel's wording (a failed instance synthesis, "synthesizing release: ...", which includes `spec.values` that do not satisfy the module's `#config` and a required value left unset, "not fully concrete: values.<field>"). Verify: `grep -rn "validating values against" docs internal test` prints nothing.
+- [x] 2.2 `task docs:bundle:check` and `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(diagnostics): name the kernel's values refusal under RenderFailed`

@@ -187,23 +187,27 @@ func deletesClusterObjects(selection *types.Selection, writer *types.Interface, 
 // delete guard. A delete anywhere else would go out without a verdict or a
 // precondition (0012:D4:R1).
 func TestDeleteCallSitesAreClosed(t *testing.T) {
-	allowed := map[string]bool{
-		"internal/apply/prune.go":  true,
-		"internal/apply/claims.go": true,
+	// The number of deletes each file may hold: the prune's one DELETE, and
+	// the guard's two (with and without a UID precondition). A further
+	// delete in a listed file needs its own verdict or precondition, and
+	// this count changed with it.
+	allowed := map[string]int{
+		"internal/apply/prune.go":  1,
+		"internal/apply/claims.go": 2,
 	}
 	calls := findDeleteCalls(t, "./internal/...", "./cmd/...")
 
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	for _, call := range calls {
-		seen[call.File] = true
-		if !allowed[call.File] {
+		seen[call.File]++
+		if _, ok := allowed[call.File]; !ok {
 			t.Errorf("%s:%d calls %s on a Kubernetes client: only %v may delete a cluster object",
 				call.File, call.Line, call.Method, []string{"internal/apply/prune.go", "internal/apply/claims.go"})
 		}
 	}
-	for file := range allowed {
-		if !seen[file] {
-			t.Errorf("%s holds no delete call: the matcher no longer finds the calls it must find", file)
+	for file, want := range allowed {
+		if seen[file] != want {
+			t.Errorf("%s holds %d delete call(s), want %d", file, seen[file], want)
 		}
 	}
 }

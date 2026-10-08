@@ -10,11 +10,20 @@ func TestPlanIdentities(t *testing.T) {
 	tests := []struct {
 		name                         string
 		recorded, previous, rendered string
+		legacy                       bool
 		want                         identityPlan
 	}{
 		{
-			name: "nothing recorded", rendered: a,
+			name: "nothing recorded: the render's identity alone", rendered: a,
+			want: identityPlan{InstanceUUID: a, Changed: true, Prune: []string{a}},
+		},
+		{
+			name: "nothing recorded, legacy fallback: then no identity", rendered: a, legacy: true,
 			want: identityPlan{InstanceUUID: a, Changed: true, Prune: []string{a, ""}},
+		},
+		{
+			name: "the legacy fallback changes nothing once an identity is recorded", recorded: a, rendered: b, legacy: true,
+			want: identityPlan{InstanceUUID: b, PreviousInstanceUUID: a, Changed: true, Prune: []string{b, a}},
 		},
 		{
 			name: "unchanged", recorded: a, rendered: a,
@@ -47,7 +56,7 @@ func TestPlanIdentities(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := planIdentities(tt.recorded, tt.previous, tt.rendered)
+			got := planIdentities(tt.recorded, tt.previous, tt.rendered, tt.legacy)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("planIdentities(%q, %q, %q) = %+v, want %+v", tt.recorded, tt.previous, tt.rendered, got, tt.want)
 			}

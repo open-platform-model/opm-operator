@@ -458,7 +458,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			return nn
 		}
 
-		It("deletes a stale object of an unknown earlier identity and one annotated for this instance", func() {
+		It("leaves a stale object that carries another instance's UUID, and deletes one annotated for this instance", func() {
 			nn := unrecorded("id-none", "idz-app", "idz-earlier", "idz-mine", "idz-theirs")
 			DeferCleanup(func() {
 				removeConfigMaps("idz-app", "idz-earlier", "idz-mine", "idz-theirs")
@@ -477,12 +477,17 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			_, err := reconcileWith(nn, identityRender(identityB, "idz-app"))
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(configMapExists("idz-earlier")).To(BeFalse(), "deleted on its managed-by label, as before the field existed")
+			Expect(configMapExists("idz-earlier")).To(BeTrue(), "another instance's UUID label: left, as before")
 			Expect(configMapExists("idz-mine")).To(BeFalse(), "annotated for the render's identity")
 			Expect(configMapExists("idz-theirs")).To(BeTrue(), "annotated for another instance")
 			expectIdentities(nn, identityB, "")
+			Expect(inventoryNames(instanceStatus(nn).Inventory)).To(ConsistOf("ConfigMap/idz-app"))
 			left := rec.withReason(status.LeftBehindReason)
 			Expect(left).To(HaveLen(1))
+			Expect(left[0].eventType).To(Equal(corev1.EventTypeWarning))
+			Expect(left[0].note).To(HavePrefix("Left 2 object(s) in the cluster: "))
+			Expect(left[0].note).To(ContainSubstring(
+				"ConfigMap/default/idz-earlier belongs to module instance " + identityX))
 			Expect(left[0].note).To(ContainSubstring(
 				"ConfigMap/default/idz-theirs is being adopted by module instance " + identityC))
 		})

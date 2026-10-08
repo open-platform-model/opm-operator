@@ -494,7 +494,7 @@ func ReconcileModuleInstance(
 	// Nothing is written here: the apply path stores a changed identity
 	// before its first write, and a NoOp fills an empty field.
 	renderedUUID := extractInstanceUUID(resources)
-	identities := planIdentities(mi.Status.InstanceUUID, mi.Status.PreviousInstanceUUID, renderedUUID)
+	identities := planIdentities(mi.Status.InstanceUUID, mi.Status.PreviousInstanceUUID, renderedUUID, false)
 
 	// Persist the contracts this instance's components demand (enhancement
 	// 0015:D3/D16), as the kernel's render reported them. Written here

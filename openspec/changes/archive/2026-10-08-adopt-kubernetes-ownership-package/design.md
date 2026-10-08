@@ -141,7 +141,7 @@ The identities, by path:
 | Path | `status.instanceUUID` at the start | Identities handed to the verdict |
 | --- | --- | --- |
 | Stale prune | set | `status.instanceUUID`, then `status.previousInstanceUUID` when set (both as stored before the apply) |
-| Stale prune | empty | the render's identity, then no identity (see "No recorded identity") |
+| Stale prune | empty | the render's identity; for a ModulePackage then also no identity (see "No recorded identity") |
 | Deletion cleanup | set | `status.instanceUUID`, then `status.previousInstanceUUID` when set |
 | Deletion cleanup | empty | no identity |
 
@@ -172,10 +172,10 @@ The identities, by path:
 #### No recorded identity
 
 **Context**: A ModulePackage has no recorded identity until its first render under this release. A package that is suspended, waits for a dependency or fails before its render does not gain one in that state. Today a package's prune and cleanup compare no identity. A ModuleInstance has an empty field only when a release older than the field recorded its inventory.
-**Decision**: One rule for both kinds and every path: while nothing is recorded, the verdict is asked with no identity, which is what a package's deletes do today. On the stale-prune path the render's identity is known, so it is asked first; this lets an object annotated for this instance be deleted when its UUID label is this instance's or absent. On the deletion path no identity is known, so an object with any adopt annotation is left behind, also one that names this instance, because the operator cannot know that it does. It is reported in `LeftBehind` and does not hold the finalizer: a held finalizer there could be released by nobody.
+**Decision**: While nothing is recorded, the deletion cleanup asks the verdict with no identity, for both kinds, because no identity is known there. The stale prune knows the render's identity and judges with it: an object that carries another instance's UUID label is left, and an object annotated for this instance is deleted when its UUID label is this instance's or absent. This is what a ModuleInstance did before this change, which judged with the render's identity. A ModulePackage, and only a ModulePackage, then asks once more with no identity, because its prune compared no UUID label before the field existed. On the deletion path an object with any adopt annotation is left behind, also one that names this instance, because the operator cannot know that it does. It is reported in `LeftBehind` and does not hold the finalizer: a held finalizer there could be released by nobody. (Corrected after the build review of 2026-10-09: an earlier version gave the fallback to both kinds, which deleted more than the released operator on a ModuleInstance. When in doubt the object is left.)
 
 The first reconcile after the upgrade that renders writes `status.instanceUUID`: before its apply when it applies, in its NoOp commit when it does not. `status.previousInstanceUUID` stays empty: the operator cannot know an earlier identity it never recorded.
-**Rationale**: No package loses a delete it has today, and the one case where the empty identity is stricter than the label check is stated.
+**Rationale**: No package loses a delete it has today, no ModuleInstance gains one, and the one case where the empty identity is stricter than the label check is stated.
 
 #### ModulePackage keeps a persisted identity
 

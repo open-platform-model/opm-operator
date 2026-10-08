@@ -102,7 +102,7 @@ Every DELETE the prune sends MUST carry a precondition on the UID of the live ob
 ### Requirement: The prune judges with the recorded identities
 The prune of stale resources MUST judge with the identities the status held when the apply of the same reconcile started: `status.instanceUUID`, and `status.previousInstanceUUID` when it is set. A stale object that carries either identity, and that the verdict lets the operator delete under it, MUST be deleted. Source: owner decisions of 2026-10-08 (prune judges with the identity stored in the instance's record, also after the instance identity changed; the status keeps both identities until the prune succeeded).
 
-When `status.instanceUUID` was empty when the reconcile started, the prune MUST ask the verdict with the render's identity first and then with no identity, so that it deletes what the managed-by label alone let it delete before.
+When `status.instanceUUID` was empty when the reconcile started, the prune MUST judge with the render's identity, so that a stale object that carries another instance's UUID label is left in the cluster, as before the field existed. A ModulePackage, and only a ModulePackage, MUST then ask the verdict once more with no identity: before the field existed its prune compared no UUID label, and it MUST NOT lose a delete it had.
 
 #### Scenario: Stale object after the instance identity changed
 - **GIVEN** a ModuleInstance with `status.instanceUUID` `A` and `spec.prune=true`, whose `spec.module.path` changes so that its render carries identity `B` and no longer holds ConfigMap `team-a/old`, which carries the UUID label `A`
@@ -127,8 +127,13 @@ When `status.instanceUUID` was empty when the reconcile started, the prune MUST 
 - **WHEN** the controller prunes the stale set
 - **THEN** the ConfigMap still exists and the prune result names it with the reason `owner-mismatch`
 
-#### Scenario: No recorded identity, object of an unknown earlier identity
-- **GIVEN** an object with an inventory and an empty `status.instanceUUID`, whose render carries identity `B`, and a stale ConfigMap that is managed by OPM, carries the UUID label `X` and has no adopt annotation
+#### Scenario: No recorded identity, ModuleInstance, object of another identity
+- **GIVEN** a ModuleInstance with an inventory and an empty `status.instanceUUID`, whose render carries identity `B`, and a stale ConfigMap that is managed by OPM, carries the UUID label `X` and has no adopt annotation
+- **WHEN** the reconcile applies and prunes
+- **THEN** the ConfigMap still exists and the prune result names it with the reason `owner-mismatch`
+
+#### Scenario: No recorded identity, ModulePackage, object of an unknown earlier identity
+- **GIVEN** a ModulePackage with an inventory and an empty `status.instanceUUID`, whose render carries identity `B`, and a stale ConfigMap that is managed by OPM, carries the UUID label `X` and has no adopt annotation
 - **WHEN** the reconcile applies and prunes
 - **THEN** the ConfigMap is deleted
 

@@ -345,7 +345,7 @@ func ReconcileModulePackage(
 	// ModuleInstance does. A third identity while an earlier change is not
 	// settled is refused before anything is applied or pruned.
 	renderedUUID := extractInstanceUUID(converted.resources)
-	identities := planIdentities(pkg.Status.InstanceUUID, pkg.Status.PreviousInstanceUUID, renderedUUID)
+	identities := planIdentities(pkg.Status.InstanceUUID, pkg.Status.PreviousInstanceUUID, renderedUUID, true)
 	if identities.Refused {
 		already := readyAlreadyStalledWith(conditionsAtStart, status.IdentityChangeUnsettledReason)
 		msg := refuseIdentityChange(params.EventRecorder, &pkg, already,

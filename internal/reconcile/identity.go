@@ -39,9 +39,12 @@ type identityPlan struct {
 // planIdentities decides what a render of identity rendered means for a
 // status that records instanceUUID and previousInstanceUUID.
 //
-//   - Nothing recorded: the render's identity is recorded. The prune asks
-//     with it first and then with no identity, so it deletes what the
-//     managed-by label alone let it delete before the field existed.
+//   - Nothing recorded: the render's identity is recorded and the prune
+//     judges with it, so an object that carries another instance's UUID label
+//     is left. With legacyFallback the prune then also asks with no identity.
+//     That is for a ModulePackage only: before the field existed its prune
+//     compared no UUID label, and it must not lose a delete it had. A
+//     ModuleInstance always judged with the render's identity.
 //   - The render carries the recorded identity, or none: nothing changes.
 //   - The render carries another identity and no change is pending: the
 //     recorded identity becomes the previous one.
@@ -51,7 +54,7 @@ type identityPlan struct {
 //
 // previousInstanceUUID is cleared by the caller, in the commit of a
 // reconcile whose apply and prune succeeded, and nowhere else.
-func planIdentities(recorded, previous, rendered string) identityPlan {
+func planIdentities(recorded, previous, rendered string, legacyFallback bool) identityPlan {
 	keep := identityPlan{
 		InstanceUUID:         recorded,
 		PreviousInstanceUUID: previous,
@@ -61,7 +64,11 @@ func planIdentities(recorded, previous, rendered string) identityPlan {
 	case rendered == "" || rendered == recorded:
 		return keep
 	case recorded == "":
-		return identityPlan{InstanceUUID: rendered, Changed: true, Prune: []string{rendered, ""}}
+		plan := identityPlan{InstanceUUID: rendered, Changed: true, Prune: []string{rendered}}
+		if legacyFallback {
+			plan.Prune = append(plan.Prune, "")
+		}
+		return plan
 	case previous == "":
 		return identityPlan{
 			InstanceUUID: rendered, PreviousInstanceUUID: recorded,

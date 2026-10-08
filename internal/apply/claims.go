@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	ssaerrors "github.com/fluxcd/pkg/ssa/errors"
@@ -137,24 +138,47 @@ func claimDeletionAllowed(ctx context.Context) bool {
 	return allowed
 }
 
-// claimGuard is the client a resource manager works through. It refuses to
-// delete a PersistentVolumeClaim unless the context allows it, so a forced
-// recreate cannot delete a claim that changed after checkClaims read it, and
-// a caller that sets no option cannot delete one at all.
-type claimGuard struct {
+// deleteGuard is the client a resource manager works through. Every delete a
+// forced recreate sends passes it.
+//
+// It refuses to delete a PersistentVolumeClaim unless the context allows it,
+// so a forced recreate cannot delete a claim that changed after checkClaims
+// read it, and a caller that sets no option cannot delete one at all.
+//
+// It sends every other delete with a precondition on the UID of the object it
+// is handed, which is the live object the resource manager read, so the
+// delete removes that object and not one created under the same name since.
+// It asks no ownership question: a forced recreate is part of an apply.
+type deleteGuard struct {
 	client.Client
 }
 
-func (g claimGuard) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+// ErrCollectionDelete is the refusal of a delete of a collection by the
+// resource manager's client.
+var ErrCollectionDelete = errors.New("a delete of a collection of objects is not allowed: " +
+	"it cannot name the objects that were read")
+
+func (g deleteGuard) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
 	if isClaimObject(obj) && !claimDeletionAllowed(ctx) {
 		return &ClaimConflictError{Namespace: obj.GetNamespace(), Name: obj.GetName()}
 	}
-	return g.Client.Delete(ctx, obj, opts...)
+	// An object without a UID is deleted without a precondition: one on an
+	// empty UID never matches.
+	uid := obj.GetUID()
+	if uid == "" {
+		return g.Client.Delete(ctx, obj, opts...)
+	}
+	// The precondition goes last, so no option of the caller replaces it.
+	guarded := append(slices.Clone(opts), client.Preconditions{UID: &uid})
+	if err := g.Client.Delete(ctx, obj, guarded...); err != nil {
+		return replacedError(err, true)
+	}
+	return nil
 }
 
-func (g claimGuard) DeleteAllOf(ctx context.Context, obj client.Object, opts ...client.DeleteAllOfOption) error {
-	if isClaimObject(obj) && !claimDeletionAllowed(ctx) {
-		return &ClaimConflictError{Namespace: obj.GetNamespace()}
-	}
-	return g.Client.DeleteAllOf(ctx, obj, opts...)
+// DeleteAllOf refuses every kind: a delete of a collection cannot carry the
+// UID of each object that was read.
+func (g deleteGuard) DeleteAllOf(_ context.Context, obj client.Object, _ ...client.DeleteAllOfOption) error {
+	return fmt.Errorf("%s in namespace %q: %w",
+		obj.GetObjectKind().GroupVersionKind().Kind, obj.GetNamespace(), ErrCollectionDelete)
 }

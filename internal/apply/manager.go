@@ -23,10 +23,12 @@ const (
 //
 // The manager works through a client that refuses to delete a
 // PersistentVolumeClaim outside an Apply with ApplyOptions.DeleteData, so its
-// forced recreate cannot delete user data unasked.
+// forced recreate cannot delete user data unasked, that sends every other
+// delete with a precondition on the UID of the object the manager read, and
+// that refuses a delete of a collection.
 func NewResourceManager(c client.Client, owner string) *fluxssa.ResourceManager {
 	poller := polling.NewStatusPoller(c, c.RESTMapper(), polling.Options{})
-	return fluxssa.NewResourceManager(claimGuard{c}, poller, fluxssa.Owner{
+	return fluxssa.NewResourceManager(deleteGuard{c}, poller, fluxssa.Owner{
 		Field: FieldManager,
 		Group: owner,
 	})

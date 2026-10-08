@@ -40,24 +40,52 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/kubernetes/dele
 
 ### Deleting an operator-managed instance
 
-<!-- The operator adds the finalizer `opmodel.dev/cleanup` on the first reconcile. On delete it reads `spec.prune`. If false, or unset, it logs "Prune disabled, orphaning managed resources on deletion" and removes the finalizer, and everything keeps running. If true, it prunes every inventory entry as the impersonated ServiceAccount (`spec.serviceAccountName`, else the manager's `--default-service-account`, else its own identity). It skips Namespaces and CRDs, skips live objects not labelled as OPM-managed, and skips objects whose UUID label names another instance. It keeps the finalizer on any failure. A missing ServiceAccount stalls the delete with reason DeletionSAMissing until the ServiceAccount returns, prune is set to false, or `opm.dev/force-delete-orphan: "true"` is annotated. On a ModuleInstance each of the three takes effect within seconds: the operator watches ServiceAccounts and that annotation. The trigger is the creation of the ServiceAccount, so restore its RBAC first and the ServiceAccount last. In the other order the prune is forbidden, the reason becomes ImpersonationFailed and the next attempt is up to 30 minutes later. A ModulePackage reacts to `spec.prune` at once and to the other two at its next recheck, up to 30 minutes later. Restoring only the ServiceAccount's RBAC (reason ImpersonationFailed) also waits for the recheck on both kinds. `opm instance delete` on such an instance only deletes the ModuleInstance and waits. ModulePackage follows the same path with the same finalizer name.
+<!-- The operator adds the finalizer `opmodel.dev/cleanup` on the first reconcile. On delete it reads `spec.prune`. If false, or unset, it logs "Prune disabled, orphaning managed resources on deletion" and removes the finalizer, and everything keeps running. If true, it prunes every inventory entry as the impersonated ServiceAccount (`spec.serviceAccountName`, else the manager's `--default-service-account`, else its own identity). It skips Namespaces and CRDs, skips live objects not labelled as OPM-managed, and skips objects whose UUID label names another instance. It keeps every PersistentVolumeClaim unless `spec.dataPolicy` is `Delete`, emits one Normal event with reason ClaimsKept that names them, and still removes the finalizer: a kept claim is not a failure. It keeps the finalizer on any failure. A missing ServiceAccount stalls the delete with reason DeletionSAMissing until the ServiceAccount returns, prune is set to false, or `opm.dev/force-delete-orphan: "true"` is annotated. On a ModuleInstance each of the three takes effect within seconds: the operator watches ServiceAccounts and that annotation. The trigger is the creation of the ServiceAccount, so restore its RBAC first and the ServiceAccount last. In the other order the prune is forbidden, the reason becomes ImpersonationFailed and the next attempt is up to 30 minutes later. A ModulePackage reacts to `spec.prune` at once and to the other two at its next recheck, up to 30 minutes later. Restoring only the ServiceAccount's RBAC (reason ImpersonationFailed) also waits for the recheck on both kinds. `opm instance delete` on such an instance only deletes the ModuleInstance and waits. ModulePackage follows the same path with the same finalizer name.
 
 Check against: opm-operator/internal/reconcile/moduleinstance.go, opm-operator/internal/reconcile/modulepackage.go, opm-operator/internal/apply/prune.go, opm-operator/openspec/specs/finalizer-and-deletion/spec.md, cli/internal/cmd/instance/delete.go -->
 
+### PersistentVolumeClaims are kept
+
+The operator does not delete a PersistentVolumeClaim, because deleting a claim deletes the data on its volume. With `spec.prune: true`, a claim that a new render no longer produces stays in the cluster, and deleting the ModuleInstance or ModulePackage leaves its claims in place. Everything else is pruned and deleted as before.
+
+A kept claim is not an error. The object stays `Ready`, a delete completes, and the operator emits one `Normal` event with the reason `ClaimsKept` that names the claims:
+
+```text
+Normal  ClaimsKept  Kept 1 PersistentVolumeClaim(s) and the data on them: media/config. They are no longer tracked. Delete one with: kubectl delete pvc <name> -n <namespace>. Set spec.dataPolicy to Delete to let the operator delete claims.
+```
+
+After that, nothing tracks the claim. A stale claim leaves `status.inventory` with the other stale entries, and a deleted instance has no inventory. The claim keeps its instance labels, so `kubectl get pvc -n <namespace> -l module-instance.opmodel.dev/name=<name>` finds it, and `kubectl delete pvc` removes it. If a later render of the same instance produces a claim of the same name, the operator takes the claim back.
+
+To have the operator delete claims, set `spec.dataPolicy: Delete` on the ModuleInstance or ModulePackage. It applies from then on: it does not reach a claim that was kept earlier. Without `spec.prune` it has no effect, because then the operator deletes nothing.
+
+Three things are not covered:
+
+- **Claims that a StatefulSet creates.** A StatefulSet creates one claim per replica from its `volumeClaimTemplates`. They are in no inventory, so the operator never deletes them, with or without `spec.dataPolicy: Delete`. Kubernetes keeps them when the StatefulSet is deleted, unless the StatefulSet sets `persistentVolumeClaimRetentionPolicy`.
+- **Other storage kinds.** Only a `PersistentVolumeClaim` of the core API group is kept.
+- **CLI-managed instances.** The operator does not touch them. The CLI keeps claims too, and its switch is the flag `--delete-data`. One difference remains: after a prune that kept a claim, the CLI still lists the claim in the inventory and the operator does not.
+
+> [!WARNING]
+> **The default changed**
+>
+> Earlier operator releases deleted a tracked PersistentVolumeClaim under `spec.prune: true`, on prune and on delete. An instance that relies on that must now set `spec.dataPolicy: Delete`.
+
+<!-- Check against: opm-operator/internal/apply/prune.go, opm-operator/internal/status/claims.go, opm-operator/api/v1alpha1/common_types.go, opm-operator/adr/020-data-claims-kept-by-default.md, cli/docs/site/diagnostics/kept-volume-claims.md -->
+
 ### Pruning when a render drops a resource
 
-<!-- The stale set is the previous inventory minus the new render. The CLI prunes it on every `opm instance apply` unless `--no-prune` is passed. It skips a resource that only moved to a renamed component, skips Namespaces, and deletes everything else, CRDs included, with no label check. It also refuses an empty render that would prune everything unless `--force` is passed. The operator prunes the stale set only when `spec.prune` is true, with the same exclusions and guards as its delete path. So `spec.prune` is one switch for two things: pruning on update and deleting on delete.
+<!-- The stale set is the previous inventory minus the new render. The CLI prunes it on every `opm instance apply` unless `--no-prune` is passed. It skips a resource that only moved to a renamed component, skips Namespaces, and deletes everything else, CRDs included, with no label check. It also refuses an empty render that would prune everything unless `--force` is passed. The operator prunes the stale set only when `spec.prune` is true, with the same exclusions and guards as its delete path, kept PersistentVolumeClaims included; a kept stale claim leaves the inventory. So `spec.prune` is one switch for two things: pruning on update and deleting on delete.
 
 Check against: cli/internal/workflow/apply/apply.go, cli/internal/inventory/stale.go, cli/internal/cmd/instance/apply.go, opm-operator/internal/reconcile/moduleinstance.go, opm-operator/openspec/specs/prune-stale-resources/spec.md -->
 
 ### Where the two paths differ
 
-<!-- Prose, not a field table. Five differences decide whether a resource is actually removed:
+<!-- Prose, not a field table. Six differences decide whether a resource is actually removed:
 - Default: the CLI always deletes on delete and prunes on apply unless `--no-prune` is passed; the operator does neither unless `spec.prune` is true.
 - Namespaces and CRDs: the operator never deletes them. The CLI deletes both on `opm instance delete`, and CRDs (not Namespaces) when pruning on apply.
 - Ownership check: the operator re-reads each live object and skips it when its managed-by or UUID label disagrees. The CLI deletes whatever the inventory names.
 - Identity: the CLI acts with the user's credentials; the operator with the impersonated ServiceAccount.
 - Record: deleting the ModuleInstance ends a CLI-managed instance's record with no cleanup. For an operator-managed instance it runs the finalizer.
+- PersistentVolumeClaims: both keep them by default. The CLI's switch is the flag `--delete-data`, the operator's is `spec.dataPolicy: Delete`. After a prune the CLI keeps the claim in the inventory; the operator drops it.
 
 Check against: cli/internal/kubernetes/delete.go, cli/internal/inventory/stale.go, opm-operator/internal/apply/prune.go, opm-operator/internal/reconcile/moduleinstance.go -->
 
@@ -71,7 +99,7 @@ Check against: opm-operator/adr/002-authoritative-inventory-model.md, enhancemen
 
 ### Why the operator keeps resources by default
 
-<!-- Verify: no written rationale for `spec.prune` defaulting to false was found in opm-operator/adr, opm-operator/openspec/specs or cli. The code and the CLI README call it deliberate. Enhancement 0012's open question on the default is a draft and must not be cited as a direction. The author supplies the reason, or the page states the behaviour without one. Candidate framing to confirm with the maintainers: an orphaned Deployment can be deleted later, but a deleted PersistentVolumeClaim cannot be undeleted.
+<!-- Verify: no written rationale for `spec.prune` defaulting to false was found in opm-operator/adr, opm-operator/openspec/specs or cli. The code and the CLI README call it deliberate. Enhancement 0012's open question on the default is a draft and must not be cited as a direction. The author supplies the reason, or the page states the behaviour without one. Candidate framing to confirm with the maintainers: an orphaned Deployment can be deleted later. PersistentVolumeClaims are no longer part of this argument: the operator keeps them even with `spec.prune` (see "PersistentVolumeClaims are kept").
 
 Check against: opm-operator/api/v1alpha1/moduleinstance_types.go, cli/README.md, cli/internal/cmd/instance/delete.go -->
 
@@ -146,6 +174,7 @@ Check against: cli/internal/cmd/operator/uninstall.go, cli/internal/operator/uni
 - The operator's own instance, the one that deploys the operator, never keeps `opmodel.dev/cleanup` and is never pruned by the operator, when its owner is absent or `operator`: the operator's reconciler, which refuses that instance before registering the finalizer and releases a leftover finalizer without pruning.
 - The operator deletes on delete only with `spec.prune`: the operator's reconciler.
 - The operator never deletes Namespaces or CRDs, or objects whose labels disagree: the operator's prune.
+- The operator deletes a PersistentVolumeClaim only with `spec.dataPolicy: Delete`: the operator's prune. `spec.dataPolicy` is `Keep` or `Delete` only: CRD enum validation.
 - An operator-managed delete needs a ready operator: the `opm instance delete` command. Nothing guards `kubectl delete`.
 - Apply needs permission to record inventory: `opm instance apply`'s status RBAC check.
 - The ModuleInstance goes last on a CLI delete: the `opm instance delete` command.

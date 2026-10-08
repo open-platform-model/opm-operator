@@ -1506,6 +1506,15 @@ func resolveEffectiveSA(specSA, defaultSA string) (string, string) {
 	return "", ""
 }
 
+// EffectiveServiceAccount is the name of the ServiceAccount an instance
+// impersonates: spec.serviceAccountName, else the manager's
+// --default-service-account, else none. The controller's ServiceAccount watch
+// maps through it, so the watch and the reconcile cannot disagree.
+func EffectiveServiceAccount(specSA, defaultSA string) string {
+	name, _ := resolveEffectiveSA(specSA, defaultSA)
+	return name
+}
+
 // recordReconcileMetrics records outcome, duration, and inventory size metrics.
 func recordReconcileMetrics(name, namespace string, outcome Outcome, duration time.Duration, reconciled bool, inventoryCount int) {
 	opmmetrics.RecordReconcile(name, namespace, outcome.MetricLabel(), duration)

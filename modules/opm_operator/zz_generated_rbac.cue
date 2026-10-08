@@ -22,6 +22,8 @@ package opm_operator
 			verbs: [
 				"get",
 				"impersonate",
+				"list",
+				"watch",
 			]
 		}, {
 			apiGroups: ["events.k8s.io"]

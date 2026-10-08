@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,9 +46,10 @@ import (
 )
 
 // A deletion stalled on a missing ServiceAccount requeues after 30 minutes.
-// Setting the orphan annotation, a recovery action its message names, does
-// not move metadata.generation, so only a predicate on the primary watch
-// makes it take effect at once. The spec runs a real manager: a direct
+// The two recovery actions its message names (the orphan annotation, the
+// return of the ServiceAccount) move neither metadata.generation nor any
+// object the controller used to watch, so only a predicate and a watch make
+// them take effect at once. These specs run a real manager: a direct
 // Reconcile call would pass with no trigger at all.
 var _ = Describe("Recovery of a stalled deletion (manager-driven)", func() {
 	const wakeWithin = 10 * time.Second
@@ -158,5 +160,39 @@ var _ = Describe("Recovery of a stalled deletion (manager-driven)", func() {
 
 		var orphaned corev1.ConfigMap
 		Expect(k8sClient.Get(ctx, cmKey, &orphaned)).To(Succeed(), "the orphan exit prunes nothing")
+	})
+
+	It("prunes and releases the instance when its ServiceAccount returns", func() {
+		const saName = "wake-returning-sa"
+		nn, cmKey := stalledDeletion("wake-sa-mi", saName)
+
+		role := &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{Name: "wake-sa-configmaps", Namespace: namespace},
+			Rules: []rbacv1.PolicyRule{{
+				APIGroups: []string{""},
+				Resources: []string{"configmaps"},
+				Verbs:     []string{"get", "list", "watch", "delete"},
+			}},
+		}
+		Expect(k8sClient.Create(ctx, role)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, role)).To(Succeed()) })
+		binding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "wake-sa-configmaps", Namespace: namespace},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name},
+			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: saName, Namespace: namespace}},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, binding)).To(Succeed()) })
+
+		// The binding alone changes nothing; the ServiceAccount is the return.
+		sa := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: saName, Namespace: namespace}}
+		Expect(k8sClient.Create(ctx, sa)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, sa)).To(Succeed()) })
+
+		gone(nn)
+
+		var pruned corev1.ConfigMap
+		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, cmKey, &pruned))).To(BeTrue(),
+			"the delete must prune the inventory as the returned ServiceAccount")
 	})
 })

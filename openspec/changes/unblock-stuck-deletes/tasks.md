@@ -12,10 +12,10 @@
 
 ## 3. Reconcile an instance when its ServiceAccount returns
 
-- [ ] 3.1 Add a manager-driven spec to `test/integration/reconcile/deletion_wake_test.go`: an instance stalled with `DeletionSAMissing` is gone, and its inventory pruned, within 10 seconds of the ServiceAccount's creation. Add specs for the map function in `internal/controller` (named, flag default, other name, other namespace, CLI-owned, suspended live, suspended deleting). Verify: on the tree of section 2 the manager spec fails
-- [ ] 3.2 Export the effective-ServiceAccount precedence from `internal/reconcile`; add `mapServiceAccountToModuleInstances`, `serviceAccountCreated` and the metadata-only watch; change the RBAC marker to `get;impersonate;list;watch`; run `task dev:manifests` and `task operator:installer`. Verify: `git diff` of `config/rbac/role.yaml`, `dist/install.yaml` and `modules/opm_operator/zz_generated_rbac.cue` shows only `list` and `watch` added to the `serviceaccounts` rule, and the specs of 3.1 pass
-- [ ] 3.3 Add a spec to `test/integration/reconcile/impersonation_rbac_test.go` that the shipped role's verbs on `serviceaccounts` are exactly `get`, `impersonate`, `list`, `watch`. Verify: it passes, and `task operator-module:drift` is green
-- [ ] 3.4 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(controller): reconcile an instance when its ServiceAccount returns`
+- [x] 3.1 Add a manager-driven spec to `test/integration/reconcile/deletion_wake_test.go`: an instance stalled with `DeletionSAMissing` is gone, and its inventory pruned, within 10 seconds of the ServiceAccount's creation. Add specs for the map function in `internal/controller` (named, flag default, other name, other namespace, CLI-owned, suspended live, suspended deleting). Verify: on the tree of section 2 the manager spec fails
+- [x] 3.2 Export the effective-ServiceAccount precedence from `internal/reconcile`; add `mapServiceAccountToModuleInstances`, `serviceAccountCreated` and the metadata-only watch; change the RBAC marker to `get;impersonate;list;watch`; run `task dev:manifests` and `task operator:installer`. Verify: `git diff` of `config/rbac/role.yaml`, `dist/install.yaml` and `modules/opm_operator/zz_generated_rbac.cue` shows only `list` and `watch` added to the `serviceaccounts` rule, and the specs of 3.1 pass
+- [x] 3.3 Add a spec to `test/integration/reconcile/impersonation_rbac_test.go` that the shipped role's verbs on `serviceaccounts` are exactly `get`, `impersonate`, `list`, `watch`. Verify: it passes, and `task operator-module:drift` is green
+- [x] 3.4 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(controller): reconcile an instance when its ServiceAccount returns`
 
 ## 4. Documentation
 

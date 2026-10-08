@@ -17,13 +17,18 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
@@ -102,5 +107,77 @@ var _ = Describe("ModuleInstance primary watch predicate", func() {
 	It("does not pass an update with a missing object", func() {
 		Expect(orphanAnnotationSet().Update(event.UpdateEvent{ObjectNew: wakeInstance(true)})).To(BeFalse())
 		Expect(orphanAnnotationSet().Update(event.UpdateEvent{ObjectOld: wakeInstance(true)})).To(BeFalse())
+	})
+})
+
+var _ = Describe("ServiceAccount watch", func() {
+	named := func(name string) func(*releasesv1alpha1.ModuleInstance) {
+		return func(mi *releasesv1alpha1.ModuleInstance) { mi.Name = name }
+	}
+	inNamespace := func(ns string) func(*releasesv1alpha1.ModuleInstance) {
+		return func(mi *releasesv1alpha1.ModuleInstance) { mi.Namespace = ns }
+	}
+	impersonating := func(sa string) func(*releasesv1alpha1.ModuleInstance) {
+		return func(mi *releasesv1alpha1.ModuleInstance) { mi.Spec.ServiceAccountName = sa }
+	}
+	cliOwned := func(mi *releasesv1alpha1.ModuleInstance) { mi.Spec.Owner = releasesv1alpha1.OwnerCLI }
+	suspended := func(mi *releasesv1alpha1.ModuleInstance) { mi.Spec.Suspend = true }
+
+	// The watch is metadata-only, so the mapper receives this type. Every
+	// ServiceAccount of these specs is created in wakeNamespace.
+	created := func(name string) *metav1.PartialObjectMetadata {
+		return &metav1.PartialObjectMetadata{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: wakeNamespace},
+		}
+	}
+	request := func(name string) reconcile.Request {
+		return reconcile.Request{NamespacedName: types.NamespacedName{Namespace: wakeNamespace, Name: name}}
+	}
+
+	It("passes only the creation of a ServiceAccount", func() {
+		p := serviceAccountCreated()
+		sa := created("deploy-sa")
+		Expect(p.Create(event.CreateEvent{Object: sa})).To(BeTrue())
+		Expect(p.Update(event.UpdateEvent{ObjectOld: sa, ObjectNew: sa})).To(BeFalse())
+		Expect(p.Delete(event.DeleteEvent{Object: sa})).To(BeFalse())
+		Expect(p.Generic(event.GenericEvent{Object: sa})).To(BeFalse())
+	})
+
+	It("enqueues the instances of the namespace that impersonate the created ServiceAccount", func() {
+		c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(
+			wakeInstance(false, named("live"), impersonating("deploy-sa")),
+			wakeInstance(true, named("deleting"), impersonating("deploy-sa")),
+			wakeInstance(true, named("deleting-suspended"), impersonating("deploy-sa"), suspended),
+			wakeInstance(false, named("live-suspended"), impersonating("deploy-sa"), suspended),
+			wakeInstance(false, named("cli-owned"), impersonating("deploy-sa"), cliOwned),
+			wakeInstance(true, named("cli-owned-deleting"), impersonating("deploy-sa"), cliOwned),
+			wakeInstance(false, named("other-sa"), impersonating("other-sa")),
+			wakeInstance(false, named("no-sa")),
+			wakeInstance(false, named("other-namespace"), inNamespace("team-b"), impersonating("deploy-sa")),
+		).Build()
+		r := &ModuleInstanceReconciler{Client: c, Scheme: scheme.Scheme}
+
+		Expect(r.mapServiceAccountToModuleInstances(context.Background(), created("deploy-sa"))).To(ConsistOf(
+			request("live"),
+			request("deleting"),
+			request("deleting-suspended"),
+		))
+		Expect(r.mapServiceAccountToModuleInstances(context.Background(), created("unused-sa"))).To(BeEmpty())
+	})
+
+	It("counts the manager's default ServiceAccount as the effective one", func() {
+		c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(
+			wakeInstance(false, named("defaulted")),
+			wakeInstance(false, named("explicit"), impersonating("deploy-sa")),
+		).Build()
+		r := &ModuleInstanceReconciler{Client: c, Scheme: scheme.Scheme, DefaultServiceAccount: "opm-deployer"}
+
+		Expect(r.mapServiceAccountToModuleInstances(context.Background(), created("opm-deployer"))).To(ConsistOf(
+			request("defaulted"),
+		))
+		Expect(r.mapServiceAccountToModuleInstances(context.Background(), created("deploy-sa"))).To(ConsistOf(
+			request("explicit"),
+		))
 	})
 })

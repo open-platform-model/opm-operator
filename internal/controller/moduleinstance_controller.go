@@ -24,6 +24,7 @@ import (
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	"github.com/open-platform-model/library/opm/kernel"
 	"golang.org/x/time/rate"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -114,7 +115,7 @@ type ModuleInstanceReconciler struct {
 // +kubebuilder:rbac:groups=opmodel.dev,resources=moduleinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=opmodel.dev,resources=moduleinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch;update
 
@@ -163,6 +164,12 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 //     generation predicate lives on For() (not as a global event filter) so
 //     it does not suppress the Platform watch, whose trigger (the
 //     reconciler's status update) does not bump generation.
+//   - ServiceAccount (metadata only, create events only) — a created
+//     ServiceAccount re-enqueues the instances of its namespace that
+//     impersonate it (mapServiceAccountToModuleInstances), so a deletion or
+//     an apply stalled on the missing ServiceAccount recovers when it
+//     returns, not at the stalled recheck. The informer needs list and watch
+//     on serviceaccounts.
 //
 // MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
 // controller's MaxConcurrentReconciles, so phases outside the render (apply,
@@ -183,6 +190,12 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&releasesv1alpha1.Platform{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToModuleInstances),
 			builder.WithPredicates(platformConsumedFieldsChanged()),
+		).
+		Watches(
+			&corev1.ServiceAccount{},
+			handler.EnqueueRequestsFromMapFunc(r.mapServiceAccountToModuleInstances),
+			builder.WithPredicates(serviceAccountCreated()),
+			builder.OnlyMetadata,
 		).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentRenders,
@@ -215,6 +228,55 @@ func orphanAnnotationSet() predicate.Predicate {
 			return !e.ObjectNew.GetDeletionTimestamp().IsZero() && set(e.ObjectNew) && !set(e.ObjectOld)
 		},
 	}
+}
+
+// serviceAccountCreated passes only the creation of a ServiceAccount: that is
+// its return. An update or a deletion changes nothing an instance waits for.
+// The initial list arrives as creations too; the instances they map to are
+// queued already from their own list.
+func serviceAccountCreated() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return true },
+		UpdateFunc:  func(event.UpdateEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	}
+}
+
+// mapServiceAccountToModuleInstances enqueues the ModuleInstances a created
+// ServiceAccount can unblock: those in its namespace whose effective
+// ServiceAccount (spec, else the manager's default) has its name. A missing
+// ServiceAccount stalls both the deletion cleanup and the apply for 30
+// minutes, and its return moves nothing else the controller watches.
+//
+// Not enqueued: a CLI-owned instance, which impersonates nothing, and a
+// suspended instance that is not being deleted, whose reconcile would only
+// repeat its Suspended event. A suspended instance being deleted is enqueued:
+// suspend does not hold back the cleanup.
+func (r *ModuleInstanceReconciler) mapServiceAccountToModuleInstances(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list releasesv1alpha1.ModuleInstanceList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list ModuleInstances for ServiceAccount-triggered re-enqueue",
+			"namespace", obj.GetNamespace(), "serviceAccount", obj.GetName())
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range list.Items {
+		mi := &list.Items[i]
+		if mi.Spec.Owner == releasesv1alpha1.OwnerCLI {
+			continue
+		}
+		if mi.Spec.Suspend && mi.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if opmreconcile.EffectiveServiceAccount(mi.Spec.ServiceAccountName, r.DefaultServiceAccount) != obj.GetName() {
+			continue
+		}
+		reqs = append(reqs, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: mi.Name, Namespace: mi.Namespace},
+		})
+	}
+	return reqs
 }
 
 // platformConsumedFieldsChanged passes a Platform update only when a field a

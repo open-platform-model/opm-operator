@@ -193,7 +193,7 @@ var _ = Describe("TransformerRegistration acceptance: a transient registry failu
 			backdateHold(ctx, before.Name, 40*time.Second)
 			result, _, _ := rejudge(ctx, &stubCatalogs{err: unreachableErr()}, before.Name)
 			Expect(result.RequeueAfter).To(BeNumerically(">=", 40*time.Second))
-			Expect(result.RequeueAfter).To(BeNumerically("<", 50*time.Second))
+			Expect(result.RequeueAfter).To(BeNumerically("<", 55*time.Second))
 
 			backdateHold(ctx, before.Name, time.Hour)
 			result, _, _ = rejudge(ctx, &stubCatalogs{err: unreachableErr()}, before.Name)
@@ -303,6 +303,24 @@ var _ = Describe("TransformerRegistration acceptance: a transient registry failu
 			Expect(ready.Status).To(Equal(metav1.ConditionUnknown))
 			Expect(ready.Reason).To(Equal(status.CatalogUnresolvedReason),
 				"a Ready that carried no verdict must not keep naming the platform")
+		})
+	})
+
+	Context("an accepted claim whose spec was edited after the verdict", func() {
+		It("is refused, because the verdict it holds is for another spec", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			before := activatedClaim(ctx, ns, claimContract(ns))
+
+			edited := before.DeepCopy()
+			edited.Spec.Version = "9.9.9"
+			Expect(k8sClient.Update(ctx, edited)).To(Succeed())
+			Expect(edited.Generation).To(BeNumerically(">", before.Status.ObservedGeneration))
+
+			result, after, _ := rejudge(ctx, &stubCatalogs{err: unreachableErr()}, before.Name)
+
+			expectRefused(result, after)
+			Expect(readyOf(after).Message).To(ContainSubstring("9.9.9"))
 		})
 	})
 

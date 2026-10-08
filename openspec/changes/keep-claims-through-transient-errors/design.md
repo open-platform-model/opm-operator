@@ -29,7 +29,7 @@ See proposal.md for the motivation. The facts that shape the approach:
 
 **Context**: The operator has two candidate classifications. `opmreconcile.IsTransientFailure` is true for every typed fetch failure, not-found and unauthorized included; the workload reconcilers use it to pick the backoff. The library's `ErrTransient` is narrower: network-level only.
 **Explored**: `internal/reconcile/resolution.go`, library `opm/errors/fetch.go`.
-**Decision**: Keep the verdict only when `opmreconcile.IsTransientFailure(err) && errors.Is(err, oerrors.ErrTransient)`.
+**Decision**: Keep the verdict only when `opmreconcile.IsTransientFailure(err) && errors.Is(err, oerrors.ErrTransient)`. The claim must also hold a verdict for its current spec: `status.accepted` is true and `status.observedGeneration` equals `metadata.generation`.
 **Rationale**: A catalog the registry no longer holds must still un-accept, and a not-found is a `FetchError` that is not `ErrTransient`. The first operand adds the operator's existing rule that a typed terminal cause in the chain wins over a fetch failure joined to it. Both read types only.
 
 ### What the claim reports while it is held
@@ -76,7 +76,8 @@ func holdBackoff(since, now time.Time) time.Duration {
 
 ## Risks / Trade-offs
 
-- [A held claim keeps a verdict taken for an earlier spec after an edit] → The Platform already folds an edited claim before it is re-judged (a known, separate defect). `observedGeneration` is left at the judged generation so a later fix can tell.
+- [A held claim keeps a verdict taken for an earlier spec after an edit] → The hold applies only when `status.observedGeneration` equals `metadata.generation`, so an edited claim is refused as before this change. One gap stays: a deferred verdict also advances `observedGeneration`, so an edit whose first reconcile is deferred (no platform yet, competing claims not listable) and whose next reconcile meets a transient failure is held with the unjudged spec. The status cannot tell that case from the deferral after a restart, which must be held; closing it needs a status field, and the CRD is out of scope.
+- [A provider upgrade that meets a registry failure still drops the provider] → Accepted as the fail-closed side of the rule above. The new version is by definition not in the module cache, and nothing has judged it.
 - [A long outage keeps a claim whose catalog was withdrawn] → The first attempt that gets an answer un-accepts it. During the outage nothing can tell the two cases apart.
 - [A 429 or a refused credential still un-accepts] → That is the library's definition of transient. It is put to the owner as a question, not widened here.
 - [`Ready=True` with `Reconciling=True` reads as "in progress" to kstatus tools] → Intended: the claim serves, and the operator is retrying a check.

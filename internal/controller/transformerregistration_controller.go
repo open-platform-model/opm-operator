@@ -163,11 +163,11 @@ func (r *TransformerRegistrationReconciler) Reconcile(ctx context.Context, req c
 				fmt.Sprintf("Claimed artifact %s at %s is not a catalog: %v",
 					claim.Spec.Catalog, claim.Spec.Version, err))
 		}
-		if claim.Status.Accepted && keepsVerdict(err) {
+		if verdictStands(&claim) && keepsVerdict(err) {
 			// The registry did not answer. That is no answer about the
 			// claim, so an accepted claim keeps its verdict and the fetch is
-			// retried. A claim that is not accepted has no verdict to keep
-			// and takes the refusal below.
+			// retried. A claim with no verdict for this spec has nothing to
+			// keep and takes the refusal below.
 			return r.holdVerdict(ctx, patcher, &claim, err)
 		}
 		// Nothing resolved. A registry or coordinate problem, which a
@@ -545,6 +545,22 @@ func (r *TransformerRegistrationReconciler) deferVerdict(
 	claim.Status.ObservedGeneration = claim.Generation
 	status.MarkReconciling(claim, reason, "%s", msg)
 	return ctrl.Result{RequeueAfter: opmreconcile.StalledRecheckInterval}, r.patchStatus(ctx, patcher, claim)
+}
+
+// verdictStands reports whether the claim holds an acceptance that a
+// transient failure may keep: it is accepted, and its spec has not changed
+// since this reconciler last recorded an outcome for it. An edited claim is
+// accepted for a spec that no longer exists, and the Platform reads the
+// coordinate off the spec, so holding it would keep a catalog or a version
+// nobody judged in the platform for as long as the registry stays silent.
+//
+// observedGeneration is the only record of which spec the status is for, and
+// a deferred verdict advances it too. An edit whose first reconcile is
+// deferred and whose next one meets a transient failure is therefore still
+// held; the status cannot tell that case from a deferral after a restart,
+// which must be held.
+func verdictStands(claim *releasesv1alpha1.TransformerRegistration) bool {
+	return claim.Status.Accepted && claim.Status.ObservedGeneration == claim.Generation
 }
 
 // keepsVerdict reports whether a catalog acquisition failure leaves an

@@ -2,7 +2,7 @@
 
 An accepted `TransformerRegistration` loses its acceptance when the registry cannot be reached during one of its reconciles. The claim reconciler sends every catalog acquisition error except a wrong-kind artifact to a refusal, which clears `status.accepted`. The Platform reconciler then regenerates the platform package without the provider's catalog, dependent instances stop resolving, and the claim can flip back on the next Platform event. The Platform reconciler already treats the same failure as transient; the claim reconciler does not.
 
-The failure needs a cold CUE module cache: the library serves an already fetched catalog version from disk with no registry call. The operator's cache is an `emptyDir`, so every new pod, and every claim that names a new catalog version, starts cold.
+The failure needs a cold CUE module cache: the library serves an already fetched catalog version from disk with no registry call. The operator's cache is an `emptyDir`, so every new pod starts cold. A claim edited to name a new catalog version starts cold too; that claim has no verdict for its new spec and stays a refusal.
 
 ## What Changes
 
@@ -10,7 +10,7 @@ The failure needs a cold CUE module cache: the library serves an already fetched
 - The failure is reported without touching the verdict: `Reconciling=True` with reason `CatalogUnresolved`, and one Warning event that carries the registry error.
 - The acquisition is retried on a capped, jittered exponential backoff (5 seconds doubling to 5 minutes), not on the 30-minute stalled recheck.
 - Every other acquisition failure refuses the claim as today: a catalog the registry does not hold, refused credentials, a wrong-kind artifact, an unclassified error.
-- A claim that is not accepted is refused on a transient failure as today.
+- A claim that is not accepted, and an accepted claim whose spec was edited since its verdict, are refused on a transient failure as today.
 
 No API type changes. No change to the acceptance rules between competing claims.
 

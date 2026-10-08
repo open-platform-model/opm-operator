@@ -16,3 +16,7 @@
 /.opm-cli-version               @emil-jacero
 /.opm-docs-version              @emil-jacero
 /docs-kit.cue                   @emil-jacero
+# .golangci-lint-version and .custom-gcl.yml pick the linter binary and its
+# plugin that the required Lint job builds and runs.
+/.golangci-lint-version         @emil-jacero
+/.custom-gcl.yml                @emil-jacero

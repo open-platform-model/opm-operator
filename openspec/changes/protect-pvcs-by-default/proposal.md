@@ -7,7 +7,7 @@ The CLI stopped doing this in cli#345: `opm instance delete` and the prune of ap
 ## What Changes
 
 - **BREAKING** (changed default): with `spec.prune: true`, the operator no longer deletes a PersistentVolumeClaim of the core API group, neither when it prunes a stale claim nor when the ModuleInstance or ModulePackage is deleted. The claim and its data stay in the cluster.
-- A new optional field is the opt-out. This proposal recommends `spec.deleteData` (boolean, absent means false) on ModuleInstance and on ModulePackage. `design.md` gives three shapes with what `kubectl explain` shows for each; the owner approves the field before any code. Specs and tasks are written for the recommended shape.
+- A new optional field is the opt-out. It is `spec.dataPolicy`, an enum with the values `Keep` and `Delete`, on ModuleInstance and on ModulePackage; absent means `Keep`. The owner chose this shape at the proposal gate on 2026-10-08, with no validation rule that ties it to `spec.prune`. `design.md` records the two shapes that were not chosen.
 - No existing field changes meaning. `spec.prune` still decides whether the operator deletes anything at all; the new field only decides whether claims are among what it deletes. With `spec.prune` false or absent the new field has no effect.
 - A kept claim never blocks anything: the reconcile succeeds, the finalizer is removed, the deletion completes. The operator reports kept claims with one `Normal` event (reason `ClaimsKept`) that names them, and a log line.
 - A stale claim that the prune keeps leaves `status.inventory`, as every stale entry does today when it is skipped or not pruned. From then on nothing tracks it; it is deleted with `kubectl delete pvc`.
@@ -16,9 +16,9 @@ The CLI stopped doing this in cli#345: `opm instance delete` and the prune of ap
 
 Not in this change: the CLI (its prompt and docs page for operator-managed instances need a follow-up, see `design.md`, "Handover between the CLI and the operator"); other kinds than PersistentVolumeClaim; any restore step; a status field that lists kept claims.
 
-SemVer: MAJOR after GA, because a default that deletes becomes a default that keeps. During beta it ships as the next `1.0.0-beta.N` with a `!` in the PR title: `feat(apply)!: keep PersistentVolumeClaims on prune and deletion unless spec.deleteData`.
+SemVer: MAJOR after GA, because a default that deletes becomes a default that keeps. During beta it ships as the next `1.0.0-beta.N` with a `!` in the PR title: `feat(apply)!: keep PersistentVolumeClaims on prune and deletion unless spec.dataPolicy is Delete`.
 
-Complexity (Principle VII): one boolean, one branch in the prune, one event. The alternative is to tell users that `spec.prune` destroys data, which the owner rejected.
+Complexity (Principle VII): one two-value field, one branch in the prune, one event. The alternative is to tell users that `spec.prune` destroys data, which the owner rejected.
 
 ## Capabilities
 
@@ -35,9 +35,9 @@ None.
 
 ## Impact
 
-- API: `api/v1alpha1` gains one optional field on `ModuleInstanceSpec` and `ModulePackageSpec`. Generated: both CRDs in `config/crd/bases`, `zz_generated.deepcopy.go` only if the shape is a struct, and `modules/opm_operator/zz_generated_crds.cue`. The last one means the squash commit also lands in the operator module's changelog and opens a module release PR, which its release gate holds until an operator release carries the new `config/` (AGENTS.md, "This repository releases two units").
+- API: `api/v1alpha1` gains one optional field on `ModuleInstanceSpec` and `ModulePackageSpec`. Generated: both CRDs in `config/crd/bases`,  `modules/opm_operator/zz_generated_crds.cue`. The last one means the squash commit also lands in the operator module's changelog and opens a module release PR, which its release gate holds until an operator release carries the new `config/` (AGENTS.md, "This repository releases two units").
 - Code: `internal/apply/prune.go` (the guard and the result), the four `apply.Prune` call sites in `internal/reconcile/moduleinstance.go` and `internal/reconcile/modulepackage.go`, `internal/status/conditions.go` (one event reason).
 - Tests: `internal/apply` unit tests, `test/integration/reconcile` (prune and deletion, both kinds), `test/integration/crdvalidation`.
 - Docs: `docs/site/operating/deletion-and-pruning.md`, `docs/site/operating/delete-an-instance-safely.md`, `docs/site/diagnostics/operator-conditions.md`, `adr/020-*.md`.
 - Users: an instance with `spec.prune: true` that relied on the operator to delete claims must set the new field. Nothing else changes for them.
-- CLI: no code dependency. The CLI's confirmation prompt for an operator-managed instance with `spec.prune` set says the operator deletes claims; after this change that is true only when the new field is set. The follow-up is a CLI change, outside this one.
+- CLI: no code dependency. The CLI's confirmation prompt for an operator-managed instance with `spec.prune` set says the operator deletes claims; after this change that is true only when the new field is set. The follow-up is a CLI change of its own (swarm task T9.26); this change does not wait for it.

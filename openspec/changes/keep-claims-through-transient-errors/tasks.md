@@ -11,5 +11,5 @@
 
 ## 3. Docs
 
-- [ ] 3.1 Add the `Reconciling`: `CatalogUnresolved` row for TransformerRegistration to `docs/site/diagnostics/operator-conditions.md` and correct the `Ready`: `CatalogUnresolved` row; verify with `task docs:bundle:check`
-- [ ] 3.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs(controller): describe the held claim condition`
+- [x] 3.1 Add the `Reconciling`: `CatalogUnresolved` row for TransformerRegistration to `docs/site/diagnostics/operator-conditions.md` and correct the `Ready`: `CatalogUnresolved` row; verify with `task docs:bundle:check`
+- [x] 3.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs(controller): describe the held claim condition`

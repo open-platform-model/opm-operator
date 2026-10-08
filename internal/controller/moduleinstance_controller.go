@@ -24,6 +24,7 @@ import (
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	"github.com/open-platform-model/library/opm/kernel"
 	"golang.org/x/time/rate"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -114,7 +115,7 @@ type ModuleInstanceReconciler struct {
 // +kubebuilder:rbac:groups=opmodel.dev,resources=moduleinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=opmodel.dev,resources=moduleinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch;update
 
@@ -150,7 +151,9 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // requeue (ADR-019).
 //
 // Watches:
-//   - ModuleInstance CRs (primary, generation-change predicate)
+//   - ModuleInstance CRs (primary): a generation change, or the orphan
+//     annotation set on an instance that is being deleted
+//     (orphanAnnotationSet), which no generation change announces.
 //   - Platform (cluster singleton) — an update re-enqueues the operator-managed,
 //     unsuspended ModuleInstances (moduleInstancePlatformIndex) via
 //     mapPlatformToModuleInstances only when a field they consume moves
@@ -161,6 +164,13 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 //     generation predicate lives on For() (not as a global event filter) so
 //     it does not suppress the Platform watch, whose trigger (the
 //     reconciler's status update) does not bump generation.
+//   - ServiceAccount (metadata only, create events only) — a created
+//     ServiceAccount re-enqueues the instances of its namespace that
+//     impersonate it and are stalled on it
+//     (mapServiceAccountToModuleInstances), so a deletion or
+//     an apply stalled on the missing ServiceAccount recovers when it
+//     returns, not at the stalled recheck. The informer needs list and watch
+//     on serviceaccounts.
 //
 // MaxConcurrentRenders (the manager's --max-concurrent-renders) becomes the
 // controller's MaxConcurrentReconciles, so phases outside the render (apply,
@@ -174,11 +184,19 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("indexing ModuleInstances by the Platform they render against: %w", err)
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&releasesv1alpha1.ModuleInstance{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&releasesv1alpha1.ModuleInstance{}, builder.WithPredicates(
+			predicate.Or(predicate.GenerationChangedPredicate{}, orphanAnnotationSet()),
+		)).
 		Watches(
 			&releasesv1alpha1.Platform{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToModuleInstances),
 			builder.WithPredicates(platformConsumedFieldsChanged()),
+		).
+		Watches(
+			&corev1.ServiceAccount{},
+			handler.EnqueueRequestsFromMapFunc(r.mapServiceAccountToModuleInstances),
+			builder.WithPredicates(serviceAccountCreated()),
+			builder.OnlyMetadata,
 		).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentRenders,
@@ -189,6 +207,101 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		Named("moduleinstance").
 		Complete(r)
+}
+
+// orphanAnnotationSet passes a ModuleInstance update only when the instance
+// is being deleted and its AnnotationForceDeleteOrphan annotation became
+// "true". A deletion stalled on a missing ServiceAccount reads that
+// annotation, and an annotation write does not move metadata.generation, so
+// without this predicate the release waits for the stalled recheck. Every
+// other annotation write stays filtered: reconciling on any of them would
+// render a healthy instance on each kubectl apply. Create, delete and generic
+// events pass, as they do under the generation predicate it is ORed with.
+func orphanAnnotationSet() predicate.Predicate {
+	set := func(obj client.Object) bool {
+		return obj.GetAnnotations()[releasesv1alpha1.AnnotationForceDeleteOrphan] == "true"
+	}
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			return !e.ObjectNew.GetDeletionTimestamp().IsZero() && set(e.ObjectNew) && !set(e.ObjectOld)
+		},
+	}
+}
+
+// serviceAccountCreated passes only the creation of a ServiceAccount: that is
+// its return. An update or a deletion changes nothing an instance waits for.
+// The initial list arrives as creations too; the instances they map to are
+// queued already from their own list.
+func serviceAccountCreated() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return true },
+		UpdateFunc:  func(event.UpdateEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	}
+}
+
+// mapServiceAccountToModuleInstances enqueues the ModuleInstances a created
+// ServiceAccount can unblock: those in its namespace whose effective
+// ServiceAccount (spec, else the manager's default) has its name and that are
+// waiting for it (waitsForServiceAccount). A missing ServiceAccount stalls
+// both the deletion cleanup and the apply for 30 minutes, and its return
+// moves nothing else the controller watches.
+//
+// An instance that is not waiting is not enqueued. A mapped request skips the
+// controller's rate limiter and a live instance renders before it reads its
+// ServiceAccount, so without this bound a namespace user who may create and
+// delete ServiceAccounts, but no ModuleInstance, could keep the render slots
+// busy by repeating the create.
+//
+// Also not enqueued: a CLI-owned instance, which impersonates nothing, and a
+// suspended instance that is not being deleted, whose reconcile would only
+// repeat its Suspended event. A suspended instance being deleted is enqueued:
+// suspend does not hold back the cleanup.
+func (r *ModuleInstanceReconciler) mapServiceAccountToModuleInstances(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list releasesv1alpha1.ModuleInstanceList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list ModuleInstances for ServiceAccount-triggered re-enqueue",
+			"namespace", obj.GetNamespace(), "serviceAccount", obj.GetName())
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range list.Items {
+		mi := &list.Items[i]
+		if mi.Spec.Owner == releasesv1alpha1.OwnerCLI {
+			continue
+		}
+		if mi.Spec.Suspend && mi.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if opmreconcile.EffectiveServiceAccount(mi.Spec.ServiceAccountName, r.DefaultServiceAccount) != obj.GetName() {
+			continue
+		}
+		if !waitsForServiceAccount(mi) {
+			continue
+		}
+		reqs = append(reqs, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: mi.Name, Namespace: mi.Namespace},
+		})
+	}
+	return reqs
+}
+
+// waitsForServiceAccount reports whether the instance's last reconcile
+// stalled on its impersonated ServiceAccount: Ready is False with
+// DeletionSAMissing (the deletion cleanup found none) or ImpersonationFailed
+// (the apply or the cleanup could not act as it). The status is the only
+// record of that stall. An instance whose stall was not written, or has not
+// been written yet, is not woken and keeps its stalled recheck.
+func waitsForServiceAccount(mi *releasesv1alpha1.ModuleInstance) bool {
+	ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+	if ready == nil || ready.Status != metav1.ConditionFalse {
+		return false
+	}
+	return ready.Reason == status.DeletionSAMissingReason || ready.Reason == status.ImpersonationFailedReason
 }
 
 // platformConsumedFieldsChanged passes a Platform update only when a field a

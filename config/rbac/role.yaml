@@ -18,6 +18,8 @@ rules:
   verbs:
   - get
   - impersonate
+  - list
+  - watch
 - apiGroups:
   - events.k8s.io
   resources:

@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	oerrors "github.com/open-platform-model/library/opm/errors"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -561,6 +562,115 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Eventually(func() bool {
 				var deleted releasesv1alpha1.ModuleInstance
 				return k8sClient.Get(ctx, nn, &deleted) != nil
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+		})
+
+		It("releases the finalizer of a deleting CLI-owned instance and prunes nothing", func() {
+			ctx := context.Background()
+
+			// OPM-managed, so the operator-owned deletion path would prune it.
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cli-owned-deleting-kept",
+					Namespace: namespace,
+					Labels:    map[string]string{labels.ManagedBy: labels.ManagedByController},
+				},
+				Data: map[string]string{"k": "v"},
+			}
+			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+
+			// The finalizer is what an operator-owned past leaves behind once
+			// spec.owner is set to cli.
+			mi := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cli-owned-finalizer-mi",
+					Namespace:  namespace,
+					Finalizers: []string{opmreconcile.FinalizerName},
+				},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerCLI,
+					Prune:  true,
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			var current releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &current)).To(Succeed())
+			current.Status.Inventory = &releasesv1alpha1.Inventory{
+				Revision: 1,
+				Count:    1,
+				Entries: []releasesv1alpha1.InventoryEntry{
+					{Kind: "ConfigMap", Name: cm.Name, Namespace: namespace, Version: "v1"},
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &current)).To(Succeed())
+
+			recorder := events.NewFakeRecorder(10)
+			reconciler := &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   recorder,
+				Renderer:        &stubRenderer{},
+			}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			Eventually(func() bool {
+				var gone releasesv1alpha1.ModuleInstance
+				return apierrors.IsNotFound(k8sClient.Get(ctx, nn, &gone))
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+			Expect(recorder.Events).NotTo(Receive())
+
+			var kept corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), &kept)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &kept)).To(Succeed())
+		})
+
+		It("keeps a leftover finalizer on a live CLI-owned instance", func() {
+			ctx := context.Background()
+			mi := &releasesv1alpha1.ModuleInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cli-owned-live-finalizer-mi",
+					Namespace:  namespace,
+					Finalizers: []string{opmreconcile.FinalizerName},
+				},
+				Spec: releasesv1alpha1.ModuleInstanceSpec{
+					Owner:  releasesv1alpha1.OwnerCLI,
+					Module: releasesv1alpha1.ModuleReference{Path: "opmodel.dev/test/module", Version: "v0.1.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mi)).To(Succeed())
+			nn := client.ObjectKeyFromObject(mi)
+
+			reconciler := &ModuleInstanceReconciler{
+				Client:          k8sClient,
+				Scheme:          k8sClient.Scheme(),
+				ResourceManager: apply.NewResourceManager(k8sClient, "opm-controller"),
+				EventRecorder:   events.NewFakeRecorder(10),
+				Renderer:        &stubRenderer{},
+			}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			var acked releasesv1alpha1.ModuleInstance
+			Expect(k8sClient.Get(ctx, nn, &acked)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&acked, opmreconcile.FinalizerName)).To(BeTrue())
+			ready := apimeta.FindStatusCondition(acked.Status.Conditions, status.ReadyCondition)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Reason).To(Equal(status.ManagedExternallyReason))
+
+			// The delete is then released by the same gate.
+			Expect(k8sClient.Delete(ctx, &acked)).To(Succeed())
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() bool {
+				var gone releasesv1alpha1.ModuleInstance
+				return apierrors.IsNotFound(k8sClient.Get(ctx, nn, &gone))
 			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
 		})
 

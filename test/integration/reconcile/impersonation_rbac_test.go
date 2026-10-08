@@ -19,6 +19,7 @@ package reconcile_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -155,6 +156,27 @@ var _ = Describe("Impersonation under the shipped manager role", Ordered, Contin
 			}
 		}
 		Expect(impersonable).To(ConsistOf("serviceaccounts"))
+	})
+
+	// The ServiceAccount watch of the ModuleInstance controller needs list and
+	// watch; nothing in the operator writes a ServiceAccount.
+	It("reads ServiceAccounts and writes none", func() {
+		var verbs []string
+		for _, rule := range shipped.Rules {
+			if slices.Contains(rule.Resources, "serviceaccounts") {
+				verbs = append(verbs, rule.Verbs...)
+			}
+		}
+		Expect(verbs).To(ConsistOf("get", "impersonate", "list", "watch"))
+
+		var list metav1.PartialObjectMetadataList
+		list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ServiceAccountList"))
+		Expect(operatorClient.List(ctx, &list)).To(Succeed())
+
+		err := operatorClient.Create(ctx, &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{Name: "never-created", Namespace: directNS},
+		})
+		Expect(apierrors.IsForbidden(err)).To(BeTrue(), "got %v", err)
 	})
 
 	It("applies as a ServiceAccount that a RoleBinding names", func() {

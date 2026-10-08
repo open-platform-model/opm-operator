@@ -27,6 +27,8 @@ A `ModuleInstance` reconcile that ends well (an apply, a `NoOp` or a skipped ren
 
 A reconcile that renders, finds its digests unchanged and learns from the drift dry-run that rendered objects do not exist applies those objects, and only those. An object that exists is never rewritten, so ADR-012 holds: drift is reported, not corrected. A missing object is not drift. A `Job` that sets `ttlSecondsAfterFinished` is not restored, because the cluster removes it after it finished and creating it again would run it again.
 
+The Job rule (added 2026-10-08, before the first release of this decision): such a `Job` that is absent while the digests are unchanged counts as finished. The reconcile removes it from the entries of `status.inventory`, so the health judgement does not read it and the instance stays `Healthy=True` on its interval. `status.inventory.digest` stays the digest of the rendered set. A reconcile that could skip its render and reads an inventory `Job` as absent renders, because only the rendered `Job` says whether it has a TTL; a failed drift detection suspends that until the next forced render. The operator records no completion, so a `Job` with a TTL that is deleted before it ran also counts as finished. A `Job` without a TTL that is missing is restored like any other object.
+
 The interval sets how stale `Healthy` can be. The drift render interval of the render skip (`--drift-render-interval`, default 30 minutes) still sets how stale `Drifted` can be and how long a deleted object waits: between two renders the periodic reconcile only reads the inventory.
 
 Option 3 was not chosen now because it adds an API field before the need for a per-instance value is shown; the flag does not block it, since a later field can override the operator default. Option 4 was not chosen because it needs an informer per rendered kind, the memory and RBAC that go with them, and a filter for the operator's own writes. Option 1 was not chosen because the stale conditions were the defect.
@@ -39,7 +41,7 @@ Option 3 was not chosen now because it adds an API field before the need for a p
 
 **Negative:** New load. Each healthy instance costs one uncached read per inventory object every interval, and one render, one dry-run per rendered object and one status write every drift render interval. Before this decision an unchanged instance rendered once. With one render slot the periodic renders of N instances run one after another and fit while N times the render time is below the drift render interval; past that, renders for spec changes queue behind periodic ones.
 
-**Negative:** An instance that renders a `Job` with `ttlSecondsAfterFinished` reads `Healthy=False` (`NotRolledOut`, the Job `Missing`) from the first periodic reconcile after the Job expired, and is then judged every 2 minutes. The health verdict that causes this is older than this decision, but the periodic reconcile makes every such instance reach it. A verdict that reads an expired Job as finished is left to a later change.
+**Negative:** After a `Job` with a TTL expired, `status.inventory` no longer lists every rendered object, and its digest is not the digest of its entries. Each expired `Job` costs one render outside the drift render interval. A `Job` with a TTL that someone deletes before it ran is not run until the instance's digests change. A `ModulePackage` does not have the Job rule.
 
 **Negative:** The interval is one value for the whole operator. A team that wants one instance checked every minute and another every hour cannot say so.
 

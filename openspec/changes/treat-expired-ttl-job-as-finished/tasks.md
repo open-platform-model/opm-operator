@@ -8,5 +8,5 @@
 
 ## 2. Docs and decision record
 
-- [ ] 2.1 `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md` and `adr/019-fixed-requeue-interval-for-module-instances.md`: state the Job rule and correct every sentence that says an expired Job reads `Missing`; ADR-019 stays "Accepted"; verify with `grep -n -i ttl` over the three files and `task docs:bundle:check`
-- [ ] 2.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: state that an expired Job with a TTL is finished`
+- [x] 2.1 `docs/RENDERING.md`, `docs/site/diagnostics/operator-conditions.md` and `adr/019-fixed-requeue-interval-for-module-instances.md`: state the Job rule and correct every sentence that says an expired Job reads `Missing`; ADR-019 stays "Accepted"; verify with `grep -n -i ttl` over the three files and `task docs:bundle:check`
+- [x] 2.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: state that an expired Job with a TTL is finished`

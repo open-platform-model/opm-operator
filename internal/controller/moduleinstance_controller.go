@@ -150,7 +150,9 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // requeue (ADR-019).
 //
 // Watches:
-//   - ModuleInstance CRs (primary, generation-change predicate)
+//   - ModuleInstance CRs (primary): a generation change, or the orphan
+//     annotation set on an instance that is being deleted
+//     (orphanAnnotationSet), which no generation change announces.
 //   - Platform (cluster singleton) — an update re-enqueues the operator-managed,
 //     unsuspended ModuleInstances (moduleInstancePlatformIndex) via
 //     mapPlatformToModuleInstances only when a field they consume moves
@@ -174,7 +176,9 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("indexing ModuleInstances by the Platform they render against: %w", err)
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&releasesv1alpha1.ModuleInstance{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&releasesv1alpha1.ModuleInstance{}, builder.WithPredicates(
+			predicate.Or(predicate.GenerationChangedPredicate{}, orphanAnnotationSet()),
+		)).
 		Watches(
 			&releasesv1alpha1.Platform{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToModuleInstances),
@@ -189,6 +193,28 @@ func (r *ModuleInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		Named("moduleinstance").
 		Complete(r)
+}
+
+// orphanAnnotationSet passes a ModuleInstance update only when the instance
+// is being deleted and its AnnotationForceDeleteOrphan annotation became
+// "true". A deletion stalled on a missing ServiceAccount reads that
+// annotation, and an annotation write does not move metadata.generation, so
+// without this predicate the release waits for the stalled recheck. Every
+// other annotation write stays filtered: reconciling on any of them would
+// render a healthy instance on each kubectl apply. Create, delete and generic
+// events pass, as they do under the generation predicate it is ORed with.
+func orphanAnnotationSet() predicate.Predicate {
+	set := func(obj client.Object) bool {
+		return obj.GetAnnotations()[releasesv1alpha1.AnnotationForceDeleteOrphan] == "true"
+	}
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			return !e.ObjectNew.GetDeletionTimestamp().IsZero() && set(e.ObjectNew) && !set(e.ObjectOld)
+		},
+	}
 }
 
 // platformConsumedFieldsChanged passes a Platform update only when a field a

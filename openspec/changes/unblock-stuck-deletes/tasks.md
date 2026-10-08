@@ -6,9 +6,9 @@
 
 ## 2. Reconcile a deleting instance when the orphan annotation is set
 
-- [ ] 2.1 Add `test/integration/reconcile/deletion_wake_test.go` with a manager-driven spec: an instance stalled with `DeletionSAMissing` gets the orphan annotation and is gone within 10 seconds. Add a table test of the predicate in `internal/controller`. Verify: on the tree of section 1 the manager spec fails (the instance stays)
-- [ ] 2.2 Add `orphanAnnotationSet` and OR it with the generation predicate on `For()` in `internal/controller/moduleinstance_controller.go`; update the watch comment. Verify: the manager spec and the table test pass
-- [ ] 2.3 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(controller): reconcile a deleting instance when the orphan annotation is set`
+- [x] 2.1 Add `test/integration/reconcile/deletion_wake_test.go` with a manager-driven spec: an instance stalled with `DeletionSAMissing` gets the orphan annotation and is gone within 10 seconds. Add a table test of the predicate in `internal/controller`. Verify: on the tree of section 1 the manager spec fails (the instance stays)
+- [x] 2.2 Add `orphanAnnotationSet` and OR it with the generation predicate on `For()` in `internal/controller/moduleinstance_controller.go`; update the watch comment. Verify: the manager spec and the table test pass
+- [x] 2.3 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `fix(controller): reconcile a deleting instance when the orphan annotation is set`
 
 ## 3. Reconcile an instance when its ServiceAccount returns
 

@@ -9,5 +9,5 @@
 
 ## 2. Contributor docs
 
-- [ ] 2.1 `AGENTS.md`: update the `dev:lint:config` line, add `dev:lint:config:test`, and add "Moving the golangci-lint version" (patch move, minor move, where the schema comes from, the hidden flag). Verify: every command in the section runs as written.
-- [ ] 2.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: say how to move the golangci-lint version`
+- [x] 2.1 `AGENTS.md`: update the `dev:lint:config` line, add `dev:lint:config:test`, and add "Moving the golangci-lint version" (patch move, minor move, where the schema comes from, the hidden flag). Verify: every command in the section runs as written.
+- [x] 2.2 `task dev:fmt dev:vet dev:lint dev:test docs:bundle:check` green, then commit `docs: say how to move the golangci-lint version`

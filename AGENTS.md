@@ -177,7 +177,8 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 - `task cascade:wiring:check`: check the release-cascade caller workflows against `.tasks/cascade/wiring-check.yaml` (offline, so the copy is not compared with `.github`; needs mikefarah `yq` v4). Run it after any edit under `.github/workflows/`; `GH_TOKEN=$(gh auth token) bash .tasks/cascade/wiring-check.sh --pin-on-main` runs the CI form.
 - `task dev:fmt`: `go fmt ./...`.
 - `task dev:vet`: `go vet ./...`.
-- `task dev:lint:config`: verify golangci-lint config.
+- `task dev:lint:config`: verify the golangci-lint config against the schema committed under `.github/golangci-lint/` (no schema download), and that `.golangci-lint-version`, the schema, its checksum, `.custom-gcl.yml` and the `Lint` job agree (`.github/scripts/lint-config-check.sh`).
+- `task dev:lint:config:test`: scenario test of that check, one defect per scenario.
 - `task dev:lint`: run golangci-lint.
 - `task dev:lint:fix`: golangci-lint w/ auto-fixes.
 - `task operator:binary`: generation + fmt + vet + build `bin/manager`.
@@ -226,6 +227,15 @@ Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*
 - `golangci-lint` v2 w/ `gofmt` + `goimports` formatters.
 - Custom `logcheck` plugin from `.custom-gcl.yml`, enforces K8s logging conventions.
 - Envtest binaries installed to `./bin` via Taskfile (`.tasks/tools.yaml`).
+
+### Moving the golangci-lint version
+
+`.golangci-lint-version` is the only place that names the linter version. `Taskfile.yml` and `Makefile` read it, and `.custom-gcl.yml` repeats it because `golangci-lint custom` reads only that file; `task dev:lint:config` refuses a tree where the two differ. No workflow, task file or `Makefile` line runs `golangci-lint config verify` on its own: without `--schema` it downloads the schema from golangci-lint.run on every run, which failed the cli's required `Lint` job twice on 2026-10-08.
+
+- A patch move (`v2.8.0` to `v2.8.1`): edit `.golangci-lint-version` and the `version:` line of `.custom-gcl.yml`. The schema is per minor line and stays.
+- A minor or major move: edit both files, then replace the schema. It is `jsonschema/golangci.jsonschema.json` of the Go module `github.com/golangci/golangci-lint/v2` at the new version, which the Go checksum database verifies: `dir=$(go mod download -json github.com/golangci/golangci-lint/v2@vX.Y.Z | jq -r .Dir)`, then copy `$dir/jsonschema/golangci.jsonschema.json` to `.github/golangci-lint/golangci.vX.Y.jsonschema.json`, make it writable (`chmod 644`), remove the old file and rewrite the checksum (`sha256sum golangci.vX.Y.jsonschema.json > SHA256SUMS` in that directory). Say in the PR body where the file came from, so the reviewer can compare the checksum.
+- `task dev:lint:config dev:lint:config:test dev:lint` must pass. The check uses the hidden `--schema` flag of `golangci-lint config verify`; if a release drops the flag, the check fails on the bump PR and needs a new design, never a dropped check.
+- Installing the linter still needs the network (the Go module proxy and the plugin build), and `task dev:lint*` reinstalls it on every run. Only the configuration check is offline: with the linter in `bin/`, `GOLANGCI_LINT=bin/golangci-lint bash .github/scripts/lint-config-check.sh` runs without a network.
 
 ## Formatting And Imports
 

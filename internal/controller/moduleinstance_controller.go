@@ -110,7 +110,6 @@ type ModuleInstanceReconciler struct {
 // +kubebuilder:rbac:groups=opmodel.dev,resources=moduleinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=opmodel.dev,resources=platforms,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;impersonate
-// +kubebuilder:rbac:groups="",resources=users;groups,verbs=impersonate
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch;update
 

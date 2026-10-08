@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestBuildImpersonationConfig_SetsExpectedGroups(t *testing.T) {
+func TestBuildImpersonationConfig_NamesTheServiceAccountOnly(t *testing.T) {
 	cfg := buildImpersonationConfig("team-a", "deploy-sa")
 
 	const wantUser = "system:serviceaccount:team-a:deploy-sa"
@@ -24,13 +23,13 @@ func TestBuildImpersonationConfig_SetsExpectedGroups(t *testing.T) {
 		t.Fatalf("UserName = %q, want %q", cfg.UserName, wantUser)
 	}
 
-	wantGroups := []string{
-		"system:serviceaccounts",
-		"system:serviceaccounts:team-a",
-		"system:authenticated",
+	// A group here would need the impersonate verb on groups, which the
+	// manager role does not hold; the apiserver derives the groups.
+	if len(cfg.Groups) != 0 {
+		t.Fatalf("Groups = %v, want none", cfg.Groups)
 	}
-	if !slices.Equal(cfg.Groups, wantGroups) {
-		t.Fatalf("Groups = %v, want %v", cfg.Groups, wantGroups)
+	if cfg.UID != "" || len(cfg.Extra) != 0 {
+		t.Fatalf("UID = %q, Extra = %v, want neither", cfg.UID, cfg.Extra)
 	}
 }
 

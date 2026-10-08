@@ -111,9 +111,13 @@ jobs:
       - name: Check linter configuration
         run: task dev:lint:config
 
-      # One defect per scenario, each of which the check must refuse (offline).
-      - name: Linter configuration check (offline test)
-        run: task dev:lint:config:test
+      # One defect per scenario, each of which the check must refuse. The
+      # script, not task dev:lint:config:test, so that the linter the step
+      # above installed is used and not built once more.
+      - name: Linter configuration check (scenario test)
+        env:
+          GOLANGCI_LINT: bin/golangci-lint
+        run: bash .github/scripts/lint-config-check-test.sh
 
       - name: Run linter
         run: task dev:lint

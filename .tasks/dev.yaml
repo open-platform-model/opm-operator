@@ -24,13 +24,13 @@ tasks:
       - '"{{.GOLANGCI_LINT}}" run --fix'
 
   lint:config:
-    desc: Verify the golangci-lint configuration against the committed schema, and that the linter version, the schema, its checksum and the Lint job agree (offline once the linter is installed)
+    desc: Verify the golangci-lint configuration against the committed schema, and that the linter version, the schema, its checksum and the Lint job agree. The check is offline; the task is not, because it installs the linter first
     deps: [":tool:golangci-lint"]
     cmds:
       - GOLANGCI_LINT="{{.GOLANGCI_LINT}}" bash .github/scripts/lint-config-check.sh
 
   lint:config:test:
-    desc: Scenario test of the linter configuration check (offline once the linter is installed)
+    desc: Scenario test of the linter configuration check. The test is offline; the task is not, because it installs the linter first
     deps: [":tool:golangci-lint"]
     cmds:
       - GOLANGCI_LINT="{{.GOLANGCI_LINT}}" bash .github/scripts/lint-config-check-test.sh

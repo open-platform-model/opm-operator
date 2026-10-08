@@ -24,6 +24,19 @@ type PruneResult struct {
 
 	// Skipped is the number of stale resources skipped due to safety exclusions.
 	Skipped int
+
+	// Kept lists the PersistentVolumeClaims the run left in the cluster
+	// because PruneOptions.DeleteData is false. A kept claim is not an error
+	// and is not counted in Skipped.
+	Kept []releasesv1alpha1.InventoryEntry
+}
+
+// PruneOptions tunes one prune run. The zero value protects data.
+type PruneOptions struct {
+	// DeleteData allows the deletion of PersistentVolumeClaims. The
+	// reconcilers set it from spec.dataPolicy; when false, every claim that
+	// would be deleted is kept and listed in PruneResult.Kept.
+	DeleteData bool
 }
 
 // Prune deletes stale resources from the cluster.
@@ -46,6 +59,15 @@ type PruneResult struct {
 //
 // Skipped resources are logged as warnings and counted in PruneResult.Skipped.
 //
+// Data protection: a PersistentVolumeClaim of the core API group is deleted
+// only when opts.DeleteData is true, because deleting a claim deletes the
+// data on its volume. Otherwise a claim that exists and passes the ownership
+// guard is left in place and listed in PruneResult.Kept. A claim that is
+// already gone is not listed, a claim another owner holds is skipped as any
+// other resource, and a claim that cannot be read is kept without an error:
+// nothing is going to be deleted, so the failed read must not fail the prune
+// or hold a finalizer.
+//
 // If a stale resource is already gone (NotFound), it is treated as success.
 // Individual failures (Get or Delete) are collected and returned as a joined
 // error; remaining entries continue (design decision 2: continue-on-error /
@@ -62,6 +84,7 @@ func Prune(
 	c client.Client,
 	ownerUUID string,
 	stale []releasesv1alpha1.InventoryEntry,
+	opts PruneOptions,
 ) (*PruneResult, error) {
 	log := logf.FromContext(ctx)
 	result := &PruneResult{}
@@ -91,6 +114,12 @@ func Prune(
 					"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name)
 				continue
 			}
+			if isDataClaim(entry) && !opts.DeleteData {
+				log.Info("Keeping PersistentVolumeClaim that could not be read",
+					"namespace", entry.Namespace, "name", entry.Name, "error", getErr.Error())
+				result.Kept = append(result.Kept, entry)
+				continue
+			}
 			errs = append(errs, fmt.Errorf("failed to get %s/%s %s: %w",
 				entry.Namespace, entry.Name, entry.Kind, getErr))
 			continue
@@ -111,6 +140,13 @@ func Prune(
 				"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name,
 				"ownerUUID", ownerUUID, "liveUUID", liveUUID)
 			result.Skipped++
+			continue
+		}
+
+		if isDataClaim(entry) && !opts.DeleteData {
+			log.Info("Keeping PersistentVolumeClaim and the data on it",
+				"namespace", entry.Namespace, "name", entry.Name)
+			result.Kept = append(result.Kept, entry)
 			continue
 		}
 
@@ -141,4 +177,10 @@ func isSafeToDelete(entry releasesv1alpha1.InventoryEntry) bool {
 	default:
 		return true
 	}
+}
+
+// isDataClaim reports whether entry is a PersistentVolumeClaim of the core
+// API group, the one kind whose deletion also deletes user data.
+func isDataClaim(entry releasesv1alpha1.InventoryEntry) bool {
+	return entry.Group == "" && entry.Kind == "PersistentVolumeClaim"
 }

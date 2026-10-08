@@ -8,10 +8,10 @@
 
 ## 2. Restore of missing objects
 
-- [ ] 2.1 `internal/apply/drift.go`: report the objects whose dry-run answers `CreatedAction` in `DriftResult.Missing`; verify with a test in `test/integration/apply` or the package's own tests that a missing object is listed and is not counted as drifted
-- [ ] 2.2 `internal/reconcile/moduleinstance.go`: `detectDrift` returns the missing set; add `restorable` (drops a `batch/v1` Job with `ttlSecondsAfterFinished`); on matching digests with a restorable set, apply that set only, keep the computed `Drifted`, end as `Applied`; verify with a unit test of `restorable`
-- [ ] 2.3 Add envtest specs: a deleted ConfigMap is created again by a rendering reconcile with outcome applied and a moved `lastAppliedAt`; a modified object beside it keeps its content and `Drifted=True`; a skipped render restores nothing; an unchanged instance still ends `NoOp` with no apply
-- [ ] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): restore a missing object of a module instance`
+- [x] 2.1 `internal/apply/drift.go`: report the objects whose dry-run answers `CreatedAction` in `DriftResult.Missing`; verify with a test in `test/integration/apply` or the package's own tests that a missing object is listed and is not counted as drifted
+- [x] 2.2 `internal/reconcile/moduleinstance.go`: `detectDrift` returns the missing set; add `apply.Restorable` (drops a `batch/v1` Job with `ttlSecondsAfterFinished`); on matching digests with a restorable set, apply that set only, keep the computed `Drifted`, end as `Applied`; verify with a unit test of `apply.Restorable`
+- [x] 2.3 Add envtest specs: a deleted ConfigMap is created again by a rendering reconcile with outcome applied and a moved `lastAppliedAt`; a modified object beside it keeps its content and `Drifted=True`; a skipped render restores nothing; an unchanged instance still ends `NoOp` with no apply
+- [x] 2.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `fix(controller): restore a missing object of a module instance`
 
 ## 3. Docs and decision record
 

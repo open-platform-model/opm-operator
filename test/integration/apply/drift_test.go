@@ -94,6 +94,22 @@ var _ = Describe("DetectDrift", func() {
 			Expect(result.Drifted).To(BeFalse())
 			Expect(result.Resources).To(BeEmpty())
 		})
+
+		It("should list a resource that does not exist as missing, beside the existing ones", func() {
+			existing := newUnstructuredConfigMap("drift-present-cm", map[string]string{"key": "value"})
+			absent := newUnstructuredConfigMap("drift-absent-cm", map[string]string{"key": "value"})
+
+			By("applying only one of the two resources")
+			_, err := apply.Apply(ctx, rm, []*unstructured.Unstructured{existing}, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("running drift detection over both")
+			result, err := apply.DetectDrift(ctx, rm, []*unstructured.Unstructured{existing, absent})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Drifted).To(BeFalse(), "a missing resource is not drift")
+			Expect(result.Resources).To(BeEmpty())
+			Expect(result.Missing).To(ConsistOf(absent))
+		})
 	})
 
 	Context("When multiple resources have mixed drift", func() {

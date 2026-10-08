@@ -535,7 +535,15 @@ func ReconcileModuleInstance(
 	// refusal carries that signal instead. A resource that stops being
 	// withheld re-enters the apply list and is compared again from then on.
 	phases.driftRan = true
-	phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, applyList)
+	var missing []*unstructured.Unstructured
+	missing, phases.driftFailed = detectDrift(ctx, params.ResourceManager, &mi, applyList)
+
+	// The same dry-run names the rendered objects the cluster lacks. With
+	// unchanged digests they are the only thing to do: restoring applies
+	// them and nothing else, so an object that exists is never rewritten and
+	// the drift just computed stays reported, not corrected (ADR-012,
+	// ADR-019).
+	applyList, isNoOp, restoring := planRestore(ctx, isNoOp, missing, applyList)
 
 	if isNoOp {
 		log.Info("No changes detected, skipping apply")
@@ -621,8 +629,9 @@ func ReconcileModuleInstance(
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
 	}
 
-	// Successful apply resolves any drift.
-	status.ClearDrifted(&mi)
+	// A successful apply of the rendered set resolves any drift. A restore
+	// applied only what was missing, so what drift detection found stands.
+	clearDriftAfterApply(&mi, restoring)
 
 	newEntries = converted.entries
 
@@ -807,7 +816,9 @@ func updateFailureCounters(
 }
 
 // detectDrift runs SSA dry-run drift detection and updates status accordingly.
-// Returns true if drift detection failed (API error).
+// It returns the resources that do not exist on the cluster, and true if
+// drift detection failed (API error); a failure leaves the missing set
+// unknown, so it returns none.
 // On drift: sets Drifted=True. On no drift: clears Drifted condition.
 // Counter updates are deferred to Phase 7 based on the returned bool.
 // Drift detection failure is non-blocking.
@@ -816,12 +827,12 @@ func detectDrift(
 	rm *fluxssa.ResourceManager,
 	mi *releasesv1alpha1.ModuleInstance,
 	resources []*unstructured.Unstructured,
-) bool {
+) (missing []*unstructured.Unstructured, failed bool) {
 	log := logf.FromContext(ctx)
 	driftResult, err := apply.DetectDrift(ctx, rm, resources)
 	if err != nil {
 		log.Error(err, "Drift detection failed, continuing reconcile")
-		return true
+		return nil, true
 	}
 	if driftResult.Drifted {
 		log.Info("Drift detected", "driftedResources", len(driftResult.Resources))
@@ -829,7 +840,39 @@ func detectDrift(
 	} else {
 		status.ClearDrifted(mi)
 	}
-	return false
+	return driftResult.Missing, false
+}
+
+// planRestore turns a reconcile with unchanged digests into a restore when
+// rendered resources are missing from the cluster. It returns the list to
+// apply, whether the reconcile is still a no-op, and whether it restores: a
+// restore applies the restorable missing resources (apply.Restorable) and
+// nothing else. A
+// reconcile that was not a no-op, or that misses nothing restorable, is
+// returned as it came.
+func planRestore(
+	ctx context.Context,
+	isNoOp bool,
+	missing, applyList []*unstructured.Unstructured,
+) (toApply []*unstructured.Unstructured, noOp, restoring bool) {
+	if !isNoOp {
+		return applyList, false, false
+	}
+	restore := apply.Restorable(missing)
+	if len(restore) == 0 {
+		return applyList, true, false
+	}
+	logf.FromContext(ctx).Info("Restoring missing resources", "missing", len(restore))
+	return restore, false, true
+}
+
+// clearDriftAfterApply clears the Drifted condition after a successful apply
+// of the rendered set. A restore leaves it: the drifted resources were not
+// applied.
+func clearDriftAfterApply(mi *releasesv1alpha1.ModuleInstance, restoring bool) {
+	if !restoring {
+		status.ClearDrifted(mi)
+	}
 }
 
 // reconcileFailureCount returns the current reconcile failure count, or 0 if counters are nil.

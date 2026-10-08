@@ -61,7 +61,7 @@ Alternatives considered:
 
 ```go
 missing, driftFailed := detectDrift(ctx, params.ResourceManager, &mi, applyList)
-restore := restorable(missing)            // drops Jobs with a TTL
+restore := apply.Restorable(missing)      // drops Jobs with a TTL
 if isNoOp && len(restore) == 0 { /* NoOp branch, unchanged */ }
 restoring := isNoOp                        // digests match, something is missing
 if restoring { applyList = restore }
@@ -78,7 +78,7 @@ Alternatives considered:
 - *Report only, do not restore.* Keeps today's behaviour; the task asks for the restore.
 - *Find missing objects from the health reads.* It needs no change in `internal/apply`, but it adds a second answer to "does it exist" beside the dry-run, read through another identity, and cannot run before the render.
 
-**The Job exception.** A Job with `ttlSecondsAfterFinished` is deleted by the cluster after it finished. To restore it would run it again on every drift render interval, which for a migration Job is harmful. `restorable` MUST drop a `batch/v1` Job whose rendered spec sets the field. A Job without a TTL that someone deletes is restored like any object.
+**The Job exception.** A Job with `ttlSecondsAfterFinished` is deleted by the cluster after it finished. To restore it would run it again on every drift render interval, which for a migration Job is harmful. `apply.Restorable` MUST drop (it lives in `internal/apply` because the reconcile package may not read object fields, a rule `TestHealthJudgesOnlyThroughTheLibrary` enforces) a `batch/v1` Job whose rendered spec sets the field. A Job without a TTL that someone deletes is restored like any object.
 
 ### The restore waits for a rendering reconcile
 

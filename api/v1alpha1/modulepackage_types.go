@@ -107,6 +107,21 @@ type ModulePackageStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// InstanceUUID is the identity of the instance the operator last rendered and
+	// began to apply: the value of the module-instance.opmodel.dev/uuid label on
+	// its objects. The prune and the deletion cleanup use it to tell the
+	// instance's own objects from another instance's.
+	// +optional
+	InstanceUUID string `json:"instanceUUID,omitempty"`
+
+	// PreviousInstanceUUID is the identity the instance had before its identity
+	// last changed. It is set only while that change is not settled: from the
+	// apply that starts to relabel the instance's objects until a reconcile has
+	// applied and pruned with success. While it is set, an object that carries
+	// either identity counts as the instance's own.
+	// +optional
+	PreviousInstanceUUID string `json:"previousInstanceUUID,omitempty"`
+
 	// conditions represent the current state of the ModulePackage resource.
 	// Ready reports whether the operator applied the last render. Healthy
 	// reports whether the applied objects have rolled out: True once every

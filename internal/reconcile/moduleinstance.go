@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/runtime/patch"
 
 	"github.com/open-platform-model/library/opm/k8s/labels"
@@ -357,6 +358,9 @@ func ReconcileModuleInstance(
 			// compares this digest with the next render.
 			mi.Status.Inventory = nextInventory(mi.Status.Inventory, newEntries)
 			mi.Status.Inventory.Digest = digests.Inventory
+			// The apply and the prune succeeded: no object of the earlier
+			// identity is left to judge. The only place that clears it.
+			mi.Status.PreviousInstanceUUID = ""
 
 			entry := status.NewSuccessEntry(reconcileAction, "complete", digests, int64(len(newEntries)))
 			status.RecordHistory(&mi.Status, entry)
@@ -396,6 +400,10 @@ func ReconcileModuleInstance(
 			log.Error(patchErr, "Failed to patch ModuleInstance status")
 		}
 	}()
+
+	// Read before MarkReconciling resets Ready: a refusal that Ready already
+	// carries is not reported by a second event.
+	alreadyUnsettled := readyAlreadyStalledWith(mi.Status.Conditions, status.IdentityChangeUnsettledReason)
 
 	// Mark reconciling at the start.
 	status.MarkReconciling(&mi, "Progressing", "Reconciliation in progress")
@@ -480,13 +488,13 @@ func ReconcileModuleInstance(
 	// later phase uses is derived from it.
 	resources := converted.resources
 
-	// Persist the rendered instance UUID on Status. All rendered resources
-	// carry the same UUID (stamped by the CUE catalog's moduleLabels merge);
-	// reading the first non-empty one is sufficient. Consumed by the prune
-	// ownership guard in both apply→prune and deletion paths.
-	if uuid := extractInstanceUUID(resources); uuid != "" {
-		mi.Status.InstanceUUID = uuid
-	}
+	// Decide what this render's identity means for the recorded ones. All
+	// rendered resources carry the same UUID (stamped by the CUE catalog's
+	// moduleLabels merge); reading the first non-empty one is sufficient.
+	// Nothing is written here: the apply path stores a changed identity
+	// before its first write, and a NoOp fills an empty field.
+	renderedUUID := extractInstanceUUID(resources)
+	identities := planIdentities(mi.Status.InstanceUUID, mi.Status.PreviousInstanceUUID, renderedUUID)
 
 	// Persist the contracts this instance's components demand (enhancement
 	// 0015:D3/D16), as the kernel's render reported them. Written here
@@ -501,6 +509,16 @@ func ReconcileModuleInstance(
 	// which over-reports demand and so blocks a claim deletion that could
 	// have proceeded. That is the direction a guard should fail in.
 	mi.Status.RequiredContracts = renderResult.RequiredContracts
+
+	// A third identity while an earlier change is not settled is refused
+	// before anything is applied or pruned: the one earlier identity the
+	// status keeps could not cover the objects of both earlier ones.
+	if identities.Refused {
+		msg := refuseIdentityChange(params.EventRecorder, &mi, alreadyUnsettled,
+			mi.Status.InstanceUUID, mi.Status.PreviousInstanceUUID, renderedUUID)
+		outcome, errMsg, retryAfter = FailedStalled, msg, StalledRecheckInterval
+		return ctrl.Result{RequeueAfter: retryAfter}, nil
+	}
 
 	// Phase 4a: judge the rendered claims before anything reaches the cluster
 	// (0015:D16). A provider upgrade whose re-rendered
@@ -530,7 +548,8 @@ func ReconcileModuleInstance(
 		Inventory: inventoryDigest(mi.Status.Inventory),
 	}
 
-	isNoOp := noOp(digests, lastApplied, refused)
+	// An identity change that is not settled is never a NoOp.
+	isNoOp := identities.keepsNoOp(noOp(digests, lastApplied, refused))
 
 	// Drift detection runs on every reconcile, including no-ops.
 	// Uses SSA dry-run to compare desired state against live cluster state.
@@ -571,6 +590,7 @@ func ReconcileModuleInstance(
 		log.Info("No changes detected, skipping apply")
 		params.EventRecorder.Eventf(&mi, nil, corev1.EventTypeNormal, status.NoOpReason, "Reconcile", "No changes detected")
 		outcome = NoOp
+		identities.fillEmpty(&mi.Status.InstanceUUID)
 		forgetExpiredJobs(ctx, &mi, expired)
 		// Judged before the deferred NoOp commit, which patches it.
 		v := judgeHealthAs(ctx, params, &mi, applyClient, impErr, inventoryEntries(mi.Status.Inventory))
@@ -598,7 +618,7 @@ func ReconcileModuleInstance(
 	phases.applyRan = true
 	force := mi.Spec.Rollout != nil && mi.Spec.Rollout.ForceConflicts
 	effectiveSA, _ := resolveEffectiveSA(mi.Spec.ServiceAccountName, params.DefaultServiceAccount)
-	applyResult, err := apply.Apply(ctx, applyRM, applyList,
+	applyResult, err := applyInstance(ctx, patcher, &mi, identities, applyRM, applyList,
 		apply.ApplyOptions{Force: force, DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		phases.applyFailed = true
@@ -661,7 +681,7 @@ func ReconcileModuleInstance(
 	// Phase 6: Prune stale resources (only if spec.prune=true and apply succeeded).
 	phases.pruneRan = true
 	var pruneDeleted int
-	outcome, reconciled, pruneDeleted, err = pruneStaleResources(ctx, &mi, applyClient, staleSet, effectiveSA, params.EventRecorder)
+	outcome, reconciled, pruneDeleted, err = pruneStaleResources(ctx, &mi, applyClient, identities.Prune, staleSet, effectiveSA, params.EventRecorder)
 	if err != nil {
 		phases.pruneFailed = true
 		errMsg = err.Error()
@@ -1290,7 +1310,10 @@ func handleDeletion(
 		deleteClient = impClient
 	}
 
-	pruneResult, err := apply.Prune(ctx, deleteClient, recordedIdentities(mi.Status.InstanceUUID), mi.Status.Inventory.Entries,
+	// An object that carries either recorded identity is the instance's own.
+	// With none recorded the verdict is asked with no identity.
+	identities := recordedIdentities(mi.Status.InstanceUUID, mi.Status.PreviousInstanceUUID)
+	pruneResult, err := apply.Prune(ctx, deleteClient, identities, mi.Status.Inventory.Entries,
 		apply.PruneOptions{DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		if effectiveSA != "" && isForbidden(err) {
@@ -1316,6 +1339,7 @@ func handleDeletion(
 	// Reported before the finalizer goes: afterwards the object, and with it
 	// the inventory that named the claims, no longer exists.
 	reportKeptClaims(params.EventRecorder, mi, "Delete", pruneResult.Kept)
+	reportLeftBehind(params.EventRecorder, mi, "Delete", pruneResult.Left)
 
 	if err := removeFinalizer(ctx, params.Client, mi); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
@@ -1452,12 +1476,14 @@ func removeFinalizer(ctx context.Context, c client.Client, mi *releasesv1alpha1.
 }
 
 // pruneStaleResources runs Phase 6: prune stale resources if spec.prune is true and stale resources exist.
-// Emits prune events via the provided recorder. Returns the outcome, whether reconcile succeeded,
+// identities are the ones the status held when the apply started, most recent
+// first (identityPlan.Prune). Emits prune events via the provided recorder. Returns the outcome, whether reconcile succeeded,
 // the number of resources deleted, and any error.
 func pruneStaleResources(
 	ctx context.Context,
 	mi *releasesv1alpha1.ModuleInstance,
 	c client.Client,
+	identities []string,
 	staleSet []releasesv1alpha1.InventoryEntry,
 	effectiveSA string,
 	recorder events.EventRecorder,
@@ -1466,7 +1492,7 @@ func pruneStaleResources(
 		return Applied, true, 0, nil
 	}
 	log := logf.FromContext(ctx)
-	pruneResult, err := apply.Prune(ctx, c, recordedIdentities(mi.Status.InstanceUUID), staleSet,
+	pruneResult, err := apply.Prune(ctx, c, identities, staleSet,
 		apply.PruneOptions{DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		recorder.Eventf(mi, nil, corev1.EventTypeWarning, status.PruneFailedReason, "Prune", "%s", err)
@@ -1482,6 +1508,7 @@ func pruneStaleResources(
 			"Pruned %d stale resources", pruneResult.Deleted)
 	}
 	reportKeptClaims(recorder, mi, "Prune", pruneResult.Kept)
+	reportLeftBehind(recorder, mi, "Prune", pruneResult.Left)
 	log.Info("Pruned stale resources",
 		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped, "keptClaims", len(pruneResult.Kept))
 	return pruneOutcome(pruneResult), true, pruneResult.Deleted, nil
@@ -1505,6 +1532,58 @@ func reportKeptClaims(recorder events.EventRecorder, obj runtime.Object, action 
 		return
 	}
 	recorder.Eventf(obj, nil, corev1.EventTypeNormal, status.ClaimsKeptReason, action, "%s", status.ClaimsKeptNote(kept))
+}
+
+// applyInstance is the apply phase of a ModuleInstance: it stores a changed
+// identity in the status, and applies only when that write succeeded.
+func applyInstance(
+	ctx context.Context,
+	patcher *patch.SerialPatcher,
+	mi *releasesv1alpha1.ModuleInstance,
+	identities identityPlan,
+	rm *fluxssa.ResourceManager,
+	resources []*unstructured.Unstructured,
+	opts apply.ApplyOptions,
+) (*apply.ApplyResult, error) {
+	if err := identities.store(&mi.Status.InstanceUUID, &mi.Status.PreviousInstanceUUID,
+		func() error { return patchDeletionStatus(ctx, patcher, mi) }); err != nil {
+		return nil, err
+	}
+	return apply.Apply(ctx, rm, resources, opts)
+}
+
+// reportLeftBehind emits the one LeftBehind event of a prune (action Prune) or
+// a deletion cleanup (action Delete) that left objects in the cluster because
+// the delete verdict skipped them: Normal when every one is of a kind OPM
+// never deletes, Warning otherwise. It emits nothing when none was left. The
+// caller calls it only for a run that returned no error: a failed run judges
+// the same entries again on its retry.
+func reportLeftBehind(recorder events.EventRecorder, obj runtime.Object, action string, left []apply.LeftBehind) {
+	if len(left) == 0 {
+		return
+	}
+	objects := make([]status.LeftObject, 0, len(left))
+	for _, l := range left {
+		objects = append(objects, status.LeftObject{Reason: l.Reason, Message: l.Message})
+	}
+	recorder.Eventf(obj, nil, status.LeftBehindEventType(objects), status.LeftBehindReason, action,
+		"%s", status.LeftBehindNote(objects))
+}
+
+// refuseIdentityChange records the refusal of a render that carries a third
+// identity while an earlier identity change is not settled: Ready=False and
+// Stalled=True with reason IdentityChangeUnsettled, and one Warning event
+// unless Ready already carried the reason when the reconcile started. It
+// returns the message.
+func refuseIdentityChange(
+	recorder events.EventRecorder, obj conditions.Setter, already bool, current, previous, rendered string,
+) string {
+	msg := status.IdentityChangeUnsettledNote(current, previous, rendered)
+	status.MarkStalled(obj, status.IdentityChangeUnsettledReason, "%s", msg)
+	if !already {
+		recorder.Eventf(obj, nil, corev1.EventTypeWarning, status.IdentityChangeUnsettledReason, "Reconcile", "%s", msg)
+	}
+	return msg
 }
 
 // classifyRenderError maps a render error to its status condition and event,

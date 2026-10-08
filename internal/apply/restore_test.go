@@ -42,4 +42,20 @@ func TestRestorable(t *testing.T) {
 	if out := Restorable(nil); len(out) != 0 {
 		t.Errorf("Restorable(nil) = %d objects, want none", len(out))
 	}
+
+	// Expired returns exactly what Restorable leaves out, in order.
+	expired := Expired([]*unstructured.Unstructured{configMap, expiringJob, deployment, zeroTTLJob, plainJob, otherJob})
+	wantExpired := []*unstructured.Unstructured{expiringJob, zeroTTLJob}
+	if len(expired) != len(wantExpired) {
+		t.Fatalf("Expired returned %d objects, want %d", len(expired), len(wantExpired))
+	}
+	for i := range wantExpired {
+		if expired[i] != wantExpired[i] {
+			t.Errorf("Expired()[%d] = %s %s, want %s %s",
+				i, expired[i].GetKind(), expired[i].GetName(), wantExpired[i].GetKind(), wantExpired[i].GetName())
+		}
+	}
+	if out := Expired(nil); len(out) != 0 {
+		t.Errorf("Expired(nil) = %d objects, want none", len(out))
+	}
 }

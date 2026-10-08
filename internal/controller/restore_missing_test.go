@@ -66,8 +66,13 @@ func configMapResource(name, message string) *object.Resource {
 	return &object.Resource{Value: cm, Instance: "test-module", Component: "hello", Transformer: "kubernetes#simple"}
 }
 
-// jobResource is a rendered Job named name that sets ttlSecondsAfterFinished.
-func jobResource(name string) *object.Resource {
+// jobResource is a rendered Job named name. With ttl it sets
+// ttlSecondsAfterFinished, as the opm catalog's Job transformer does.
+func jobResource(name string, ttl bool) *object.Resource {
+	ttlField := ""
+	if ttl {
+		ttlField = "ttlSecondsAfterFinished: 100"
+	}
 	job := cuecontext.New().CompileString(fmt.Sprintf(`{
 	apiVersion: "batch/v1"
 	kind:       "Job"
@@ -80,7 +85,7 @@ func jobResource(name string) *object.Resource {
 		}
 	}
 	spec: {
-		ttlSecondsAfterFinished: 100
+		%s
 		template: spec: {
 			restartPolicy: "Never"
 			containers: [{name: "run", image: "busybox"}]
@@ -88,7 +93,8 @@ func jobResource(name string) *object.Resource {
 	}
 }`, name, periodicNamespace,
 		labels.ManagedBy, labels.ManagedByController,
-		labels.ModuleInstanceNamespace, periodicNamespace))
+		labels.ModuleInstanceNamespace, periodicNamespace,
+		ttlField))
 	Expect(job.Err()).NotTo(HaveOccurred())
 	return &object.Resource{Value: job, Instance: "test-module", Component: "hello", Transformer: "kubernetes#simple"}
 }
@@ -206,25 +212,133 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		Expect(drifted.Status).To(Equal(metav1.ConditionTrue))
 	})
 
-	It("leaves a Job with a TTL absent, ends NoOp and reports it Missing", func() {
-		ctx := context.Background()
-		nn := createPeriodicInstance(ctx, "restore-ttl-job-mi")
-		const jobName = "restore-ttl-job"
+	// jobInstance creates an instance whose render is the ConfigMap
+	// "test-module" and the Job jobName, and returns its renderer. The
+	// reconcile drops the resources of the result it is handed, so fresh
+	// gives the next render a new list.
+	jobInstance := func(ctx context.Context, name, jobName string, ttl bool) (nn types.NamespacedName, renderer *callCountingRenderer, fresh func()) {
+		nn = createPeriodicInstance(ctx, name)
 		DeferCleanup(func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &batchv1.Job{
 				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: periodicNamespace},
 			}, client.PropagationPolicy(metav1.DeletePropagationBackground)))).To(Succeed())
 		})
-		renderer := &callCountingRenderer{}
-		resources := func() []*object.Resource {
-			return []*object.Resource{configMapResource("test-module", "hello"), jobResource(jobName)}
-		}
+		renderer = &callCountingRenderer{}
 		renderer.result = &render.RenderResult{
-			Resources:        resources(),
 			ModuleVersion:    stubModuleVersion,
 			PlatformIdentity: stubPlatformIdentity,
 			SkewPolicy:       stubSkewPolicy,
 		}
+		fresh = func() {
+			renderer.result.Resources = []*object.Resource{configMapResource("test-module", "hello"), jobResource(jobName, ttl)}
+		}
+		fresh()
+		return nn, renderer, fresh
+	}
+
+	jobExists := func(ctx context.Context, jobName string) bool {
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: periodicNamespace}, &batchv1.Job{})
+		if err != nil {
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(), "reading the Job: %v", err)
+		}
+		return err == nil
+	}
+
+	// removeJob removes the Job as the cluster's TTL controller, or a user,
+	// would. envtest runs no Job and no TTL controller.
+	removeJob := func(ctx context.Context, jobName string) {
+		Expect(k8sClient.Delete(ctx, &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: periodicNamespace},
+		}, client.PropagationPolicy(metav1.DeletePropagationBackground))).To(Succeed())
+		Eventually(func() bool { return jobExists(ctx, jobName) }, 5*time.Second, 50*time.Millisecond).Should(BeFalse())
+	}
+
+	// completeJob writes the status the Job controller writes when the Job
+	// finished well.
+	completeJob := func(ctx context.Context, jobName string) {
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: periodicNamespace}, &job)).To(Succeed())
+		now := metav1.Now()
+		job.Status.StartTime = &now
+		job.Status.CompletionTime = &now
+		job.Status.Succeeded = 1
+		job.Status.Conditions = []batchv1.JobCondition{
+			{Type: batchv1.JobSuccessCriteriaMet, Status: corev1.ConditionTrue, Reason: "CompletionsReached", LastProbeTime: now, LastTransitionTime: now},
+			{Type: batchv1.JobComplete, Status: corev1.ConditionTrue, Reason: "CompletionsReached", LastProbeTime: now, LastTransitionTime: now},
+		}
+		Expect(k8sClient.Status().Update(ctx, &job)).To(Succeed())
+	}
+
+	listsJob := func(mi *releasesv1alpha1.ModuleInstance, jobName string) bool {
+		for _, e := range mi.Status.Inventory.Entries {
+			if e.Group == "batch" && e.Kind == "Job" && e.Name == jobName {
+				return true
+			}
+		}
+		return false
+	}
+
+	healthy := func(mi *releasesv1alpha1.ModuleInstance) *metav1.Condition {
+		h := apimeta.FindStatusCondition(mi.Status.Conditions, status.HealthyCondition)
+		Expect(h).NotTo(BeNil())
+		return h
+	}
+
+	It("keeps an instance healthy when its completed Job with a TTL expired", func() {
+		ctx := context.Background()
+		createSkipPlatform(ctx)
+		const jobName = "restore-ttl-complete-job"
+		nn, renderer, fresh := jobInstance(ctx, "restore-ttl-complete-mi", jobName, true)
+		r := periodicReconciler(renderer, 30*time.Minute) // the render skip is on
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply, records the key
+		applied := get(ctx, nn)
+		Expect(listsJob(applied, jobName)).To(BeTrue())
+		Expect(healthy(applied).Status).To(Equal(metav1.ConditionFalse), "the Job has not finished")
+
+		By("the Job completes and a skipped reconcile sees it")
+		completeJob(ctx, jobName)
+		calls := renderer.calls.Load()
+		res := reconcileOnce(ctx, r, nn)
+		Expect(renderer.calls.Load()).To(Equal(calls), "the render is skipped")
+		Expect(healthy(get(ctx, nn)).Status).To(Equal(metav1.ConditionTrue))
+		Expect(res.RequeueAfter).To(beThePeriodicRequeue())
+
+		By("the cluster removes the finished Job")
+		removeJob(ctx, jobName)
+		fresh()
+		res = reconcileOnce(ctx, r, nn)
+
+		Expect(renderer.calls.Load()).To(Equal(calls+1), "an absent inventory Job makes the reconcile render")
+		Expect(jobExists(ctx, jobName)).To(BeFalse(), "the Job is not created again")
+		after := get(ctx, nn)
+		Expect(after.Status.History).To(HaveLen(1), "the reconcile ended NoOp")
+		Expect(listsJob(after, jobName)).To(BeFalse(), "the expired Job left the inventory")
+		Expect(after.Status.Inventory.Count).To(Equal(int64(1)))
+		Expect(after.Status.Inventory.Digest).To(Equal(applied.Status.Inventory.Digest), "the digest stays that of the rendered set")
+		Expect(after.Status.Inventory.Revision).To(Equal(applied.Status.Inventory.Revision))
+		Expect(apimeta.IsStatusConditionTrue(after.Status.Conditions, status.ReadyCondition)).To(BeTrue())
+		h := healthy(after)
+		Expect(h.Status).To(Equal(metav1.ConditionTrue))
+		Expect(h.Reason).To(Equal(status.RolledOutReason))
+		Expect(h.Message).To(Equal("1/1 objects ready"))
+		Expect(res.RequeueAfter).To(beThePeriodicRequeue(), "the instance is back on its interval")
+
+		By("the next periodic reconcile skips its render and writes nothing")
+		counting, writes := patchCountingClient()
+		r.Client = counting
+		res = reconcileOnce(ctx, r, nn)
+		Expect(renderer.calls.Load()).To(Equal(calls+1), "one render per expired Job")
+		Expect(writes.Load()).To(BeZero())
+		Expect(res.RequeueAfter).To(beThePeriodicRequeue())
+		Expect(healthy(get(ctx, nn)).Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("treats a Job with a TTL that was removed before it ran as finished", func() {
+		ctx := context.Background()
+		const jobName = "restore-ttl-job"
+		nn, renderer, fresh := jobInstance(ctx, "restore-ttl-job-mi", jobName, true)
 		r := periodicReconciler(renderer, 0) // every reconcile renders
 
 		reconcileOnce(ctx, r, nn) // finalizer
@@ -232,31 +346,143 @@ var _ = Describe("Restore of a missing ModuleInstance object", func() {
 		applied := get(ctx, nn)
 		Expect(applied.Status.History).To(HaveLen(1))
 
-		By("the cluster removes the finished Job")
-		jobKey := types.NamespacedName{Name: jobName, Namespace: periodicNamespace}
-		Expect(k8sClient.Delete(ctx, &batchv1.Job{
-			ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: periodicNamespace},
-		}, client.PropagationPolicy(metav1.DeletePropagationBackground))).To(Succeed())
-		Eventually(func() bool {
-			return apierrors.IsNotFound(k8sClient.Get(ctx, jobKey, &batchv1.Job{}))
-		}, 5*time.Second, 50*time.Millisecond).Should(BeTrue())
-
-		renderer.result.Resources = resources()
-		calls := renderer.calls.Load()
+		By("the Job is removed before any Pod of it ran")
+		removeJob(ctx, jobName)
+		fresh()
 		res := reconcileOnce(ctx, r, nn)
 
-		Expect(renderer.calls.Load()).To(Equal(calls+1), "the reconcile rendered")
-		Expect(apierrors.IsNotFound(k8sClient.Get(ctx, jobKey, &batchv1.Job{}))).To(BeTrue(), "the Job is not created again")
+		// Nothing records that a Job completed, so this Job reads as one
+		// that finished and expired.
+		Expect(jobExists(ctx, jobName)).To(BeFalse(), "the Job is not created again")
 		after := get(ctx, nn)
 		Expect(after.Status.History).To(HaveLen(1), "the reconcile ended NoOp")
-		Expect(apimeta.IsStatusConditionTrue(after.Status.Conditions, status.ReadyCondition)).To(BeTrue())
-		h := apimeta.FindStatusCondition(after.Status.Conditions, status.HealthyCondition)
-		Expect(h).NotTo(BeNil())
+		Expect(listsJob(after, jobName)).To(BeFalse())
+		h := healthy(after)
+		Expect(h.Status).To(Equal(metav1.ConditionTrue))
+		Expect(h.Reason).To(Equal(status.RolledOutReason))
+		Expect(res.RequeueAfter).To(beThePeriodicRequeue())
+
+		By("the next render with unchanged digests is still a NoOp")
+		fresh()
+		reconcileOnce(ctx, r, nn)
+		Expect(jobExists(ctx, jobName)).To(BeFalse())
+		Expect(get(ctx, nn).Status.History).To(HaveLen(1), "the shortened inventory does not cause an apply")
+	})
+
+	It("creates a missing Job without a TTL again, without waiting for the drift render interval", func() {
+		ctx := context.Background()
+		createSkipPlatform(ctx)
+		const jobName = "restore-plain-job"
+		nn, renderer, fresh := jobInstance(ctx, "restore-plain-job-mi", jobName, false)
+		r := periodicReconciler(renderer, 30*time.Minute)
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply, records the key
+		calls := renderer.calls.Load()
+
+		removeJob(ctx, jobName)
+		fresh()
+		res := reconcileOnce(ctx, r, nn)
+
+		Expect(renderer.calls.Load()).To(Equal(calls+1), "an absent inventory Job makes the reconcile render")
+		Expect(jobExists(ctx, jobName)).To(BeTrue(), "the Job without a TTL is created again")
+		after := get(ctx, nn)
+		Expect(after.Status.History).To(HaveLen(2), "the restore is recorded as an apply")
+		Expect(listsJob(after, jobName)).To(BeTrue())
+		h := healthy(after)
+		Expect(h.Status).To(Equal(metav1.ConditionFalse), "the new Job has not finished")
+		Expect(h.Message).NotTo(ContainSubstring("Missing"))
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<=", 2*time.Minute))
+	})
+
+	It("restores a deleted object beside an expired Job and records the inventory without the Job", func() {
+		ctx := context.Background()
+		const jobName = "restore-beside-job"
+		nn, renderer, fresh := jobInstance(ctx, "restore-beside-job-mi", jobName, true)
+		r := periodicReconciler(renderer, 0)
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply
+		applied := get(ctx, nn)
+
+		removeJob(ctx, jobName)
+		deleteConfigMap(ctx)
+		fresh()
+		res := reconcileOnce(ctx, r, nn)
+
+		_, err := configMap(ctx, "test-module")
+		Expect(err).NotTo(HaveOccurred(), "the deleted ConfigMap exists again")
+		Expect(jobExists(ctx, jobName)).To(BeFalse(), "the expired Job is not created again")
+		after := get(ctx, nn)
+		Expect(after.Status.History).To(HaveLen(2), "the restore is recorded as an apply")
+		Expect(listsJob(after, jobName)).To(BeFalse())
+		Expect(after.Status.Inventory.Count).To(Equal(int64(1)))
+		Expect(after.Status.Inventory.Digest).To(Equal(applied.Status.Inventory.Digest))
+		Expect(after.Status.Inventory.Revision).To(Equal(applied.Status.Inventory.Revision + 1))
+		Expect(healthy(after).Status).To(Equal(metav1.ConditionTrue))
+		Expect(res.RequeueAfter).To(beThePeriodicRequeue())
+
+		fresh()
+		reconcileOnce(ctx, r, nn)
+		Expect(get(ctx, nn).Status.History).To(HaveLen(2), "the next reconcile is a NoOp")
+	})
+
+	It("reports an absent Job as Missing while drift detection fails, and renders for it once", func() {
+		ctx := context.Background()
+		createSkipPlatform(ctx)
+		const jobName = "restore-ttl-nodrift-job"
+		nn, renderer, fresh := jobInstance(ctx, "restore-ttl-nodrift-mi", jobName, true)
+		r := periodicReconciler(renderer, 30*time.Minute)
+
+		reconcileOnce(ctx, r, nn) // finalizer
+		reconcileOnce(ctx, r, nn) // apply, records the key
+		calls := renderer.calls.Load()
+		removeJob(ctx, jobName)
+
+		// Every dry-run fails, so the missing set is unknown.
+		base, err := client.NewWithWatch(cfg, client.Options{})
+		Expect(err).NotTo(HaveOccurred())
+		noDryRun := interceptor.NewClient(base, interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
+				o := &client.PatchOptions{}
+				o.ApplyOptions(opts)
+				if len(o.DryRun) > 0 {
+					return fmt.Errorf("injected dry-run failure")
+				}
+				return c.Patch(ctx, obj, p, opts...)
+			},
+		})
+		r.ResourceManager = apply.NewResourceManager(noDryRun, "opm-controller")
+
+		fresh()
+		res := reconcileOnce(ctx, r, nn)
+		Expect(renderer.calls.Load()).To(Equal(calls+1), "the absent Job makes the reconcile render")
+		after := get(ctx, nn)
+		Expect(after.Status.FailureCounters.Drift).To(Equal(int64(1)))
+		Expect(listsJob(after, jobName)).To(BeTrue(), "an unknown missing set removes nothing")
+		h := healthy(after)
 		Expect(h.Status).To(Equal(metav1.ConditionFalse))
 		Expect(h.Reason).To(Equal(status.NotRolledOutReason))
 		Expect(h.Message).To(ContainSubstring("Job " + periodicNamespace + "/" + jobName + " (Missing)"))
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
-		Expect(res.RequeueAfter).To(BeNumerically("<=", 2*time.Minute), "the missing Job keeps the health requeue")
+		Expect(res.RequeueAfter).To(BeNumerically("<=", 2*time.Minute))
+
+		By("the health requeue does not render again")
+		res = reconcileOnce(ctx, r, nn)
+		Expect(renderer.calls.Load()).To(Equal(calls+1), "a failed drift detection bounds the renders")
+		Expect(healthy(get(ctx, nn)).Status).To(Equal(metav1.ConditionFalse))
+		Expect(res.RequeueAfter).To(BeNumerically("<=", 2*time.Minute))
+
+		By("the next render with a working dry-run classifies the Job")
+		rendering := periodicReconciler(renderer, 0)
+		fresh()
+		res = reconcileOnce(ctx, rendering, nn)
+		Expect(jobExists(ctx, jobName)).To(BeFalse())
+		recovered := get(ctx, nn)
+		Expect(listsJob(recovered, jobName)).To(BeFalse())
+		Expect(healthy(recovered).Status).To(Equal(metav1.ConditionTrue))
+		Expect(res.RequeueAfter).To(beThePeriodicRequeue())
 	})
 
 	It("records a failed restore as a failed apply and retries on the backoff", func() {

@@ -84,7 +84,8 @@ func DetectDrift(
 // Restorable returns the missing resources that a reconcile with unchanged
 // digests creates again. A Job whose spec sets ttlSecondsAfterFinished is
 // left out: the cluster deletes it after it finished, so its absence is the
-// expected state, and creating it again would run it again.
+// expected state, and creating it again would run it again. Expired returns
+// the ones left out.
 func Restorable(missing []*unstructured.Unstructured) []*unstructured.Unstructured {
 	var out []*unstructured.Unstructured
 	for _, obj := range missing {
@@ -92,6 +93,20 @@ func Restorable(missing []*unstructured.Unstructured) []*unstructured.Unstructur
 			continue
 		}
 		out = append(out, obj)
+	}
+	return out
+}
+
+// Expired returns the missing resources that Restorable leaves out: the Jobs
+// that set ttlSecondsAfterFinished. With unchanged digests such a Job counts
+// as finished and removed by the cluster. Nothing records that it completed,
+// so a Job deleted by hand before it ran is returned too.
+func Expired(missing []*unstructured.Unstructured) []*unstructured.Unstructured {
+	var out []*unstructured.Unstructured
+	for _, obj := range missing {
+		if expiresAfterFinish(obj) {
+			out = append(out, obj)
+		}
 	}
 	return out
 }

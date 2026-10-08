@@ -166,7 +166,8 @@ func (r *ModuleInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 //     reconciler's status update) does not bump generation.
 //   - ServiceAccount (metadata only, create events only) — a created
 //     ServiceAccount re-enqueues the instances of its namespace that
-//     impersonate it (mapServiceAccountToModuleInstances), so a deletion or
+//     impersonate it and are stalled on it
+//     (mapServiceAccountToModuleInstances), so a deletion or
 //     an apply stalled on the missing ServiceAccount recovers when it
 //     returns, not at the stalled recheck. The informer needs list and watch
 //     on serviceaccounts.
@@ -245,11 +246,18 @@ func serviceAccountCreated() predicate.Predicate {
 
 // mapServiceAccountToModuleInstances enqueues the ModuleInstances a created
 // ServiceAccount can unblock: those in its namespace whose effective
-// ServiceAccount (spec, else the manager's default) has its name. A missing
-// ServiceAccount stalls both the deletion cleanup and the apply for 30
-// minutes, and its return moves nothing else the controller watches.
+// ServiceAccount (spec, else the manager's default) has its name and that are
+// waiting for it (waitsForServiceAccount). A missing ServiceAccount stalls
+// both the deletion cleanup and the apply for 30 minutes, and its return
+// moves nothing else the controller watches.
 //
-// Not enqueued: a CLI-owned instance, which impersonates nothing, and a
+// An instance that is not waiting is not enqueued. A mapped request skips the
+// controller's rate limiter and a live instance renders before it reads its
+// ServiceAccount, so without this bound a namespace user who may create and
+// delete ServiceAccounts, but no ModuleInstance, could keep the render slots
+// busy by repeating the create.
+//
+// Also not enqueued: a CLI-owned instance, which impersonates nothing, and a
 // suspended instance that is not being deleted, whose reconcile would only
 // repeat its Suspended event. A suspended instance being deleted is enqueued:
 // suspend does not hold back the cleanup.
@@ -272,11 +280,28 @@ func (r *ModuleInstanceReconciler) mapServiceAccountToModuleInstances(ctx contex
 		if opmreconcile.EffectiveServiceAccount(mi.Spec.ServiceAccountName, r.DefaultServiceAccount) != obj.GetName() {
 			continue
 		}
+		if !waitsForServiceAccount(mi) {
+			continue
+		}
 		reqs = append(reqs, reconcile.Request{
 			NamespacedName: types.NamespacedName{Name: mi.Name, Namespace: mi.Namespace},
 		})
 	}
 	return reqs
+}
+
+// waitsForServiceAccount reports whether the instance's last reconcile
+// stalled on its impersonated ServiceAccount: Ready is False with
+// DeletionSAMissing (the deletion cleanup found none) or ImpersonationFailed
+// (the apply or the cleanup could not act as it). The status is the only
+// record of that stall. An instance whose stall was not written, or has not
+// been written yet, is not woken and keeps its stalled recheck.
+func waitsForServiceAccount(mi *releasesv1alpha1.ModuleInstance) bool {
+	ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+	if ready == nil || ready.Status != metav1.ConditionFalse {
+		return false
+	}
+	return ready.Reason == status.DeletionSAMissingReason || ready.Reason == status.ImpersonationFailedReason
 }
 
 // platformConsumedFieldsChanged passes a Platform update only when a field a

@@ -67,6 +67,7 @@ Watches(&corev1.ServiceAccount{},
 - Create only: the "return" of a ServiceAccount is a create. Updates and deletes change nothing an instance waits for.
 - The map function lists the instances of the ServiceAccount's namespace from the cache and keeps those whose effective ServiceAccount has that name. The precedence (`spec.serviceAccountName`, else the flag default) comes from one function in `internal/reconcile`, exported for this use, so the watch and the reconcile cannot disagree.
 - It skips CLI-owned instances and suspended instances that are not being deleted: a reconcile of either only rewrites an acknowledgement and emits an event.
+- It keeps only an instance whose `Ready` condition is `False` with `DeletionSAMissing` or `ImpersonationFailed` (added after the security review). A mapped request skips the controller's rate limiter and the live path renders before it reads the ServiceAccount, so an unfiltered wake let a namespace user with `create` and `delete` on ServiceAccounts, and no right on a `ModuleInstance`, keep the render slots busy. An instance whose stall is not in its status keeps the stalled recheck.
 - It does not restrict itself to deleting instances. The apply path stalls on the same missing ServiceAccount with the same 30 minute recheck; filtering those out would be code whose only effect is to keep that wait.
 
 The reconcile that follows reads the ServiceAccount with the uncached reader, so it cannot run ahead of the cache.

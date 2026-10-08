@@ -22,6 +22,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -32,6 +33,7 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	opmreconcile "github.com/open-platform-model/opm-operator/internal/reconcile"
+	"github.com/open-platform-model/opm-operator/internal/status"
 )
 
 // wakeNamespace is the namespace of the instances in the trigger specs.
@@ -144,32 +146,69 @@ var _ = Describe("ServiceAccount watch", func() {
 		Expect(p.Generic(event.GenericEvent{Object: sa})).To(BeFalse())
 	})
 
-	It("enqueues the instances of the namespace that impersonate the created ServiceAccount", func() {
+	// stalledOn is the Ready condition a reconcile leaves when it cannot act
+	// as the instance's ServiceAccount.
+	stalledOn := func(reason string) func(*releasesv1alpha1.ModuleInstance) {
+		return func(mi *releasesv1alpha1.ModuleInstance) {
+			apimeta.SetStatusCondition(&mi.Status.Conditions, metav1.Condition{
+				Type: status.ReadyCondition, Status: metav1.ConditionFalse, Reason: reason, Message: "stalled",
+			})
+		}
+	}
+	applyStalled := stalledOn(status.ImpersonationFailedReason)
+	deleteStalled := stalledOn(status.DeletionSAMissingReason)
+	healthy := func(mi *releasesv1alpha1.ModuleInstance) {
+		apimeta.SetStatusCondition(&mi.Status.Conditions, metav1.Condition{
+			Type: status.ReadyCondition, Status: metav1.ConditionTrue, Reason: status.ReconciliationSucceededReason, Message: "ok",
+		})
+	}
+
+	It("enqueues the instances of the namespace that are stalled on the created ServiceAccount", func() {
 		c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(
-			wakeInstance(false, named("live"), impersonating("deploy-sa")),
-			wakeInstance(true, named("deleting"), impersonating("deploy-sa")),
-			wakeInstance(true, named("deleting-suspended"), impersonating("deploy-sa"), suspended),
-			wakeInstance(false, named("live-suspended"), impersonating("deploy-sa"), suspended),
-			wakeInstance(false, named("cli-owned"), impersonating("deploy-sa"), cliOwned),
-			wakeInstance(true, named("cli-owned-deleting"), impersonating("deploy-sa"), cliOwned),
-			wakeInstance(false, named("other-sa"), impersonating("other-sa")),
-			wakeInstance(false, named("no-sa")),
-			wakeInstance(false, named("other-namespace"), inNamespace("team-b"), impersonating("deploy-sa")),
+			wakeInstance(false, named("live"), impersonating("deploy-sa"), applyStalled),
+			wakeInstance(true, named("deleting"), impersonating("deploy-sa"), deleteStalled),
+			wakeInstance(true, named("deleting-forbidden"), impersonating("deploy-sa"), applyStalled),
+			wakeInstance(true, named("deleting-suspended"), impersonating("deploy-sa"), suspended, deleteStalled),
+			wakeInstance(false, named("live-suspended"), impersonating("deploy-sa"), suspended, applyStalled),
+			wakeInstance(false, named("cli-owned"), impersonating("deploy-sa"), cliOwned, applyStalled),
+			wakeInstance(true, named("cli-owned-deleting"), impersonating("deploy-sa"), cliOwned, deleteStalled),
+			wakeInstance(false, named("other-sa"), impersonating("other-sa"), applyStalled),
+			wakeInstance(false, named("no-sa"), applyStalled),
+			wakeInstance(false, named("other-namespace"), inNamespace("team-b"), impersonating("deploy-sa"), applyStalled),
 		).Build()
 		r := &ModuleInstanceReconciler{Client: c, Scheme: scheme.Scheme}
 
 		Expect(r.mapServiceAccountToModuleInstances(context.Background(), created("deploy-sa"))).To(ConsistOf(
 			request("live"),
 			request("deleting"),
+			request("deleting-forbidden"),
 			request("deleting-suspended"),
 		))
 		Expect(r.mapServiceAccountToModuleInstances(context.Background(), created("unused-sa"))).To(BeEmpty())
 	})
 
+	// A mapped request skips the rate limiter and a live instance renders
+	// before it reads its ServiceAccount: a create must cost nothing unless
+	// an instance waits for it.
+	It("enqueues nothing for an instance that is not stalled on its ServiceAccount", func() {
+		c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(
+			wakeInstance(false, named("healthy"), impersonating("deploy-sa"), healthy),
+			wakeInstance(false, named("never-reconciled"), impersonating("deploy-sa")),
+			wakeInstance(false, named("render-failed"), impersonating("deploy-sa"), stalledOn(status.RenderFailedReason)),
+			wakeInstance(true, named("deleting-not-stalled"), impersonating("deploy-sa"), healthy),
+			wakeInstance(false, named("stalled"), impersonating("deploy-sa"), applyStalled),
+		).Build()
+		r := &ModuleInstanceReconciler{Client: c, Scheme: scheme.Scheme}
+
+		Expect(r.mapServiceAccountToModuleInstances(context.Background(), created("deploy-sa"))).To(ConsistOf(
+			request("stalled"),
+		))
+	})
+
 	It("counts the manager's default ServiceAccount as the effective one", func() {
 		c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(
-			wakeInstance(false, named("defaulted")),
-			wakeInstance(false, named("explicit"), impersonating("deploy-sa")),
+			wakeInstance(false, named("defaulted"), applyStalled),
+			wakeInstance(false, named("explicit"), impersonating("deploy-sa"), applyStalled),
 		).Build()
 		r := &ModuleInstanceReconciler{Client: c, Scheme: scheme.Scheme, DefaultServiceAccount: "opm-deployer"}
 

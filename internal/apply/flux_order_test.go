@@ -2,7 +2,7 @@ package apply
 
 import (
 	"fmt"
-	"runtime/debug"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -10,6 +10,7 @@ import (
 
 	fluxssa "github.com/fluxcd/pkg/ssa"
 	ssautils "github.com/fluxcd/pkg/ssa/utils"
+	"golang.org/x/mod/modfile"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -214,20 +215,34 @@ func compareOrders(order []*unstructured.Unstructured, weight func(schema.GroupV
 	return c
 }
 
-// moduleVersion returns the version of a module of this test binary.
+// goModPath is the operator's go.mod, seen from this package's directory,
+// which is where go test runs the package's tests.
+const goModPath = "../../go.mod"
+
+// moduleVersion returns the version go.mod requires a module at, or the
+// version it replaces it with. A test binary carries no dependency versions
+// in its build info, so go.mod is the one place that names the pins.
 func moduleVersion(path string) string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, dep := range info.Deps {
-			if dep.Path != path {
-				continue
-			}
-			if dep.Replace != nil {
-				return dep.Replace.Version
-			}
-			return dep.Version
+	const unknown = "version not found, see go.mod"
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return unknown
+	}
+	mod, err := modfile.Parse(goModPath, data, nil)
+	if err != nil {
+		return unknown
+	}
+	for _, r := range mod.Replace {
+		if r.Old.Path == path {
+			return r.New.Version
 		}
 	}
-	return "version not in the build info, see go.mod"
+	for _, r := range mod.Require {
+		if r.Mod.Path == path {
+			return r.Mod.Version
+		}
+	}
+	return unknown
 }
 
 // contradictionMessage is the failure text: the pairs, the two pinned
@@ -278,6 +293,31 @@ func TestFluxOrderNeverContradictsLibraryWeights(t *testing.T) {
 
 	if len(got.contradictions) > 0 {
 		t.Fatal(contradictionMessage(got.contradictions))
+	}
+	// The library weighs many kinds equally (every kind Flux does not list,
+	// for one), so a count of zero means the tie branch no longer counts.
+	if got.refined == 0 {
+		t.Fatal("the comparison found no pair that Flux orders and the library weighs equally")
+	}
+}
+
+// TestFluxOrderRefinesATie pins that a tie is no failure and is counted: the
+// library weighs a ConfigMap and a Secret equally, and Flux applies the
+// ConfigMap first.
+func TestFluxOrderRefinesATie(t *testing.T) {
+	mk := func(kind string) *unstructured.Unstructured {
+		o := &unstructured.Unstructured{}
+		o.SetGroupVersionKind(ownGVK[kind])
+		o.SetName("x")
+		return o
+	}
+	order := stagedOrder([]*unstructured.Unstructured{mk("Secret"), mk("ConfigMap")}, fluxssa.DefaultApplyOptions())
+	if got := []string{order[0].GetKind(), order[1].GetKind()}; !slices.Equal(got, []string{"ConfigMap", "Secret"}) {
+		t.Fatalf("want Flux to apply the ConfigMap before the Secret, got %v", got)
+	}
+	got := compareOrders(order, libobject.Weight)
+	if len(got.contradictions) != 0 || got.refined != 1 {
+		t.Fatalf("want no contradiction and one refined pair, got %v and %d", got.contradictions, got.refined)
 	}
 }
 
@@ -332,7 +372,8 @@ func TestFluxOrderComparisonCanFail(t *testing.T) {
 		first := fluxssa.ReconcileOrder.First
 		si, di := slices.Index(first, "Service"), slices.Index(first, "Deployment")
 		if si < 0 || di < 0 {
-			t.Skipf("Flux's ReconcileOrder.First no longer names Service and Deployment: %v", first)
+			t.Fatalf("Flux's ReconcileOrder.First no longer names Service and Deployment; "+
+				"swap two other entries of different library weight here: %v", first)
 		}
 		// The universe is built before the swap; the swap changes only the order.
 		universe, _ := fluxOrderUniverse()
@@ -376,6 +417,16 @@ func TestFluxOrderComparisonCanFail(t *testing.T) {
 	})
 }
 
+// TestFluxOrderMessageNamesThePins pins that the failure message can name the
+// two versions that disagree.
+func TestFluxOrderMessageNamesThePins(t *testing.T) {
+	for _, path := range []string{fluxModule, libraryModule} {
+		if v := moduleVersion(path); !strings.HasPrefix(v, "v") {
+			t.Errorf("want the version go.mod pins %s at, got %q", path, v)
+		}
+	}
+}
+
 // TestFluxOrderContradictionMessage pins what a failure tells the maintainer.
 func TestFluxOrderContradictionMessage(t *testing.T) {
 	msg := contradictionMessage([]orderPair{{
@@ -385,8 +436,8 @@ func TestFluxOrderContradictionMessage(t *testing.T) {
 	}})
 	for _, want := range []string{
 		"/Service (50) before apps/Deployment (40)",
-		fluxModule,
-		libraryModule,
+		fluxModule + " " + moduleVersion(fluxModule),
+		libraryModule + " " + moduleVersion(libraryModule),
 		"Do not edit this test",
 		"Hold this pin bump",
 		"opm/k8s/object/weights.go",

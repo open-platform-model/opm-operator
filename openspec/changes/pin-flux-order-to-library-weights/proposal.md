@@ -8,7 +8,7 @@ Nothing in the operator checks that rule. The library's own guard (`opm/k8s/obje
 
 - A new test in `internal/apply` builds a set of objects that covers every kind class of both orders, puts it in the order Flux's staged apply gives it, and fails for every pair of kinds that Flux applies in the opposite order to the library's weights. Flux's order is read by calling the pinned Flux module: its exported stage rules and its exported sorter. It is not copied as literals, so a Flux bump that moves a kind fails this test on the bump PR.
 - A second test in `test/integration/apply` runs the operator's real `apply.Apply` against the test API server, records the order of the writes, and checks that order against the library weights and against Flux's stage rules. It covers what the first test has to assume: the precedence of Flux's stages and the options the operator passes.
-- The failure message of both tests names the pairs, both pinned module versions where the build has them, and what the maintainer does next. It says that the test and its kind list are not edited to get a pass.
+- The failure message of both tests names the pairs, the two pinned modules (the comparison test with their versions from `go.mod`), and what the maintainer does next. It says that the test and its kind list are not edited to get a pass.
 - One requirement is added to the `ssa-apply` spec for the rule the tests guard.
 - No production code changes. No API type, controller or reconcile phase changes. Not in this change: the order of prune and deletion (the operator walks the inventory in recorded order there and does not use Flux's order or the weights), any pre-sort by library weights before the apply, the library's guard and its literals, the CLI's pinned weight table.
 

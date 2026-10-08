@@ -219,7 +219,8 @@ func describeWrite(u *unstructured.Unstructured) string {
 // orderGuidance is what a failure of this spec tells the maintainer.
 const orderGuidance = `
 The order of a real staged apply contradicts the library's kind weights or
-Flux's stage rules (0012:D5:R1).
+Flux's stage rules (0012:D5:R1). The two pins are github.com/fluxcd/pkg/ssa
+and github.com/open-platform-model/library in go.mod.
 
 What to do:
   - Do not edit this spec or its set of objects to make it pass.

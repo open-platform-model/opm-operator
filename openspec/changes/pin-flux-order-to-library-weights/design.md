@@ -148,7 +148,7 @@ What to do:
     fix it in the library and hold the bump.
 ```
 
-The versions come from `debug.ReadBuildInfo()` when the test binary carries them; otherwise the line says `version not in the build info, see go.mod`. The reference `0012:D5:R1` is in a test message that only maintainers read, never in a string a user sees.
+The comparison test reads the two versions from the operator's `go.mod` (`golang.org/x/mod/modfile`, a direct requirement already), because a test binary carries no dependency versions in its build info; when `go.mod` cannot be read the line says `version not found, see go.mod`. The observed test names the two module paths and points at `go.mod`. The reference `0012:D5:R1` is in a test message that only maintainers read, never in a string a user sees.
 
 ### 7. Where the rule is specified
 
@@ -186,4 +186,5 @@ Source, Render, Apply, Prune and Status: none. The tests call `internal/apply` a
 - [The operator starts to pass `CustomStageKinds`] The comparison test uses `DefaultApplyOptions()` and would not see it, because the options are built inline in `Apply`. The observed test sees it for the kinds in its set. Making the options reachable from the test would be a production change, so it is left out.
 - [Mutating `fluxssa.ReconcileOrder` in a sub-test] It is a package variable of another module. The sub-test restores it in `t.Cleanup`, and no test of the package that touches it runs in parallel.
 - [A Flux bump now can fail for a reason the bump author did not cause] That is intended. The message says where the fix goes.
+- [The universe holds one version per kind, beside `v1beta1` of the two definitions] `object.Weight` looks up the exact group, version and kind first. At beta.7 every such row equals the weight of its kind, so nothing is missed. A library table with a weight for one version only would not be compared here; the library's own guard compares every row of its table.
 - [Envtest time] One more apply of about 25 small objects in an existing suite.

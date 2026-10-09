@@ -63,10 +63,24 @@ if _, ok := errors.AsType[*oerrors.IdentityError](err); ok {
 
 The message text is the same on both versions. The library also names a third form, a client that refreshes a token it holds; two catalog acquisitions on one kernel against a registry that issues an expiring token did not produce it, so it is not pinned here.
 
-The operator reads the classification in two ways. `IsTransientFailure` is true for every `*FetchError` of any kind, so a ModuleInstance, a ModulePackage and the Platform retry on the backoff as a non-stalled `ResolutionFailed` on both versions. `keepsVerdict` (the TransformerRegistration reconciler) also requires `oerrors.ErrTransient`, so for an accepted claim the two rows that lost `transient` move from held to refused.
-**Decision**: No edit to a classifier. Pin the table's dependency-load rows at the package load site, and pin `keepsVerdict` on the same errors.
+The operator reads the classification in two ways. `IsTransientFailure` is true for every `*FetchError` of any kind, so a ModuleInstance, a ModulePackage and the Platform retry on the backoff as a non-stalled `ResolutionFailed` on both versions. `keepsVerdict` (the TransformerRegistration reconciler) required `oerrors.ErrTransient`, so for an accepted claim the two rows that lost `transient` would move from held to refused.
+**Decision**: A 401 refuses the claim, with no edit: it is what `registration-acceptance` requires for refused credentials. A 429 holds the claim (supervisor ruling, 2026-10-09): `keepsVerdict` MUST also be true for a typed fetch failure with status 429. Pin the table's dependency-load rows at the package load site, pin `keepsVerdict` on the same errors, and drive a claim through the reconciler against a token registry for 401, 429 and 503.
 **Rationale**: The new outcome is what `registration-acceptance` already requires ("refused credentials" refuse the claim) and what the conditions page says for a 429. The hold of opm-operator#262 covers a registry that does not answer or answers 5xx, and both still hold through a token endpoint. So the change is a fix of a misread form, not a new rule, and the PR title carries no `!`.
-**Alternative considered**: Keep holding a claim on a token endpoint's 429, because a rate limit passes. Rejected here: a direct 429 already un-accepts (`transformerregistration_transient_test.go`), so it would be a new rule for one form, and that is the owner's decision, not the bump's.
+**Alternative considered**: Hold only on a 429 from the token endpoint. Not possible without matching message text: the library types both as `FetchOther` with status 429, and the operator does not match text. So a 429 from the registry itself holds the claim too, where it un-accepted before; the entry of `transformerregistration_transient_test.go` that pinned the old outcome moved to the held cases.
+
+```go
+// internal/controller/transformerregistration_controller.go
+func keepsVerdict(err error) bool {
+	if !opmreconcile.IsTransientFailure(err) {
+		return false
+	}
+	if errors.Is(err, oerrors.ErrTransient) {
+		return true
+	}
+	fe, ok := errors.AsType[*oerrors.FetchError](err)
+	return ok && fe.Status == http.StatusTooManyRequests
+}
+```
 
 ### Unset required values (library#227)
 
@@ -91,11 +105,12 @@ The note of a render failure event is the error text, with no cut. The three-val
 - Source: none.
 - Render: none for a ModuleInstance. A ModulePackage that leaves unset a required value a component reads fails at the same place with another message. The kind of a typed fetch failure changes for two forms; the outcome (retry on the backoff) does not.
 - Apply: none. Prune: none.
-- Status: the ModulePackage message above, with reason `ResolutionFailed` and the stall unchanged; and a TransformerRegistration that was accepted is refused with `CatalogUnresolved`, instead of held, when its catalog's dependency load meets a token endpoint that answers 401 or 429.
+- Status: the ModulePackage message above, with reason `ResolutionFailed` and the stall unchanged; a TransformerRegistration that was accepted is refused with `CatalogUnresolved`, instead of held, when its catalog's dependency load meets a token endpoint that answers 401; and an accepted claim is held, instead of refused, on a 429 answer.
 
 ## Risks / Trade-offs
 
-- [An accepted claim is un-accepted when the token endpoint rate-limits a dependency load] → It is the rule for a direct 429 today; the conditions page names it. The claim is judged again after 30 minutes.
+- [An accepted claim is un-accepted when the token endpoint refuses a token during a dependency load] → It is the rule for refused credentials; the conditions page names it. The way out is a valid pull credential; the claim is judged again after 30 minutes.
+- [A registry that answers 429 for a long time keeps a claim held] → The hold retries on the capped backoff and reports `Reconciling=True`, as for an outage.
 - [The pinned token forms depend on text the embedded CUE produces] → The library owns that match (its ADR-014) and tests it; the operator's tests fail on a bump that brings back the old answer.
 - [No e2e run in this change] → The CI e2e job on the PR is the proof. No e2e or integration assertion names an identity form, a token answer or a required-value message that this change moves.
 

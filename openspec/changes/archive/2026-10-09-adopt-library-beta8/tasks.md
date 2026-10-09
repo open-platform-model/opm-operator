@@ -19,3 +19,9 @@
 - [x] 3.1 Add `TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue` to `internal/render/required_values_test.go`: a package that leaves unset a required value a component reads is refused with the exact `values.<field>` message, with the count of further unset values, under `ErrAcquire`; verify it passes on beta.8 and fails on beta.7
 - [x] 3.2 Correct the header comment of `required_values_test.go`, make the event-note assertion independent of the temporary directory's length, and add the `modulepackage-kernel-rendering` delta; verify `openspec validate adopt-library-beta8 --strict` passes
 - [x] 3.3 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `test(render): pin the package message for an unset value a component reads`
+
+## 4. Hold a claim on a rate limit (supervisor ruling)
+
+- [x] 4.1 Change the claim tests to the ruled outcome and see them fail: a 429 holds in `TestCatalogDependencyLoadTokenEndpoint`, in a new spec with a built 429 error, and in a new table that drives a claim through the reconciler against a token registry (401 refuses, 429 holds, 503 holds)
+- [x] 4.2 Make `keepsVerdict` true for a typed fetch failure with status 429; correct the main spec `registration-acceptance`, this change's delta and the conditions page so they agree
+- [x] 4.3 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `fix(controller): keep an accepted claim through a registry rate limit`

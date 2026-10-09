@@ -203,7 +203,7 @@ Acceptance SHALL reach the same verdict for a claim whether the library derives 
 
 ### Requirement: An accepted claim keeps its verdict through a transient registry failure
 
-When the acquisition of the claimed catalog fails with a transient registry failure, a claim whose `status.accepted` is true and whose `status.observedGeneration` equals its `metadata.generation` SHALL keep its verdict: `status.accepted`, `status.active`, the `Active` condition and a `Ready` condition that reports the acceptance SHALL stay as they were. A `Ready` condition that is not `True` reports no verdict (an earlier reconcile deferred it, as the first reconcile after an operator restart does); it SHALL become `Unknown` with reason `CatalogUnresolved`, so it names the current cause. A transient registry failure is the one the library classifies as transient: the registry gave no HTTP response, or it answered with a 5xx status. The operator SHALL NOT classify by message text.
+When the acquisition of the claimed catalog fails with a transient registry failure, a claim whose `status.accepted` is true and whose `status.observedGeneration` equals its `metadata.generation` SHALL keep its verdict: `status.accepted`, `status.active`, the `Active` condition and a `Ready` condition that reports the acceptance SHALL stay as they were. A `Ready` condition that is not `True` reports no verdict (an earlier reconcile deferred it, as the first reconcile after an operator restart does); it SHALL become `Unknown` with reason `CatalogUnresolved`, so it names the current cause. A transient registry failure is the one the library classifies as transient (the registry gave no HTTP response, or it answered with a 5xx status), or a 429 answer, which the operator reads from the status of the library's typed fetch failure. The operator SHALL NOT classify by message text.
 
 The operator SHALL report the failure without changing the verdict: the claim SHALL carry `Reconciling=True` with reason `CatalogUnresolved`, and the operator SHALL emit one Warning event that carries the registry error when the claim enters this state. The condition message SHALL NOT change between attempts, so repeated attempts write no status and emit no further event.
 
@@ -267,7 +267,7 @@ Every other acquisition failure SHALL refuse the claim, accepted or not: a catal
 
 A registry that uses token authentication has a token endpoint, and an answer from that endpoint SHALL count as an answer from the registry. When the acquisition of the claimed catalog fails because the token endpoint answered with an error status, the operator SHALL judge the claim by that status, as the library classifies it, and SHALL NOT treat the failure as an unreachable registry. This holds where the answer reaches the operator through a failed dependency load, which carries no typed status. The operator SHALL NOT classify by message text itself.
 
-A refusal (401) and a 429 answer SHALL refuse the claim, accepted or not, with reason `CatalogUnresolved`. A 5xx answer from the token endpoint is a transient registry failure: an accepted claim SHALL keep its verdict through it.
+A refusal (401) SHALL refuse the claim, accepted or not, with reason `CatalogUnresolved`. A 5xx answer from the token endpoint is a transient registry failure: an accepted claim SHALL keep its verdict through it. A 429 answer (a rate limit) SHALL keep an accepted claim's verdict in the same way, with the same report and the same backoff: a rate limit passes with nothing changed and says nothing about the claim. The operator SHALL tell a 429 by the status of the library's typed fetch failure. That status does not say whether the registry or its token endpoint answered, so a 429 from either holds the claim.
 
 #### Scenario: A refused token during a dependency load un-accepts
 
@@ -275,10 +275,11 @@ A refusal (401) and a 429 answer SHALL refuse the claim, accepted or not, with r
 - **THEN** the failure is a typed fetch failure of kind unauthorized with status 401, and it is not transient
 - **AND** the claim is refused with reason `CatalogUnresolved` and `status.accepted` is false
 
-#### Scenario: A rate-limited token endpoint un-accepts
+#### Scenario: A rate-limited token endpoint holds the claim
 
 - **WHEN** the same acquisition fails because the token endpoint answers 429
-- **THEN** the failure is a typed fetch failure with status 429, it is not transient, and the claim is refused
+- **THEN** the failure is a typed fetch failure with status 429, which the library does not class as transient
+- **AND** an accepted claim keeps `status.accepted`, `status.active` and its `Ready` condition, reports `Reconciling=True` with reason `CatalogUnresolved`, and is retried on the backoff
 
 #### Scenario: A token endpoint that is down holds the claim
 

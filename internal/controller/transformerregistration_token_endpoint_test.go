@@ -39,9 +39,9 @@ import (
 // tokenRegistry starts a registry that uses token authentication, as GHCR
 // does: it answers every registry request 401 with a Bearer challenge that
 // names its own /token endpoint, and that endpoint answers every request
-// with tokenStatus. It returns the CUE_REGISTRY mapping.
-func tokenRegistry(t *testing.T, tokenStatus int) string {
-	t.Helper()
+// with tokenStatus. It returns the CUE_REGISTRY mapping and the function that
+// stops the server.
+func tokenRegistry(tokenStatus int) (string, func()) {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/token" {
@@ -53,8 +53,7 @@ func tokenRegistry(t *testing.T, tokenStatus int) string {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = fmt.Fprint(w, `{"errors":[{"code":"UNAUTHORIZED","message":"token required"}]}`)
 	}))
-	t.Cleanup(srv.Close)
-	return strings.TrimPrefix(srv.URL, "http://") + "+insecure"
+	return strings.TrimPrefix(srv.URL, "http://") + "+insecure", srv.Close
 }
 
 // dependentCatalogDir writes a catalog source tree whose module file declares
@@ -78,8 +77,9 @@ func dependentCatalogDir(t *testing.T) string {
 // catalog's dependency load. cue/load flattens the cause of a failed import
 // into text, and until library v1.0.0-beta.8 that text read as an unreachable
 // registry, so a refused token held an accepted claim as a registry outage.
-// A refusal (401) and a 429 answer are answers about the claim and must
-// un-accept; a 5xx answer is the outage the hold exists for.
+// A refusal (401) is an answer about the claim and must un-accept. A rate
+// limit (429) and a 5xx answer say nothing about the claim: they are what the
+// hold exists for. The 429 is told by the typed status, never by text.
 //
 // No test reaches a real registry, and every case starts on a cold cache.
 func TestCatalogDependencyLoadTokenEndpoint(t *testing.T) {
@@ -90,14 +90,17 @@ func TestCatalogDependencyLoadTokenEndpoint(t *testing.T) {
 		keeps  bool
 	}{
 		{name: "a refused token un-accepts", status: http.StatusUnauthorized, kind: oerrors.FetchUnauthorized},
-		{name: "a rate-limited token endpoint un-accepts", status: http.StatusTooManyRequests, kind: oerrors.FetchOther},
+		{name: "a rate-limited token endpoint holds the claim", status: http.StatusTooManyRequests, kind: oerrors.FetchOther, keeps: true},
 		{name: "a token endpoint that is down holds the claim", status: http.StatusServiceUnavailable, kind: oerrors.FetchOther, keeps: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("CUE_CACHE_DIR", t.TempDir())
 
-			_, err := kernel.New(kernel.WithRegistry(tokenRegistry(t, tc.status))).
+			registry, stop := tokenRegistry(tc.status)
+			t.Cleanup(stop)
+
+			_, err := kernel.New(kernel.WithRegistry(registry)).
 				AcquireCatalogFromDir(context.Background(), dependentCatalogDir(t))
 			require.Error(t, err)
 

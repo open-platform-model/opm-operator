@@ -425,9 +425,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 
 			// No resources applied.
 			var cm corev1.ConfigMap
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
+			expectGone(types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)
 
 			// Cleanup (no finalizer to clear).
 			Expect(k8sClient.Delete(ctx, &updated)).To(Succeed())
@@ -1704,11 +1702,9 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(result).To(Equal(reconcile.Result{}))
 
 			// Verify ConfigMap was deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Name: "test-module", Namespace: namespace,
 			}, &cm)
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
 
 			// Verify ModuleInstance is gone (finalizer removed, deletion completed).
 			Eventually(func() bool {
@@ -1853,11 +1849,9 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(result).To(Equal(reconcile.Result{}))
 
 			// ConfigMap should be deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Name: "safety-test-cm", Namespace: namespace,
 			}, &corev1.ConfigMap{})
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
 
 			// ModuleInstance should be gone (finalizer removed).
 			Eventually(func() bool {
@@ -1925,11 +1919,9 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			Expect(result).To(Equal(reconcile.Result{}))
 
 			// Verify ConfigMap was deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Name: "test-module", Namespace: namespace,
 			}, &cm)
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
 
 			// Verify ModuleInstance is gone.
 			Eventually(func() bool {

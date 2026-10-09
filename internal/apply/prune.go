@@ -7,11 +7,10 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/open-platform-model/library/opm/k8s/lifecycle"
 	"github.com/open-platform-model/library/opm/k8s/ownership"
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
@@ -58,39 +57,47 @@ type PruneOptions struct {
 // counted as deleted. Recognised by the API status, never by message text.
 var ErrReplaced = errors.New("object was replaced since it was read")
 
-// Prune deletes the stale resources the library's delete verdict
-// (opm/k8s/ownership) lets this instance delete (0012:D4:R1, 0012:D8:R8). It
-// decides ownership with no comparison of its own.
+// Prune deletes stale resources through the library's deletion plan
+// (opm/k8s/lifecycle), which judges every object with the library's delete
+// verdict (0012:D4:R1, 0012:D8:R8). It decides ownership with no comparison
+// of its own, and it deletes nothing itself: the plan runner sends each
+// delete the plan names, in the plan's order (descending kind weight), with
+// the plan's Foreground propagation and UID precondition.
 //
 // identities are the instance identities to judge with, most recent first. An
 // object counts as the instance's own when the verdict says proceed for one
-// of them: the verdict is asked with the first, and with the next one while
-// the answer is that the object belongs to, or is being adopted by, another
-// instance. An empty list asks once with no identity, which compares no UUID
-// label and leaves every object that carries an adopt annotation.
+// of them: there is one plan per identity, and the entries a plan skips as
+// another instance's, or as adopted by another instance, are asked again with
+// the next identity (RunDeletion). An empty list asks once with no identity,
+// which compares no UUID label and leaves every object that carries an adopt
+// annotation.
 //
-// For each entry, in this order:
+// For each entry:
 //
 //   - A kind OPM never deletes (a core Namespace, a CustomResourceDefinition
 //     of apiextensions.k8s.io, matched on group and kind) is left without a
 //     read.
 //   - The live object is read with c, the client that would delete it. An
 //     object that is already gone is done.
-//   - The verdict is asked. An object it skips for every identity is left in
-//     the cluster and named in PruneResult.Left with the reason and message
-//     of the first verdict. That is not an error.
+//   - An object the verdict skips for every identity is left in the cluster
+//     and named in PruneResult.Left with the reason and message of the first
+//     verdict. That is not an error.
 //   - A PersistentVolumeClaim of the core API group is deleted only when
 //     opts.DeleteData is true, because deleting a claim deletes the data on
-//     its volume. Otherwise a claim the verdict lets the instance delete is
-//     left in place and listed in PruneResult.Kept. A claim that cannot be
-//     read is kept without an error: nothing is going to be deleted, so the
-//     failed read must not fail the prune or hold a finalizer.
+//     its volume. Otherwise it never enters the plan: a claim the verdict
+//     would let the instance delete is left in place and listed in
+//     PruneResult.Kept, and a claim that cannot be read is kept without an
+//     error (ClassifyKeptClaims).
 //   - The DELETE carries a precondition on the UID of the object that was
 //     judged. A DELETE the API server refuses on it returns ErrReplaced for
 //     the entry: the object that now holds the name is not deleted.
 //
 // A failed read or DELETE fails its entry, not the run: the remaining entries
 // are still attempted and the failures are returned as one joined error.
+//
+// A delete the API server accepted counts as deleted. With Foreground
+// propagation the object can stay, terminating, until its dependents are
+// gone; Prune does not wait for that.
 //
 // The caller computes the stale set, checks spec.prune, and calls Prune only
 // after the apply succeeded. Apply protects claims in the same way on a
@@ -105,89 +112,73 @@ func Prune(
 	log := logf.FromContext(ctx)
 	result := &PruneResult{}
 
+	planned, claims := SplitKeptClaims(stale, opts.DeleteData)
+	// The caller checked spec.prune, so the plan always prunes.
+	deletion, err := RunDeletion(ctx, c, planned, identities, lifecycle.Policy{Prune: true})
+	if err != nil {
+		return result, err
+	}
+
 	var errs []error
-	for _, entry := range stale {
-		obj := ownership.Object{Group: entry.Group, Kind: entry.Kind, Namespace: entry.Namespace, Name: entry.Name}
-		if ownership.SafetyExcluded(entry.Group, entry.Kind) {
-			result.leave(ctx, entry, ownership.CanDelete(ownership.DeleteInput{Object: obj}))
-			continue
-		}
-
-		live := &unstructured.Unstructured{}
-		live.SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   entry.Group,
-			Version: entry.Version,
-			Kind:    entry.Kind,
-		})
-		getErr := c.Get(ctx, types.NamespacedName{
-			Namespace: entry.Namespace,
-			Name:      entry.Name,
-		}, live)
-		if getErr != nil {
-			if apierrors.IsNotFound(getErr) {
+	for _, step := range deletion.Results() {
+		entry := step.Entry
+		switch step.Outcome.Result {
+		case lifecycle.ResultDeleted:
+			log.Info("Pruned stale resource",
+				"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name)
+			result.Deleted++
+		case lifecycle.ResultSkipped:
+			if step.Outcome.Skip == ownership.SkipAlreadyAbsent {
 				log.V(1).Info("Stale resource already deleted",
 					"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name)
 				continue
 			}
-			if isDataClaim(entry) && !opts.DeleteData {
-				log.Info("Keeping PersistentVolumeClaim that could not be read",
-					"namespace", entry.Namespace, "name", entry.Name, "error", getErr.Error())
-				result.Kept = append(result.Kept, entry)
-				continue
-			}
-			errs = append(errs, fmt.Errorf("failed to get %s/%s %s: %w",
-				entry.Namespace, entry.Name, entry.Kind, getErr))
-			continue
+			result.leave(ctx, LeftBehind{Entry: entry, Reason: step.Outcome.Skip, Message: step.Outcome.Message})
+		case lifecycle.ResultFailed:
+			errs = append(errs, stepError(step))
 		}
+	}
 
-		verdict := judgeDelete(obj, live, identities)
-		if !verdict.Proceed() {
-			result.leave(ctx, entry, verdict)
-			continue
-		}
-
-		if isDataClaim(entry) && !opts.DeleteData {
-			log.Info("Keeping PersistentVolumeClaim and the data on it",
-				"namespace", entry.Namespace, "name", entry.Name)
-			result.Kept = append(result.Kept, entry)
-			continue
-		}
-
-		var deleteOpts []client.DeleteOption
-		pre := verdict.Preconditions()
-		if pre != nil {
-			deleteOpts = append(deleteOpts, client.Preconditions(*pre))
-		}
-		if err := c.Delete(ctx, live, deleteOpts...); err != nil {
-			if apierrors.IsNotFound(err) {
-				log.V(1).Info("Stale resource already deleted",
-					"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name)
-				continue
-			}
-			errs = append(errs, fmt.Errorf("failed to delete %s/%s %s: %w",
-				entry.Namespace, entry.Name, entry.Kind, replacedError(err, pre != nil)))
-			continue
-		}
-
-		log.Info("Pruned stale resource",
-			"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name)
-		result.Deleted++
+	kept, left := ClassifyKeptClaims(ctx, c, identities, claims)
+	result.Kept = kept
+	for _, l := range left {
+		result.leave(ctx, l)
 	}
 
 	return result, errors.Join(errs...)
 }
 
+// stepError words a failed step as the prune's error for its entry, keeping
+// the API status of the failed read or delete.
+func stepError(step StepResult) error {
+	entry := step.Entry
+	verb := "get"
+	if step.Failed == lifecycle.ActionDelete {
+		verb = "delete"
+	}
+	cause := step.Err
+	if cause == nil {
+		// A read that returned another object than the entry's has no API
+		// error: the library's message says what was read.
+		cause = errors.New(step.Outcome.Message)
+	}
+	return fmt.Errorf("failed to %s %s/%s %s: %w", verb, entry.Namespace, entry.Name, entry.Kind, cause)
+}
+
 // leave records an entry the delete verdict skipped.
-func (r *PruneResult) leave(ctx context.Context, entry releasesv1alpha1.InventoryEntry, verdict ownership.DeleteVerdict) {
+func (r *PruneResult) leave(ctx context.Context, left LeftBehind) {
+	entry := left.Entry
 	logf.FromContext(ctx).Info("Leaving resource in place on prune",
 		"kind", entry.Kind, "namespace", entry.Namespace, "name", entry.Name,
-		"reason", string(verdict.Skip), "message", verdict.Message)
-	r.Left = append(r.Left, LeftBehind{Entry: entry, Reason: verdict.Skip, Message: verdict.Message})
+		"reason", string(left.Reason), "message", left.Message)
+	r.Left = append(r.Left, left)
 	r.Skipped = len(r.Left)
 }
 
 // judgeDelete asks the library's delete verdict for one live object with each
-// identity in turn, and returns the first verdict that says proceed. It asks
+// identity in turn, and returns the first verdict that says proceed. It is
+// for the report on a kept claim only: no delete follows its answer, since
+// every delete is judged inside the deletion plan. It asks
 // with the next identity only while the answer is that the object is another
 // instance's or adopted by another instance, the two answers that depend on
 // the identity. When no identity lets the delete proceed it returns the first

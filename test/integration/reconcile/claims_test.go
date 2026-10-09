@@ -294,6 +294,13 @@ func inventoryNames(inv *releasesv1alpha1.Inventory) []string {
 	return names
 }
 
+// expectConfigMapGone waits until the ConfigMap is gone: a delete with
+// Foreground propagation ends when the collector helper has run.
+func expectConfigMapGone(name string, description ...any) {
+	GinkgoHelper()
+	expectGone(types.NamespacedName{Name: name, Namespace: namespace}, &corev1.ConfigMap{}, description...)
+}
+
 func expectInstanceGone(nn types.NamespacedName) {
 	GinkgoHelper()
 	err := k8sClient.Get(ctx, nn, &releasesv1alpha1.ModuleInstance{})
@@ -332,7 +339,7 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 		Expect(reconcileInstance(params, nn)).To(Succeed())
 
 		expectClaimUntouched("cpk-data")
-		Expect(configMapExists("cpk-b")).To(BeFalse(), "a stale ConfigMap is pruned as before")
+		expectConfigMapGone("cpk-b", "a stale ConfigMap is pruned as before")
 		Expect(configMapExists("cpk-a")).To(BeTrue())
 
 		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
@@ -534,7 +541,7 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 		Expect(reconcileInstance(params, nn)).To(Succeed())
 
 		expectInstanceGone(nn)
-		Expect(configMapExists("cdk-a")).To(BeFalse())
+		expectConfigMapGone("cdk-a")
 		expectClaimUntouched("cdk-config")
 		expectClaimUntouched("cdk-cache")
 
@@ -581,7 +588,7 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 
 		expectInstanceGone(nn)
 		expectClaimDeleted("cdd-data")
-		Expect(configMapExists("cdd-a")).To(BeFalse())
+		expectConfigMapGone("cdd-a")
 		Expect(rec.withReason(status.ClaimsKeptReason)).To(BeEmpty())
 	})
 
@@ -652,7 +659,7 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 		Expect(result.RequeueAfter).To(BeNumerically("<=", 5*time.Minute))
 
 		expectSameClaim(before)
-		Expect(configMapExists("cfk-b")).To(BeFalse(), "no object of the refused render may be applied")
+		expectConfigMapGone("cfk-b", "no object of the refused render may be applied")
 
 		var mi releasesv1alpha1.ModuleInstance
 		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
@@ -855,7 +862,7 @@ var _ = Describe("PersistentVolumeClaims of a ModulePackage", func() {
 		reconcilePackage(nn, renderOf([]string{"ppk-a"}, nil))
 
 		expectClaimUntouched("ppk-data")
-		Expect(configMapExists("ppk-b")).To(BeFalse())
+		expectConfigMapGone("ppk-b")
 		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())
 		Expect(inventoryNames(pkg.Status.Inventory)).To(ConsistOf("ConfigMap/ppk-a"))
 		ready := apimeta.FindStatusCondition(pkg.Status.Conditions, status.ReadyCondition)
@@ -898,7 +905,7 @@ var _ = Describe("PersistentVolumeClaims of a ModulePackage", func() {
 		reconcilePackage(nn, renderOf(nil, nil))
 
 		expectPackageGone(nn)
-		Expect(configMapExists("pdk-a")).To(BeFalse())
+		expectConfigMapGone("pdk-a")
 		expectClaimUntouched("pdk-data")
 		kept := rec.withReason(status.ClaimsKeptReason)
 		Expect(kept).To(HaveLen(1))
@@ -953,7 +960,7 @@ var _ = Describe("PersistentVolumeClaims of a ModulePackage", func() {
 		Expect(result.RequeueAfter).To(BeNumerically(">", 0), "the conflict is retried on the backoff")
 
 		expectSameClaim(before)
-		Expect(configMapExists("pfk-b")).To(BeFalse(), "no object of the refused render may be applied")
+		expectConfigMapGone("pfk-b", "no object of the refused render may be applied")
 		var pkg releasesv1alpha1.ModulePackage
 		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())
 		expectClaimConflict(pkg.Status.Conditions, rec, "pfk-data")

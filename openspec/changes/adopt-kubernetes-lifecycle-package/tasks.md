@@ -21,10 +21,10 @@ No task uses a cluster. The envtest suites are `internal/controller`, `test/inte
 
 ## 3. Internal packages and controller: stale prune on the plan
 
-- [ ] 3.1 Rewrite `apply.Prune` as a caller of the runner with `lifecycle.Policy{Prune: true}`, keeping its signature, `PruneResult`, `LeftBehind`, the joined error and the log lines. Remove `judgeDelete` from the delete path. The two deletion handlers still call `Prune` in this section, so their deletes become Foreground too. Verify: `internal/apply/prune_test.go`, `prune_claims_test.go`, `internal/reconcile/prune_outcome_test.go` and `left_behind_test.go` pass with no change other than expected request order and propagation; `test/integration/apply` and `test/integration/reconcile` pass with the collector helper running
-- [ ] 3.2 Update `TestDeleteCallSitesAreClosed` (`internal/apply/callsites_test.go`): allowed sites are `internal/apply/deletion.go` (1) and `internal/apply/claims.go` (2). Verify: the test fails when a `Delete` is added to `prune.go`
-- [ ] 3.3 Specs in `test/integration/reconcile` for both kinds: a stale Deployment is deleted with Foreground, the reconcile ends `Ready=True` while the Deployment still terminates (helper paused), and the inventory no longer lists it. Verify: the specs pass
-- [ ] 3.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(apply)!: prune stale resources through the library deletion plan`. End of launch one: boxes ticked, tree clean, gates green, branch not mergeable
+- [x] 3.1 Rewrite `apply.Prune` as a caller of the runner with `lifecycle.Policy{Prune: true}`, keeping its signature, `PruneResult`, `LeftBehind`, the joined error and the log lines. Remove `judgeDelete` from the delete path. The two deletion handlers still call `Prune` in this section, so their deletes become Foreground too. Verify: `internal/apply/prune_test.go`, `prune_claims_test.go`, `internal/reconcile/prune_outcome_test.go` and `left_behind_test.go` pass with no change other than expected request order and propagation; `test/integration/apply` and `test/integration/reconcile` pass with the collector helper running
+- [x] 3.2 Update `TestDeleteCallSitesAreClosed` (`internal/apply/callsites_test.go`): allowed sites are `internal/apply/deletion.go` (1) and `internal/apply/claims.go` (2). Verify: the test fails when a `Delete` is added to `prune.go`
+- [x] 3.3 Specs in `test/integration/reconcile` for both kinds: a stale Deployment is deleted with Foreground, the reconcile ends `Ready=True` while the Deployment still terminates (helper paused), and the inventory no longer lists it. Verify: the specs pass
+- [x] 3.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(apply)!: prune stale resources through the library deletion plan`. End of launch one: boxes ticked, tree clean, gates green, branch not mergeable
 
 ## 4. Controller: deletion cleanup on the plan and the hold verdict
 

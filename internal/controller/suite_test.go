@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -101,6 +102,17 @@ var _ = BeforeSuite(func() {
 	gc, err = collector.Start(cfg)
 	Expect(err).NotTo(HaveOccurred())
 })
+
+// expectGone waits until key no longer exists. A prune and a deletion cleanup
+// delete with Foreground propagation, so the object is gone only once the
+// collector helper has removed the foregroundDeletion finalizer, as the
+// garbage collector does in a cluster.
+func expectGone(key client.ObjectKey, obj client.Object) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		return apierrors.IsNotFound(k8sClient.Get(ctx, key, obj))
+	}, 10*time.Second, 20*time.Millisecond).Should(BeTrue())
+}
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")

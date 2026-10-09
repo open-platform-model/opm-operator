@@ -233,18 +233,16 @@ func deletesClusterObjects(selection *types.Selection, writer *types.Interface, 
 }
 
 // The list of places that may delete a cluster object is closed: the deletion
-// plan runner, which deletes only what the library's plan names, the prune,
-// which asks the library's delete verdict first, and the resource manager's
-// delete guard. A delete anywhere else would go out without a verdict or a
-// precondition (0012:D4:R1).
+// plan runner, which deletes only what the library's plan names, and the
+// resource manager's delete guard. A delete anywhere else would go out
+// without a verdict or a precondition (0012:D4:R1).
 func TestDeleteCallSitesAreClosed(t *testing.T) {
-	// The number of deletes each file may hold: the runner's one DELETE, the
-	// prune's one, and the guard's two (with and without a UID
-	// precondition). A further delete in a listed file needs its own verdict
-	// or precondition, and this count changed with it.
+	// The number of deletes each file may hold: the runner's one DELETE, and
+	// the guard's two (with and without a UID precondition). A further
+	// delete in a listed file needs its own verdict or precondition, and
+	// this count changed with it.
 	allowed := map[string]int{
 		"internal/apply/deletion.go": 1,
-		"internal/apply/prune.go":    1,
 		"internal/apply/claims.go":   2,
 	}
 	calls := findDeleteCalls(t, "./internal/...", "./cmd/...")

@@ -25,6 +25,11 @@ import (
 // one a user reads; on the ModulePackage path the kernel's refusal is the
 // only one.
 //
+// Since library v1.0.0-beta.8 the kernel names every unset required value as
+// values.<field>, a value a component reads included. That changes the
+// ModulePackage message for such a value, and it makes the kernel's report
+// name the same values as the renderer's check.
+//
 // Both build a module in a temporary directory, so they need opmodel.dev/core
 // and the opm catalog from CUE_REGISTRY (GHCR under `task dev:test`).
 
@@ -270,7 +275,10 @@ func TestKernelModuleRenderer_EveryUnsetRequiredValueIsNamed(t *testing.T) {
 			_, err := r.synthesizeFrom(context.Background(), mod, "needy", "default", rawValues(tc.values))
 			require.Error(t, err)
 			assert.Equal(t, prefix+findings("#config.", tc.unset...), err.Error())
-			assert.Less(t, len(err.Error()), eventNoteLimit, "the message is the event note")
+			// The message is the event note, which nothing cuts. Its length
+			// is measured without the temporary directory, which is as long
+			// as the machine makes it.
+			assert.Less(t, len(strings.ReplaceAll(err.Error(), dir, "")), eventNoteLimit)
 			assert.NotErrorIs(t, err, ErrAcquire)
 
 			// What the kernel says for the same values without that check.
@@ -294,4 +302,64 @@ func TestKernelModuleRenderer_EveryUnsetRequiredValueIsNamed(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, inst)
 	})
+}
+
+// readingInstancePackage is needyInstancePackage with a module whose two
+// required #config values have no default: greeting, which the component
+// reads, and note, which nothing reads.
+func readingInstancePackage(t *testing.T, valuesCUE string) string {
+	t.Helper()
+	dir := needyInstancePackage(t, valuesCUE)
+	file := filepath.Join(dir, "instance.cue")
+	pkg, err := os.ReadFile(file)
+	require.NoError(t, err)
+	edited := strings.NewReplacer(
+		"message: string | *\"hello\"", "greeting: string",
+		"data: message: #config.message", "data: message: #config.greeting",
+	).Replace(string(pkg))
+	require.NotEqual(t, string(pkg), edited, "the package template changed under this helper")
+	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
+	return dir
+}
+
+// A ModulePackage that leaves unset a required #config value a component
+// reads is told the value's name. Until library v1.0.0-beta.8 the kernel
+// named the place that read it instead (components.hello.spec.configMaps.
+// hello.data.message), and did not name a second unset value at all. The
+// package path has no check of its own, so the kernel's text is the condition
+// message and the event note: it names the first unset value and counts the
+// rest.
+func TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue(t *testing.T) {
+	registry := requiredValueRegistry(t)
+	r := &KernelPackageRenderer{
+		Kernel:      kernel.New(kernel.WithRegistry(registry)),
+		Store:       platformstore.NewStore(),
+		RuntimeName: "opm-controller",
+	}
+	const frame = `loading package: Kernel.AcquireInstanceFromDir: instance "needy": not fully concrete: `
+
+	cases := []struct {
+		name   string
+		values string
+		want   string
+	}{
+		{name: "only the read value unset", values: `note: "set"`,
+			want: frame + `values.greeting: incomplete value string`},
+		{name: "both unset", values: `{}`,
+			want: frame + `values.greeting: incomplete value string (and 1 more errors)`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, result, err := r.Render(context.Background(), readingInstancePackage(t, tc.values))
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Equal(t, tc.want, err.Error())
+			assert.ErrorIs(t, err, ErrAcquire)
+			_, isFetch := errors.AsType[*oerrors.FetchError](err)
+			assert.False(t, isFetch, "an unset value must not retry as a registry fetch failure")
+		})
+	}
+
+	_, _, err := r.Render(context.Background(), readingInstancePackage(t, `{greeting: "hi", note: "set"}`))
+	assert.ErrorIs(t, err, ErrPlatformNotReady)
 }

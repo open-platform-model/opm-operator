@@ -13,3 +13,9 @@
 - [x] 2.3 Add to `internal/render/required_values_test.go` a test with three unset required values (one nested, one read by a component): the ModuleInstance message names all three as `#config.<field>` in one exact string under 1024 characters, setting one value removes only its finding, and the kernel's synthesis alone names the same fields at the same positions as `values.<field>`; verify it passes with `CUE_REGISTRY` set to the GHCR mapping
 - [x] 2.4 Name the token endpoint in the `CatalogUnresolved` row of `docs/site/diagnostics/operator-conditions.md`, move the library version in the comment of `internal/render/fetch_classification_test.go` to beta.8, and search `test/e2e` and `test/integration` for assertions the bump makes stale; verify `task docs:bundle:check` passes
 - [x] 2.5 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `test: pin what library v1.0.0-beta.8 changes for the operator`
+
+## 3. Pin the ModulePackage message (review)
+
+- [x] 3.1 Add `TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue` to `internal/render/required_values_test.go`: a package that leaves unset a required value a component reads is refused with the exact `values.<field>` message, with the count of further unset values, under `ErrAcquire`; verify it passes on beta.8 and fails on beta.7
+- [x] 3.2 Correct the header comment of `required_values_test.go`, make the event-note assertion independent of the temporary directory's length, and add the `modulepackage-kernel-rendering` delta; verify `openspec validate adopt-library-beta8 --strict` passes
+- [x] 3.3 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `test(render): pin the package message for an unset value a component reads`

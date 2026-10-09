@@ -42,7 +42,7 @@ Both cleanups and both stale prunes run on the library plan. The forced recreate
 | Finalizer released, today | When `apply.Prune` returns no error | n/a |
 | Finalizer released, after | When `MayReleaseHold` releases and every object this cleanup deleted is gone | n/a |
 | Objects still terminating, today | Not observed; the instance is gone | Not observed |
-| Objects still terminating, after | The reconcile ends, `Ready=False`/`Reconciling=True` with reason `DeletionInProgress`, requeue after 5 s to 60 s (a quarter of the age of the oldest terminating object). It never blocks in process | Not observed and not waited for: the entry leaves the inventory as today |
+| Objects still terminating, after | The reconcile ends, `Ready=False`/`Reconciling=True` with reason `DeletionInProgress`, requeue after 1 s to 60 s (a quarter of the age of the oldest terminating object). It never blocks in process | Not observed and not waited for: the entry leaves the inventory as today |
 | Stuck object, today | Not visible: reported as pruned, instance gone | Not visible |
 | Stuck object, after | After 10 minutes: `Ready=False`/`Stalled=True`, reason `DeletionBlocked`, message names each object and its finalizers; one Warning event; recheck every minute | Not visible (unchanged; see Risks in design.md) |
 
@@ -58,7 +58,8 @@ The hold verdict maps onto the statuses that exist today; no reason is renamed:
 | `cleanup-incomplete` | Error, finalizer kept, retry with backoff, as today |
 | `inventory-empty` because only kept claims are left, identity missing or failed | **New**: finalizer removed without a read, `DeletionUnconfirmed` event. Today: stalled `DeletionSAMissing` (`moduleinstance.go:1399`, `:1410-1415`) |
 | `cleanup-complete` | Record it (`Ready` reason `DeletionInProgress`), wait for the deleted objects to be gone, then remove the finalizer |
-| `identity-unavailable` or `cleanup-forbidden` at a recheck, after `cleanup-complete` was recorded | **New**: finalizer removed, `DeletionUnconfirmed` event (owner decision of 2026-10-09) |
+| At a recheck, after `cleanup-complete` was recorded: the ServiceAccount is NotFound, or reads as it are refused as Forbidden or Unauthorized | **New**: finalizer removed, `DeletionUnconfirmed` event (owner decision of 2026-10-09) |
+| At a recheck, after `cleanup-complete` was recorded: any other failure (a 5xx, a timeout, a throttle, a connection error) | Transient: finalizer and wait reason kept, retried with backoff (supervisor ruling of 2026-10-09 after the self-review) |
 
 ### 3. What is kept from recent operator work
 
@@ -81,7 +82,7 @@ The plan's order is the library's: descending kind weight, stable among equal we
 
 There is no timeout that gives up. The operator never removes the finalizer while an object it deleted, and can still read, exists.
 
-- Up to 10 minutes: reason `DeletionInProgress`. The recheck interval is a quarter of the age of the oldest terminating object, at least 5 s and at most 60 s.
+- Up to 10 minutes: reason `DeletionInProgress`. The recheck interval is a quarter of the age of the oldest terminating object, at least 1 s and at most 60 s.
 - After 10 minutes (measured from the `deletionTimestamp` of the oldest remaining object, by the controller's clock): reason `DeletionBlocked`, `Stalled=True`, a Warning event, recheck every 60 s. The message names each remaining object and the finalizer that holds it, for example `Deployment/media/jellyfin (waits for its dependents)` or `ConfigMap/media/x (finalizers: example.com/hold)`.
 - Ways out, written as visible text on `docs/site/operating/delete-an-instance-safely.md` (tasks.md 6.1 carries the text): (1) remove what holds the named object; (2) set `spec.prune` to false on the deleting object: the next reconcile releases the finalizer and leaves the objects as they are. The annotation `opm.dev/force-delete-orphan` keeps its one meaning (missing ServiceAccount) and does not lift this wait.
 - The ServiceAccount or its rights disappear during the wait: the operator releases the finalizer and emits `DeletionUnconfirmed`. It does not stall (owner decision of 2026-10-09). Before every delete was sent, a lost identity still stalls with `DeletionSAMissing` or `ImpersonationFailed`, as today.

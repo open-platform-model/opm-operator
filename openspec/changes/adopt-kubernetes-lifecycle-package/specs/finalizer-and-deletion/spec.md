@@ -73,7 +73,7 @@ One outcome differs from the behaviour before this requirement. When the invento
 ### Requirement: The finalizer is kept until the deleted objects are gone
 After a release verdict, the controller MUST remove the cleanup finalizer only when every object this cleanup deleted no longer exists: its read returns NotFound, or another object (a different UID) holds its name. A kept PersistentVolumeClaim, an object left behind and an object that was already absent MUST NOT be waited for. Source: owner decision of 2026-10-09 (the finalizer waits until the deleted objects are gone).
 
-While at least one deleted object still exists, the reconcile MUST end without removing the finalizer, MUST set `Ready=False` and `Reconciling=True` with reason `DeletionInProgress`, and MUST request a requeue after an interval of at least 5 seconds and at most 60 seconds. It MUST NOT wait inside the reconcile. Each such reconcile MUST judge every inventory entry again from the cluster and MUST NOT rely on a stored list of what was deleted.
+While at least one deleted object still exists, the reconcile MUST end without removing the finalizer, MUST set `Ready=False` and `Reconciling=True` with reason `DeletionInProgress`, and MUST request a requeue after an interval of at least 1 second and at most 60 seconds. It MUST NOT wait inside the reconcile. Each such reconcile MUST judge every inventory entry again from the cluster and MUST NOT rely on a stored list of what was deleted.
 
 Setting `spec.prune` to false on the deleting object MUST release the finalizer at the next reconcile, whatever is still terminating.
 
@@ -88,10 +88,15 @@ Setting `spec.prune` to false on the deleting object MUST release the finalizer 
 - **WHEN** the controller reconciles the instance
 - **THEN** the finalizer is removed and the ModuleInstance deletion completes
 
-#### Scenario: Nothing terminating releases in the same reconcile
-- **GIVEN** a ModuleInstance being deleted whose inventory holds one ConfigMap, which is gone as soon as its delete is accepted
+#### Scenario: Nothing left at the check releases in the same reconcile
+- **GIVEN** a ModuleInstance being deleted whose one deleted ConfigMap no longer exists when the cleanup reads it again in the same reconcile
 - **WHEN** the controller reconciles the instance
 - **THEN** the finalizer is removed in that reconcile and `DeletionInProgress` is never set
+
+#### Scenario: An object the garbage collector has not removed yet is waited for
+- **GIVEN** a ModuleInstance being deleted whose one ConfigMap was deleted with Foreground propagation and still carries the `foregroundDeletion` finalizer when the cleanup reads it again
+- **WHEN** the controller reconciles the instance
+- **THEN** the finalizer stays, `Ready` is False with reason `DeletionInProgress`, and the reconcile asks for a requeue after 1 second
 
 #### Scenario: A name taken by a new object does not hold the finalizer
 - **GIVEN** a deleted ConfigMap whose name is held by a new object with another UID
@@ -106,13 +111,13 @@ Setting `spec.prune` to false on the deleting object MUST release the finalizer 
 ### Requirement: A wait survives the loss of the deleting identity
 A deletion cleanup has sent every delete when one reconcile of it ended with a release verdict for every plan: each plan step ended as deleted (the API server accepted its DELETE) or as skipped, and no step failed. That reconcile records the fact by setting the `Ready` reason `DeletionInProgress`, or it removes the finalizer at once when nothing is left. The reason `DeletionBlocked` carries the same fact. No other field records it. Source: owner decision of 2026-10-09 (when the ServiceAccount or its permissions disappear during the wait, release the finalizer; the `Ready` reason is the record, with no new CRD field).
 
-The controller MUST read the record only from the `Ready` condition the object carried when the reconcile started, and only on an object that has a `deletionTimestamp`. It MUST use the record for one decision: what to do when the deleting identity is missing or failed, or when a read of the cleanup is refused as Forbidden. While the identity is available and every read succeeds, the record MUST NOT change any outcome.
+The controller MUST read the record only from the `Ready` condition the object carried when the reconcile started, and only on an object that has a `deletionTimestamp`. It MUST use the record for one decision: what to do when the deleting identity is gone. The identity is gone when the ServiceAccount does not exist (the API server answers NotFound), or when a read or a repeated delete the cleanup sends as that ServiceAccount is refused as Forbidden or Unauthorized. The controller MUST decide this from the typed API error and MUST NOT read message text. While the identity is available and every read succeeds, the record MUST NOT change any outcome.
 
 With the record present:
 
-- When the deleting identity is missing or failed, the controller MUST remove the finalizer without a read or a delete, and MUST emit one `Warning` event with reason `DeletionUnconfirmed` and action `Delete` that states how many inventory objects it could not confirm as gone.
-- When the identity is available and reads are refused as Forbidden, each entry whose read was refused counts as not confirmed and MUST NOT hold the finalizer. An object that was read and still exists MUST keep the wait, also when its repeated DELETE is refused as Forbidden. When no readable deleted object is left, the controller MUST remove the finalizer and emit the same event.
-- Any other failure MUST keep the finalizer and be retried, as without the record.
+- When the ServiceAccount does not exist, the controller MUST remove the finalizer without a read or a delete, and MUST emit one `Warning` event with reason `DeletionUnconfirmed` and action `Delete` that states how many inventory objects it could not confirm as gone.
+- When the identity is available and reads are refused as Forbidden or Unauthorized, each entry whose read was refused counts as not confirmed and MUST NOT hold the finalizer. An object that was read and still exists MUST keep the wait, also when its repeated DELETE is refused as Forbidden or Unauthorized. When no readable deleted object is left, the controller MUST remove the finalizer and emit the same event.
+- Any other failure is transient and says nothing about the identity: a ServiceAccount that could not be looked up (a server error, a timeout, a throttle, a connection error, a cancelled context, a refusal of the controller's own read), and a read or a delete of the cleanup that failed for such a cause. The controller MUST keep the finalizer, MUST retry with its normal backoff, MUST NOT replace the wait reason with a stall reason (the wait reason is the record), and for a ServiceAccount that could not be looked up MUST say in the `Ready` message that the check failed. A DELETE refused as Forbidden of an object that is not being deleted MUST hold the finalizer as without the record.
 
 Without the record, a missing or failed identity and a Forbidden step MUST hold the finalizer with `DeletionSAMissing` or `ImpersonationFailed`, however many deletes an earlier, failed reconcile already sent.
 
@@ -135,6 +140,12 @@ The controller MUST NOT set the reasons `DeletionInProgress` and `DeletionBlocke
 - **GIVEN** a ModuleInstance being deleted whose `Ready` condition carries the reason `DeletionBlocked`
 - **WHEN** its ServiceAccount is deleted and the controller reconciles the instance
 - **THEN** the finalizer is removed
+
+#### Scenario: A failed lookup of the ServiceAccount during the wait keeps the finalizer
+- **GIVEN** a ModuleInstance being deleted with reason `DeletionBlocked`, whose ServiceAccount exists
+- **WHEN** the controller's read of the ServiceAccount fails with a server error or a timeout
+- **THEN** the finalizer stays, `Ready` keeps the reason `DeletionBlocked` and says that the check failed, and the reconcile is retried
+- **AND** no event with reason `DeletionUnconfirmed` is emitted
 
 #### Scenario: Identity lost before every delete was sent
 - **GIVEN** a ModuleInstance being deleted whose first cleanup reconcile deleted one ConfigMap and failed on a second, so that `Ready` carries no deletion wait reason

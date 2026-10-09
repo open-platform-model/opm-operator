@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -565,14 +566,29 @@ func verdictStands(claim *releasesv1alpha1.TransformerRegistration) bool {
 
 // keepsVerdict reports whether a catalog acquisition failure leaves an
 // accepted claim's verdict standing: the library's transient registry failure
-// (oerrors.ErrTransient: no HTTP response, or a 5xx answer) with no typed
-// terminal cause in the chain. It is narrower than
-// opmreconcile.IsTransientFailure on purpose. That one is true for every
+// (oerrors.ErrTransient: no HTTP response, or a 5xx answer) or a rate limit
+// (a 429 answer), with no typed terminal cause in the chain. It is narrower
+// than opmreconcile.IsTransientFailure on purpose. That one is true for every
 // typed fetch failure, and a catalog the registry no longer holds or a
 // refused credential is an answer about the claim, so it still un-accepts.
+//
+// The library does not count a 429 as ErrTransient, so the status is read
+// here. A rate limit passes with nothing changed and says nothing about the
+// claim; a registry that uses token authentication (GHCR) answers it from
+// its token endpoint, and un-accepting on it would take the provider's
+// catalog out of the platform for a blip. The typed status does not say
+// whether the registry or its token endpoint answered, so both hold.
+//
 // It reads types only, never message text.
 func keepsVerdict(err error) bool {
-	return opmreconcile.IsTransientFailure(err) && errors.Is(err, oerrors.ErrTransient)
+	if !opmreconcile.IsTransientFailure(err) {
+		return false
+	}
+	if errors.Is(err, oerrors.ErrTransient) {
+		return true
+	}
+	fe, ok := errors.AsType[*oerrors.FetchError](err)
+	return ok && fe.Status == http.StatusTooManyRequests
 }
 
 // holdJitter is the fraction of the backoff added at random, so claims held

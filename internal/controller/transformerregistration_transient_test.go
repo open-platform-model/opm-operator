@@ -171,6 +171,21 @@ var _ = Describe("TransformerRegistration acceptance: a transient registry failu
 			expectVerdictKept(before, after)
 		})
 
+		It("keeps its verdict when the registry answers 429", func() {
+			ctx := context.Background()
+			ns := nextClaimNamespace()
+			before := activatedClaim(ctx, ns, claimContract(ns))
+
+			result, after, _ := rejudge(ctx, &stubCatalogs{err: fmt.Errorf("fetching catalog: %w", &oerrors.FetchError{
+				Kind:   oerrors.FetchOther,
+				Status: http.StatusTooManyRequests,
+				Err:    errors.New("429 Too Many Requests"),
+			})}, before.Name)
+
+			expectVerdictKept(before, after)
+			Expect(result.RequeueAfter).To(BeNumerically("<", 2*opmreconcile.BackoffBaseDelay))
+		})
+
 		It("writes no status and no second event on a repeated attempt", func() {
 			ctx := context.Background()
 			ns := nextClaimNamespace()
@@ -245,8 +260,6 @@ var _ = Describe("TransformerRegistration acceptance: a transient registry failu
 				&oerrors.FetchError{Kind: oerrors.FetchNotFound, Err: errors.New("module not found")}),
 			Entry("the registry refuses the credentials",
 				&oerrors.FetchError{Kind: oerrors.FetchUnauthorized, Status: http.StatusUnauthorized, Err: errors.New("401")}),
-			Entry("the registry answers 429",
-				&oerrors.FetchError{Kind: oerrors.FetchOther, Status: http.StatusTooManyRequests, Err: errors.New("429")}),
 			Entry("the library did not classify the failure",
 				errors.New("registry unreachable, said in words only")),
 			Entry("a terminal cause is joined to an unreachable registry",
@@ -378,6 +391,30 @@ var _ = Describe("TransformerRegistration acceptance: a transient registry failu
 
 			expectRefused(result, after)
 		})
+
+		// A registry that uses token authentication, as GHCR does: the
+		// answer comes from its token endpoint.
+		DescribeTable("judges an accepted, active claim by the token endpoint's answer",
+			func(tokenStatus int, kept bool) {
+				ctx := context.Background()
+				ns := nextClaimNamespace()
+				before := activatedClaim(ctx, ns, claimContract(ns))
+				useColdCUECache()
+				registry, stop := tokenRegistry(tokenStatus)
+				DeferCleanup(stop)
+
+				result, after, _ := rejudge(ctx, kernel.New(kernel.WithRegistry(registry)), before.Name)
+
+				if kept {
+					expectVerdictKept(before, after)
+					return
+				}
+				expectRefused(result, after)
+			},
+			Entry("a refused token (401) un-accepts", http.StatusUnauthorized, false),
+			Entry("a rate limit (429) holds", http.StatusTooManyRequests, true),
+			Entry("a token endpoint that is down (503) holds", http.StatusServiceUnavailable, true),
+		)
 	})
 })
 

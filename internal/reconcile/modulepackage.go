@@ -252,6 +252,9 @@ func ReconcileModulePackage(
 			recordInputs(&pkg.Status.LastAppliedInputs, renderedInputs, now)
 
 			pkg.Status.Inventory = nextInventory(pkg.Status.Inventory, newEntries)
+			// The apply and the prune succeeded: no object of the earlier
+			// identity is left to judge. The only place that clears it.
+			pkg.Status.PreviousInstanceUUID = ""
 			digests.Inventory = pkg.Status.Inventory.Digest
 
 			status.RecordModulePackageHistory(&pkg.Status, status.NewSuccessEntry(reconcileAction, "complete", digests, int64(len(newEntries))))
@@ -338,23 +341,38 @@ func ReconcileModulePackage(
 	key := renderedKey(digests.Source, digests.Config, converted.result, params.OperatorVersion, params.LibraryVersion)
 	renderedInputs = &key
 
+	// Decide what this render's identity means for the recorded ones, as a
+	// ModuleInstance does. A third identity while an earlier change is not
+	// settled is refused before anything is applied or pruned.
+	renderedUUID := extractInstanceUUID(converted.resources)
+	identities := planIdentities(pkg.Status.InstanceUUID, pkg.Status.PreviousInstanceUUID, renderedUUID, true)
+	if identities.Refused {
+		already := readyAlreadyStalledWith(conditionsAtStart, status.IdentityChangeUnsettledReason)
+		msg := refuseIdentityChange(params.EventRecorder, &pkg, already,
+			pkg.Status.InstanceUUID, pkg.Status.PreviousInstanceUUID, renderedUUID)
+		applyFail(&phaseFail{FailedStalled, msg, StalledRecheckInterval})
+		return ctrl.Result{RequeueAfter: retryAfter}, nil
+	}
+
 	lastApplied := status.DigestSet{
 		Source:    pkg.Status.LastAppliedSourceDigest,
 		Config:    pkg.Status.LastAppliedConfigDigest,
 		Render:    pkg.Status.LastAppliedRenderDigest,
 		Inventory: inventoryDigestModulePackage(pkg.Status.Inventory),
 	}
-	if status.IsNoOp(digests, lastApplied) {
+	// An identity change that is not settled is never a NoOp.
+	if identities.keepsNoOp(status.IsNoOp(digests, lastApplied)) {
 		log.Info("No changes detected, skipping apply")
 		params.EventRecorder.Eventf(&pkg, nil, corev1.EventTypeNormal, status.NoOpReason, "Reconcile", "No changes detected")
 		outcome = NoOp
+		identities.fillEmpty(&pkg.Status.InstanceUUID)
 		// Judged before the deferred NoOp commit, which patches it.
 		v := judgePackageHealth(ctx, params, &pkg, inventoryEntries(pkg.Status.Inventory))
 		applyHealth(&pkg, v)
 		return ctrl.Result{RequeueAfter: packageRequeue(healthRequeue(v, pkg.Status.LastAppliedAt, time.Now()), interval)}, nil
 	}
 
-	applyedResult, fail := applyAndPruneModulePackage(ctx, params, &pkg, converted, &phases)
+	applyedResult, fail := applyAndPruneModulePackage(ctx, params, patcher, &pkg, converted, identities, &phases)
 	if fail != nil {
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -708,8 +726,10 @@ type applyPruneResult struct {
 func applyAndPruneModulePackage(
 	ctx context.Context,
 	params *ModulePackageParams,
+	patcher *patch.SerialPatcher,
 	pkg *releasesv1alpha1.ModulePackage,
 	converted *convertedRender,
+	identities identityPlan,
 	phases *phaseOutcomes,
 ) (*applyPruneResult, *phaseFail) {
 	log := logf.FromContext(ctx)
@@ -728,6 +748,14 @@ func applyAndPruneModulePackage(
 	if impErr != nil {
 		status.MarkStalled(pkg, status.ImpersonationFailedReason, "%s", impErr)
 		return nil, &phaseFail{FailedStalled, impErr.Error(), StalledRecheckInterval}
+	}
+
+	// A changed identity is stored before the first write of the apply: no
+	// apply without the record.
+	if err := identities.store(&pkg.Status.InstanceUUID, &pkg.Status.PreviousInstanceUUID,
+		func() error { return patchModulePackageIdentityStatus(ctx, patcher, pkg) }); err != nil {
+		status.MarkNotReady(pkg, status.ApplyFailedReason, "%s", err)
+		return nil, &phaseFail{FailedTransient, err.Error(), modulePackageBackoff(pkg)}
 	}
 
 	// Apply.
@@ -757,9 +785,7 @@ func applyAndPruneModulePackage(
 	phases.pruneRan = true
 	outcome := Applied
 	if pkg.Spec.Prune && len(staleSet) > 0 {
-		// ModulePackage does not persist an instance UUID on Status; pass empty and rely
-		// on the managed-by check in the prune guard.
-		pruneResult, pruneErr := apply.Prune(ctx, applyClient, "", staleSet,
+		pruneResult, pruneErr := apply.Prune(ctx, applyClient, identities.Prune, staleSet,
 			apply.PruneOptions{DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
 		if pruneErr != nil {
 			phases.pruneFailed = true
@@ -772,12 +798,21 @@ func applyAndPruneModulePackage(
 				"Pruned %d stale resources", pruneResult.Deleted)
 		}
 		reportKeptClaims(params.EventRecorder, pkg, "Prune", pruneResult.Kept)
+		reportLeftBehind(params.EventRecorder, pkg, "Prune", pruneResult.Left)
 		outcome = pruneOutcome(pruneResult)
 	}
 
 	sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
 	reader := appliedReader(sa, applyClient, params.APIReader, params.Client)
 	return &applyPruneResult{outcome: outcome, entries: converted.entries, healthReader: reader}, nil
+}
+
+// patchModulePackageIdentityStatus commits the two identity fields before an
+// apply, without marking the generation as observed.
+func patchModulePackageIdentityStatus(
+	ctx context.Context, patcher *patch.SerialPatcher, pkg *releasesv1alpha1.ModulePackage,
+) error {
+	return patchModulePackageDeletionStatus(ctx, patcher, pkg)
 }
 
 func modulePackageBackoff(pkg *releasesv1alpha1.ModulePackage) time.Duration {
@@ -942,7 +977,10 @@ func handleModulePackageDeletion(ctx context.Context, params *ModulePackageParam
 		deleteClient = impClient
 	}
 
-	pruneResult, err := apply.Prune(ctx, deleteClient, "", pkg.Status.Inventory.Entries,
+	// An object that carries either recorded identity is the package's own.
+	// With none recorded the verdict is asked with no identity.
+	identities := recordedIdentities(pkg.Status.InstanceUUID, pkg.Status.PreviousInstanceUUID)
+	pruneResult, err := apply.Prune(ctx, deleteClient, identities, pkg.Status.Inventory.Entries,
 		apply.PruneOptions{DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
 	if err != nil {
 		if effectiveSA != "" && isForbidden(err) {
@@ -966,6 +1004,7 @@ func handleModulePackageDeletion(ctx context.Context, params *ModulePackageParam
 	log.Info("Deletion cleanup pruned resources",
 		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped, "keptClaims", len(pruneResult.Kept))
 	reportKeptClaims(params.EventRecorder, pkg, "Delete", pruneResult.Kept)
+	reportLeftBehind(params.EventRecorder, pkg, "Delete", pruneResult.Left)
 
 	if err := removeModulePackageFinalizer(ctx, params.Client, pkg); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)

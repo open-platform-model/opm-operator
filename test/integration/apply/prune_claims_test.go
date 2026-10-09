@@ -94,7 +94,7 @@ var _ = Describe("Prune and PersistentVolumeClaims", func() {
 			claimEntry("claims-default-pvc"),
 			{Kind: "ConfigMap", Version: "v1", Namespace: "default", Name: "claims-default-cm"},
 		}
-		result, err := apply.Prune(ctx, k8sClient, testOwnerUUID, stale, apply.PruneOptions{})
+		result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Deleted).To(Equal(1))
 		Expect(result.Skipped).To(Equal(0))
@@ -108,7 +108,7 @@ var _ = Describe("Prune and PersistentVolumeClaims", func() {
 	It("deletes a claim when DeleteData is set", func() {
 		createClaim("claims-delete-pvc", ownedLabels())
 
-		result, err := apply.Prune(ctx, k8sClient, testOwnerUUID,
+		result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID},
 			[]releasesv1alpha1.InventoryEntry{claimEntry("claims-delete-pvc")}, apply.PruneOptions{DeleteData: true})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Deleted).To(Equal(1))
@@ -117,7 +117,7 @@ var _ = Describe("Prune and PersistentVolumeClaims", func() {
 	})
 
 	It("does not report a claim that is already gone as kept", func() {
-		result, err := apply.Prune(ctx, k8sClient, testOwnerUUID,
+		result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID},
 			[]releasesv1alpha1.InventoryEntry{claimEntry("claims-absent-pvc")}, apply.PruneOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Kept).To(BeEmpty())
@@ -132,7 +132,7 @@ var _ = Describe("Prune and PersistentVolumeClaims", func() {
 		})
 
 		for _, opts := range []apply.PruneOptions{{}, {DeleteData: true}} {
-			result, err := apply.Prune(ctx, k8sClient, testOwnerUUID,
+			result, err := apply.Prune(ctx, k8sClient, []string{testOwnerUUID},
 				[]releasesv1alpha1.InventoryEntry{claimEntry("claims-foreign-pvc")}, opts)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Skipped).To(Equal(1))
@@ -157,11 +157,11 @@ var _ = Describe("Prune and PersistentVolumeClaims", func() {
 		})
 		stale := []releasesv1alpha1.InventoryEntry{claimEntry("claims-unreadable-pvc")}
 
-		result, err := apply.Prune(ctx, unreadable, testOwnerUUID, stale, apply.PruneOptions{})
+		result, err := apply.Prune(ctx, unreadable, []string{testOwnerUUID}, stale, apply.PruneOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Kept).To(Equal(stale))
 
-		result, err = apply.Prune(ctx, unreadable, testOwnerUUID, stale, apply.PruneOptions{DeleteData: true})
+		result, err = apply.Prune(ctx, unreadable, []string{testOwnerUUID}, stale, apply.PruneOptions{DeleteData: true})
 		Expect(err).To(MatchError(ContainSubstring("injected read failure")))
 		Expect(result.Kept).To(BeEmpty())
 		Expect(claimDeleteRequested("claims-unreadable-pvc")).To(BeFalse())

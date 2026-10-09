@@ -58,8 +58,8 @@ The hold verdict maps onto the statuses that exist today; no reason is renamed:
 | `cleanup-incomplete` | Error, finalizer kept, retry with backoff, as today |
 | `inventory-empty` because only kept claims are left, identity missing or failed | **New**: finalizer removed without a read, `DeletionUnconfirmed` event. Today: stalled `DeletionSAMissing` (`moduleinstance.go:1399`, `:1410-1415`) |
 | `cleanup-complete` | Record it (`Ready` reason `DeletionInProgress`), wait for the deleted objects to be gone, then remove the finalizer |
-| At a recheck, after `cleanup-complete` was recorded: the ServiceAccount is NotFound, or reads as it are refused as Forbidden or Unauthorized | **New**: finalizer removed, `DeletionUnconfirmed` event (owner decision of 2026-10-09) |
-| At a recheck, after `cleanup-complete` was recorded: any other failure (a 5xx, a timeout, a throttle, a connection error) | Transient: finalizer and wait reason kept, retried with backoff (supervisor ruling of 2026-10-09 after the self-review) |
+| At a recheck, after `cleanup-complete` was recorded: the ServiceAccount is NotFound, or reads as it are refused as Forbidden while the controller may still impersonate it (asked with a SelfSubjectAccessReview) | **New**: finalizer removed, `DeletionUnconfirmed` event (owner decision of 2026-10-09) |
+| At a recheck, after `cleanup-complete` was recorded: any other failure (a 5xx, a timeout, a throttle, a connection error, a 401, a 403 the controller cannot attribute to the ServiceAccount) | Finalizer and wait reason kept, the message says why, retried with backoff, `DeletionBlocked` after 10 minutes (supervisor ruling of 2026-10-09 after the self-review) |
 
 ### 3. What is kept from recent operator work
 

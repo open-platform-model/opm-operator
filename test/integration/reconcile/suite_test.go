@@ -43,6 +43,7 @@ import (
 
 	releasesv1alpha1 "github.com/open-platform-model/opm-operator/api/v1alpha1"
 	"github.com/open-platform-model/opm-operator/internal/render"
+	"github.com/open-platform-model/opm-operator/test/collector"
 )
 
 var (
@@ -51,6 +52,9 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+
+	// gc plays the garbage collector, which envtest does not run.
+	gc *collector.Collector
 )
 
 func TestReconcileIntegration(t *testing.T) {
@@ -85,10 +89,14 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	gc, err = collector.Start(cfg)
+	Expect(err).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	gc.Stop()
 	cancel()
 	Eventually(func() error {
 		return testEnv.Stop()

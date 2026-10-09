@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/test/collector"
 )
 
 var (
@@ -46,6 +47,9 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+
+	// gc plays the garbage collector, which envtest does not run.
+	gc *collector.Collector
 )
 
 func TestApplyIntegration(t *testing.T) {
@@ -73,10 +77,14 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	gc, err = collector.Start(cfg)
+	Expect(err).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	gc.Stop()
 	cancel()
 	Eventually(func() error {
 		return testEnv.Stop()

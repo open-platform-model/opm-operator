@@ -6,10 +6,10 @@ No task uses a cluster. The envtest suites are `internal/controller`, `test/inte
 
 ## 1. Spike: Foreground deletes under envtest
 
-- [ ] 1.1 Write a spec in `test/integration/apply` that deletes a Deployment with Foreground propagation and asserts what the API server does without a garbage collector: the object stays, with a `deletionTimestamp` and the `foregroundDeletion` finalizer. Verify: the spec passes, and its outcome replaces "it is not run yet" in design.md ("Risks", first item)
-- [ ] 1.2 Add a shared test helper (one package under `test/`, imported by the four envtest suites) that plays the garbage collector: a loop that removes `foregroundDeletion` from terminating objects of the kinds the suites create. Start it in the `BeforeSuite` of each of the four suites and stop it in `AfterSuite`; give specs a way to pause it for one namespace, so a spec can hold an object terminating. Verify: a spec deletes with Foreground and reads NotFound; a second spec pauses the helper and reads the object still terminating
-- [ ] 1.3 Check with a unit test what the fake client of `internal/apply/prune_test.go` does with a propagation policy and a UID precondition; write into design.md ("Risks") what unit tests can assert and what only envtest can. Verify: the note is in design.md
-- [ ] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(apply): prove foreground deletes under envtest and add a collector helper`
+- [x] 1.1 Write a spec in `test/integration/apply` that deletes a Deployment with Foreground propagation and asserts what the API server does without a garbage collector: the object stays, with a `deletionTimestamp` and the `foregroundDeletion` finalizer. Verify: the spec passes, and its outcome replaces "it is not run yet" in design.md ("Risks", first item)
+- [x] 1.2 Add a shared test helper (one package under `test/`, imported by the four envtest suites) that plays the garbage collector: a loop that removes `foregroundDeletion` from terminating objects of the kinds the suites create. Start it in the `BeforeSuite` of each of the four suites and stop it in `AfterSuite`; give specs a way to pause it for one namespace, so a spec can hold an object terminating. Verify: a spec deletes with Foreground and reads NotFound; a second spec pauses the helper and reads the object still terminating
+- [x] 1.3 Check with a unit test what the fake client of `internal/apply/prune_test.go` does with a propagation policy and a UID precondition; write into design.md ("Risks") what unit tests can assert and what only envtest can. Verify: the note is in design.md
+- [x] 1.4 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `test(apply): prove foreground deletes under envtest and add a collector helper`
 
 ## 2. Internal packages: the plan runner
 

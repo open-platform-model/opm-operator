@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.0.0-beta.9](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.8...v1.0.0-beta.9) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* delete through the library deletion plan ([#278](https://github.com/open-platform-model/opm-operator/issues/278))
+* judge every apply with the library ownership verdict ([#274](https://github.com/open-platform-model/opm-operator/issues/274))
+* judge every prune and delete with the library ownership verdict ([#271](https://github.com/open-platform-model/opm-operator/issues/271))
+* **deps:** bump library to v1.0.0-beta.7 ([#269](https://github.com/open-platform-model/opm-operator/issues/269))
+* **apply:** keep PersistentVolumeClaims on a forced recreate unless spec.dataPolicy is Delete ([#268](https://github.com/open-platform-model/opm-operator/issues/268))
+* **apply:** keep PersistentVolumeClaims on prune and deletion unless spec.dataPolicy is Delete ([#267](https://github.com/open-platform-model/opm-operator/issues/267))
+* **inventory:** the operator now computes status.inventory.digest, status.lastAppliedRenderDigest and status.lastAttemptedRenderDigest with the library's opm/k8s/inventory (0012:D6, 0012:D7), so each stored value changes once. The inventory digest hashes a canonical field-by-field encoding of the entries instead of their JSON; the render digest no longer includes the value of the app.kubernetes.io/managed-by label. On its first reconcile after the upgrade, every operator-managed ModuleInstance and ModulePackage renders, finds its stored digests out of date and applies once: server-side apply is idempotent, so no object changes, and --max-concurrent-renders bounds how many of these renders run at once. Each object gains one history entry and its status.inventory.revision advances once; the next reconcile is a no-op again. Each TransformerRegistration whose provider instance is operator-managed is judged once more when that provider's inventory digest moves, re-acquiring its catalog from the registry outside the render slots, with an unchanged verdict. A rendered value that cannot be exported is now reported by the reconciler's conversion instead of the renderer: an export failure stays RenderFailed ("computing render digest"), a decode failure is ApplyFailed ("converting resources"), and neither emits a Render warning event. No CRD field and no prune decision changes. History entries written before the upgrade keep their old digests, and CLI-owned instances are untouched. A tool that compares these digests with its own must compute them with opm/k8s/inventory from library v1.0.0-beta.6 or later. Rolling back to an earlier operator applies every object once more.
+* the exported package github.com/open-platform-model/opm-operator/pkg/core is deleted. Import github.com/open-platform-model/library/opm/k8s/object for Resource, NewResource (was ResourceFromCompiled), MarshalJSON and ToUnstructured, and github.com/open-platform-model/library/opm/k8s/labels for the label keys and IsOPMManagedBy, with the Label prefix and Value suffix dropped (LabelManagedByControllerValue is labels.ManagedByController, LabelManagedByValue is labels.ManagedByCLI, LabelManagedByLegacyValue is labels.ManagedByLegacy).
+* **deps:** bump library to v1.0.0-beta.6, opm catalog to v4.6.0 and opm CLI to v1.0.0-beta.10 ([#248](https://github.com/open-platform-model/opm-operator/issues/248))
+
+### Features
+
+* **api:** record the last applied module version in plain text on status ([#242](https://github.com/open-platform-model/opm-operator/issues/242)) ([dd0d798](https://github.com/open-platform-model/opm-operator/commit/dd0d798bb0b11387660e12b42394688f77ba24db))
+* **apply:** keep PersistentVolumeClaims on prune and deletion unless spec.dataPolicy is Delete ([#267](https://github.com/open-platform-model/opm-operator/issues/267)) ([24b2360](https://github.com/open-platform-model/opm-operator/commit/24b236060ef2bf7353009d89f37fa96a0c93a0b1))
+* **controller:** bound each render by --render-timeout and report RenderTimedOut ([#251](https://github.com/open-platform-model/opm-operator/issues/251)) ([36eda16](https://github.com/open-platform-model/opm-operator/commit/36eda162a133d29649fd6e52ec17880abbc18a3c))
+* **controller:** report whether a module instance has rolled out in a Healthy condition ([#257](https://github.com/open-platform-model/opm-operator/issues/257)) ([59537b7](https://github.com/open-platform-model/opm-operator/commit/59537b7fc265980a352065a3ff2881e1d9898878))
+* **controller:** requeue a healthy module instance and restore its missing objects ([#261](https://github.com/open-platform-model/opm-operator/issues/261)) ([1f2424b](https://github.com/open-platform-model/opm-operator/commit/1f2424b3a081650c731c9db39a099af31c0c9c30))
+* **controller:** skip the render when its inputs are unchanged ([#246](https://github.com/open-platform-model/opm-operator/issues/246)) ([ac81eec](https://github.com/open-platform-model/opm-operator/commit/ac81eec2f2eab36da8325ae416e83214658c4cd7))
+* delete through the library deletion plan ([#278](https://github.com/open-platform-model/opm-operator/issues/278)) ([7ed45c3](https://github.com/open-platform-model/opm-operator/commit/7ed45c3b2d3ee85d3ddd328a142c9b69faaae7ef))
+* **inventory:** compute the stale set and digests with the library's inventory package ([#255](https://github.com/open-platform-model/opm-operator/issues/255)) ([c303a46](https://github.com/open-platform-model/opm-operator/commit/c303a460019979c77a1bba5757798d85c7393d45))
+* judge every apply with the library ownership verdict ([#274](https://github.com/open-platform-model/opm-operator/issues/274)) ([a418b40](https://github.com/open-platform-model/opm-operator/commit/a418b408fe75feffcf29e67665c01ca70362e447))
+* judge every prune and delete with the library ownership verdict ([#271](https://github.com/open-platform-model/opm-operator/issues/271)) ([5bad00a](https://github.com/open-platform-model/opm-operator/commit/5bad00aba49ffbd29fa633fb04a2bdae3746fed8))
+* use the library's Kubernetes object and label packages (pkg/core removed) ([#253](https://github.com/open-platform-model/opm-operator/issues/253)) ([277ca18](https://github.com/open-platform-model/opm-operator/commit/277ca18b82e3eac121fd4bac0112bf216c3de8d1))
+
+
+### Bug Fixes
+
+* **apply:** impersonate the ServiceAccount only and drop the users and groups grant ([#260](https://github.com/open-platform-model/opm-operator/issues/260)) ([44da5e9](https://github.com/open-platform-model/opm-operator/commit/44da5e950f7bc0c7e6d71fc0891b43ae4b3ad865))
+* **apply:** keep PersistentVolumeClaims on a forced recreate unless spec.dataPolicy is Delete ([#268](https://github.com/open-platform-model/opm-operator/issues/268)) ([553c59f](https://github.com/open-platform-model/opm-operator/commit/553c59f2eb16cb06667b0ed4767ae4f3e546f278))
+* classify registry failures by the library's typed fetch errors ([#249](https://github.com/open-platform-model/opm-operator/issues/249)) ([2fe3c66](https://github.com/open-platform-model/opm-operator/commit/2fe3c6634e9bc6d5e45d49c7556d8083d39180f9))
+* **controller:** detect drift as the identity that applies ([#265](https://github.com/open-platform-model/opm-operator/issues/265)) ([45c6a12](https://github.com/open-platform-model/opm-operator/commit/45c6a12c2cb68d9b1e3500b111aa33de3924011b))
+* **controller:** drop Platform updates that change nothing a ModulePackage renders against ([#237](https://github.com/open-platform-model/opm-operator/issues/237)) ([e97a018](https://github.com/open-platform-model/opm-operator/commit/e97a01866c0bbf8b46e4001e66b9875fb79cd1f7))
+* **controller:** keep an accepted claim through a transient registry failure ([#262](https://github.com/open-platform-model/opm-operator/issues/262)) ([66c233b](https://github.com/open-platform-model/opm-operator/commit/66c233b42e9a3a9c46855e331d2c190b2dda8ca5))
+* **controller:** record a recovered reconcile panic as a failure instead of Ready ([#236](https://github.com/open-platform-model/opm-operator/issues/236)) ([3652152](https://github.com/open-platform-model/opm-operator/commit/36521521dd997755d59d7d2a154dcb626fba839a))
+* **controller:** unblock the stuck deletes of a module instance ([#263](https://github.com/open-platform-model/opm-operator/issues/263)) ([7474778](https://github.com/open-platform-model/opm-operator/commit/7474778526025e3a839542e56ac838b56b460780))
+* **deps:** bump library to v1.0.0-beta.6, opm catalog to v4.6.0 and opm CLI to v1.0.0-beta.10 ([#248](https://github.com/open-platform-model/opm-operator/issues/248)) ([b1d226b](https://github.com/open-platform-model/opm-operator/commit/b1d226b8874c6b2fb113da17c16dc4e0ec60457a))
+* **deps:** bump library to v1.0.0-beta.7 ([#269](https://github.com/open-platform-model/opm-operator/issues/269)) ([0f75ccb](https://github.com/open-platform-model/opm-operator/commit/0f75ccb6d716e8eca777f9cd8c7e70b9c2b5a187))
+* **deps:** bump library to v1.0.0-beta.8 ([#273](https://github.com/open-platform-model/opm-operator/issues/273)) ([7cf939d](https://github.com/open-platform-model/opm-operator/commit/7cf939d23040f2aa4086a09fe26f2edc4116d8ad))
+* **deps:** bump library to v1.0.0-beta.9 ([#276](https://github.com/open-platform-model/opm-operator/issues/276)) ([46e6b3c](https://github.com/open-platform-model/opm-operator/commit/46e6b3cf74fbf43bea5960cbc95e4f3f1da5c293))
+* **render:** drop the operator's values pre-check ([#275](https://github.com/open-platform-model/opm-operator/issues/275)) ([f53b74a](https://github.com/open-platform-model/opm-operator/commit/f53b74ab62ab54a7765aac2880e53782b3ac4d65))
+
+
+### Code Refactoring
+
+* **render:** read the contract demand from the kernel's render ([#252](https://github.com/open-platform-model/opm-operator/issues/252)) ([aca469b](https://github.com/open-platform-model/opm-operator/commit/aca469b76186f390c1942b2ef3bfd1f84a898dc3))
+
 ## [1.0.0-beta.8](https://github.com/open-platform-model/opm-operator/compare/v1.0.0-beta.7...v1.0.0-beta.8) (2026-10-04)
 
 

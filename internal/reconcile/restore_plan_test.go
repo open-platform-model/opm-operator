@@ -27,6 +27,7 @@ func TestPlanRestore(t *testing.T) {
 		name          string
 		isNoOp        bool
 		missing       []*unstructured.Unstructured
+		takenIn       []*unstructured.Unstructured
 		wantApply     []*unstructured.Unstructured
 		wantNoOp      bool
 		wantRestoring bool
@@ -57,10 +58,23 @@ func TestPlanRestore(t *testing.T) {
 			wantApply:     []*unstructured.Unstructured{configMap},
 			wantRestoring: true,
 		},
+		{
+			name:          "unchanged digests with a taken-in object apply only that object",
+			isNoOp:        true,
+			takenIn:       []*unstructured.Unstructured{configMap},
+			wantApply:     []*unstructured.Unstructured{configMap},
+			wantRestoring: true,
+		},
+		{
+			name:      "changed digests apply the rendered set whatever is taken in",
+			isNoOp:    false,
+			takenIn:   []*unstructured.Unstructured{configMap},
+			wantApply: rendered,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			toApply, noOp, restoring := planRestore(context.Background(), tt.isNoOp, tt.missing, rendered)
+			toApply, noOp, restoring := planRestore(context.Background(), tt.isNoOp, tt.missing, tt.takenIn, rendered)
 			if noOp != tt.wantNoOp || restoring != tt.wantRestoring {
 				t.Errorf("planRestore noOp, restoring = %v, %v, want %v, %v", noOp, restoring, tt.wantNoOp, tt.wantRestoring)
 			}

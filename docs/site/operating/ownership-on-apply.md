@@ -18,7 +18,7 @@ On every reconcile that renders, the operator reads each rendered object once, a
 - its labels `app.kubernetes.io/managed-by` and `module-instance.opmodel.dev/uuid`, and its annotation `opmodel.dev/adopt`;
 - whether it is being deleted.
 
-The identity of the instance is `status.instanceUUID`. Every refusal prints it.
+Every refusal prints the UUID of the instance, and that is the one to use. `status.instanceUUID` holds the same value once an apply has succeeded; while a first apply or a change of the module path is refused, the status holds none or the earlier one.
 
 | The live object | The operator |
 | --- | --- |
@@ -26,7 +26,7 @@ The identity of the instance is `status.instanceUUID`. Every refusal prints it.
 | Is in the inventory of the instance | Applies it, whatever its labels say. Labels that were removed or changed come back. |
 | Is not in the inventory, is managed by OPM and carries this instance's UUID label, or no UUID label | Applies it and records it in the inventory. |
 | Carries `opmodel.dev/adopt` with this instance's UUID | Applies it and records it in the inventory. This is the adopt. |
-| Carries `opmodel.dev/adopt` with another instance's UUID | Lets it go: see "An object another instance adopted". |
+| Carries `opmodel.dev/adopt` with another instance's UUID, and is in the inventory, or is managed by OPM with this instance's, the named instance's or no UUID label | Lets it go: see "An object another instance adopted". Any other object with such an annotation refuses the reconcile, as the two rows below say. |
 | Is not in the inventory and OPM does not manage it | Refuses the reconcile. |
 | Is not in the inventory and carries another instance's UUID label | Refuses the reconcile. |
 | Is being deleted, and the reconcile would write it or the object is not in the inventory | Refuses the reconcile until the object is gone. |
@@ -56,7 +56,7 @@ kubectl annotate configmap settings -n media opmodel.dev/adopt=6f1c0a52-8f0e-5a0
 
 The next attempt applies the object, sets the OPM labels and records it in the inventory. The operator never sets, changes or removes this annotation. It stays on the object as the record of the hand-over, so leave it there.
 
-The operator does not delete and create again an object it takes over. With `spec.rollout.forceConflicts: true`, when the API server refuses the update of such an object (a changed immutable field, for example `spec.clusterIP` of a Service), the reconcile fails with the reason `ApplyFailed`, names the object and the refused fields, and writes nothing. Change the object so that the update is accepted, or delete it yourself. Once the object is in the inventory, `forceConflicts` treats it like every other object of the instance.
+The operator does not delete and create again an object that exists and is not yet in the inventory. That holds for an object you hand over with the annotation, and also for the instance's own object that an apply created before it failed. With `spec.rollout.forceConflicts: true`, when the API server refuses the update of such an object (a changed immutable field, for example `spec.clusterIP` of a Service), the reconcile fails with the reason `ApplyFailed`, names the object and the refused fields, and writes nothing. Change the object so that the update is accepted, or delete it yourself: the operator creates it again at the next attempt. Once the object is in the inventory, `forceConflicts` treats it like every other object of the instance.
 
 ## The refusals and the way out
 
@@ -71,7 +71,7 @@ The operator does not delete and create again an object it takes over. With `spe
 
 ## An object another instance adopted
 
-When the adopt annotation of a rendered object names another instance, this instance lets the object go. It does not apply it, does not compare it for drift, does not restore it and does not delete it. The object leaves `status.inventory`, the other objects are applied, and the instance stays `Ready=True`.
+When the adopt annotation of a rendered object names another instance, and the object is in the inventory or is managed by OPM, this instance lets the object go. It does not apply it, does not compare it for drift, does not restore it and does not delete it. The object leaves `status.inventory`, the other objects are applied, and the instance stays `Ready=True`.
 
 The message of `Ready` states how many rendered objects are in this state, for as long as the module renders them:
 

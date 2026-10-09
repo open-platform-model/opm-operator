@@ -476,6 +476,73 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		Expect(liveConfigMapLabels("owns-bare")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA))
 	})
 
+	// A shared Namespace is the most likely meeting of two instances, and it
+	// is cluster-scoped: its inventory entry has no namespace, and it is
+	// applied in the first stage of the staged apply.
+	It("judges a Namespace two instances render: refused, taken in, and applied once both hold it", func() {
+		const shared = "own-shared-ns"
+		namespaceOf := func(uuid string) *object.Resource {
+			return cueResource(fmt.Sprintf(`{
+	apiVersion: "v1"
+	kind:       "Namespace"
+	metadata: {name: %q, labels: {%q: %q, %q: %q}}
+}`, shared, labels.ManagedBy, labels.ManagedByController, labels.ModuleInstanceUUID, uuid))
+		}
+		renderOf := func(uuid, payload, cm string) *render.RenderResult {
+			r := ownedRender(uuid, payload, cm)
+			r.Resources = append(r.Resources, namespaceOf(uuid))
+			return r
+		}
+		liveNamespace := func() *corev1.Namespace {
+			GinkgoHelper()
+			var ns corev1.Namespace
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: shared}, &ns)).To(Succeed())
+			return &ns
+		}
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, liveNamespace()))).To(Succeed())
+		})
+
+		first := create("own-ns-first", "ownns-first")
+		reconcileWith(first, renderOf(identityA, "v1", "ownns-first"))
+		expectReady(first)
+		Expect(inventoryNames(instanceStatus(first).Inventory)).To(ConsistOf("ConfigMap/ownns-first", "Namespace/"+shared))
+		held := liveNamespace()
+
+		By("a second instance meets the Namespace for the first time")
+		second := create("own-ns-second", "ownns-second")
+		rec.events = nil
+		ready := expectRefused(second, reconcileWith(second, renderOf(identityB, "v1", "ownns-second")))
+		Expect(ready.Message).To(ContainSubstring("Namespace/" + shared + " belongs to module instance " + identityA))
+		Expect(liveNamespace().ResourceVersion).To(Equal(held.ResourceVersion))
+		Expect(configMapExists("ownns-second")).To(BeFalse())
+
+		By("annotated for the second instance: taken in, the same object")
+		ns := liveNamespace()
+		ns.Annotations = map[string]string{labels.AnnotationAdopt: identityB}
+		Expect(k8sClient.Update(ctx, ns)).To(Succeed())
+		reconcileWith(second, renderOf(identityB, "v1", "ownns-second"))
+		expectReady(second)
+		Expect(inventoryNames(instanceStatus(second).Inventory)).To(ConsistOf("ConfigMap/ownns-second", "Namespace/"+shared))
+		taken := liveNamespace()
+		Expect(taken.UID).To(Equal(held.UID))
+		Expect(taken.Labels).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityB))
+
+		By("both inventories list it and no annotation names an instance: both apply, neither is refused")
+		taken.Annotations = nil
+		Expect(k8sClient.Update(ctx, taken)).To(Succeed())
+		rec.events = nil
+		reconcileWith(first, renderOf(identityA, "v2", "ownns-first"))
+		expectReady(first)
+		Expect(liveNamespace().Labels).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA), "the apply relabels it")
+		reconcileWith(second, renderOf(identityB, "v2", "ownns-second"))
+		expectReady(second)
+		Expect(liveNamespace().Labels).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityB))
+		Expect(rec.withReason(status.ApplyRefusedReason)).To(BeEmpty())
+		Expect(inventoryNames(instanceStatus(first).Inventory)).To(ContainElement("Namespace/" + shared))
+		Expect(inventoryNames(instanceStatus(second).Inventory)).To(ContainElement("Namespace/" + shared))
+	})
+
 	It("writes nothing when an object cannot be read", func() {
 		nn := start("own-read", "ownr-a", "ownr-b")
 		removeConfigMaps("ownr-b")

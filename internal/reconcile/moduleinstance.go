@@ -1737,7 +1737,7 @@ func classifyRenderError(
 		return FailedTransient, err.Error()
 	}
 	reason := renderFailureReason(err)
-	recorder.Eventf(mi, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
+	recorder.Eventf(mi, nil, corev1.EventTypeWarning, reason, "Render", "%s", render.EventNote(err))
 	status.MarkStalled(mi, reason, "%s", err)
 	return FailedStalled, err.Error()
 }

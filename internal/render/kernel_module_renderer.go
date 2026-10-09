@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-
-	cueerrors "cuelang.org/go/cue/errors"
 
 	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
@@ -41,8 +38,19 @@ type acquireError struct {
 	err error
 }
 
-func (e *acquireError) Error() string   { return e.msg + ": " + e.err.Error() }
+func (e *acquireError) Error() string   { return e.within(conditionMessageLimit) }
 func (e *acquireError) Unwrap() []error { return []error{ErrAcquire, e.err} }
+
+// within words the error in at most limit bytes: a cause that can word
+// itself within a length does so in what the message leaves; any other text
+// is cut.
+func (e *acquireError) within(limit int) string {
+	head := e.msg + ": "
+	if b, ok := e.err.(bounded); ok && limit > len(head) {
+		return head + b.within(limit-len(head))
+	}
+	return cutText(head+e.err.Error(), limit)
+}
 
 // acquireFailed wraps err as msg + ": " + err, the same text as
 // fmt.Errorf("%s: %w", msg, err), and marks it with ErrAcquire.
@@ -84,9 +92,10 @@ var _ ModuleRenderer = (*KernelModuleRenderer)(nil)
 // store (returning ErrPlatformNotReady before any I/O when absent), acquires
 // the module, loads the values as one values source with origin spec.values
 // (an empty document when none are supplied, letting the module's #config
-// defaults apply) and checks it against the module's #config, synthesizes
-// the instance, renders it against the platform, and adapts the compiled
-// output to operator resources plus inventory entries.
+// defaults apply), synthesizes the instance, renders it against the platform,
+// and adapts the compiled output to operator resources plus inventory
+// entries. The kernel's synthesis is the one check of the values against the
+// module's #config.
 //
 // Every kernel call shares nothing (library ADR-005, ADR-007): acquisition,
 // synthesis and the render build each evaluate in a context of their own, so
@@ -145,9 +154,14 @@ func (r *KernelModuleRenderer) synthesize(
 	return r.synthesizeFrom(ctx, mod, name, namespace, values)
 }
 
-// synthesizeFrom checks the values against the acquired module's #config and
-// synthesizes the instance. It is the part of synthesize that needs no
-// registry fetch of the module itself.
+// synthesizeFrom synthesizes the instance from the acquired module and the
+// values. It is the part of synthesize that needs no registry fetch of the
+// module itself. Synthesis checks the values against the module's #config
+// (types, constraints, fields the schema does not allow, required values left
+// unset); a failure is worded with every finding and its positions
+// (withFindings). The positions of the module's own files are left as CUE
+// reports them: a module from the registry lies in the CUE module cache,
+// whose paths do not change between reconciles.
 func (r *KernelModuleRenderer) synthesizeFrom(
 	ctx context.Context,
 	mod *module.Module,
@@ -169,56 +183,17 @@ func (r *KernelModuleRenderer) synthesizeFrom(
 	if err != nil {
 		return nil, fmt.Errorf("compiling values: %w", err)
 	}
-	sources := []kernel.Source{src}
-
-	// Check the source against the module's #config before synthesis.
-	// Synthesis bakes the values into the module's own build, and a
-	// violation there surfaces where a component consumed the value (a
-	// path inside the module) before the kernel's own per-source check
-	// runs; the kernel's layered validation reports it at the source's
-	// positions instead, so the error names spec.values. It also refuses a
-	// required #config value left unset that no component reads. Synthesis
-	// refuses that too since library v1.0.0-beta.7 (library#211), with a
-	// different message (`not fully concrete: values.<field>: ...`); this
-	// check runs first, so the message a user reads is this one.
-	if _, err := r.Kernel.ValidateConfigDetailed(mod.ConfigSchema(), sources); err != nil {
-		return nil, fmt.Errorf("validating values against the module's #config: %s", cueFindings(err))
-	}
 
 	inst, err := r.Kernel.SynthesizeInstance(ctx, kernel.InstanceInput{
 		Module:    mod,
 		Name:      name,
 		Namespace: namespace,
-		Values:    sources,
+		Values:    []kernel.Source{src},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("synthesizing release: %w", err)
+		return nil, withFindings("synthesizing release: ", err, "")
 	}
 	return inst, nil
-}
-
-// cueFindings words a CUE error tree as one finding per entry, each followed
-// by the positions CUE attributed it to, so a values violation reads
-// `message: conflicting values ... (spec.values:1:13, ...)`. A non-CUE error
-// is returned as its own message.
-func cueFindings(err error) string {
-	findings := cueerrors.Errors(err)
-	lines := make([]string, 0, len(findings))
-	for _, e := range findings {
-		line := e.Error()
-		if positions := cueerrors.Positions(e); len(positions) > 0 {
-			at := make([]string, 0, len(positions))
-			for _, p := range positions {
-				at = append(at, p.String())
-			}
-			line += " (" + strings.Join(at, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	if len(lines) == 0 {
-		return err.Error()
-	}
-	return strings.Join(lines, "; ")
 }
 
 // resultFromRender adapts the kernel's render output to the operator's

@@ -190,6 +190,13 @@ func TestClassifyRenderError(t *testing.T) {
 			wantReason:  status.RenderFailedReason,
 		},
 		{
+			name: "unset required value refused by synthesis is a render failure",
+			err: fmt.Errorf("synthesizing release: %w", errors.New(
+				`Kernel.SynthesizeInstance: instance "demo": not fully concrete: values.note: incomplete value string`)),
+			wantOutcome: FailedStalled,
+			wantReason:  status.RenderFailedReason,
+		},
+		{
 			name: "author-defect resolution failure under acquire stalls",
 			err: acquireErr(&oerrors.ResolutionError{Kind: oerrors.ResolutionImportUnprovided,
 				Err: errors.New("cannot find module providing package test.example/absent/pkg")}),
@@ -587,5 +594,76 @@ func TestIsTransientFailure(t *testing.T) {
 				t.Errorf("IsTransientFailure(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// eventNoteLimit is the longest note events.k8s.io/v1 accepts; the API
+// server refuses an event with a longer one.
+const eventNoteLimit = 1024
+
+// longRenderFailure is a stalled render failure whose text is longer than an
+// event note may be.
+func longRenderFailure() error {
+	return fmt.Errorf("synthesizing release: %w", errors.New(strings.Repeat("values.field: incomplete value string; ", 100)))
+}
+
+// A stalled render failure longer than an event note keeps its whole text on
+// the Ready condition and in the returned message; the event note is cut to
+// the limit and says how much was left out.
+func TestClassifyRenderError_LongFailureFitsTheEventNote(t *testing.T) {
+	err := longRenderFailure()
+	mi := &releasesv1alpha1.ModuleInstance{}
+	rec := events.NewFakeRecorder(2)
+
+	outcome, msg := classifyRenderError(mi, rec, err)
+	if outcome != FailedStalled || msg != err.Error() {
+		t.Fatalf("classifyRenderError() = (%v, %d characters), want stalled with the whole text", outcome, len(msg))
+	}
+	if got := conditions.GetMessage(mi, status.ReadyCondition); got != err.Error() {
+		t.Errorf("Ready message is %d characters, want the whole text (%d)", len(got), len(err.Error()))
+	}
+	assertBoundedRenderEvent(t, drainEvents(rec), status.RenderFailedReason, err)
+}
+
+// The same for a ModulePackage whose package load stalls.
+func TestRenderModulePackage_LongFailureFitsTheEventNote(t *testing.T) {
+	err := acquireErr(longRenderFailure())
+	pkg := &releasesv1alpha1.ModulePackage{}
+	rec := events.NewFakeRecorder(2)
+	params := &ModulePackageParams{EventRecorder: rec, Renderer: failingPackageRenderer{err: err}}
+
+	_, fail, rerr := renderModulePackage(context.Background(), params, pkg, t.TempDir(), "/pkg", time.Hour)
+	if fail == nil || rerr != nil || fail.outcome != FailedStalled || fail.errMsg != err.Error() {
+		t.Fatalf("renderModulePackage() = (%v, %v), want stalled with the whole text", fail, rerr)
+	}
+	if got := conditions.GetMessage(pkg, status.ReadyCondition); got != err.Error() {
+		t.Errorf("Ready message is %d characters, want the whole text (%d)", len(got), len(err.Error()))
+	}
+	assertBoundedRenderEvent(t, drainEvents(rec), status.ResolutionFailedReason, err)
+}
+
+// assertBoundedRenderEvent checks that es is one Warning event of the given
+// reason whose note starts as err's text, fits the note limit and counts
+// what it left out.
+func assertBoundedRenderEvent(t *testing.T, es []string, reason string, err error) {
+	t.Helper()
+	if len(es) != 1 {
+		t.Fatalf("events %v, want exactly one", es)
+	}
+	note, ok := strings.CutPrefix(es[0], "Warning "+reason+" ")
+	if !ok {
+		t.Fatalf("event %q, want a Warning with reason %q", es[0], reason)
+	}
+	if len(note) > eventNoteLimit {
+		t.Errorf("note is %d characters, limit %d", len(note), eventNoteLimit)
+	}
+	if len(note) < eventNoteLimit-100 {
+		t.Errorf("note is %d characters, want it to use the limit %d", len(note), eventNoteLimit)
+	}
+	if !strings.HasPrefix(err.Error(), note[:900]) {
+		t.Errorf("note does not start as the error text: %s", note)
+	}
+	if !strings.HasSuffix(note, " more characters)") {
+		t.Errorf("note does not count what it left out: %s", note)
 	}
 }

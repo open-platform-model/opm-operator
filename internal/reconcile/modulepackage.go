@@ -712,7 +712,7 @@ func renderModulePackage(
 		}
 		reason := renderErrorReason(err)
 		status.MarkStalled(pkg, reason, "%s", err)
-		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, reason, "Render", "%s", err)
+		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, reason, "Render", "%s", render.EventNote(err))
 		return nil, &phaseFail{FailedStalled, err.Error(), StalledRecheckInterval}, nil
 	}
 	if kind != render.KindModuleInstance {

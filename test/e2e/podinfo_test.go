@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -199,6 +200,10 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "podinfo",
 				"--type=merge", "-p", `{"metadata":{"finalizers":null}}`))
 		}
+
+		By("removing what the Job spec added")
+		_, _ = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "--ignore-not-found", "--wait=false",
+			"job/podinfo-wait-probe", "rolebinding/podinfo-applier-jobs", "role/podinfo-applier-jobs"))
 
 		By("removing the podinfo applier RBAC")
 		// The CR is gone; this clears the ServiceAccount/Role/RoleBinding (and is
@@ -559,5 +564,122 @@ var _ = Describe("Podinfo example module", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(phase).To(Equal("Active"))
 		})
+	})
+
+	// The deletion cleanup deletes with Foreground propagation and keeps the
+	// finalizer until every object it deleted is gone. A kind cluster runs a
+	// real garbage collector, so this is where "gone" means that the Pods are
+	// gone too. No fixture module renders a Job, so the spec adds one to the
+	// instance's inventory by hand: it carries the instance's labels, as a
+	// rendered Job would.
+	It("keeps a prune=true instance until its workloads and a Job's Pods are gone", func() {
+		const jobName = "podinfo-wait-probe"
+		kubectlApply := func(manifest string) {
+			GinkgoHelper()
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(manifest)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		By("letting the applier ServiceAccount read and delete Jobs")
+		kubectlApply(`
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: podinfo-applier-jobs
+  namespace: ` + mrNamespace + `
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: podinfo-applier-jobs
+  namespace: ` + mrNamespace + `
+subjects:
+  - kind: ServiceAccount
+    name: podinfo-applier
+    namespace: ` + mrNamespace + `
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: podinfo-applier-jobs
+`)
+
+		By("creating a Job that carries the instance's labels and runs until it is deleted")
+		uuid, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "podinfo",
+			"-o", "jsonpath={.status.instanceUUID}"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(uuid).NotTo(BeEmpty(), "the instance must have recorded its identity")
+		image, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "deployment", deploymentName,
+			"-o", "jsonpath={.spec.template.spec.containers[0].image}"))
+		Expect(err).NotTo(HaveOccurred())
+		kubectlApply(`
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ` + jobName + `
+  namespace: ` + mrNamespace + `
+  labels:
+    app.kubernetes.io/managed-by: opm-controller
+    module-instance.opmodel.dev/uuid: "` + uuid + `"
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: podinfo
+          image: ` + image + `
+`)
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "pods",
+				"-l", "job-name="+jobName, "-o", "name"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).To(ContainSubstring("pod/"), "the Job must have created its Pod")
+		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+		By("adding the Job to the instance's inventory and deleting the instance")
+		_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "patch", "moduleinstance", "podinfo",
+			"--subresource=status", "--type=json", "-p",
+			`[{"op":"add","path":"/status/inventory/entries/-","value":{"group":"batch","kind":"Job","namespace":"`+
+				mrNamespace+`","name":"`+jobName+`","v":"v1"}}]`))
+		Expect(err).NotTo(HaveOccurred(), "Failed to add the Job to status.inventory")
+		_, err = utils.Run(exec.Command("kubectl", "-n", mrNamespace, "delete", "moduleinstance", "podinfo",
+			"--wait=false"))
+		Expect(err).NotTo(HaveOccurred(), "Failed to delete the podinfo ModuleInstance")
+
+		By("watching the instance until it is gone: it waits, and it never stalls")
+		sawWait := false
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "podinfo",
+				"--ignore-not-found", "-o", `jsonpath={.status.conditions[?(@.type=="Ready")].reason}`))
+			g.Expect(err).NotTo(HaveOccurred())
+			Expect([]string{"DeletionSAMissing", "ImpersonationFailed", "DeletionBlocked"}).NotTo(ContainElement(out),
+				"the deletion must not stall")
+			if out == "DeletionInProgress" {
+				sawWait = true
+			}
+			gone, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "moduleinstance", "podinfo",
+				"--ignore-not-found", "-o", "name"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(gone).To(BeEmpty(), "the ModuleInstance still exists")
+		}, 4*time.Minute, time.Second).Should(Succeed())
+		_, _ = fmt.Fprintf(GinkgoWriter, "DeletionInProgress was seen: %t (false means the deletion finished between two polls)\n", sawWait)
+
+		By("confirming that nothing the cleanup deleted is left: the instance went last")
+		for _, object := range []string{"deployment/" + deploymentName, "service/" + serviceName, "job/" + jobName} {
+			out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", object, "--ignore-not-found", "-o", "name"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out).To(BeEmpty(), "%s outlived the ModuleInstance", object)
+		}
+		out, err := utils.Run(exec.Command("kubectl", "-n", mrNamespace, "get", "pods",
+			"-l", "job-name="+jobName, "-o", "name"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(BeEmpty(), "the Pods of the deleted Job outlived the ModuleInstance")
 	})
 })

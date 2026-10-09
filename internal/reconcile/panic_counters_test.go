@@ -61,7 +61,7 @@ func configMapRenderResult(t *testing.T) *render.RenderResult {
 	v := cuecontext.New().CompileString(fmt.Sprintf(`{
 	apiVersion: "v1"
 	kind:       "ConfigMap"
-	metadata: {name: "app-config", namespace: %q}
+	metadata: {name: "app-config", namespace: %q, labels: "module-instance.opmodel.dev/uuid": "00000000-0000-0000-0000-00000000c0de"}
 	data: message: "hello"
 }`, loopTestNamespace))
 	if v.Err() != nil {

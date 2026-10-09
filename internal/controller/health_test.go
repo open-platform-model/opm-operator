@@ -66,6 +66,7 @@ func deploymentRenderResult() *render.RenderResult {
 		labels: {
 			%q: %q
 			%q: %q
+			%q: %q
 		}
 	}
 	spec: {
@@ -79,6 +80,7 @@ func deploymentRenderResult() *render.RenderResult {
 }`, healthDeploymentName, namespace,
 		labels.ManagedBy, labels.ManagedByController,
 		labels.ModuleInstanceNamespace, namespace,
+		labels.ModuleInstanceUUID, stubRenderUUID,
 		healthDeploymentName, healthDeploymentName))
 	if dep.Err() != nil {
 		panic(fmt.Sprintf("compiling stub Deployment: %v", dep.Err()))

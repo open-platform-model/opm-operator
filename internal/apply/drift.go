@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	fluxssa "github.com/fluxcd/pkg/ssa"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -42,13 +40,14 @@ type DriftResult struct {
 // yet (CreatedAction) are not considered drifted and are returned in Missing;
 // unchanged resources are neither.
 //
-// The identity is the one of rm's client. Each resource is read through it
-// before the diff, and a read that is refused as Forbidden is returned as an
-// error: an identity that may patch but not get would otherwise be given a
-// verdict against an object it never saw.
+// The identity is the one of rm's client. DetectDrift sends no read of its
+// own before the diff: the caller hands it objects the apply guard (Guard)
+// read through the same identity. Flux's Diff reads each object and drops the
+// error of that read, so an identity that may patch but not get would be
+// given a verdict against an object it never saw; the guard's read is what
+// fails for such an identity, before DetectDrift is called.
 //
-// Returns an error only when the read is refused or the dry-run API call
-// itself fails.
+// Returns an error only when the dry-run API call itself fails.
 // Drift detection results are not errors — drift is an expected operational signal.
 func DetectDrift(
 	ctx context.Context,
@@ -60,10 +59,6 @@ func DetectDrift(
 	opts := fluxssa.DefaultDiffOptions()
 
 	for _, resource := range resources {
-		if err := refusedRead(ctx, rm.Client(), resource); err != nil {
-			return nil, fmt.Errorf("reading %s/%s %s for the dry-run diff: %w",
-				resource.GetNamespace(), resource.GetName(), resource.GetKind(), err)
-		}
 		entry, _, _, err := rm.Diff(ctx, resource, opts)
 		if err != nil {
 			return nil, fmt.Errorf("dry-run diff for %s/%s %s: %w",
@@ -91,21 +86,6 @@ func DetectDrift(
 
 	result.Drifted = len(result.Resources) > 0
 	return result, nil
-}
-
-// refusedRead reads resource through c and returns the error when the API
-// server refuses the read as Forbidden. Flux's Diff makes the same read and
-// drops its error, so without this check a refused read compares the dry-run
-// result with an empty object and reports drift. Every other outcome is left
-// to Diff: an object that does not exist is one the dry-run would create, and
-// a failing API server fails the dry-run too.
-func refusedRead(ctx context.Context, c client.Client, resource *unstructured.Unstructured) error {
-	live := &unstructured.Unstructured{}
-	live.SetGroupVersionKind(resource.GroupVersionKind())
-	if err := c.Get(ctx, client.ObjectKeyFromObject(resource), live); apierrors.IsForbidden(err) {
-		return err
-	}
-	return nil
 }
 
 // Restorable returns the missing resources that a reconcile with unchanged

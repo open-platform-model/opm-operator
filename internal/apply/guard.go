@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -50,6 +51,11 @@ type GuardResult struct {
 	// inventory: applying one brings it under the instance.
 	TakenIn []*unstructured.Unstructured
 
+	// Pins names each object of TakenIn with the UID the guard read, in the
+	// order of TakenIn. An apply that is handed them (ApplyOptions.TakenIn)
+	// writes that object and no other of the same name.
+	Pins []Pin
+
 	// LetGo are the objects whose adopt annotation names another instance.
 	// They are not applied and the reconcile goes on.
 	LetGo []Judged
@@ -72,7 +78,13 @@ type GuardReadError struct {
 	Err    error
 }
 
+// Error names the object and, when the API server gave one, the reason of
+// the refusal (Forbidden): the text of a refused discovery request does not
+// say it.
 func (e *GuardReadError) Error() string {
+	if reason := apierrors.ReasonForError(e.Err); reason != metav1.StatusReasonUnknown {
+		return fmt.Sprintf("reading %s before the apply (%s): %v", e.Object, reason, e.Err)
+	}
 	return fmt.Sprintf("reading %s before the apply: %v", e.Object, e.Err)
 }
 
@@ -131,6 +143,7 @@ func Guard(ctx context.Context, c client.Reader, in GuardInput) (*GuardResult, e
 			result.Allowed = append(result.Allowed, resource)
 			if live != nil && !inInventory {
 				result.TakenIn = append(result.TakenIn, resource)
+				result.Pins = append(result.Pins, Pin{Object: obj, UID: live.GetUID()})
 			}
 		case verdict.Refuse == ownership.RefuseAdoptedElsewhere:
 			result.LetGo = append(result.LetGo, judged(resource, verdict, inInventory))

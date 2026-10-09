@@ -298,6 +298,8 @@ func TestWriteCallSitesAreClosed(t *testing.T) {
 		"internal/apply/apply.go": 1,
 		// The dry run of the claim check: it changes nothing.
 		"internal/apply/claims.go": 1,
+		// The dry run of the taken-in check: it changes nothing.
+		"internal/apply/takein.go": 1,
 		// Status and finalizer patches of the operator's own kinds.
 		"internal/reconcile/moduleinstance.go":                      10,
 		"internal/reconcile/modulepackage.go":                       5,

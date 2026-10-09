@@ -239,9 +239,6 @@ var _ = Describe("ModulePackage live artifact pipeline", Ordered, func() {
 		By("undeploying the controller-manager")
 		_, _ = utils.Run(exec.Command("make", "undeploy"))
 
-		Expect(releaseErr).NotTo(HaveOccurred(),
-			"the ModulePackage must be released when its ServiceAccount goes after every delete was sent")
-
 		By("uninstalling CRDs")
 		_, _ = utils.Run(exec.Command("make", "uninstall"))
 
@@ -249,6 +246,9 @@ var _ = Describe("ModulePackage live artifact pipeline", Ordered, func() {
 			By("uninstalling Flux (installed by this suite)")
 			_, _ = utils.Run(exec.Command("task", "flux:uninstall"))
 		}
+
+		Expect(releaseErr).NotTo(HaveOccurred(),
+			"the ModulePackage must be released when its ServiceAccount goes after every delete was sent")
 	})
 
 	AfterEach(func() {

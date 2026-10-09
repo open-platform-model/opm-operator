@@ -575,3 +575,42 @@ func TestRecordIsIgnoredOnALiveObject(t *testing.T) {
 		t.Error("another reason counts as the record")
 	}
 }
+
+// TestFailedGoneCheckKeepsTheFinalizer: when the read that checks whether a
+// deleted object is gone fails with anything but NotFound, it is not known
+// whether the object is gone. The finalizer stays, the error is returned for
+// a retry, and no wait reason is written: the cleanup did not confirm
+// anything, so the next reconcile is a first pass.
+func TestFailedGoneCheckKeepsTheFinalizer(t *testing.T) {
+	forEachCleanupKind(t, func(t *testing.T, kind cleanupKind) {
+		reads := 0
+		run := newCleanupRun(t, kind, cleanupFixture{prune: true,
+			entries: []releasesv1alpha1.InventoryEntry{claimEntry("data"), configMapEntry("cm")}},
+			func(obj client.Object) error {
+				if obj.GetName() != "cm" {
+					return nil
+				}
+				// The plan's read succeeds; the gone-check read fails.
+				if reads++; reads == 2 {
+					return serverError(obj)
+				}
+				return nil
+			}, nil, ownedClaim("data"), ownedConfigMap("cm", holdFinalizer))
+
+		if _, err := run.reconcile(); err == nil {
+			t.Fatal("a failed gone-check read must fail the reconcile")
+		}
+		if reads != 2 {
+			t.Fatalf("the ConfigMap was read %d times, want the plan's read and the gone-check", reads)
+		}
+		if run.released() {
+			t.Fatal("the finalizer was removed although the deleted object could not be read")
+		}
+		if reason := run.readyReason(); reason != "" {
+			t.Errorf("Ready reason = %q, want none: nothing was confirmed", reason)
+		}
+		if evs := drainEvents(run.rec); len(evs) != 0 {
+			t.Errorf("events = %v, want none before the gone-check succeeded", evs)
+		}
+	})
+}

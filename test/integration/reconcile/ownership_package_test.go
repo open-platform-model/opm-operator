@@ -159,7 +159,7 @@ var _ = Describe("Ownership guard on the apply of a ModulePackage", func() {
 		Expect(refusals[0].action).To(Equal("Apply"))
 		Expect(rec.withReason(status.AppliedReason)).To(BeEmpty())
 		Expect(liveConfigMapNamed("por-held").ResourceVersion).To(Equal(before), "the refused object is untouched")
-		Expect(configMapExists("por-new")).To(BeFalse(), "no other rendered object is created")
+		expectConfigMapGone("por-new", "no other rendered object is created")
 		Expect(f.applied).To(Equal(applied))
 		Expect(inventoryNames(packageOf(nn).Status.Inventory)).To(ConsistOf("ConfigMap/por-app"))
 		Expect(packageOf(nn).Status.FailureCounters.Apply).To(Equal(int64(1)))
@@ -279,7 +279,7 @@ var _ = Describe("Ownership guard on the apply of a ModulePackage", func() {
 
 		By("the object is gone: the retry applies the whole render")
 		release()
-		Expect(configMapExists("pot-held")).To(BeFalse())
+		expectConfigMapGone("pot-held")
 		reconcilePackage(nn, ownedRender(identityA, "v1", names...))
 		Expect(expectReady(nn).Message).To(Equal("Reconciliation succeeded"))
 		Expect(inventoryNames(packageOf(nn).Status.Inventory)).To(ConsistOf(

@@ -132,7 +132,7 @@ The ModulePackage reconciler MUST apply the same protection as the ModuleInstanc
 #### Scenario: Deletion of a ModulePackage keeps its claims
 - **GIVEN** a ModulePackage with `spec.prune=true` and no `spec.dataPolicy` that is being deleted, with a PersistentVolumeClaim in its inventory
 - **WHEN** the controller reconciles
-- **THEN** the claim still exists, every other entry is deleted, and the finalizer is removed
+- **THEN** the claim still exists, every other entry is deleted, and the finalizer is removed once those entries are gone
 
 #### Scenario: A ModulePackage that opts out deletes its claims
 - **GIVEN** a ModulePackage with `spec.prune=true` and `spec.dataPolicy=Delete` that is being deleted, with a PersistentVolumeClaim in its inventory
@@ -181,7 +181,7 @@ The prune of stale resources and the deletion cleanup of a ModulePackage MUST ju
 #### Scenario: Deletion of a package judges with the recorded identity
 - **GIVEN** a ModulePackage with `status.instanceUUID` `A` being deleted, whose inventory holds a ConfigMap with the UUID label `A` and a Secret with the UUID label `B`
 - **WHEN** the deletion cleanup runs
-- **THEN** the ConfigMap is deleted, the Secret still exists and the finalizer is removed
+- **THEN** the ConfigMap is deleted, the Secret still exists and the finalizer is removed once the ConfigMap is gone
 
 #### Scenario: A package that never rendered is deleted as before
 - **GIVEN** a suspended ModulePackage with an inventory and no `status.instanceUUID`
@@ -217,3 +217,16 @@ A ModulePackage has no drift check to report a verdict that could not be asked. 
 - **GIVEN** a Ready ModulePackage with matching digests whose effective ServiceAccount was deleted
 - **WHEN** a reconcile renders
 - **THEN** the package reports `Stalled=True` with reason `ImpersonationFailed` and is not a `NoOp`
+
+### Requirement: A ModulePackage deletes and waits as a ModuleInstance does
+The deletion cleanup and the prune of stale resources of a ModulePackage MUST follow the same rules as a ModuleInstance's (capabilities `finalizer-and-deletion` and `prune-stale-resources`): the library's deletion plan, the hold verdict, the wait until deleted objects are gone, the reasons `DeletionInProgress` and `DeletionBlocked`, the release when the deleting identity is lost after every delete was sent, and the release of an inventory of kept claims only.
+
+#### Scenario: A terminating object holds the finalizer of a ModulePackage
+- **GIVEN** a ModulePackage with `spec.prune=true` being deleted, whose Deployment still exists with a `deletionTimestamp`
+- **WHEN** the controller reconciles it
+- **THEN** the finalizer is still present and `Ready` is False with reason `DeletionInProgress`
+
+#### Scenario: A ModulePackage is released when its ServiceAccount goes during the wait
+- **GIVEN** a ModulePackage being deleted with reason `DeletionInProgress`, whose ServiceAccount is deleted
+- **WHEN** the controller reconciles it
+- **THEN** the finalizer is removed and one `Warning` event with reason `DeletionUnconfirmed` is emitted

@@ -45,8 +45,47 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/inventory/owner
    <!-- If the namespace was created by `opm instance apply --create-namespace`, delete it with `kubectl delete namespace <namespace>`. It was never in the inventory. If operator-managed, delete any Namespace or CRD from step 3 yourself. Unless `spec.dataPolicy` was `Delete`, the PersistentVolumeClaims are still there: the delete left a Normal event with reason ClaimsKept that names them (`kubectl get events -n <namespace> --field-selector reason=ClaimsKept`), and `kubectl get pvc -n <namespace>` lists them (Verify: whether a rendered claim carries `module-instance.opmodel.dev/name`, so that the list can be filtered by instance); remove one with `kubectl delete pvc <claim> -n <namespace>`. If you left `spec.prune` unset, the resources are still running on purpose. If a CLI-managed record was already deleted with kubectl, re-run `opm instance apply` with the same instance file. The first-apply existence check accepts live objects that carry an OPM `app.kubernetes.io/managed-by` label, and apply writes a fresh record, so `opm instance delete` works again. Verify: this recovery end to end. The fallback is `kubectl delete <kinds> -n <namespace> -l module-instance.opmodel.dev/name=<name>`. Verify: that every rendered kind carries that label; cluster-scoped kinds need a command without `-n`.
    Check against: cli/internal/workflow/apply/apply.go, cli/internal/inventory/stale.go, cli/internal/kubernetes/client.go, core/src/transformer.cue, core/src/module_instance.cue -->
 8. Release a delete stuck in Terminating.
-   <!-- If operator-managed and the ModuleInstance stays in Terminating, read its Ready condition with `kubectl get moduleinstance <name> -n <namespace> -o yaml`. The CLI's timeout message says the same: "timed out after <duration> waiting for ModuleInstance ... the operator's opmodel.dev/cleanup finalizer may still be pruning workloads". If the reason is DeletionSAMissing (the impersonated ServiceAccount is gone), do one of three things: restore the ServiceAccount and its RBAC; set `spec.prune` to false to orphan; or `kubectl annotate moduleinstance <name> -n <namespace> opm.dev/force-delete-orphan=true` to orphan with an OrphanedOnDeletion event. Only the literal value "true" counts. Each of the three releases a ModuleInstance within seconds, the first only when the RBAC is restored before the ServiceAccount (the creation of the ServiceAccount is what the operator reacts to; in the other order the reason becomes ImpersonationFailed and the wait below applies); a ModulePackage picks up the restored ServiceAccount or the annotation at its next recheck, up to 30 minutes later. If the reason is ImpersonationFailed, fix the ServiceAccount's RBAC; the operator retries at its next recheck, up to 30 minutes later. An instance with `spec.owner: cli` never waits on the finalizer: the operator releases a leftover `opmodel.dev/cleanup` on delete and prunes nothing.
-   Check against: opm-operator/internal/reconcile/moduleinstance.go, opm-operator/api/v1alpha1/common_types.go, opm-operator/internal/status/conditions.go, cli/internal/inventory/reconcile.go -->
+
+   This step is for an operator-managed instance. With `spec.prune: true` the operator deletes the instance's resources and keeps the ModuleInstance until they are gone, so a delete takes at least about a second and can take as long as the slowest Pod needs to stop. When it takes longer than you expect, read the `Ready` condition:
+
+   ```sh
+   kubectl get moduleinstance <name> -n <namespace> -o jsonpath='{.status.conditions[?(@.type=="Ready")]}'
+   ```
+
+   `opm instance delete` waits for the same thing. Its timeout message says that the operator's `opmodel.dev/cleanup` finalizer may still be pruning workloads.
+
+   **`DeletionInProgress`.** The operator deleted the instance's resources and waits until they are gone. The message names what is left. There is nothing to do: a Deployment is gone when its Pods have stopped.
+
+   **`DeletionBlocked`.** A resource has been terminating for more than 10 minutes, or the delete is at least 10 minutes old and the operator cannot check the deleted resources. The message names the resource and the finalizer that holds it, or the request that fails and why. The operator keeps checking once a minute and never gives up on its own. You have two ways out:
+
+   - Remove what holds the resource. When the message says that the resource waits for its dependents, find the Pod or other dependent that cannot stop, for example a Pod on a node that is gone, and delete it. When the message names another finalizer, fix or remove the controller that owns that finalizer.
+   - Let the instance go and leave the resources as they are:
+
+     ```sh
+     kubectl patch moduleinstance <name> -n <namespace> --type=merge -p '{"spec":{"prune":false}}'
+     ```
+
+     The operator then removes its finalizer within seconds. The resources that were terminating stay terminating, and nothing tracks them any more.
+
+   The annotation `opm.dev/force-delete-orphan` does not release this wait. It is for a missing ServiceAccount only.
+
+   **`DeletionSAMissing` or `ImpersonationFailed`.** The ServiceAccount the operator deletes as, or its rights, went away before the operator had deleted everything. For `DeletionSAMissing`, do one of three things:
+
+   - Restore the ServiceAccount and its RBAC. Create the RBAC first and the ServiceAccount last: the creation of the ServiceAccount is what the operator reacts to. In the other order the reason becomes `ImpersonationFailed`.
+   - Set `spec.prune` to false, with the command above. The resources are left running.
+   - Run `kubectl annotate moduleinstance <name> -n <namespace> opm.dev/force-delete-orphan=true`. The resources are left running and the operator writes an `OrphanedOnDeletion` event. Only the literal value `true` counts.
+
+   Each of the three releases a ModuleInstance within seconds. A ModulePackage picks up the restored ServiceAccount or the annotation at its next recheck, up to 30 minutes later. For `ImpersonationFailed`, fix the ServiceAccount's RBAC; the operator tries again at its next recheck, up to 30 minutes later.
+
+   To avoid both, delete the instance first and its ServiceAccount after it:
+
+   - Do not delete a file that lists the ServiceAccount before the instance with one `kubectl delete -f`. kubectl deletes in file order, so the ServiceAccount is gone before the operator has sent a single delete, and the delete stalls with `DeletionSAMissing`. The ModulePackage sample the operator ships, `config/samples/opmodel.dev_v1alpha1_modulepackage.yaml`, is such a file. Delete the instance by name first and the rest of the file after it, or use one of the three ways out above.
+
+   The order matters only until the reason is `DeletionInProgress`. When the ServiceAccount is deleted while the operator only waits (the reason is `DeletionInProgress` or `DeletionBlocked`), it lets the instance go and writes a `Warning` event with the reason `DeletionUnconfirmed`: the operator could not check that the resources are gone, so check the namespace for leftovers yourself. Only a deleted ServiceAccount does this. When the ServiceAccount stays and loses its rights, for example because its RoleBinding is deleted, the instance keeps waiting: the message says at once what the operator could not check, and once the delete is 10 minutes old the reason is `DeletionBlocked`. Restore the rights, delete the ServiceAccount, or set `spec.prune` to false.
+
+   An instance with `spec.owner: cli` never waits on the finalizer: the operator releases a leftover `opmodel.dev/cleanup` on delete and prunes nothing.
+
+   <!-- Check against: opm-operator/internal/reconcile/deletion.go (runDeletionCleanup, awaitGone, actOnLostIdentity), opm-operator/internal/status/deletion.go, opm-operator/internal/reconcile/moduleinstance.go, opm-operator/api/v1alpha1/common_types.go, cli/internal/inventory/reconcile.go -->
 
 ## Check that it worked
 

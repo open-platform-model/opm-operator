@@ -2,6 +2,7 @@ package apply
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +19,21 @@ import (
 // can branch deletion-cleanup behavior without introducing a sentinel type.
 func IsServiceAccountNotFound(err error) bool {
 	return apierrors.IsNotFound(err)
+}
+
+// IsServiceAccountGone reports whether err is the API server's answer that
+// the ServiceAccount name does not exist: a NotFound status whose details
+// name the core resource serviceaccounts and that name. It reads the typed
+// status only, never the message, so a NotFound of another object, of a
+// resource of another group, or one that names nothing (a proxy's 404) is not
+// mistaken for it.
+func IsServiceAccountGone(err error, name string) bool {
+	var statusErr *apierrors.StatusError
+	if !errors.As(err, &statusErr) || !apierrors.IsNotFound(statusErr) {
+		return false
+	}
+	details := statusErr.Status().Details
+	return details != nil && details.Group == "" && details.Kind == "serviceaccounts" && details.Name == name
 }
 
 // NewImpersonatedClient builds a controller-runtime client that impersonates

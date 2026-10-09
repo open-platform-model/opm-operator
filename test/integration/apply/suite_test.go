@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/open-platform-model/opm-operator/internal/apply"
+	"github.com/open-platform-model/opm-operator/test/collector"
 )
 
 var (
@@ -46,6 +48,9 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+
+	// gc plays the garbage collector, which envtest does not run.
+	gc *collector.Collector
 )
 
 func TestApplyIntegration(t *testing.T) {
@@ -73,10 +78,25 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	gc, err = collector.Start(cfg)
+	Expect(err).NotTo(HaveOccurred())
 })
+
+// expectGone waits until key no longer exists. A prune and a deletion cleanup
+// delete with Foreground propagation, so the object is gone only once the
+// collector helper has removed the foregroundDeletion finalizer, as the
+// garbage collector does in a cluster.
+func expectGone(key client.ObjectKey, obj client.Object, description ...any) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		return apierrors.IsNotFound(k8sClient.Get(ctx, key, obj))
+	}, 10*time.Second, 20*time.Millisecond).Should(BeTrue(), description...)
+}
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	gc.Stop()
 	cancel()
 	Eventually(func() error {
 		return testEnv.Stop()

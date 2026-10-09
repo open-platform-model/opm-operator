@@ -117,10 +117,14 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 		Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModulePackage{
 			ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
 		})).To(Succeed())
-		_, err := opmreconcile.ReconcileModulePackage(ctx, params, ctrl.Request{NamespacedName: nn})
-		Expect(err).NotTo(HaveOccurred())
-		err = k8sClient.Get(ctx, nn, &releasesv1alpha1.ModulePackage{})
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the finalizer must be removed, got %v", err)
+		// The cleanup keeps the finalizer until the objects it deleted are
+		// gone, so it is reconciled until then, as its requeue would.
+		Eventually(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModulePackage(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Get(ctx, nn, &releasesv1alpha1.ModulePackage{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the finalizer must be removed, got %v", err)
+		}, 10*time.Second, 50*time.Millisecond).Should(Succeed())
 	}
 
 	It("records the identity of the instance it renders", func() {
@@ -148,7 +152,7 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 
 		reconcilePackage(nn, identityRender(identityB, "piu-app"))
 
-		Expect(configMapExists("piu-old")).To(BeFalse(), "deleted on its managed-by label, as before the field existed")
+		expectConfigMapGone("piu-old", "deleted on its managed-by label, as before the field existed")
 		expectPackageIdentities(nn, identityB, "")
 	})
 
@@ -158,7 +162,7 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 
 		reconcilePackage(nn, identityRender(identityB, "pic-app"))
 
-		Expect(configMapExists("pic-old")).To(BeFalse())
+		expectConfigMapGone("pic-old")
 		Expect(liveConfigMapLabels("pic-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityB))
 		expectPackageIdentities(nn, identityB, "")
 	})
@@ -181,7 +185,7 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 		By("a deletion in the window would accept both; the retry settles")
 		f.failDelete = ""
 		reconcilePackage(nn, identityRender(identityB, "pir-app"))
-		Expect(configMapExists("pir-old")).To(BeFalse())
+		expectConfigMapGone("pir-old")
 		expectPackageIdentities(nn, identityB, "")
 	})
 
@@ -210,7 +214,7 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0), "the reconcile is retried")
 		Expect(f.applied).To(BeZero(), "no object of the render is applied")
-		Expect(configMapExists("pis-new")).To(BeFalse())
+		expectConfigMapGone("pis-new")
 		Expect(liveConfigMapLabels("pis-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA))
 		expectPackageIdentities(nn, identityA, "")
 
@@ -230,8 +234,8 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 
 		deletePackage(nn)
 
-		Expect(configMapExists("piw-app")).To(BeFalse(), "relabelled to the new identity")
-		Expect(configMapExists("piw-old")).To(BeFalse(), "still labelled with the earlier identity")
+		expectConfigMapGone("piw-app", "relabelled to the new identity")
+		expectConfigMapGone("piw-old", "still labelled with the earlier identity")
 	})
 
 	It("does not prune another instance's object once an identity is recorded", func() {
@@ -264,7 +268,7 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 		reconcilePackage(nn, identityRender(identityC, "pit-app", "pit-new"))
 
 		Expect(res.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
-		Expect(configMapExists("pit-new")).To(BeFalse())
+		expectConfigMapGone("pit-new")
 		Expect(liveConfigMapLabels("pit-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA))
 		expectPackageIdentities(nn, identityB, identityA)
 		st := packageStatus(nn)
@@ -284,7 +288,7 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 
 		deletePackage(nn)
 
-		Expect(configMapExists("pid-own")).To(BeFalse())
+		expectConfigMapGone("pid-own")
 		Expect(configMapExists("pid-other")).To(BeTrue())
 		left := rec.withReason(status.LeftBehindReason)
 		Expect(left).To(HaveLen(1))
@@ -302,8 +306,8 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 
 		deletePackage(nn)
 
-		Expect(configMapExists("pin-plain")).To(BeFalse())
-		Expect(configMapExists("pin-other")).To(BeFalse(), "managed by OPM, whatever its UUID label")
+		expectConfigMapGone("pin-plain")
+		expectConfigMapGone("pin-other", "managed by OPM, whatever its UUID label")
 		Expect(configMapExists("pin-annotated")).To(BeTrue(), "no identity is known to compare the annotation with")
 		left := rec.withReason(status.LeftBehindReason)
 		Expect(left).To(HaveLen(1))

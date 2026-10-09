@@ -1,0 +1,9 @@
+# Implements the operator's part of the deletion protocol of enhancement 0012
+# (0012:D4:R1, R5 and R6, for the operator frontend). No decision is claimed
+# here: 0012:D4 also binds the apply half (R2), which lands in
+# guard-every-apply-by-ownership, and R1 does not yet name the forced recreate
+# as an exception. Under-claiming is the safe direction.
+implements:
+  - enhancement: "0012"
+    decisions: []
+    resolves: []

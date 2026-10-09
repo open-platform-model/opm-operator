@@ -240,8 +240,8 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		Expect(ready.Message).To(ContainSubstring("ConfigMap/" + namespace + "/ownf-b"))
 		Expect(ready.Message).To(ContainSubstring(labels.AnnotationAdopt + "=" + identityA))
 
-		Expect(configMapExists("ownf-a")).To(BeFalse(), "no other rendered object is created")
-		Expect(configMapExists("ownf-c")).To(BeFalse(), "no other rendered object is created")
+		expectConfigMapGone("ownf-a", "no other rendered object is created")
+		expectConfigMapGone("ownf-c", "no other rendered object is created")
 		after := liveConfigMapNamed("ownf-b")
 		Expect(after.ResourceVersion).To(Equal(before.ResourceVersion), "the refused object is untouched")
 		Expect(after.ManagedFields).To(Equal(before.ManagedFields))
@@ -298,7 +298,7 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		}
 		Expect(ready.Message).NotTo(MatchRegexp(`\d{4}:D\d+`), "no enhancement reference")
 
-		Expect(configMapExists("owno-c")).To(BeFalse())
+		expectConfigMapGone("owno-c")
 		after := liveConfigMapNamed("owno-a")
 		Expect(after.ResourceVersion).To(Equal(before.ResourceVersion))
 		Expect(after.Labels).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityX))
@@ -535,7 +535,7 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		ready := expectRefused(second, reconcileWith(second, renderOf(identityB, "v1", "ownns-second")))
 		Expect(ready.Message).To(ContainSubstring("Namespace/" + shared + " belongs to module instance " + identityA))
 		Expect(liveNamespace().ResourceVersion).To(Equal(held.ResourceVersion))
-		Expect(configMapExists("ownns-second")).To(BeFalse())
+		expectConfigMapGone("ownns-second")
 
 		By("annotated for the second instance: taken in, the same object")
 		ns := liveNamespace()
@@ -576,7 +576,7 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		st := instanceStatus(nn)
 		Expect(st.FailureCounters.Drift).To(Equal(int64(1)))
 		Expect(inventoryNames(st.Inventory)).To(ConsistOf("ConfigMap/ownr-a", "ConfigMap/ownr-b"))
-		Expect(configMapExists("ownr-b")).To(BeFalse(), "nothing is restored on a failed read")
+		expectConfigMapGone("ownr-b", "nothing is restored on a failed read")
 		Expect(f.applied).To(Equal(applied))
 
 		By("a changed render fails as a failed apply")
@@ -590,7 +590,7 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		Expect(cond(nn, status.StalledCondition)).To(BeNil())
 		Expect(requeue).To(BeNumerically(">", 0))
 		Expect(payloadOf("ownr-a")).To(Equal("v1"))
-		Expect(configMapExists("ownr-b")).To(BeFalse())
+		expectConfigMapGone("ownr-b")
 		Expect(f.applied).To(Equal(applied))
 		Expect(instanceStatus(nn).FailureCounters.Apply).To(Equal(int64(1)))
 	})
@@ -713,7 +713,7 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(live), &after)).To(Succeed())
 			Expect(after.UID).To(Equal(live.UID), "the Service is not recreated")
 			Expect(after.ResourceVersion).To(Equal(live.ResourceVersion))
-			Expect(configMapExists("ownfc-cm")).To(BeFalse(), "nothing is written")
+			expectConfigMapGone("ownfc-cm", "nothing is written")
 			Expect(f.applied).To(BeZero())
 		})
 

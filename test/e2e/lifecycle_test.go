@@ -187,17 +187,46 @@ var _ = Describe("ModulePackage live artifact pipeline", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		// Teardown order matters (see podinfo_test.go): the ModulePackage
-		// prunes by impersonating the podinfo-deploy ServiceAccount bundled in
-		// the same fixture file, so delete the CR first and let it drain while
-		// the SA still exists, then remove the RBAC and the OCIRepository.
+		// The ModulePackage prunes by impersonating the podinfo-deploy
+		// ServiceAccount bundled in the same fixture file. The ServiceAccount
+		// must exist until the cleanup has sent every delete: removed before
+		// that, the deletion stalls with DeletionSAMissing, as it always did
+		// (deleting the fixture file in one command removes the
+		// ServiceAccount first, so it is not used here). Once every delete was
+		// sent the package only waits for the objects to be gone, and from
+		// then on the ServiceAccount may go: the package is released with a
+		// DeletionUnconfirmed event. This teardown takes that path when the
+		// timing allows it, and asserts that the package goes either way,
+		// without stripping its finalizer.
 		By("removing the podinfo ModulePackage")
 		_, _ = utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "delete", "modulepackage", pkgName,
 			"--ignore-not-found", "--wait=false"))
 
-		By("waiting for the ModulePackage finalizer to clear")
-		if _, err := utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "wait", "--for=delete",
-			"modulepackage/"+pkgName, "--timeout=2m")); err != nil {
+		By("waiting until the cleanup has sent every delete, or has finished")
+		// Polled by hand and asserted at the end: a failed Eventually would
+		// end this node and skip the rest of the teardown.
+		lastSeen, reachedWait := "", false
+		for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); time.Sleep(500 * time.Millisecond) {
+			out, err := utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "get", "modulepackage", pkgName,
+				"--ignore-not-found", "-o", `jsonpath={.metadata.name}/{.status.conditions[?(@.type=="Ready")].reason}`))
+			lastSeen = out
+			if err == nil && (out == "" || out == pkgName+"/DeletionInProgress") {
+				reachedWait = true
+				break
+			}
+		}
+
+		By("removing the ServiceAccount and its RoleBinding while the package may still wait")
+		_, _ = utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "delete", "--ignore-not-found", "--wait=false",
+			"rolebinding/podinfo-deploy", "serviceaccount/podinfo-deploy"))
+
+		By("waiting for the ModulePackage to go, with no finalizer patch as a fallback")
+		_, releaseErr := utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "wait", "--for=delete",
+			"modulepackage/"+pkgName, "--timeout=3m"))
+		if releaseErr != nil {
+			// Asserted at the end: the rest of the teardown must still run,
+			// and a package left with its finalizer would wedge the CRD
+			// deletion of the undeploy.
 			_, _ = utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "patch", "modulepackage", pkgName,
 				"--type=merge", "-p", `{"metadata":{"finalizers":null}}`))
 		}
@@ -222,6 +251,11 @@ var _ = Describe("ModulePackage live artifact pipeline", Ordered, func() {
 			By("uninstalling Flux (installed by this suite)")
 			_, _ = utils.Run(exec.Command("task", "flux:uninstall"))
 		}
+
+		Expect(reachedWait).To(BeTrue(),
+			"the package was neither gone nor waiting for its deleted objects after 2 minutes; last seen %q", lastSeen)
+		Expect(releaseErr).NotTo(HaveOccurred(),
+			"the ModulePackage must be released when its ServiceAccount goes after every delete was sent")
 	})
 
 	AfterEach(func() {

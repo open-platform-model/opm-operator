@@ -77,12 +77,10 @@ var _ = Describe("Prune", func() {
 
 			By("verifying the ConfigMap no longer exists")
 			fetched := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Namespace: "default",
 				Name:      "prune-test-cm",
 			}, fetched)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
 	})
 
@@ -178,12 +176,10 @@ var _ = Describe("Prune", func() {
 
 			By("verifying the ConfigMap no longer exists")
 			fetched := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Namespace: "default",
 				Name:      "prune-mixed-cm",
 			}, fetched)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
 	})
 
@@ -247,12 +243,10 @@ var _ = Describe("Prune", func() {
 
 			By("verifying the successful resource was deleted")
 			fetched := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Namespace: "default",
 				Name:      "prune-failslow-ok",
 			}, fetched)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
 
 			By("verifying the failed resource still exists")
 			fetched = &corev1.ConfigMap{}
@@ -364,12 +358,10 @@ var _ = Describe("Prune", func() {
 
 			By("verifying the owned ConfigMap no longer exists")
 			fetched := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Namespace: "default",
 				Name:      "prune-owned-cm",
 			}, fetched)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
 	})
 
@@ -430,12 +422,10 @@ var _ = Describe("Prune", func() {
 
 			By("verifying the CLI-labeled ConfigMap no longer exists")
 			fetched := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Namespace: "default",
 				Name:      "prune-cli-handoff-cm",
 			}, fetched)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
 	})
 })

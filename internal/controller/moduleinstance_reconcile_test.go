@@ -425,9 +425,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 
 			// No resources applied.
 			var cm corev1.ConfigMap
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
+			expectGone(types.NamespacedName{Name: "test-module", Namespace: namespace}, &cm)
 
 			// Cleanup (no finalizer to clear).
 			Expect(k8sClient.Delete(ctx, &updated)).To(Succeed())
@@ -1701,17 +1699,20 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			// Reconcile should run deletion cleanup: prune ConfigMap + remove finalizer.
 			result, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			// The cleanup deletes with Foreground propagation and keeps the
+			// finalizer until the deleted objects are gone: it asks for a recheck
+			// unless they went at once.
+			Expect(result.RequeueAfter).To(BeNumerically("<=", time.Minute))
 
 			// Verify ConfigMap was deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Name: "test-module", Namespace: namespace,
 			}, &cm)
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
 
 			// Verify ModuleInstance is gone (finalizer removed, deletion completed).
 			Eventually(func() bool {
+				// A recheck of the waiting cleanup, as the requeue would run it.
+				_, _ = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 				var deleted releasesv1alpha1.ModuleInstance
 				err := k8sClient.Get(ctx, nn, &deleted)
 				return err != nil
@@ -1850,17 +1851,20 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			// Reconcile deletion.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			// The cleanup deletes with Foreground propagation and keeps the
+			// finalizer until the deleted objects are gone: it asks for a recheck
+			// unless they went at once.
+			Expect(result.RequeueAfter).To(BeNumerically("<=", time.Minute))
 
 			// ConfigMap should be deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Name: "safety-test-cm", Namespace: namespace,
 			}, &corev1.ConfigMap{})
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
 
 			// ModuleInstance should be gone (finalizer removed).
 			Eventually(func() bool {
+				// A recheck of the waiting cleanup, as the requeue would run it.
+				_, _ = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 				var deleted releasesv1alpha1.ModuleInstance
 				err := k8sClient.Get(ctx, nn, &deleted)
 				return err != nil
@@ -1922,17 +1926,20 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 			// Reconcile should still perform deletion cleanup despite suspend.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			// The cleanup deletes with Foreground propagation and keeps the
+			// finalizer until the deleted objects are gone: it asks for a recheck
+			// unless they went at once.
+			Expect(result.RequeueAfter).To(BeNumerically("<=", time.Minute))
 
 			// Verify ConfigMap was deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			expectGone(types.NamespacedName{
 				Name: "test-module", Namespace: namespace,
 			}, &cm)
-			Expect(err).To(HaveOccurred())
-			Expect(client.IgnoreNotFound(err)).To(Succeed())
 
 			// Verify ModuleInstance is gone.
 			Eventually(func() bool {
+				// A recheck of the waiting cleanup, as the requeue would run it.
+				_, _ = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 				var deleted releasesv1alpha1.ModuleInstance
 				err := k8sClient.Get(ctx, nn, &deleted)
 				return err != nil

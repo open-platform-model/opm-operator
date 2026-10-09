@@ -187,6 +187,8 @@ When the deletion cleanup path attempts to build an impersonated client and the 
 
 This behavior MUST apply symmetrically to both `ModuleRelease` and `Release` deletion paths.
 
+Two cases are not this stall, because the missing ServiceAccount has nothing left to do (capability `finalizer-and-deletion`): an inventory that holds nothing the cleanup would delete (it is empty, or holds only PersistentVolumeClaims that `spec.dataPolicy` keeps), and a cleanup that already sent every delete and only waits for the objects to be gone. In both the finalizer is removed, the controller's own client is still never used, and a `Warning` event with reason `DeletionUnconfirmed` says what could not be read.
+
 #### Scenario: SA deleted before finalizer can prune
 - **GIVEN** a ModuleRelease with `spec.serviceAccountName=hello-applier`, `spec.prune=true`, and a non-empty inventory
 - **AND** the ServiceAccount `hello-applier` has been deleted from the release's namespace
@@ -204,6 +206,18 @@ This behavior MUST apply symmetrically to both `ModuleRelease` and `Release` del
 - **THEN** the release stalls with reason `ImpersonationFailed` (the existing generic reason)
 - **AND** the reason is NOT `DeletionSAMissing`
 - **AND** the orphan annotation has no effect on this case
+
+#### Scenario: Only kept claims and no ServiceAccount
+- **GIVEN** a ModuleInstance with `spec.prune=true` and no `spec.dataPolicy` being deleted, whose inventory holds only PersistentVolumeClaims, and whose ServiceAccount does not exist
+- **WHEN** the controller reconciles it
+- **THEN** no object is read or deleted and the finalizer is removed
+- **AND** the reason `DeletionSAMissing` is never set
+- **AND** a `Warning` event with reason `DeletionUnconfirmed` says that the claims were left in place without a read
+
+#### Scenario: ServiceAccount removed while the cleanup waits
+- **GIVEN** a ModuleInstance being deleted whose `Ready` condition carries the reason `DeletionInProgress`
+- **WHEN** its ServiceAccount is deleted and the controller reconciles the instance
+- **THEN** the finalizer is removed and the reason `DeletionSAMissing` is never set
 
 ### Requirement: Orphan-exit annotation removes finalizer on SA-missing
 When a release is in the `DeletionSAMissing` stall state AND the annotation `opm.dev/force-delete-orphan` is set to `"true"` on the release, the controller MUST:

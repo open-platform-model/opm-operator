@@ -40,9 +40,59 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/kubernetes/dele
 
 ### Deleting an operator-managed instance
 
-<!-- The operator adds the finalizer `opmodel.dev/cleanup` on the first reconcile. On delete it reads `spec.prune`. If false, or unset, it logs "Prune disabled, orphaning managed resources on deletion" and removes the finalizer, and everything keeps running. If true, it prunes every inventory entry as the impersonated ServiceAccount (`spec.serviceAccountName`, else the manager's `--default-service-account`, else its own identity). It skips Namespaces and CRDs (matched on group and kind), and leaves every live object the library's delete verdict skips: not labelled as OPM-managed, labelled with another instance's UUID (it accepts `status.instanceUUID` and `status.previousInstanceUUID`; a ModulePackage with no `status.instanceUUID` yet compares no UUID label), or annotated `opmodel.dev/adopt` for another instance. It emits one LeftBehind event for what it left, and every DELETE carries the UID of the object it read. It keeps every PersistentVolumeClaim unless `spec.dataPolicy` is `Delete`, emits one Normal event with reason ClaimsKept that names them, and still removes the finalizer: a kept claim is not a failure. It keeps the finalizer on any failure. A missing ServiceAccount stalls the delete with reason DeletionSAMissing until the ServiceAccount returns, prune is set to false, or `opm.dev/force-delete-orphan: "true"` is annotated. On a ModuleInstance each of the three takes effect within seconds: the operator watches ServiceAccounts and that annotation. The trigger is the creation of the ServiceAccount, so restore its RBAC first and the ServiceAccount last. In the other order the prune is forbidden, the reason becomes ImpersonationFailed and the next attempt is up to 30 minutes later. A ModulePackage reacts to `spec.prune` at once and to the other two at its next recheck, up to 30 minutes later. Restoring only the ServiceAccount's RBAC (reason ImpersonationFailed) also waits for the recheck on both kinds. `opm instance delete` on such an instance only deletes the ModuleInstance and waits. ModulePackage follows the same path with the same finalizer name.
+<!-- The operator adds the finalizer `opmodel.dev/cleanup` on the first reconcile. On delete it reads `spec.prune`. If false, or unset, it logs "Prune disabled, orphaning managed resources on deletion" and removes the finalizer, and everything keeps running. If true, it prunes every inventory entry as the impersonated ServiceAccount (`spec.serviceAccountName`, else the manager's `--default-service-account`, else its own identity). It skips Namespaces and CRDs (matched on group and kind), and leaves every live object the library's delete verdict skips: not labelled as OPM-managed, labelled with another instance's UUID (it accepts `status.instanceUUID` and `status.previousInstanceUUID`; a ModulePackage with no `status.instanceUUID` yet compares no UUID label), or annotated `opmodel.dev/adopt` for another instance. It emits one LeftBehind event for what it left, and every DELETE carries the UID of the object it read. It keeps every PersistentVolumeClaim unless `spec.dataPolicy` is `Delete`, emits one Normal event with reason ClaimsKept that names them, and still removes the finalizer: a kept claim is not a failure. It keeps the finalizer on any failure, and after the deletes until the deleted objects are gone (the visible section "The operator waits until the deleted resources are gone"). A missing ServiceAccount stalls the delete with reason DeletionSAMissing until the ServiceAccount returns, prune is set to false, or `opm.dev/force-delete-orphan: "true"` is annotated. On a ModuleInstance each of the three takes effect within seconds: the operator watches ServiceAccounts and that annotation. The trigger is the creation of the ServiceAccount, so restore its RBAC first and the ServiceAccount last. In the other order the prune is forbidden, the reason becomes ImpersonationFailed and the next attempt is up to 30 minutes later. A ModulePackage reacts to `spec.prune` at once and to the other two at its next recheck, up to 30 minutes later. Restoring only the ServiceAccount's RBAC (reason ImpersonationFailed) also waits for the recheck on both kinds. `opm instance delete` on such an instance only deletes the ModuleInstance and waits. ModulePackage follows the same path with the same finalizer name.
 
 Check against: opm-operator/internal/reconcile/moduleinstance.go, opm-operator/internal/reconcile/modulepackage.go, opm-operator/internal/apply/prune.go, opm-operator/openspec/specs/finalizer-and-deletion/spec.md, cli/internal/cmd/instance/delete.go -->
+
+### The operator waits until the deleted resources are gone
+
+When `spec.prune` is true, the operator deletes the resources of a deleted ModuleInstance or ModulePackage through one deletion plan, the same plan the CLI uses:
+
+- **Order.** Resources are deleted by kind, workloads before the configuration and the RBAC they use. The order of `status.inventory` plays no part.
+- **Foreground.** Every delete uses foreground propagation: Kubernetes keeps the deleted resource, in `Terminating`, until its dependents are gone. A deleted Deployment stays visible until its Pods have stopped.
+
+A prune on update deletes in the same way.
+
+After the operator sent the deletes, it keeps its finalizer on the ModuleInstance until every resource it deleted is gone. The instance stays in `Terminating` meanwhile, and its `Ready` condition says why:
+
+```text
+Ready=False  DeletionInProgress  Every delete was sent; waiting for 1 object(s) to be gone: Deployment/media/jellyfin (waits for its dependents to be deleted).
+```
+
+The operator does not block while it waits. It looks again after 1 second, then less often, at most 60 seconds apart, and each time it reads every resource of the inventory again. A delete therefore takes at least about a second, also for an instance of ConfigMaps only, and `kubectl delete moduleinstance` returns later than it did. A prune on update does not wait: the stale resource leaves the inventory when its delete is accepted.
+
+A kept PersistentVolumeClaim, a resource the operator leaves behind and a resource that was already gone are not waited for.
+
+When a resource has been terminating for more than 10 minutes, the reason becomes `DeletionBlocked` with `Stalled=True`, and the operator writes one `Warning` event. The message names each resource and what holds it, at most ten resources and three finalizers each:
+
+```text
+Ready=False  DeletionBlocked  1 deleted object(s) are still terminating after more than 10m0s: ConfigMap/media/settings (finalizers: example.com/hold). Ways out: (1) remove what holds each object: delete the dependent that cannot stop, or fix or remove the controller that owns the named finalizer; (2) set spec.prune=false on this object to remove its finalizer and leave the objects as they are. The annotation opm.dev/force-delete-orphan does not release this wait.
+```
+
+A blocked delete never times out. The operator keeps checking once a minute, and the instance goes when the resource goes or when you set `spec.prune` to false. [Delete an instance safely](/docs/operating/delete-an-instance-safely/) has the steps.
+
+The operator deletes and reads as the instance's ServiceAccount. What happens when that identity goes away depends on when:
+
+- **Before any delete is sent**, or before every delete was sent: the delete stalls with the reason `DeletionSAMissing` or `ImpersonationFailed`, as described above. Deleting a file that lists the ServiceAccount before the instance with one `kubectl delete -f` ends there, because kubectl deletes the ServiceAccount first.
+- **The ServiceAccount is deleted while the operator only waits** (the reason is `DeletionInProgress` or `DeletionBlocked`): the operator can no longer check the resources and lets the instance go, with a `DeletionUnconfirmed` event. This is the only case in which a waiting delete is released without a check.
+- **The ServiceAccount stays and its rights go** while the operator waits, for example its RoleBinding is deleted: the operator does not let go. Its requests are refused, it keeps its finalizer and the reason, says in the message which request failed and why, and tries again. Once the delete is 10 minutes old, the reason is `DeletionBlocked`. Restore the rights, delete the ServiceAccount, or set `spec.prune` to false. The same holds for any other answer the operator gets in place of a result: a server error, a timeout, a throttled or unauthorized request.
+
+The event of a released delete:
+
+```text
+Warning  DeletionUnconfirmed  Removed the cleanup finalizer without confirming that 3 object(s) are gone: ServiceAccount "media/jellyfin-deploy" is missing. Every delete was sent before; the objects may still exist. Check the namespace for leftovers.
+```
+
+The operator never reads or deletes with its own identity in place of the ServiceAccount. It remembers that every delete was sent through the `Ready` reason of the deleting instance, and it keeps no other record.
+
+One more case needs no ServiceAccount: an inventory that holds only PersistentVolumeClaims that `spec.dataPolicy` keeps. The cleanup would delete nothing, so the operator removes its finalizer even when the ServiceAccount is missing. It cannot read the claims then, so it writes a `DeletionUnconfirmed` event in place of the `ClaimsKept` event.
+
+> [!WARNING]
+> **Deletes changed**
+>
+> Earlier operator releases sent each delete with the default propagation of its kind, in inventory order, and removed the finalizer as soon as the deletes were accepted. What you notice now: a deleted resource with dependents stays `Terminating` until they are gone; a ModuleInstance or ModulePackage with `spec.prune: true` stays `Terminating` until its resources are gone, at least about a second; a resource that cannot terminate holds the instance, and after 10 minutes the reason is `DeletionBlocked`; an instance whose inventory holds only kept PersistentVolumeClaims is deleted even when its ServiceAccount is missing, where it stalled with `DeletionSAMissing` before. No field, flag or RBAC rule changed.
+
+<!-- Check against: opm-operator/internal/reconcile/deletion.go, opm-operator/internal/apply/deletion.go, opm-operator/internal/status/deletion.go, opm-operator/openspec/specs/finalizer-and-deletion/spec.md, library/opm/k8s/lifecycle -->
 
 ### PersistentVolumeClaims are kept
 
@@ -72,10 +122,11 @@ Nothing is applied because the rest of the render belongs to the new claim: a wo
 
 Without `forceConflicts` nothing changes: the apply fails with the reason `ApplyFailed` and the claim stays.
 
-Three things are not covered:
+Four things are not covered:
 
 - **Claims that a StatefulSet creates.** A StatefulSet creates one claim per replica from its `volumeClaimTemplates`. They are in no inventory, so the operator never deletes them, with or without `spec.dataPolicy: Delete`. Kubernetes keeps them when the StatefulSet is deleted, unless the StatefulSet sets `persistentVolumeClaimRetentionPolicy`.
 - **Other storage kinds.** Only a `PersistentVolumeClaim` of the core API group is kept.
+- **A claim that names a deleted resource as its owner.** The operator sends no delete for a kept claim. But a claim whose `metadata.ownerReferences` names a resource the operator deletes, for example a Deployment of the same instance, is deleted by the Kubernetes garbage collector together with that owner. The `ClaimsKept` event still names it. OPM does not use owner references to track what an instance owns, so this happens only when a module renders such a reference or something else adds one.
 - **CLI-managed instances.** The operator does not touch them. The CLI keeps claims too, and its switch is the flag `--delete-data`. One difference remains: after a prune that kept a claim, the CLI still lists the claim in the inventory and the operator does not.
 
 > [!WARNING]

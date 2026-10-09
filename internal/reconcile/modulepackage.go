@@ -87,6 +87,10 @@ type ModulePackageParams struct {
 	// of the key on a NoOp.
 	DriftRenderInterval time.Duration
 
+	// DeletionWait tunes the wait of a deletion cleanup for its deleted
+	// objects. The zero value is the production setting; tests set its clock.
+	DeletionWait DeletionWait
+
 	// convert exports a render result for apply. Nil, as in production,
 	// means convertRender; tests in this package set it to observe the
 	// conversion, for example that it runs while the render slot is held.
@@ -1054,135 +1058,32 @@ func removeModulePackageFinalizer(ctx context.Context, c client.Client, pkg *rel
 	return c.Patch(ctx, pkg, mergePatch)
 }
 
-// handleModulePackageDeletion runs the deletion cleanup path. Mirrors
-// handleDeletion in moduleinstance.go — both share the same SA-missing-at-delete
-// bug class and are kept symmetric on purpose. See that function's doc and
-// design.md (deletion-sa-missing-stall) for the stall/orphan branches.
+// handleModulePackageDeletion runs the deletion cleanup of a ModulePackage:
+// the one cleanup of both kinds, runDeletionCleanup, which documents every
+// branch.
 func handleModulePackageDeletion(ctx context.Context, params *ModulePackageParams, pkg *releasesv1alpha1.ModulePackage) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-	log.Info("Running deletion cleanup for ModulePackage")
-
 	patcher := patch.NewSerialPatcher(pkg, params.Client)
-
-	if !pkg.Spec.Prune || pkg.Status.Inventory == nil || len(pkg.Status.Inventory.Entries) == 0 {
-		if !pkg.Spec.Prune {
-			log.Info("Prune disabled, orphaning managed resources on deletion")
-		}
-		if err := removeModulePackageFinalizer(ctx, params.Client, pkg); err != nil {
-			return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
-		}
-		log.Info("Finalizer removed, deletion can proceed")
-		return ctrl.Result{}, nil
-	}
-
-	effectiveSA, source := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
-	deleteClient := params.Client
-	if effectiveSA != "" && params.RestConfig != nil {
-		impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), pkg.Namespace, effectiveSA)
-		if impErr != nil {
-			return handleModulePackageDeletionImpersonationFailure(ctx, params, patcher, pkg, effectiveSA, source, impErr)
-		}
-		deleteClient = impClient
-	}
-
-	// An object that carries either recorded identity is the package's own.
-	// With none recorded the verdict is asked with no identity.
-	identities := recordedIdentities(pkg.Status.InstanceUUID, pkg.Status.PreviousInstanceUUID)
-	pruneResult, err := apply.Prune(ctx, deleteClient, identities, pkg.Status.Inventory.Entries,
-		apply.PruneOptions{DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
-	if err != nil {
-		if effectiveSA != "" && isForbidden(err) {
-			log.Error(err, "Impersonation denied during deletion cleanup",
-				"serviceAccount", effectiveSA,
-				"serviceAccountSource", source)
-			emit := !readyAlreadyStalledWith(pkg.Status.Conditions, status.ImpersonationFailedReason)
-			status.MarkStalled(pkg, status.ImpersonationFailedReason, "%s", err)
-			if emit {
-				params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning,
-					status.ImpersonationFailedReason, "Delete", "%s", err)
-			}
-			if patchErr := patchModulePackageDeletionStatus(ctx, patcher, pkg); patchErr != nil {
-				log.Error(patchErr, "Failed to patch ModulePackage status on Forbidden deletion prune")
-			}
-			return ctrl.Result{RequeueAfter: StalledRecheckInterval}, nil
-		}
-		log.Error(err, "Partial failure during deletion cleanup, retaining finalizer")
-		return ctrl.Result{}, err
-	}
-	log.Info("Deletion cleanup pruned resources",
-		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped, "keptClaims", len(pruneResult.Kept))
-	reportKeptClaims(params.EventRecorder, pkg, "Delete", pruneResult.Kept)
-	reportLeftBehind(params.EventRecorder, pkg, "Delete", pruneResult.Left)
-
-	if err := removeModulePackageFinalizer(ctx, params.Client, pkg); err != nil {
-		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
-	}
-	log.Info("Finalizer removed, deletion can proceed")
-	return ctrl.Result{}, nil
-}
-
-func handleModulePackageDeletionImpersonationFailure(
-	ctx context.Context,
-	params *ModulePackageParams,
-	patcher *patch.SerialPatcher,
-	pkg *releasesv1alpha1.ModulePackage,
-	effectiveSA, source string,
-	impErr error,
-) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
-	if apply.IsServiceAccountNotFound(impErr) {
-		if pkg.GetAnnotations()[releasesv1alpha1.AnnotationForceDeleteOrphan] == "true" {
-			orphanCount := int64(len(pkg.Status.Inventory.Entries))
-			log.Info("Orphaning inventory and removing finalizer at operator request",
-				"serviceAccount", effectiveSA,
-				"serviceAccountSource", source,
-				"inventoryCount", orphanCount)
-			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning,
-				status.OrphanedOnDeletionReason, "Delete",
-				"Orphaned %d managed resources; ServiceAccount %q missing and %s annotation set",
-				orphanCount, effectiveSA, releasesv1alpha1.AnnotationForceDeleteOrphan)
-			pkg.Status.Inventory = nil
-			if err := patchModulePackageDeletionStatus(ctx, patcher, pkg); err != nil {
-				log.Error(err, "Failed to patch ModulePackage status on orphan-exit")
-			}
-			if err := removeModulePackageFinalizer(ctx, params.Client, pkg); err != nil {
-				return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
-			}
-			log.Info("Finalizer removed, deletion can proceed")
-			return ctrl.Result{}, nil
-		}
-
-		log.Error(impErr, "Impersonation ServiceAccount missing during deletion; ModulePackage stalled pending operator action",
-			"serviceAccount", effectiveSA,
-			"serviceAccountSource", source,
-			"annotation", releasesv1alpha1.AnnotationForceDeleteOrphan)
-		msg := deletionSAMissingMessage(pkg.Namespace, effectiveSA)
-		emit := !readyAlreadyStalledWith(pkg.Status.Conditions, status.DeletionSAMissingReason)
-		status.MarkStalled(pkg, status.DeletionSAMissingReason, "%s", msg)
-		if emit {
-			params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning,
-				status.DeletionSAMissingReason, "Delete", "%s", msg)
-		}
-		if err := patchModulePackageDeletionStatus(ctx, patcher, pkg); err != nil {
-			log.Error(err, "Failed to patch ModulePackage status on DeletionSAMissing stall")
-		}
-		return ctrl.Result{RequeueAfter: StalledRecheckInterval}, nil
-	}
-
-	log.Error(impErr, "Impersonation failed during deletion cleanup",
-		"serviceAccount", effectiveSA,
-		"serviceAccountSource", source)
-	emit := !readyAlreadyStalledWith(pkg.Status.Conditions, status.ImpersonationFailedReason)
-	status.MarkStalled(pkg, status.ImpersonationFailedReason, "%s", impErr)
-	if emit {
-		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning,
-			status.ImpersonationFailedReason, "Delete", "%s", impErr)
-	}
-	if err := patchModulePackageDeletionStatus(ctx, patcher, pkg); err != nil {
-		log.Error(err, "Failed to patch ModulePackage status on ImpersonationFailed stall")
-	}
-	return ctrl.Result{RequeueAfter: StalledRecheckInterval}, nil
+	return runDeletionCleanup(ctx, deletionEnv{
+		client:                params.Client,
+		apiReader:             params.APIReader,
+		restConfig:            params.RestConfig,
+		recorder:              params.EventRecorder,
+		defaultServiceAccount: params.DefaultServiceAccount,
+		wait:                  params.DeletionWait,
+	}, deletionTarget{
+		obj:            pkg,
+		kind:           "ModulePackage",
+		prune:          pkg.Spec.Prune,
+		deleteData:     pkg.Spec.DataPolicy.DeletesClaims(),
+		serviceAccount: pkg.Spec.ServiceAccountName,
+		entries:        inventoryEntries(pkg.Status.Inventory),
+		// An object that carries either recorded identity is the package's
+		// own. With none recorded the verdict is asked with no identity.
+		identities:      recordedIdentities(pkg.Status.InstanceUUID, pkg.Status.PreviousInstanceUUID),
+		clearInventory:  func() { pkg.Status.Inventory = nil },
+		patchStatus:     func(ctx context.Context) error { return patchModulePackageDeletionStatus(ctx, patcher, pkg) },
+		removeFinalizer: func(ctx context.Context) error { return removeModulePackageFinalizer(ctx, params.Client, pkg) },
+	})
 }
 
 func patchModulePackageDeletionStatus(ctx context.Context, patcher *patch.SerialPatcher, pkg *releasesv1alpha1.ModulePackage) error {

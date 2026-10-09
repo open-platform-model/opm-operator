@@ -132,9 +132,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		Expect(result.RequeueAfter).To(BeZero())
 
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "stale-a", Namespace: namespace}, &cm)).To(Succeed())
-		err = k8sClient.Get(ctx, types.NamespacedName{Name: "stale-b", Namespace: namespace}, &cm)
-		Expect(err).To(HaveOccurred())
-		Expect(client.IgnoreNotFound(err)).To(Succeed())
+		expectGone(types.NamespacedName{Name: "stale-b", Namespace: namespace}, &cm)
 
 		By("inventory contains only A and the Pruned event was emitted (AppliedAndPruned outcome)")
 		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
@@ -241,9 +239,7 @@ var _ = Describe("Reconcile Stale Pruning", func() {
 		var cm corev1.ConfigMap
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "sel-a", Namespace: namespace}, &cm)).To(Succeed())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "sel-c", Namespace: namespace}, &cm)).To(Succeed())
-		err = k8sClient.Get(ctx, types.NamespacedName{Name: "sel-b", Namespace: namespace}, &cm)
-		Expect(err).To(HaveOccurred())
-		Expect(client.IgnoreNotFound(err)).To(Succeed())
+		expectGone(types.NamespacedName{Name: "sel-b", Namespace: namespace}, &cm)
 
 		By("inventory reflects A and C")
 		var mi releasesv1alpha1.ModuleInstance

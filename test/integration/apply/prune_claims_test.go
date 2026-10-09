@@ -101,8 +101,7 @@ var _ = Describe("Prune and PersistentVolumeClaims", func() {
 		Expect(result.Kept).To(Equal([]releasesv1alpha1.InventoryEntry{claimEntry("claims-default-pvc")}))
 
 		Expect(claimDeleteRequested("claims-default-pvc")).To(BeFalse(), "the claim must be untouched")
-		err = k8sClient.Get(ctx, client.ObjectKeyFromObject(cm), &corev1.ConfigMap{})
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the ConfigMap must be pruned as before")
+		expectGone(client.ObjectKeyFromObject(cm), &corev1.ConfigMap{}, "the ConfigMap must be pruned as before")
 	})
 
 	It("deletes a claim when DeleteData is set", func() {

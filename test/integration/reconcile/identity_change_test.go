@@ -265,7 +265,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 		_, err := reconcileWith(nn, identityRender(identityB, "idc-app"))
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(configMapExists("idc-old")).To(BeFalse(), "it carries the earlier identity: the instance's own")
+		expectConfigMapGone("idc-old", "it carries the earlier identity: the instance's own")
 		Expect(liveConfigMapLabels("idc-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityB))
 		expectIdentities(nn, identityB, "")
 		Expect(inventoryNames(instanceStatus(nn).Inventory)).To(ConsistOf("ConfigMap/idc-app"))
@@ -291,8 +291,8 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 		_, err = reconcileWith(nn, identityRender(identityB, "idr-app"))
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(configMapExists("idr-old")).To(BeFalse())
-		Expect(configMapExists("idr-older")).To(BeFalse())
+		expectConfigMapGone("idr-old")
+		expectConfigMapGone("idr-older")
 		expectIdentities(nn, identityB, "")
 		Expect(ready(nn).Status).To(Equal(metav1.ConditionTrue))
 	})
@@ -370,7 +370,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 		Expect(requeue).To(BeNumerically(">", 0), "the reconcile is retried")
 		Expect(f.applied).To(BeZero(), "no object of the render is applied")
-		Expect(configMapExists("idn-new")).To(BeFalse())
+		expectConfigMapGone("idn-new")
 		Expect(liveConfigMapLabels("idn-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA))
 		expectIdentities(nn, identityA, "")
 
@@ -420,8 +420,8 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 		_, err = reconcileWith(nn, identityRender(identityB, "idl-keep"))
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(configMapExists("idl-app")).To(BeFalse(), "labelled B, the instance's own")
-		Expect(configMapExists("idl-old")).To(BeFalse(), "labelled A, the instance's own")
+		expectConfigMapGone("idl-app", "labelled B, the instance's own")
+		expectConfigMapGone("idl-old", "labelled A, the instance's own")
 		expectIdentities(nn, identityB, "")
 	})
 
@@ -478,7 +478,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(configMapExists("idz-earlier")).To(BeTrue(), "another instance's UUID label: left, as before")
-			Expect(configMapExists("idz-mine")).To(BeFalse(), "annotated for the render's identity")
+			expectConfigMapGone("idz-mine", "annotated for the render's identity")
 			Expect(configMapExists("idz-theirs")).To(BeTrue(), "annotated for another instance")
 			expectIdentities(nn, identityB, "")
 			Expect(inventoryNames(instanceStatus(nn).Inventory)).To(ConsistOf("ConfigMap/idz-app"))
@@ -520,7 +520,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			Expect(requeue).To(Equal(opmreconcile.StalledRecheckInterval))
 			Expect(f.applied).To(BeZero(), "nothing is applied")
 			Expect(f.deleteCalls).To(BeZero(), "nothing is deleted")
-			Expect(configMapExists("idt-new")).To(BeFalse())
+			expectConfigMapGone("idt-new")
 			Expect(configMapExists("idt-old")).To(BeTrue())
 			expectIdentities(nn, identityB, identityA)
 			st := instanceStatus(nn)
@@ -545,7 +545,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			Expect(err).NotTo(HaveOccurred())
 			expectIdentities(nn, identityB, "")
 			Expect(ready(nn).Status).To(Equal(metav1.ConditionTrue))
-			Expect(configMapExists("idt-old")).To(BeFalse())
+			expectConfigMapGone("idt-old")
 		})
 
 		It("does not stop the deletion cleanup, which accepts both identities", func() {
@@ -560,9 +560,9 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			})).To(Succeed())
 			Expect(reconcileInstance(params, nn)).To(Succeed())
 
-			Expect(configMapExists("idtd-app")).To(BeFalse(), "relabelled to B")
-			Expect(configMapExists("idtd-old")).To(BeFalse(), "still labelled A")
-			Expect(instanceGone(nn)).To(BeTrue())
+			expectConfigMapGone("idtd-app", "relabelled to B")
+			expectConfigMapGone("idtd-old", "still labelled A")
+			reconcileInstanceUntilGone(params, nn)
 		})
 	})
 
@@ -589,9 +589,9 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 			Expect(deleteInstance(nn)).To(Succeed())
 
-			Expect(configMapExists("idw-app")).To(BeFalse(), "the live workload, relabelled to the new identity")
-			Expect(configMapExists("idw-old")).To(BeFalse(), "not yet relabelled")
-			Expect(instanceGone(nn)).To(BeTrue())
+			expectConfigMapGone("idw-app", "the live workload, relabelled to the new identity")
+			expectConfigMapGone("idw-old", "not yet relabelled")
+			reconcileInstanceUntilGone(params, nn)
 			Expect(rec.withReason(status.LeftBehindReason)).To(BeEmpty())
 		})
 
@@ -609,11 +609,12 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 			Expect(deleteInstance(nn)).To(Succeed())
 
-			Expect(configMapExists("iddl-own")).To(BeFalse())
+			expectConfigMapGone("iddl-own")
 			for _, name := range []string{"iddl-other", "iddl-adopted", "iddl-foreign"} {
 				Expect(configMapExists(name)).To(BeTrue(), name)
 			}
-			Expect(instanceGone(nn)).To(BeTrue(), "a skipped object does not hold the finalizer")
+			// A skipped object does not hold the finalizer.
+			reconcileInstanceUntilGone(params, nn)
 			left := rec.withReason(status.LeftBehindReason)
 			Expect(left).To(HaveLen(1))
 			Expect(left[0].eventType).To(Equal(corev1.EventTypeWarning))
@@ -641,8 +642,8 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 			By("the next cleanup reads the object that now holds the name and judges it")
 			Expect(reconcileInstance(params, nn)).To(Succeed())
-			Expect(configMapExists("iddr-own")).To(BeFalse())
-			Expect(instanceGone(nn)).To(BeTrue())
+			expectConfigMapGone("iddr-own")
+			reconcileInstanceUntilGone(params, nn)
 		})
 
 		It("holds the finalizer when a delete fails and reports nothing as left behind", func() {
@@ -657,7 +658,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 			f.failDelete = ""
 			Expect(reconcileInstance(params, nn)).To(Succeed())
-			Expect(instanceGone(nn)).To(BeTrue())
+			reconcileInstanceUntilGone(params, nn)
 			Expect(rec.withReason(status.LeftBehindReason)).To(HaveLen(1), "the cleanup that removes the finalizer reports")
 		})
 	})
@@ -710,7 +711,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			_, err := reconcileWith(nn, identityRender(identityA, "idcl-app"))
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(configMapExists("idcl-old")).To(BeFalse())
+			expectConfigMapGone("idcl-old")
 			Expect(rec.withReason(status.LeftBehindReason)).To(BeEmpty())
 		})
 	})

@@ -169,38 +169,71 @@ The synthesis flow MUST behave predictably across the common user-facing scenari
 - **WHEN** a user updates `spec.module.version` on an existing `ModuleRelease` CR
 - **THEN** the controller detects the CR change, re-synthesizes the package with the new version, CUE resolves the new version from the registry, new resources are rendered and applied, and previous resources no longer in the inventory are pruned when `prune: true`
 
-### Requirement: An unset required config value is refused in the spec.values wording
+### Requirement: An unset required config value is refused by instance synthesis
 
-A ModuleInstance whose `spec.values` leave a required `#config` value of its module unset SHALL be refused before instance synthesis by the check of `spec.values` against `#config`, whether or not a component reads the value and whether or not `spec.values` is present. The message SHALL start with `validating values against the module's #config: ` and SHALL name the `#config` field and the position of its declaration. The ModuleInstance SHALL report `Ready=False` and `Stalled=True` with reason `RenderFailed`. A kernel that refuses the same state during synthesis SHALL NOT change this message or this reason.
+A ModuleInstance whose `spec.values` leave a required `#config` value of its module unset SHALL be refused by instance synthesis, whether or not a component reads the value and whether or not `spec.values` is present. The controller SHALL report the kernel's refusal and SHALL NOT run a check of its own for this state. The message SHALL be `synthesizing release: Kernel.SynthesizeInstance: instance "<name>": not fully concrete: ` followed by one finding for every unset required value, `values.<field>: incomplete value <type> (<file>:<line>:<column>)` with the position of its `#config` declaration, joined by `; `. A nested field SHALL be named by its full path (`values.db.host`). A value a component reads SHALL be named like a value no component reads, and the message SHALL NOT name the place in a component that reads it. The controller SHALL word the findings from the kernel's typed error tree; the kernel's own text names the first finding and counts the rest. The ModuleInstance SHALL report `Ready=False` and `Stalled=True` with reason `RenderFailed`.
 
 #### Scenario: Unset required value that no component reads
 
 - **WHEN** a module declares `#config: note: string` with no default, no component reads `note`, and a ModuleInstance of it sets no `note` in `spec.values`
-- **THEN** the render fails with `validating values against the module's #config: #config.note: incomplete value string (<file>:<line>:<column>)`, and the ModuleInstance reports `Ready=False` and `Stalled=True` with reason `RenderFailed`
+- **THEN** the render fails with a message that contains `not fully concrete: values.note: incomplete value string (<file>:<line>:<column>)`, and the ModuleInstance reports `Ready=False` and `Stalled=True` with reason `RenderFailed`
 
-#### Scenario: The value is set
+#### Scenario: No spec.values at all
 
-- **WHEN** the same ModuleInstance sets `note` in `spec.values`
-- **THEN** the values pass the check and the instance is synthesized
+- **WHEN** the same module is instantiated by a ModuleInstance without `spec.values`
+- **THEN** the render fails with the same message and the same reason
 
-### Requirement: Every unset required config value is named
+#### Scenario: Two unset required values
 
-When the `spec.values` of a ModuleInstance leave more than one required `#config` value of its module unset, the refusal SHALL name every one of them, one finding for each, as `#config.<field>` with the position of its declaration. A nested field SHALL be named by its full path (`#config.db.host`). A value a component reads and a value no component reads SHALL be named alike. The findings SHALL be joined by `; ` after the prefix `validating values against the module's #config: `.
+- **WHEN** the module also declares `#config: other: int` with no default and a ModuleInstance sets neither `note` nor `other`
+- **THEN** the message names both `values.note` and `values.other`, each with the position of its declaration, and does not shorten the second to a count
 
-The fields named SHALL be the fields the kernel names for the same values when it refuses the instance during synthesis, where it writes them as `values.<field>`, at the same positions. The two reports SHALL NOT differ in which values they name.
-
-#### Scenario: Three unset values, one read by a component
+#### Scenario: Three unset values, one read by a component, one nested
 
 - **WHEN** a module declares `#config: {note: string, db: host: string, greeting: string}` with no defaults, one component reads `greeting`, and a ModuleInstance of it sets none of them
-- **THEN** the render fails with one message that names `#config.note`, `#config.db.host` and `#config.greeting`, each as `incomplete value string` with its position
+- **THEN** the message names `values.note`, `values.db.host` and `values.greeting`, each as `incomplete value string` with its position, and names no path under `components`
 - **AND** the ModuleInstance reports `Ready=False` and `Stalled=True` with reason `RenderFailed`
-
-#### Scenario: The kernel names the same values
-
-- **WHEN** the same values are given to the kernel's instance synthesis without the check of `spec.values`
-- **THEN** the kernel refuses with findings `values.note`, `values.db.host` and `values.greeting`, at the same positions and with the same text after the path
 
 #### Scenario: Setting one value removes its finding only
 
-- **WHEN** the ModuleInstance sets `note` and leaves the other two unset
-- **THEN** the message names `#config.db.host` and `#config.greeting` and does not name `#config.note`
+- **WHEN** the same ModuleInstance sets `note` and leaves the other two unset
+- **THEN** the message names `values.db.host` and `values.greeting` and does not name `values.note`
+
+#### Scenario: The value is set
+
+- **WHEN** the ModuleInstance sets every required value in `spec.values`
+- **THEN** the instance is synthesized
+
+### Requirement: A values failure reports every finding with its positions
+
+When instance synthesis refuses the values of a ModuleInstance, the message on the `Ready` condition SHALL carry the kernel's error text up to its first finding, followed by every finding the kernel reported, each with the positions the kernel attributed it to, and SHALL NOT replace findings after the first with a count while the message is inside the condition's limit of 32768 characters; past that limit it SHALL keep whole findings from the first and end with `; and <N> more findings`. The event carries the same text within the event note limit (capability `events-emission`). A registry fetch failure during synthesis SHALL keep its own text. A finding caused by a value in `spec.values` SHALL name its position as `spec.values:<line>:<column>`. The wording SHALL NOT change how the failure is classified: a values failure SHALL report reason `RenderFailed` with `Stalled=True`, and a registry fetch failure during synthesis SHALL still report `ResolutionFailed` without `Stalled` and retry on the backoff.
+
+#### Scenario: A value of the wrong type that a component reads
+
+- **WHEN** a module declares `#config: message: string | *"hello"`, a component reads `message`, and a ModuleInstance sets `message: 42`
+- **THEN** the message names `#config.message`, the conflicting values and a position `spec.values:<line>:<column>`, and the ModuleInstance reports `Ready=False` and `Stalled=True` with reason `RenderFailed`
+
+#### Scenario: A value of the wrong type that no component reads
+
+- **WHEN** a module declares `#config: note: string`, no component reads `note`, and a ModuleInstance sets `note: 7`
+- **THEN** the message names `#config.note`, the conflicting values and a position `spec.values:<line>:<column>`, with reason `RenderFailed`
+
+#### Scenario: Two values of the wrong type
+
+- **WHEN** a ModuleInstance sets two values that each conflict with `#config`
+- **THEN** the message names both fields, each with its positions
+
+#### Scenario: A constraint a value does not meet
+
+- **WHEN** a module declares `#config: port: int & >0 | *80` and a ModuleInstance sets `port: -1`
+- **THEN** the message names `#config.port`, `invalid value -1 (out of bound >0)` and a position `spec.values:<line>:<column>`, with reason `RenderFailed`
+
+#### Scenario: A field the module does not declare
+
+- **WHEN** a ModuleInstance sets a field in `spec.values` that the module's `#config` does not allow
+- **THEN** the message contains `field not allowed (spec.values:<line>:<column>)`, with reason `RenderFailed`
+
+#### Scenario: A registry fetch failure during synthesis keeps its class
+
+- **WHEN** instance synthesis fails with a registry fetch failure
+- **THEN** the ModuleInstance reports `Ready=False` with reason `ResolutionFailed`, no `Stalled` condition, and retries on the exponential backoff

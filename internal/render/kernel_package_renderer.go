@@ -61,7 +61,12 @@ func (r *KernelPackageRenderer) Render(
 			// Only #ModuleInstance is renderable; any other kind is unsupported.
 			return "", nil, fmt.Errorf("%w: %w", ErrUnsupportedKind, err)
 		}
-		return KindModuleInstance, nil, acquireFailed("loading package", err)
+		// The findings are written out one by one, as on the ModuleInstance
+		// path. Positions in the package's own files are written relative
+		// to its CUE module root: the package is extracted to a new
+		// temporary directory on every reconcile, and the message must not
+		// change with it.
+		return KindModuleInstance, nil, acquireFailed("loading package", withFindings("", err, cueModuleRoot(packageDir)))
 	}
 
 	// Gate on platform readiness ahead of the build so a package with no

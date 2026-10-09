@@ -7,6 +7,7 @@ import (
 
 	"github.com/fluxcd/pkg/runtime/conditions"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -44,19 +45,22 @@ type DeletionWait struct {
 	// the deletion is reported as DeletionBlocked. Default 10 minutes.
 	BlockedAfter time.Duration
 	// MinRecheck and MaxRecheck bound the requeue interval of a waiting
-	// deletion. Defaults 5 and 60 seconds.
+	// deletion. Defaults 1 and 60 seconds.
 	MinRecheck time.Duration
 	MaxRecheck time.Duration
 	// Now is the controller's clock. Default time.Now.
 	Now func() time.Time
 }
 
-// The defaults of DeletionWait. A judgment, not a measurement: a Pod's
-// default grace period is 30 seconds, so most deletions end within the first
-// few rechecks.
+// The defaults of DeletionWait. A judgment, not a measurement. The API server
+// sets the foregroundDeletion finalizer on every object a Foreground delete
+// reaches, so also a ConfigMap is still there for a moment: the first recheck
+// comes after one second, so that a deletion of objects that go at once is
+// not held longer. A Pod's default grace period is 30 seconds; the interval
+// has grown to about 8 seconds by then.
 const (
 	defaultDeletionBlockedAfter = 10 * time.Minute
-	defaultDeletionMinRecheck   = 5 * time.Second
+	defaultDeletionMinRecheck   = time.Second
 	defaultDeletionMaxRecheck   = 60 * time.Second
 )
 
@@ -162,16 +166,21 @@ func (i identityState) unread() status.Unread {
 // One fact is carried across reconciles: that a reconcile of this deletion
 // reached a release verdict, so every delete was sent. The record is the
 // Ready reason DeletionInProgress or DeletionBlocked (everyDeleteWasSent).
-// It decides one thing: with the record, a deleting identity that is lost
-// during the wait, or reads that are refused as Forbidden, no longer hold the
-// finalizer (DeletionUnconfirmed). It never causes a read or a delete.
+// It decides one thing: with the record, a deleting identity that is really
+// gone during the wait no longer holds the finalizer (DeletionUnconfirmed).
+// Gone means, by the typed API error and never by message text: the
+// ServiceAccount is NotFound, or the reads as that ServiceAccount are refused
+// as Forbidden or Unauthorized. Any other failure (a server error, a
+// timeout, a throttle, a connection error, a cancelled context) is transient:
+// the finalizer and the record stay and the reconcile is retried with
+// backoff. The record never causes a read or a delete.
 func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.Info("Running deletion cleanup for " + t.kind)
 	env.wait = env.wait.withDefaults()
 
 	// Read before any Mark* call of this reconcile.
-	recorded := everyDeleteWasSent(t.obj)
+	recorded := recordedWaitReason(t.obj)
 
 	policy := lifecycle.Policy{
 		Prune:       t.prune,
@@ -210,9 +219,16 @@ func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) 
 	}
 	verdict := holdVerdict(cleanup.Deletion)
 	if !verdict.Release {
-		if recorded && verdict.Because == lifecycle.HoldCleanupForbidden {
-			if waitFor, unconfirmed, onlyLostRights := classifyRecheck(cleanup.Deletion); onlyLostRights {
+		if recorded != "" {
+			switch waitFor, unconfirmed, kind := classifyRecheck(cleanup.Deletion); kind {
+			case recheckLostRights:
 				return awaitGone(ctx, env, t, identity, goneCheck{steps: waitFor, unconfirmed: unconfirmed})
+			case recheckTransient:
+				// Retried with backoff. The status is not touched: a stall
+				// reason would erase the record.
+				log.Error(cleanup.Failed, "A recheck of the waiting deletion failed, retaining finalizer")
+				return ctrl.Result{}, cleanup.Failed
+			case recheckRefusedDelete:
 			}
 		}
 		return actOnHold(ctx, env, t, identity, verdict, cleanup)
@@ -221,7 +237,7 @@ func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) 
 	log.Info("Deletion cleanup pruned resources",
 		"deleted", cleanup.Report.Deleted, "skipped", cleanup.Report.Skipped, "keptClaims", len(cleanup.Report.Kept))
 	check := goneCheck{steps: cleanup.Deletion.Deleted()}
-	if !recorded {
+	if recorded == "" {
 		// The first reconcile of this deletion that reaches a release
 		// verdict reports; a recheck does not report again.
 		check.report = cleanup.Report
@@ -242,12 +258,30 @@ func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) 
 // same for anyone who may edit the spec. The roles the operator ships give
 // users no write verb on a status subresource (test/rbac).
 func everyDeleteWasSent(obj conditions.Getter) bool {
+	return recordedWaitReason(obj) != ""
+}
+
+// recordedWaitReason returns the wait reason that is the record, or the
+// empty string when the object carries no record.
+func recordedWaitReason(obj conditions.Getter) string {
 	if obj.GetDeletionTimestamp().IsZero() {
-		return false
+		return ""
 	}
 	ready := apimeta.FindStatusCondition(obj.GetConditions(), status.ReadyCondition)
-	return ready != nil && ready.Status == metav1.ConditionFalse &&
-		(ready.Reason == status.DeletionInProgressReason || ready.Reason == status.DeletionBlockedReason)
+	if ready == nil || ready.Status != metav1.ConditionFalse {
+		return ""
+	}
+	if ready.Reason == status.DeletionInProgressReason || ready.Reason == status.DeletionBlockedReason {
+		return ready.Reason
+	}
+	return ""
+}
+
+// rightsLost reports whether err is the API server's refusal of a request as
+// Forbidden or Unauthorized: the identity that sent it has lost its rights.
+// It reads the typed API status, never the message.
+func rightsLost(err error) bool {
+	return err != nil && (apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err))
 }
 
 // unreadSteps counts the steps of a plan that a cleanup would read: all but
@@ -262,40 +296,56 @@ func unreadSteps(plan lifecycle.DeletionPlan) int {
 	return n
 }
 
-// classifyRecheck sorts the failed steps of a recheck that holds as
-// cleanup-forbidden, for a deletion that already sent every delete:
-//
-//   - A read refused as Forbidden cannot be confirmed and does not hold.
-//   - A delete refused as Forbidden of an object that was read and is already
-//     terminating is a repeated delete: the object is waited for, as a
-//     deleted one.
-//   - Any other failure (a failure that is not Forbidden, or a Forbidden
-//     delete of an object that is not terminating) is not a lost right
-//     during the wait: onlyLostRights is false and the hold stands.
-//
-// waitFor also holds the steps whose delete was accepted.
-func classifyRecheck(deletion apply.Deletion) (waitFor []apply.StepResult, unconfirmed int, onlyLostRights bool) {
+// recheckKind says what the failed steps of a recheck are.
+type recheckKind int
+
+const (
+	// recheckLostRights: every failure is a refusal (Forbidden or
+	// Unauthorized) of a read, or of a repeated delete of an object that is
+	// already terminating. The identity lost its rights during the wait.
+	recheckLostRights recheckKind = iota
+	// recheckTransient: at least one step failed for another cause (a server
+	// error, a timeout, a throttle). Nothing is known; retry.
+	recheckTransient
+	// recheckRefusedDelete: no transient failure, and the delete of an
+	// object that is NOT terminating was refused. That object was never
+	// deleted, so the record does not cover it: the hold stands as without
+	// the record.
+	recheckRefusedDelete
+)
+
+// classifyRecheck sorts the failed steps of a recheck that holds, for a
+// deletion that already sent every delete. A failure is read from the typed
+// API error of the step, never from message text. waitFor holds the steps to
+// read again: the ones whose delete was accepted and the terminating ones
+// whose repeated delete was refused. unconfirmed counts the reads that were
+// refused: those entries cannot be confirmed and do not hold.
+func classifyRecheck(deletion apply.Deletion) (waitFor []apply.StepResult, unconfirmed int, kind recheckKind) {
+	refusedDelete := false
 	for _, run := range deletion.Runs {
 		for _, step := range run.Steps {
 			switch step.Outcome.Result {
 			case lifecycle.ResultDeleted:
 				waitFor = append(waitFor, step)
 			case lifecycle.ResultFailed:
-				forbidden := step.Outcome.Failure == lifecycle.FailureForbidden
 				switch {
-				case forbidden && step.Failed == lifecycle.ActionRead:
+				case !rightsLost(step.Err):
+					return nil, 0, recheckTransient
+				case step.Failed == lifecycle.ActionRead:
 					unconfirmed++
-				case forbidden && step.Failed == lifecycle.ActionDelete &&
-					step.Live != nil && !step.Live.GetDeletionTimestamp().IsZero():
+				case step.Live != nil && !step.Live.GetDeletionTimestamp().IsZero():
 					waitFor = append(waitFor, step)
 				default:
-					return nil, 0, false
+					refusedDelete = true
 				}
 			case lifecycle.ResultSkipped:
 			}
 		}
 	}
-	return waitFor, unconfirmed, true
+	if refusedDelete {
+		return nil, 0, recheckRefusedDelete
+	}
+	return waitFor, unconfirmed, recheckLostRights
 }
 
 // goneCheck is what a cleanup waits for after every delete was sent.
@@ -471,8 +521,9 @@ type lostCounts struct {
 	// claims is the number of kept claims; planned the number of entries a
 	// plan would read.
 	claims, planned int
-	// recorded says that an earlier reconcile sent every delete.
-	recorded bool
+	// recorded is the wait reason an earlier reconcile wrote when it had
+	// sent every delete; empty without that record.
+	recorded string
 }
 
 // actOnLostIdentity acts on the verdict of a cleanup whose deleting identity
@@ -517,10 +568,29 @@ func actOnLostIdentity(
 		return releaseFinalizer(ctx, t)
 	}
 
-	if counts.recorded {
-		// Every delete was sent by an earlier reconcile of this deletion, so
-		// the lost identity has nothing left to delete. The objects cannot
-		// be read without it: the event says so.
+	if counts.recorded != "" && identity.held != lifecycle.IdentityMissing {
+		// The ServiceAccount could not be looked up, which says nothing
+		// about whether it exists. The record releases only an identity that
+		// is gone, so this is retried, and the wait reason, which is the
+		// record, is kept: a stall reason here would erase it.
+		log.Error(identity.err, "Could not obtain the deleting identity while the deletion waits; retaining finalizer",
+			"serviceAccount", identity.name, "serviceAccountSource", identity.source)
+		msg := fmt.Sprintf("Every delete was sent; the deleted objects could not be checked: %s. The check is retried.", identity.err)
+		if counts.recorded == status.DeletionBlockedReason {
+			status.MarkDeletionBlocked(t.obj, msg)
+		} else {
+			status.MarkDeletionInProgress(t.obj, msg)
+		}
+		if err := t.patchStatus(ctx); err != nil {
+			log.Error(err, "Failed to patch "+t.kind+" status on a failed identity check")
+		}
+		return ctrl.Result{}, fmt.Errorf("obtaining the deleting identity: %w", identity.err)
+	}
+
+	if counts.recorded != "" {
+		// The ServiceAccount is gone (NotFound). Every delete was sent by an
+		// earlier reconcile of this deletion, so it has nothing left to
+		// delete. The objects cannot be read without it: the event says so.
 		log.Info("The deleting identity was lost while the deletion waited; releasing without a read",
 			"serviceAccount", identity.name, "serviceAccountSource", identity.source, "unconfirmed", counts.planned)
 		env.recorder.Eventf(t.obj, nil, corev1.EventTypeWarning, status.DeletionUnconfirmedReason, "Delete",

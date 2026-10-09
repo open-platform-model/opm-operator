@@ -149,8 +149,8 @@ func TestDeletionUnconfirmedNotes(t *testing.T) {
 		{DeletionUnconfirmedNote(1, "media/deploy", UnreadIdentityFailed),
 			[]string{`ServiceAccount "media/deploy" cannot be impersonated`}},
 		{DeletionUnconfirmedNote(2, "media/deploy", UnreadForbidden),
-			[]string{`ServiceAccount "media/deploy" is forbidden to read them`}},
-		{DeletionUnconfirmedNote(2, "", UnreadForbidden), []string{"the controller is forbidden to read them"}},
+			[]string{`ServiceAccount "media/deploy" is not allowed to read them`}},
+		{DeletionUnconfirmedNote(2, "", UnreadForbidden), []string{"the controller is not allowed to read them"}},
 		{ClaimsUnreadNote(2, "media/deploy", UnreadIdentityMissing),
 			[]string{"2 PersistentVolumeClaim(s)", `ServiceAccount "media/deploy" is missing`, "left in place", "may still exist"}},
 	}

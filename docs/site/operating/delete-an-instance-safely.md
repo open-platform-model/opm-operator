@@ -46,7 +46,7 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/inventory/owner
    Check against: cli/internal/workflow/apply/apply.go, cli/internal/inventory/stale.go, cli/internal/kubernetes/client.go, core/src/transformer.cue, core/src/module_instance.cue -->
 8. Release a delete stuck in Terminating.
 
-   This step is for an operator-managed instance. With `spec.prune: true` the operator deletes the instance's resources and keeps the ModuleInstance until they are gone, so a delete takes at least a few seconds and can take as long as the slowest Pod needs to stop. When it takes longer than you expect, read the `Ready` condition:
+   This step is for an operator-managed instance. With `spec.prune: true` the operator deletes the instance's resources and keeps the ModuleInstance until they are gone, so a delete takes at least about a second and can take as long as the slowest Pod needs to stop. When it takes longer than you expect, read the `Ready` condition:
 
    ```sh
    kubectl get moduleinstance <name> -n <namespace> -o jsonpath='{.status.conditions[?(@.type=="Ready")]}'
@@ -77,7 +77,11 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/inventory/owner
 
    Each of the three releases a ModuleInstance within seconds. A ModulePackage picks up the restored ServiceAccount or the annotation at its next recheck, up to 30 minutes later. For `ImpersonationFailed`, fix the ServiceAccount's RBAC; the operator tries again at its next recheck, up to 30 minutes later.
 
-   To avoid both, delete the instance first and its ServiceAccount after it. The order matters only until the operator has sent every delete. When the ServiceAccount or its rights are removed while the operator only waits (the reason is `DeletionInProgress` or `DeletionBlocked`), it lets the instance go and writes a `Warning` event with the reason `DeletionUnconfirmed`: the operator could not check that the resources are gone, so check the namespace for leftovers yourself.
+   To avoid both, delete the instance first and its ServiceAccount after it:
+
+   - Do not delete a file that lists the ServiceAccount before the instance with one `kubectl delete -f`. kubectl deletes in file order, so the ServiceAccount is gone before the operator has sent a single delete, and the delete stalls with `DeletionSAMissing`. The ModulePackage sample the operator ships, `config/samples/opmodel.dev_v1alpha1_modulepackage.yaml`, is such a file. Delete the instance by name first and the rest of the file after it, or use one of the three ways out above.
+
+   The order matters only until the operator has sent every delete. When the ServiceAccount or its rights are removed while the operator only waits (the reason is `DeletionInProgress` or `DeletionBlocked`), it lets the instance go and writes a `Warning` event with the reason `DeletionUnconfirmed`: the operator could not check that the resources are gone, so check the namespace for leftovers yourself. This applies only when the ServiceAccount is really gone or refused. When the operator merely fails to reach the API server, it keeps waiting and tries again.
 
    An instance with `spec.owner: cli` never waits on the finalizer: the operator releases a leftover `opmodel.dev/cleanup` on delete and prunes nothing.
 

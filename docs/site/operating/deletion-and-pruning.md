@@ -59,7 +59,7 @@ After the operator sent the deletes, it keeps its finalizer on the ModuleInstanc
 Ready=False  DeletionInProgress  Every delete was sent; waiting for 1 object(s) to be gone: Deployment/media/jellyfin (waits for its dependents to be deleted).
 ```
 
-The operator does not block while it waits. It looks again after 5 seconds, then less often, at most 60 seconds apart, and each time it reads every resource of the inventory again. A delete therefore takes at least a few seconds, also for an instance of ConfigMaps only, and `kubectl delete moduleinstance` returns later than it did. A prune on update does not wait: the stale resource leaves the inventory when its delete is accepted.
+The operator does not block while it waits. It looks again after 1 second, then less often, at most 60 seconds apart, and each time it reads every resource of the inventory again. A delete therefore takes at least about a second, also for an instance of ConfigMaps only, and `kubectl delete moduleinstance` returns later than it did. A prune on update does not wait: the stale resource leaves the inventory when its delete is accepted.
 
 A kept PersistentVolumeClaim, a resource the operator leaves behind and a resource that was already gone are not waited for.
 
@@ -71,7 +71,7 @@ Ready=False  DeletionBlocked  1 deleted object(s) are still terminating after mo
 
 A blocked delete never times out. The operator keeps checking once a minute, and the instance goes when the resource goes or when you set `spec.prune` to false. [Delete an instance safely](/docs/operating/delete-an-instance-safely/) has the steps.
 
-The operator deletes and reads as the instance's ServiceAccount. If the ServiceAccount is deleted, or loses its rights, **before** every delete was sent, the delete stalls with the reason `DeletionSAMissing` or `ImpersonationFailed`, as described above. Deleting a file that lists the ServiceAccount before the instance with one `kubectl delete -f` ends there, because kubectl deletes the ServiceAccount first. If it happens **after** every delete was sent, while the operator only waits, the operator can no longer check the resources and lets the instance go. It writes one `Warning` event:
+The operator deletes and reads as the instance's ServiceAccount. If the ServiceAccount is deleted, or loses its rights, **before** every delete was sent, the delete stalls with the reason `DeletionSAMissing` or `ImpersonationFailed`, as described above. Deleting a file that lists the ServiceAccount before the instance with one `kubectl delete -f` ends there, because kubectl deletes the ServiceAccount first. If it happens **after** every delete was sent, while the operator only waits, the operator can no longer check the resources and lets the instance go. "It happens" means that the ServiceAccount no longer exists, or that the API server refuses its reads as Forbidden or Unauthorized. A server error, a timeout or a throttled request is not that: the operator keeps its finalizer and the reason, says in the message that the check failed, and tries again. It writes one `Warning` event:
 
 ```text
 Warning  DeletionUnconfirmed  Removed the cleanup finalizer without confirming that 3 object(s) are gone: ServiceAccount "media/jellyfin-deploy" is missing. Every delete was sent before; the objects may still exist. Check the namespace for leftovers.
@@ -84,7 +84,7 @@ One more case needs no ServiceAccount: an inventory that holds only PersistentVo
 > [!WARNING]
 > **Deletes changed**
 >
-> Earlier operator releases sent each delete with the default propagation of its kind, in inventory order, and removed the finalizer as soon as the deletes were accepted. What you notice now: a deleted resource with dependents stays `Terminating` until they are gone; a ModuleInstance or ModulePackage with `spec.prune: true` stays `Terminating` until its resources are gone, at least a few seconds; a resource that cannot terminate holds the instance, and after 10 minutes the reason is `DeletionBlocked`; an instance whose inventory holds only kept PersistentVolumeClaims is deleted even when its ServiceAccount is missing, where it stalled with `DeletionSAMissing` before. No field, flag or RBAC rule changed.
+> Earlier operator releases sent each delete with the default propagation of its kind, in inventory order, and removed the finalizer as soon as the deletes were accepted. What you notice now: a deleted resource with dependents stays `Terminating` until they are gone; a ModuleInstance or ModulePackage with `spec.prune: true` stays `Terminating` until its resources are gone, at least about a second; a resource that cannot terminate holds the instance, and after 10 minutes the reason is `DeletionBlocked`; an instance whose inventory holds only kept PersistentVolumeClaims is deleted even when its ServiceAccount is missing, where it stalled with `DeletionSAMissing` before. No field, flag or RBAC rule changed.
 
 <!-- Check against: opm-operator/internal/reconcile/deletion.go, opm-operator/internal/apply/deletion.go, opm-operator/internal/status/deletion.go, opm-operator/openspec/specs/finalizer-and-deletion/spec.md, library/opm/k8s/lifecycle -->
 

@@ -25,8 +25,8 @@ const (
 	UnreadIdentityMissing Unread = "is missing"
 	// UnreadIdentityFailed: the ServiceAccount could not be impersonated.
 	UnreadIdentityFailed Unread = "cannot be impersonated"
-	// UnreadForbidden: the reads were refused as Forbidden.
-	UnreadForbidden Unread = "is forbidden to read them"
+	// UnreadForbidden: the reads were refused as Forbidden or Unauthorized.
+	UnreadForbidden Unread = "is not allowed to read them"
 )
 
 // unreadCause words who could not read, and why. identity is the namespaced

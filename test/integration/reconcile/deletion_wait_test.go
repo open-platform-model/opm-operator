@@ -324,7 +324,7 @@ var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 		DeferCleanup(resume)
 		s.requestDelete()
 		result := s.mustReconcile()
-		Expect(result.RequeueAfter).To(Equal(5*time.Second), "a young wait is rechecked after the minimum interval")
+		Expect(result.RequeueAfter).To(Equal(time.Second), "a young wait is rechecked after the minimum interval")
 		expectTerminatingInForeground(prefix + "-web")
 		return s, resume
 	}
@@ -446,7 +446,7 @@ var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 				Expect(s.gone()).To(BeTrue())
 				unconfirmed := s.rec.withReason(status.DeletionUnconfirmedReason)
 				Expect(unconfirmed).To(HaveLen(1))
-				Expect(unconfirmed[0].note).To(ContainSubstring("is forbidden to read them"))
+				Expect(unconfirmed[0].note).To(ContainSubstring("is not allowed to read them"))
 				Expect(s.rec.withReason(status.ImpersonationFailedReason)).To(BeEmpty())
 			})
 
@@ -486,7 +486,9 @@ var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 				who.expectForbidden("delete", deleteDeploymentDryRun(prefix+"-web"))
 				Expect(readDeployment(prefix+"-web")(who.client())).To(Succeed(), "the tenant can still read")
 
-				Expect(s.mustReconcile().RequeueAfter).To(Equal(5 * time.Second))
+				// The interval is a quarter of the age of the wait, which the RBAC
+				// change above has let grow.
+				Expect(s.mustReconcile().RequeueAfter).To(And(BeNumerically(">=", time.Second), BeNumerically("<=", time.Minute)))
 				expectInProgress(s, prefix+"-web")
 				Expect(s.rec.withReason(status.ImpersonationFailedReason)).To(BeEmpty())
 				Expect(s.rec.withReason(status.DeletionUnconfirmedReason)).To(BeEmpty())

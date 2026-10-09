@@ -2,14 +2,17 @@ package reconcile
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/conditions"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,11 +30,12 @@ const holdFinalizer = "example.com/hold"
 
 func TestRecheckInterval(t *testing.T) {
 	w := DeletionWait{}.withDefaults()
-	if w.BlockedAfter != 10*time.Minute || w.MinRecheck != 5*time.Second || w.MaxRecheck != 60*time.Second || w.Now == nil {
+	if w.BlockedAfter != 10*time.Minute || w.MinRecheck != time.Second || w.MaxRecheck != 60*time.Second || w.Now == nil {
 		t.Fatalf("defaults = %+v", w)
 	}
 	for age, want := range map[time.Duration]time.Duration{
-		0:                5 * time.Second,
+		0:                time.Second,
+		3 * time.Second:  time.Second,
 		20 * time.Second: 5 * time.Second,
 		2 * time.Minute:  30 * time.Second,
 		4 * time.Minute:  60 * time.Second,
@@ -95,8 +99,8 @@ func TestCleanupWaitsUntilDeletedObjectsAreGone(t *testing.T) {
 
 		for i := range 3 {
 			result := run.mustReconcile()
-			if result.RequeueAfter != 5*time.Second {
-				t.Fatalf("reconcile %d: RequeueAfter = %s, want 5s", i, result.RequeueAfter)
+			if result.RequeueAfter != time.Second {
+				t.Fatalf("reconcile %d: RequeueAfter = %s, want 1s", i, result.RequeueAfter)
 			}
 			if run.released() {
 				t.Fatalf("reconcile %d: the finalizer was removed while an object terminates", i)
@@ -149,8 +153,8 @@ func TestCleanupReportsABlockedDeletion(t *testing.T) {
 		run := newCleanupRun(t, kind, cleanupFixture{prune: true,
 			entries: []releasesv1alpha1.InventoryEntry{configMapEntry("held")}}, nil, nil, held)
 
-		if result := run.mustReconcile(); result.RequeueAfter != 5*time.Second {
-			t.Fatalf("RequeueAfter = %s, want 5s", result.RequeueAfter)
+		if result := run.mustReconcile(); result.RequeueAfter != time.Second {
+			t.Fatalf("RequeueAfter = %s, want 1s", result.RequeueAfter)
 		}
 		drainEvents(run.rec)
 
@@ -443,7 +447,7 @@ func TestRecordAndForbiddenRechecks(t *testing.T) {
 			}
 			evs := drainEvents(run.rec)
 			if len(evs) != 1 || !strings.HasPrefix(evs[0], "Warning "+status.DeletionUnconfirmedReason) ||
-				!strings.Contains(evs[0], "2 object(s)") || !strings.Contains(evs[0], `"team-a/deploy-sa" is forbidden to read them`) {
+				!strings.Contains(evs[0], "2 object(s)") || !strings.Contains(evs[0], `"team-a/deploy-sa" is not allowed to read them`) {
 				t.Errorf("events = %v, want one DeletionUnconfirmed for 2 objects", evs)
 			}
 			if len(run.log.deletes) != 0 {
@@ -476,7 +480,7 @@ func TestRecordAndForbiddenRechecks(t *testing.T) {
 				t.Fatalf("Ready reason = %q, want DeletionInProgress", run.readyReason())
 			}
 			deny = forbidden
-			if result := run.mustReconcile(); result.RequeueAfter != 5*time.Second {
+			if result := run.mustReconcile(); result.RequeueAfter != time.Second {
 				t.Errorf("RequeueAfter = %s, want the wait's recheck", result.RequeueAfter)
 			}
 			if run.released() || run.readyReason() != status.DeletionInProgressReason {
@@ -532,22 +536,34 @@ func TestRecordAndForbiddenRechecks(t *testing.T) {
 			}
 		})
 
-		t.Run("a failure that is not Forbidden holds and is retried as before", func(t *testing.T) {
-			run := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa", entries: entries,
-				conditions: waitRecord(status.DeletionInProgressReason)},
-				func(obj client.Object) error {
-					if obj.GetName() == "a" {
-						return forbidden(obj)
-					}
-					return serverError(obj)
-				}, nil, ownedConfigMap("a"), ownedConfigMap("b"))
-			if _, err := run.reconcile(); err != nil {
-				t.Fatalf("reconcile: %v", err)
-			}
-			if run.released() {
-				t.Error("the finalizer was removed although a read failed with a server error")
-			}
-		})
+	})
+}
+
+// A recheck in which a step failed for a cause that is not a refusal (here a
+// server error next to a Forbidden read) is retried, and the record stays.
+func TestRecordIsKeptWhenARecheckFailsForATransientCause(t *testing.T) {
+	entries := []releasesv1alpha1.InventoryEntry{configMapEntry("a"), configMapEntry("b")}
+	forEachCleanupKind(t, func(t *testing.T, kind cleanupKind) {
+		run := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa", entries: entries,
+			conditions: waitRecord(status.DeletionInProgressReason)},
+			func(obj client.Object) error {
+				if obj.GetName() == "a" {
+					return forbidden(obj)
+				}
+				return serverError(obj)
+			}, nil, ownedConfigMap("a"), ownedConfigMap("b"))
+		if _, err := run.reconcile(); err == nil {
+			t.Fatal("a read that failed with a server error must fail the reconcile")
+		}
+		if run.released() {
+			t.Error("the finalizer was removed although a read failed with a server error")
+		}
+		if got := run.readyReason(); got != status.DeletionInProgressReason {
+			t.Errorf("Ready reason = %q, want the record kept", got)
+		}
+		if evs := drainEvents(run.rec); len(evs) != 0 {
+			t.Errorf("events = %v, want none", evs)
+		}
 	})
 }
 
@@ -611,6 +627,98 @@ func TestFailedGoneCheckKeepsTheFinalizer(t *testing.T) {
 		}
 		if evs := drainEvents(run.rec); len(evs) != 0 {
 			t.Errorf("events = %v, want none before the gone-check succeeded", evs)
+		}
+	})
+}
+
+// failServiceAccountRead makes the controller's read of the ServiceAccount
+// fail with err, as a control plane under load does.
+func (r *cleanupRun) failServiceAccountRead(err error) {
+	r.env.restConfig = stubRestConfig
+	r.env.apiReader = interceptor.NewClient(r.base, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.ServiceAccount); ok {
+				return err
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+}
+
+// TestRecordHoldsOnATransientIdentityFailure: the record releases only an
+// identity that is really gone. A read of the ServiceAccount that fails for
+// any other cause (a server error, a timeout, a throttle, a refusal of the
+// controller's own read) says nothing about the ServiceAccount: the
+// finalizer stays, the record stays, and the reconcile is retried.
+func TestRecordHoldsOnATransientIdentityFailure(t *testing.T) {
+	failures := map[string]error{
+		"server error":      apierrors.NewInternalError(errors.New("injected")),
+		"timeout":           context.DeadlineExceeded,
+		"server timeout":    apierrors.NewTimeoutError("injected", 1),
+		"throttled":         apierrors.NewTooManyRequests("injected", 1),
+		"unavailable":       apierrors.NewServiceUnavailable("injected"),
+		"connection":        errors.New("dial tcp 10.0.0.1:443: connect: connection refused"),
+		"cancelled":         context.Canceled,
+		"controller denied": apierrors.NewForbidden(schema.GroupResource{Resource: "serviceaccounts"}, "deploy-sa", errors.New("denied")),
+	}
+	for name, failure := range failures {
+		for _, reason := range []string{status.DeletionInProgressReason, status.DeletionBlockedReason} {
+			forEachCleanupKind(t, func(t *testing.T, kind cleanupKind) {
+				t.Run(name+"/"+reason, func(t *testing.T) {
+					held := ownedConfigMap("cm", holdFinalizer)
+					run := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa",
+						entries:    []releasesv1alpha1.InventoryEntry{configMapEntry("cm")},
+						conditions: waitRecord(reason)}, nil, nil, held, saFixture(deletionTestNamespace, "deploy-sa"))
+					run.failServiceAccountRead(failure)
+
+					if _, err := run.reconcile(); err == nil {
+						t.Fatal("the reconcile must return the error, so that it is retried with backoff")
+					}
+					if run.released() {
+						t.Fatal("one failed read of a ServiceAccount removed the cleanup finalizer")
+					}
+					ready := run.ready()
+					if ready == nil || ready.Reason != reason {
+						t.Fatalf("Ready = %+v, want the reason %s kept: it is the record", ready, reason)
+					}
+					if !strings.Contains(ready.Message, "could not be checked") {
+						t.Errorf("the message must say that the check failed: %s", ready.Message)
+					}
+					if len(run.log.reads) != 0 || len(run.log.deletes) != 0 {
+						t.Errorf("reads = %v, deletes = %v; want none", run.log.reads, run.log.deletes)
+					}
+					if evs := drainEvents(run.rec); len(evs) != 0 {
+						t.Errorf("events = %v, want none", evs)
+					}
+				})
+			})
+		}
+	}
+}
+
+// With the record, reads the API server refuses as Unauthorized count as
+// lost rights, as Forbidden ones do. Without it they hold and are retried.
+func TestRecordReleasesUnauthorizedReads(t *testing.T) {
+	unauthorized := func(client.Object) error { return apierrors.NewUnauthorized("token rejected") }
+	entries := []releasesv1alpha1.InventoryEntry{configMapEntry("a")}
+	forEachCleanupKind(t, func(t *testing.T, kind cleanupKind) {
+		run := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa", entries: entries,
+			conditions: waitRecord(status.DeletionInProgressReason)}, unauthorized, nil, ownedConfigMap("a", holdFinalizer))
+		run.mustReconcile()
+		if !run.released() {
+			t.Fatalf("the finalizer stays; Ready reason %q", run.readyReason())
+		}
+		if evs := drainEvents(run.rec); len(evs) != 1 || !strings.Contains(evs[0], status.DeletionUnconfirmedReason) {
+			t.Errorf("events = %v, want one DeletionUnconfirmed", evs)
+		}
+
+		first := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa", entries: entries},
+			unauthorized, nil, ownedConfigMap("a"))
+		if _, err := first.reconcile(); err == nil {
+			t.Error("without the record an Unauthorized read must fail the reconcile")
+		}
+		if first.released() {
+			t.Error("without the record an Unauthorized read released the finalizer")
 		}
 	})
 }

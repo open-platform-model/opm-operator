@@ -318,3 +318,16 @@ func TestGuardAndAnUnservedKind(t *testing.T) {
 		t.Fatalf("without its CRD: %+v, %v; want a GuardReadError", got, err)
 	}
 }
+
+// An empty list has nothing to judge: no verdict is asked, so no identity is
+// needed and nothing is read. A render with every component switched off
+// carries no identity, and it must not fail.
+func TestGuardAsksNothingForAnEmptyList(t *testing.T) {
+	got, err := Guard(context.Background(), nil, GuardInput{Inventory: []releasesv1alpha1.InventoryEntry{guardEntry("x")}})
+	if err != nil {
+		t.Fatalf("Guard of an empty list = %v, want no error", err)
+	}
+	if got == nil || len(got.Allowed)+len(got.TakenIn)+len(got.LetGo)+len(got.Refused) != 0 {
+		t.Fatalf("Guard of an empty list = %+v, want an empty result", got)
+	}
+}

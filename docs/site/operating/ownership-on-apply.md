@@ -44,7 +44,7 @@ Warning  ApplyRefused  Refused to apply over 1 object(s), nothing was applied: C
 
 The message names at most ten objects and then gives the number of the rest.
 
-A reconcile that changes nothing (the render equals what was applied last) is refused only for an object that exists outside the inventory. An inventoried object that is being deleted does not refuse it: the operator writes nothing over that object.
+A reconcile that changes nothing (the render equals what was applied last) is refused only for an object that exists outside the inventory. An inventoried object that is being deleted does not refuse it: the operator writes nothing over that object. One case differs for a ModulePackage: when such a reconcile takes an object in, or lets one go, the package applies its whole render, so an inventoried object that is being deleted refuses it until the object is gone.
 
 ## Take over an object that exists
 
@@ -106,7 +106,9 @@ The read is made as the identity that applies. A ServiceAccount the operator imp
 
 ## A render without an instance identity
 
-Every object a module renders carries the `module-instance.opmodel.dev/uuid` label. When no rendered object carries it and the object has no `status.instanceUUID` yet, the operator cannot ask who holds an object. The reconcile fails with the reason `ApplyFailed` and writes nothing.
+Every transformer of the opm catalog sets the `module-instance.opmodel.dev/uuid` label on what it renders. A transformer of another catalog that leaves the label out can give a render in which no object carries it. When the object also has no `status.instanceUUID` yet, the operator cannot ask who holds an object: the reconcile fails with the reason `ApplyFailed` and writes nothing. The fix is in that catalog: set the label.
+
+A render that holds no object, for example because every component is switched off, has nothing to check and is not failed.
 
 ## When the check runs
 

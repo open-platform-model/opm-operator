@@ -264,6 +264,26 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		Expect(liveConfigMapNamed("ownf-b").UID).To(Equal(before.UID), "adopted, not recreated")
 	})
 
+	// A render with every component switched off holds no object, so it
+	// carries no identity. There is nothing to judge and nothing to write.
+	It("does not fail an empty render that carries no identity", func() {
+		nn := create("own-empty")
+
+		requeue := reconcileWith(nn, &render.RenderResult{})
+
+		expectReady(nn)
+		Expect(requeue).To(BeZero())
+		Expect(rec.withReason(status.ApplyFailedReason)).To(BeEmpty())
+		st := instanceStatus(nn)
+		Expect(st.InstanceUUID).To(BeEmpty())
+		Expect(st.FailureCounters.Apply).To(BeZero())
+
+		By("and again, with unchanged digests")
+		reconcileWith(nn, &render.RenderResult{})
+		expectReady(nn)
+		Expect(rec.withReason(status.ApplyFailedReason)).To(BeEmpty())
+	})
+
 	It("refuses over two objects of another instance and names both", func() {
 		nn := create("own-other", "owno-a", "owno-b", "owno-c")
 		createLiveConfigMap("owno-a", labels.ManagedByController, identityX, "")
@@ -434,7 +454,7 @@ var _ = Describe("Ownership guard on the apply of a ModuleInstance", func() {
 		Expect(liveConfigMapLabels("ownw-app")).To(HaveKeyWithValue(labels.ModuleInstanceUUID, identityA),
 			"nothing is relabelled")
 
-		By("the same holds once the change is stored and not settled")
+		By("annotated for the new identity: taken in, and the change settles")
 		adopt("ownw-kept", identityB)
 		reconcileWith(nn, ownedRender(identityB, "v1", "ownw-app", "ownw-kept"))
 		expectReady(nn)

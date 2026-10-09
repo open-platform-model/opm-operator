@@ -58,12 +58,18 @@ The `ReleaseReconciler` MUST skip reconciliation when `spec.suspend` is true.
 - **THEN** the controller emits a resume event and proceeds with normal reconciliation
 
 ### Requirement: No-op detection
-The `ReleaseReconciler` MUST detect no-op reconciliations when source artifact revision, config, render, and inventory digests all match the last applied values. A reconcile whose digests match is not a no-op when a rendered object that the apply verdict allows exists outside `status.inventory`, or when an inventoried object is adopted by another instance: it then applies the objects the verdict allows and records the inventory without the adopted object.
+The `ReleaseReconciler` MUST detect no-op reconciliations when source artifact revision, config, render, and inventory digests all match the last applied values. A reconcile whose digests match is not a no-op when a rendered object that the apply verdict allows exists outside `status.inventory`, or when an inventoried object is adopted by another instance: it then applies the objects the verdict allows and records the inventory without the adopted object. Such a reconcile applies the rendered set, so an inventoried object that is being deleted refuses it (`ssa-apply`, "An apply is judged by the ownership verdict before its first write"): nothing is written and `Ready` is `False` with reason `ApplyRefused` until that object is gone.
 
 #### Scenario: All digests match
 - **WHEN** source artifact digest, config digest, render digest, and inventory digest all match the last applied values
 - **AND** every rendered object that exists is in `status.inventory` and none is adopted by another instance
 - **THEN** the controller skips apply and prune, keeps `Ready=True`, and requeues with interval
+
+#### Scenario: Matching digests, an object to take in and an inventoried object being deleted
+- **GIVEN** a Ready ModulePackage with matching digests, a rendered ConfigMap that exists outside `status.inventory` with the package's adopt annotation, and an inventoried ConfigMap that carries a deletion timestamp
+- **WHEN** a reconcile renders
+- **THEN** nothing is written and the package reports `Ready=False` with reason `ApplyRefused`
+- **AND** once the inventoried ConfigMap is gone, the retry applies the render, creates it again and takes the other in
 
 #### Scenario: All digests match and an object was adopted by another instance
 - **GIVEN** a Ready ModulePackage and an inventoried ConfigMap that a user annotates `opmodel.dev/adopt` with another instance's UUID

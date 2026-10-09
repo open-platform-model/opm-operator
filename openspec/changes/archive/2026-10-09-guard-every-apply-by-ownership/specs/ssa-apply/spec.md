@@ -5,7 +5,7 @@ Before the first write of a reconcile, the controller MUST read every object of 
 
 The read MUST be made by the client that applies: the impersonated ServiceAccount when one is effective, the controller's own identity otherwise. The controller MUST NOT set the verdict's install admission input.
 
-The identity the verdict is asked with is the same for a ModuleInstance and a ModulePackage, and this paragraph is its one definition. The controller MUST ask once per object, with the instance's identity: the render's, or the recorded one when the render carries none. This holds when no identity is recorded yet and while an identity change is not settled. The controller MUST NOT ask with the earlier identity of an unsettled change (`status.previousInstanceUUID`): another record can render that identity, so an object that carries it is not proven to be the instance's own. The controller MUST NOT ask the apply verdict with an empty identity, and MUST NOT hand it the list the prune judges with, which holds the earlier identity and for a ModulePackage with no recorded identity ends with no identity. A reconcile that has no identity at all MUST fail as a failed apply with nothing written.
+The identity the verdict is asked with is the same for a ModuleInstance and a ModulePackage, and this paragraph is its one definition. The controller MUST ask once per object, with the instance's identity: the render's, or the recorded one when the render carries none. This holds when no identity is recorded yet and while an identity change is not settled. The controller MUST NOT ask with the earlier identity of an unsettled change (`status.previousInstanceUUID`): another record can render that identity, so an object that carries it is not proven to be the instance's own. The controller MUST NOT ask the apply verdict with an empty identity, and MUST NOT hand it the list the prune judges with, which holds the earlier identity and for a ModulePackage with no recorded identity ends with no identity. A reconcile that has one or more objects to apply and no identity at all MUST fail as a failed apply with nothing written. A reconcile whose apply list is empty has no object to judge: it asks no verdict and MUST NOT fail for a missing identity.
 
 When the verdict refuses an object as `terminating`, `foreign-object` or `other-instance`, and the reconcile would write that object or the object exists and is not in `status.inventory`, the controller MUST NOT write anything in that reconcile: it applies no object, stores no identity and prunes nothing. The refused object MUST be left as it is.
 
@@ -75,6 +75,11 @@ When the read of an object fails for a reason other than that the object does no
 - **WHEN** the controller reconciles and renders
 - **THEN** the ConfigMap is not written and leaves `status.inventory`
 - **AND** the verdict was asked with the render's identity, never with an empty one
+
+#### Scenario: An empty render with no identity is not failed
+- **GIVEN** a new ModuleInstance whose render holds no object, so it carries no identity and none is recorded
+- **WHEN** the controller reconciles
+- **THEN** `Ready` is `True` and no `ApplyFailed` condition or event appears
 
 #### Scenario: An inventoried object with another instance's UUID label is applied
 - **GIVEN** two Ready instances that both list Namespace `shared` in `status.inventory`, where the Namespace carries the first instance's UUID label and no adopt annotation

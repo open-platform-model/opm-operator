@@ -115,12 +115,13 @@ func (g guardedApply) changesInventory() bool {
 }
 
 // refusedToWrite returns the refusals of the apply verdict that refuse this
-// reconcile. With changed digests the reconcile would write every rendered
-// object, so each refusal counts. With unchanged digests it writes nothing
-// over an object of the inventory, so only an object that exists outside the
-// inventory counts: one the instance renders and does not hold.
-func refusedToWrite(refused []apply.Judged, digestsUnchanged bool) []apply.Judged {
-	if !digestsUnchanged {
+// reconcile. A reconcile that applies the rendered set would write every
+// rendered object, so each refusal counts. One that writes nothing over an
+// object of the inventory (a no-op, or the restore of a ModuleInstance with
+// unchanged digests) is refused only for an object that exists outside the
+// inventory: one the instance renders and does not hold.
+func refusedToWrite(refused []apply.Judged, keepsInventoried bool) []apply.Judged {
+	if !keepsInventoried {
 		return refused
 	}
 	var out []apply.Judged

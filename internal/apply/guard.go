@@ -25,8 +25,8 @@ type GuardInput struct {
 
 	// Identity is the instance's identity: the render's, or the recorded one
 	// when the render carries none. Never the earlier identity of an
-	// unsettled change, which another record can render, and never empty:
-	// Guard returns ErrNoIdentity for an empty identity.
+	// unsettled change, which another record can render, and never empty
+	// when there is an object to judge: Guard then returns ErrNoIdentity.
 	Identity string
 }
 
@@ -103,6 +103,12 @@ func (e *GuardReadError) Unwrap() error { return e.Err }
 // defines it: such an object cannot exist. Every other failed read returns a
 // *GuardReadError and no result.
 func Guard(ctx context.Context, c client.Reader, in GuardInput) (*GuardResult, error) {
+	// An empty list has no object to judge, so no verdict is asked and no
+	// identity is needed: a render with every component switched off is a
+	// valid render.
+	if len(in.Resources) == 0 {
+		return &GuardResult{}, nil
+	}
 	if in.Identity == "" {
 		return nil, ErrNoIdentity
 	}

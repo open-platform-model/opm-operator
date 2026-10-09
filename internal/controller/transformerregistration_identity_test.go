@@ -93,10 +93,10 @@ func renderedClaimResult() *render.RenderResult {
 		Transformer: "opm#transformer-registration-transformer",
 	}
 
-	// The claim carries no UUID label, and the apply guard refuses to ask the
-	// ownership verdict without an instance identity. So the render holds a
-	// second object that carries it, as the workload of a provider module
-	// does.
+	// The claim of this fixture carries no UUID label, and the apply guard
+	// refuses to ask the ownership verdict without an instance identity. So
+	// the render holds a second object that carries it, as every object of a
+	// real render does.
 	settings := cueCtx.CompileString(fmt.Sprintf(`{
 	apiVersion: "v1"
 	kind:       "ConfigMap"

@@ -227,6 +227,66 @@ var _ = Describe("Ownership guard on the apply of a ModulePackage", func() {
 		Expect(liveConfigMapNamed("pol-adopted").Data["payload"]).To(Equal("v1"))
 	})
 
+	// A package that applies on matching digests applies the rendered set:
+	// it has no restore step. So it would write an inventoried object that
+	// is being deleted, and that refuses it until the object is gone.
+	It("refuses a take-in on matching digests while an inventoried object is being deleted", func() {
+		nn := start("pkg-own-term", "pot-app", "pot-held", "pot-taken")
+		names := []string{"pot-app", "pot-held", "pot-taken"}
+		adopt("pot-taken", identityX)
+		reconcilePackage(nn, ownedRender(identityA, "v1", names...))
+		expectReady(nn)
+		Expect(inventoryNames(packageOf(nn).Status.Inventory)).To(ConsistOf("ConfigMap/pot-app", "ConfigMap/pot-held"))
+
+		setConfigMapMeta("pot-held", func(cm *corev1.ConfigMap) { cm.Finalizers = []string{"test.opmodel.dev/hold"} })
+		Expect(k8sClient.Delete(ctx, liveConfigMapNamed("pot-held"))).To(Succeed())
+		released := false
+		release := func() {
+			if !released {
+				released = true
+				setConfigMapMeta("pot-held", func(cm *corev1.ConfigMap) { cm.Finalizers = nil })
+			}
+		}
+		DeferCleanup(release)
+
+		By("a no-op writes nothing over the object, so nothing is refused")
+		rec.events = nil
+		reconcilePackage(nn, ownedRender(identityA, "v1", names...))
+		expectReady(nn)
+		Expect(rec.withReason(status.NoOpReason)).To(HaveLen(1))
+		Expect(rec.withReason(status.ApplyRefusedReason)).To(BeEmpty())
+
+		By("an object to take in makes the reconcile an apply of the rendered set")
+		adopt("pot-taken", identityA)
+		setConfigMapMeta("pot-app", func(cm *corev1.ConfigMap) { cm.Data["payload"] = "by-hand" })
+		taken := liveConfigMapNamed("pot-taken").ResourceVersion
+		edited := liveConfigMapNamed("pot-app").ResourceVersion
+		applied := f.applied
+		rec.events = nil
+		res := reconcilePackage(nn, ownedRender(identityA, "v1", names...))
+
+		ready := cond(nn, status.ReadyCondition)
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(status.ApplyRefusedReason))
+		Expect(ready.Message).To(ContainSubstring("pot-held is being deleted"))
+		Expect(cond(nn, status.StalledCondition)).To(BeNil())
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(rec.withReason(status.ApplyRefusedReason)).To(HaveLen(1))
+		Expect(f.applied).To(Equal(applied), "nothing is written")
+		Expect(liveConfigMapNamed("pot-taken").ResourceVersion).To(Equal(taken))
+		Expect(liveConfigMapNamed("pot-app").ResourceVersion).To(Equal(edited))
+		Expect(inventoryNames(packageOf(nn).Status.Inventory)).To(ConsistOf("ConfigMap/pot-app", "ConfigMap/pot-held"))
+
+		By("the object is gone: the retry applies the whole render")
+		release()
+		Expect(configMapExists("pot-held")).To(BeFalse())
+		reconcilePackage(nn, ownedRender(identityA, "v1", names...))
+		Expect(expectReady(nn).Message).To(Equal("Reconciliation succeeded"))
+		Expect(inventoryNames(packageOf(nn).Status.Inventory)).To(ConsistOf(
+			"ConfigMap/pot-app", "ConfigMap/pot-held", "ConfigMap/pot-taken"))
+		Expect(configMapExists("pot-held")).To(BeTrue(), "the deleted object is created again")
+	})
+
 	It("fails with matching digests when an object cannot be read, and keeps the inventory", func() {
 		nn := start("pkg-own-read", "pord-app")
 

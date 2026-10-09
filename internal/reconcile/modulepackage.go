@@ -868,7 +868,8 @@ type packageApply struct {
 //     ServiceAccount, Ready=False with ApplyFailed on the backoff otherwise;
 //   - the verdict refuses an object the reconcile would write, or one that
 //     exists outside the inventory: Ready=False with ApplyRefused, not
-//     stalled, on the backoff.
+//     stalled, on the backoff. A package writes every rendered object unless
+//     the reconcile is a no-op.
 //
 // The last two count as a failed apply.
 func guardModulePackageApply(
@@ -900,7 +901,13 @@ func guardModulePackageApply(
 		status.MarkNotReady(pkg, status.ApplyFailedReason, "%s", guard.err)
 		return nil, &phaseFail{FailedTransient, guard.err.Error(), modulePackageBackoff(pkg)}
 	}
-	if refusing := refusedToWrite(guard.refused, digestsUnchanged); len(refusing) > 0 {
+	// A package that applies on matching digests (it takes an object in, or
+	// lets an inventoried one go) applies the rendered set: it has no restore
+	// step that would leave its inventoried objects alone. So it would write
+	// an inventoried object that is being deleted, and that refuses it. Only
+	// a reconcile that stays a no-op writes nothing over such an object.
+	writesNothing := digestsUnchanged && !guard.changesInventory()
+	if refusing := refusedToWrite(guard.refused, writesNothing); len(refusing) > 0 {
 		phases.applyRan, phases.applyFailed = true, true
 		msg := refuseApply(ctx, params.EventRecorder, pkg, refusing)
 		return nil, &phaseFail{FailedTransient, msg, modulePackageBackoff(pkg)}

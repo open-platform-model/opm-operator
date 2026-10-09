@@ -7,4 +7,4 @@ ModulePath: "opmodel.dev/modules/opm_operator@v0"
 
 // Version is the module's bare SemVer, on its own train: it is not the
 // operator's version (that is operator.Version).
-Version: "0.1.0"
+Version: "0.2.0"

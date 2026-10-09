@@ -92,8 +92,7 @@ func (e *GuardReadError) Unwrap() error { return e.Err }
 
 // Guard reads every object of in.Resources through c and asks the library's
 // apply verdict (opm/k8s/ownership) for it, once, with in.Identity. It writes
-// nothing and decides ownership with no comparison of its own. Admit is never
-// set: it is for the operator install only.
+// nothing and decides ownership with no comparison of its own.
 //
 // c must read live, as the identity that applies: a refusal names the owner
 // of an object, and a cached read could miss a new adopt annotation.

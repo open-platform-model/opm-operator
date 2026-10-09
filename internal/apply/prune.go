@@ -191,8 +191,7 @@ func (r *PruneResult) leave(ctx context.Context, entry releasesv1alpha1.Inventor
 // with the next identity only while the answer is that the object is another
 // instance's or adopted by another instance, the two answers that depend on
 // the identity. When no identity lets the delete proceed it returns the first
-// verdict. An empty list asks once with no identity. Admit is never set: it
-// is for the operator install only.
+// verdict. An empty list asks once with no identity.
 func judgeDelete(obj ownership.Object, live *unstructured.Unstructured, identities []string) ownership.DeleteVerdict {
 	if len(identities) == 0 {
 		identities = []string{""}

@@ -168,7 +168,7 @@ The first build of this change (2026-10-08, library v1.0.0-beta.7) was held: for
 
 **Explored**: (A) positions as CUE reports them: the condition message of an unchanged package changes on every recheck and no two events are equal. (B) no positions on a package: loses where in the package the value is. (C) positions under the package's CUE module root written relative to it; all others (the CUE module cache) as reported.
 
-**Decision**: (C). The root is the nearest directory at or above the package directory that holds `cue.mod`. A ModuleInstance keeps absolute positions: its module lies in the CUE module cache, whose paths are stable, and `main` printed the same positions.
+**Decision**: (C). The root is the nearest directory at or above the package directory that holds `cue.mod`. This makes the positions stable, not every message: a failure of the package build (a wrong type on a value a component reads) has the kernel's frame `building instance package from <directory>: `, which names the extraction directory on `main` and after this change. Taking the directory out of that frame needs the kernel to give it as a typed field, or a cut of the kernel's text; neither is in this change. A ModuleInstance keeps absolute positions: its module lies in the CUE module cache, whose paths are stable, and `main` printed the same positions.
 
 ### A registry fetch failure keeps its text
 

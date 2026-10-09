@@ -527,3 +527,46 @@ func TestKernelPackageRenderer_ValuesFailureListsEveryFinding(t *testing.T) {
 		})
 	}
 }
+
+// Twenty-five unset required values through the real package load: the
+// message names every one, and the event note of the error Render returns is
+// cut to whole findings and a count. Nothing between the kernel and the
+// returned error may hide the findings from EventNote.
+func TestKernelPackageRenderer_ManyUnsetValuesFitTheEventNote(t *testing.T) {
+	registry := requiredValueRegistry(t)
+	r := &KernelPackageRenderer{
+		Kernel:      kernel.New(kernel.WithRegistry(registry)),
+		Store:       platformstore.NewStore(),
+		RuntimeName: "opm-controller",
+	}
+
+	dir := needyInstancePackage(t, `{}`)
+	file := filepath.Join(dir, "instance.cue")
+	pkg, err := os.ReadFile(file)
+	require.NoError(t, err)
+	var fields strings.Builder
+	for i := 1; i <= 25; i++ {
+		fmt.Fprintf(&fields, "\n\t\trequiredValueNumber%02d: string", i)
+	}
+	edited := strings.Replace(string(pkg), "note:    string\n", "note:    string"+fields.String()+"\n", 1)
+	require.NotEqual(t, string(pkg), edited, "the package template changed under this test")
+	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
+
+	_, _, err = r.Render(context.Background(), dir)
+	require.Error(t, err)
+	message := err.Error()
+	for i := 1; i <= 25; i++ {
+		assert.Contains(t, message, fmt.Sprintf("values.requiredValueNumber%02d: incomplete value string (instance.cue:", i))
+	}
+	assert.NotContains(t, message, " more ")
+	require.Greater(t, len(message), eventNoteLimit, "the case must need the cut")
+
+	note := EventNote(err)
+	assert.LessOrEqual(t, len(note), eventNoteLimit)
+	named := strings.Count(note, ": incomplete value string (")
+	left := countedTail(t, note)
+	assert.Equal(t, 26, named+left, "note and the twenty-five are named or counted: %s", note)
+	assert.Positive(t, named)
+	assert.True(t, strings.HasPrefix(message, strings.TrimSuffix(note, moreFindings(left))+"; "),
+		"the cut is between two findings: %s", note)
+}

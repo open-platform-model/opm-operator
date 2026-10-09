@@ -3,6 +3,8 @@ package render
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -57,6 +59,25 @@ func TestWithFindings_PositionsUnderTheRootAreRelative(t *testing.T) {
 		withFindings("loading: ", cueErr, "/tmp/extract-1").Error())
 	// A directory whose name only starts like the root is not under it.
 	assert.Contains(t, withFindings("", cueErr, "/tmp/extract").Error(), "/tmp/extract-1/pkg/instance.cue:1:7")
+}
+
+// The module root is a clean path whatever form the package directory has,
+// so the prefix test of a position holds.
+func TestCueModuleRoot(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "cue.mod"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "pkg", "sub"), 0o755))
+
+	assert.Equal(t, root, cueModuleRoot(root))
+	assert.Equal(t, root, cueModuleRoot(root+string(filepath.Separator)))
+	assert.Equal(t, root, cueModuleRoot(filepath.Join(root, "pkg", "sub")))
+	assert.Equal(t, root, cueModuleRoot(root+"/./pkg/"))
+
+	// With no cue.mod at or above it, the directory itself, clean.
+	bare := t.TempDir()
+	if cueModuleRoot(bare) == bare {
+		assert.Equal(t, bare, cueModuleRoot(bare+"/./"))
+	}
 }
 
 // opaqueError hides its cause's text behind its own.

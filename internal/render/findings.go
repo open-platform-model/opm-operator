@@ -142,6 +142,7 @@ func positionText(p token.Pos, root string) string {
 // cueModuleRoot returns the nearest directory at or above dir that holds a
 // cue.mod directory, and dir itself when there is none.
 func cueModuleRoot(dir string) string {
+	dir = filepath.Clean(dir)
 	for d := dir; ; d = filepath.Dir(d) {
 		if info, err := os.Stat(filepath.Join(d, "cue.mod")); err == nil && info.IsDir() {
 			return d

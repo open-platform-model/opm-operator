@@ -50,7 +50,7 @@ When a ModulePackage is refused because its values leave required `#config` valu
 
 ### Requirement: A package values failure reports every finding with stable positions
 
-When the load of a ModulePackage fails with findings of the kernel (a value of the wrong type, a constraint a value does not meet, a field the module's `#config` does not allow, a value left unset), the message SHALL list every finding with the positions the kernel attributed it to, and SHALL NOT replace findings after the first with a count while the message is inside the condition's limit of 32768 characters; past that limit it SHALL keep whole findings from the first and end with `; and <N> more findings`. A position in a file of the package SHALL be written relative to the package's CUE module root, so the message of an unchanged package is the same on every reconcile although the operator extracts the package to a new temporary directory each time. A position in any other file SHALL be written as the kernel reports it. The wording SHALL NOT change how the failure is classified, and a registry fetch failure SHALL keep its own text.
+When the load of a ModulePackage fails with findings of the kernel (a value of the wrong type, a constraint a value does not meet, a field the module's `#config` does not allow, a value left unset), the message SHALL list every finding with the positions the kernel attributed it to, and SHALL NOT replace findings after the first with a count while the message is inside the condition's limit of 32768 characters; past that limit it SHALL keep whole findings from the first and end with `; and <N> more findings`. A position in a file of the package SHALL be written relative to the package's CUE module root, so no position names the temporary directory the operator extracts the package to, which is a new one on every reconcile. A position in any other file SHALL be written as the kernel reports it. The text in front of the findings is the kernel's and is not changed: for a failure the kernel reports under `Kernel.AcquireInstanceFromDir: instance "<name>": ` it holds no directory, so the whole message of an unchanged package is the same on every reconcile; for a failure of the package build (for example a value of the wrong type that a component reads) the kernel's text is `building instance package from <directory>: ...` and still names the extraction directory. The wording SHALL NOT change how the failure is classified, and a registry fetch failure SHALL keep its own text.
 
 #### Scenario: A value of the wrong type
 
@@ -69,8 +69,13 @@ When the load of a ModulePackage fails with findings of the kernel (a value of t
 
 #### Scenario: The same package in another directory
 
-- **WHEN** the same refused package is loaded from two different extraction directories
-- **THEN** both messages are equal and neither names an extraction directory in a position
+- **WHEN** a package refused under the frame `Kernel.AcquireInstanceFromDir: instance "<name>": ` (an unset value, a wrong type no component reads, a constraint, a field not allowed) is loaded from two different extraction directories
+- **THEN** both messages are equal and neither names an extraction directory
+
+#### Scenario: A build failure keeps the kernel's frame
+
+- **WHEN** a package's values give a value of the wrong type to a field a component reads, so the package build fails
+- **THEN** the message starts `loading package: building instance package from <directory>: `, the findings follow with positions in the package relative to its CUE module root, and the reason is `ResolutionFailed` with `Stalled=True`
 
 #### Scenario: A registry fetch failure keeps its text
 

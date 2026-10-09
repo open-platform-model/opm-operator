@@ -25,4 +25,4 @@
 - [x] 4.5 `internal/reconcile`: the `Eventf` of the stalled branch in `classifyRenderError` and in `renderModulePackage` takes `render.EventNote(err)`; no other line. Tests `TestClassifyRenderError_LongFailureFitsTheEventNote` and `TestRenderModulePackage_LongFailureFitsTheEventNote`. Verify: both fail with the two lines put back.
 - [x] 4.6 Commit `fix(render): name every values finding on both kinds and bound the event note`.
 - [x] 4.7 Docs and specs: the `ResolutionFailed` and `RenderFailed` rows of `docs/site/diagnostics/operator-conditions.md`; the deltas for `module-instance-synthesis`, `modulepackage-kernel-rendering` and `events-emission`. Verify: `openspec validate drop-values-pre-validate --strict`, `task docs:bundle:check`.
-- [x] 4.8 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green.
+- [x] 4.8 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `docs(diagnostics): describe the values findings of both kinds and the event bound`.

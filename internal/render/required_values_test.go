@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,16 +21,14 @@ import (
 )
 
 // These tests pin what each render path says about values that do not
-// satisfy the module's #config. The kernel is the one check on both paths
-// (it refuses an unset required value since library v1.0.0-beta.7): the
-// ModuleInstance path reports the kernel's synthesis error with every finding
-// and its positions written out, the ModulePackage path the kernel's package
-// load error as it is.
+// satisfy the module's #config. The kernel is the one check on both paths:
+// the ModuleInstance path reports the kernel's synthesis error, the
+// ModulePackage path the kernel's package load error, and both write every
+// finding out with its positions, where the kernel's own text holds the first
+// finding and a count.
 //
 // Since library v1.0.0-beta.8 the kernel names every unset required value as
-// values.<field>, a value a component reads included. That changes the
-// ModulePackage message for such a value, and it makes the kernel's report
-// name the same values as the renderer's check.
+// values.<field>, a value a component reads included.
 //
 // Both build a module in a temporary directory, so they need opmodel.dev/core
 // and the opm catalog from CUE_REGISTRY (GHCR under `task dev:test`).
@@ -241,7 +240,7 @@ func TestKernelPackageRenderer_UnsetRequiredValueIsRefused(t *testing.T) {
 	assert.Equal(t, KindModuleInstance, kind)
 	assert.Nil(t, result)
 	assert.Equal(t, `loading package: Kernel.AcquireInstanceFromDir: instance "needy": `+
-		`not fully concrete: values.note: incomplete value string`, err.Error())
+		`not fully concrete: values.note: incomplete value string (instance.cue:23:12)`, err.Error())
 	assert.ErrorIs(t, err, ErrAcquire)
 	_, isFetch := errors.AsType[*oerrors.FetchError](err)
 	assert.False(t, isFetch, "an unset value must not retry as a registry fetch failure")
@@ -285,18 +284,12 @@ func TestKernelPackageRenderer_UnprovidedImportIsNotAFetchFailure(t *testing.T) 
 	assert.Contains(t, err.Error(), "cannot find module providing package test.example/absent/pkg")
 }
 
-// eventNoteLimit is the longest note events.k8s.io/v1 accepts. A render
-// failure's event note is the error text, with no cut.
-const eventNoteLimit = 1024
-
 // A ModuleInstance that leaves several required #config values unset is told
-// every one of them in one message: a nested value by its full path, and a
-// value a component reads like one that none reads. Since library
-// v1.0.0-beta.8 the kernel's own refusal names the same values, at the same
-// positions, as values.<field> where the renderer's check writes
-// #config.<field>. The change that removes the renderer's check relies on
-// that, so it is pinned here: a library change that makes the two reports
-// name different values fails on the bump.
+// every one of them in one message, each as values.<field> with the position
+// of its #config declaration: a nested value by its full path, and a value a
+// component reads like one that none reads. The kernel's refusal is the only
+// report (library v1.0.0-beta.8 names every unset value); its own text names
+// the first and counts the rest, so the message is worded from its findings.
 func TestKernelModuleRenderer_EveryUnsetRequiredValueIsNamed(t *testing.T) {
 	registry := requiredValueRegistry(t)
 
@@ -314,52 +307,30 @@ func TestKernelModuleRenderer_EveryUnsetRequiredValueIsNamed(t *testing.T) {
 	require.NoError(t, err)
 	r := &KernelModuleRenderer{Kernel: k, Store: platformstore.NewStore(), RuntimeName: "opm-controller"}
 
-	const prefix = "validating values against the module's #config: "
-	finding := func(root, field, position string) string {
-		return root + field + ": incomplete value string (" + extra + ":" + position + ")"
+	const frame = `synthesizing release: Kernel.SynthesizeInstance: instance "needy": not fully concrete: `
+	unset := func(field, position string) string {
+		return "values." + field + ": incomplete value string (" + extra + ":" + position + ")"
 	}
-	findings := func(root string, fields ...[2]string) string {
-		parts := make([]string, 0, len(fields))
-		for _, f := range fields {
-			parts = append(parts, finding(root, f[0], f[1]))
-		}
-		return strings.Join(parts, "; ")
-	}
-	note, host, greeting := [2]string{"note", "4:8"}, [2]string{"db.host", "5:12"}, [2]string{"greeting", "6:12"}
+	note, host, greeting := unset("note", "4:8"), unset("db.host", "5:12"), unset("greeting", "6:12")
 
 	cases := []struct {
 		name   string
 		values string
-		unset  [][2]string
+		unset  []string
 	}{
-		{name: "nothing set", values: `{}`, unset: [][2]string{note, host, greeting}},
-		{name: "one value set", values: `{"note": "set"}`, unset: [][2]string{host, greeting}},
-		{name: "only the read value unset", values: `{"note": "set", "db": {"host": "h"}}`, unset: [][2]string{greeting}},
+		{name: "nothing set", values: `{}`, unset: []string{note, host, greeting}},
+		{name: "one value set", values: `{"note": "set"}`, unset: []string{host, greeting}},
+		{name: "only the read value unset", values: `{"note": "set", "db": {"host": "h"}}`, unset: []string{greeting}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			// What a user reads: the renderer's check, which runs first.
 			_, err := r.synthesizeFrom(context.Background(), mod, "needy", "default", rawValues(tc.values))
 			require.Error(t, err)
-			assert.Equal(t, prefix+findings("#config.", tc.unset...), err.Error())
-			// The message is the event note, which nothing cuts. Its length
-			// is measured without the temporary directory, which is as long
-			// as the machine makes it.
-			assert.Less(t, len(strings.ReplaceAll(err.Error(), dir, "")), eventNoteLimit)
+			assert.Equal(t, frame+strings.Join(tc.unset, "; "), err.Error())
+			assert.NotContains(t, err.Error(), "components.", "no finding names the place that reads a value")
+			// The message fits an event note, so the note is the message.
+			assert.Equal(t, err.Error(), EventNote(err))
 			assert.NotErrorIs(t, err, ErrAcquire)
-
-			// What the kernel says for the same values without that check.
-			src, err := k.LoadSourceFromBytes(valuesOrigin, []byte(tc.values))
-			require.NoError(t, err)
-			_, err = k.SynthesizeInstance(context.Background(), kernel.InstanceInput{
-				Module: mod, Name: "needy", Namespace: "default", Values: []kernel.Source{src},
-			})
-			require.Error(t, err)
-			assert.Equal(t, findings("values.", tc.unset...), cueFindings(err),
-				"the kernel names the values the renderer's check names")
-			assert.True(t, strings.HasPrefix(err.Error(),
-				`Kernel.SynthesizeInstance: instance "needy": not fully concrete: values.`+tc.unset[0][0]+`: incomplete value string`),
-				"the kernel's own text names the first value only: %s", err)
 		})
 	}
 
@@ -369,6 +340,46 @@ func TestKernelModuleRenderer_EveryUnsetRequiredValueIsNamed(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, inst)
 	})
+}
+
+// Twenty unset required values on a real module: the message, which is the
+// condition message, names every one; the event note stays inside the note
+// limit, names whole findings from the first and counts the rest.
+func TestKernelModuleRenderer_TwentyUnsetValuesFitTheEventNote(t *testing.T) {
+	registry := requiredValueRegistry(t)
+
+	dir := t.TempDir()
+	require.NoError(t, os.CopyFS(dir, os.DirFS(helloFixtureDir)))
+	var fields strings.Builder
+	for i := 1; i <= 20; i++ {
+		fmt.Fprintf(&fields, "#config: required%02d: string\n", i)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "extra.cue"),
+		[]byte("package hello\n\n"+fields.String()), 0o644))
+
+	k := kernel.New(kernel.WithRegistry(registry))
+	mod, err := k.AcquireModuleFromDir(context.Background(), dir)
+	require.NoError(t, err)
+	r := &KernelModuleRenderer{Kernel: k, Store: platformstore.NewStore(), RuntimeName: "opm-controller"}
+
+	_, err = r.synthesizeFrom(context.Background(), mod, "needy", "default", nil)
+	require.Error(t, err)
+	message := err.Error()
+	for i := 1; i <= 20; i++ {
+		assert.Contains(t, message, fmt.Sprintf("values.required%02d: incomplete value string (", i))
+	}
+	assert.NotContains(t, message, " more ")
+	assert.Less(t, len(message), conditionMessageLimit)
+	require.Greater(t, len(message), eventNoteLimit, "the case must need the cut")
+
+	note := EventNote(err)
+	assert.LessOrEqual(t, len(note), eventNoteLimit)
+	named := strings.Count(note, ": incomplete value string (")
+	left := countedTail(t, note)
+	assert.Equal(t, 20, named+left, "every value is named or counted: %s", note)
+	assert.Positive(t, named)
+	assert.True(t, strings.HasPrefix(message, strings.TrimSuffix(note, moreFindings(left))+"; "),
+		"the cut is between two findings: %s", note)
 }
 
 // readingInstancePackage is needyInstancePackage with a module whose two
@@ -390,13 +401,13 @@ func readingInstancePackage(t *testing.T, valuesCUE string) string {
 }
 
 // A ModulePackage that leaves unset a required #config value a component
-// reads is told the value's name. Until library v1.0.0-beta.8 the kernel
-// named the place that read it instead (components.hello.spec.configMaps.
-// hello.data.message), and did not name a second unset value at all. The
-// package path has no check of its own, so the kernel's text is the condition
-// message and the event note: it names the first unset value and counts the
-// rest.
-func TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue(t *testing.T) {
+// reads is told the value's name, and every other unset value with it, each
+// as values.<field> with the position of its #config declaration in the
+// package. Until library v1.0.0-beta.8 the kernel named the place that read
+// the value instead (components.hello.spec.configMaps.hello.data.message).
+// The kernel's own text names the first unset value and counts the rest, so
+// the message is worded from its findings, as on the ModuleInstance path.
+func TestKernelPackageRenderer_EveryUnsetRequiredValueIsNamed(t *testing.T) {
 	registry := requiredValueRegistry(t)
 	r := &KernelPackageRenderer{
 		Kernel:      kernel.New(kernel.WithRegistry(registry)),
@@ -411,9 +422,10 @@ func TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue(t *testing.T) {
 		want   string
 	}{
 		{name: "only the read value unset", values: `note: "set"`,
-			want: frame + `values.greeting: incomplete value string`},
+			want: frame + `values.greeting: incomplete value string (instance.cue:22:13)`},
 		{name: "both unset", values: `{}`,
-			want: frame + `values.greeting: incomplete value string (and 1 more errors)`},
+			want: frame + `values.greeting: incomplete value string (instance.cue:22:13); ` +
+				`values.note: incomplete value string (instance.cue:23:12)`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -421,6 +433,7 @@ func TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue(t *testing.T) {
 			require.Error(t, err)
 			assert.Nil(t, result)
 			assert.Equal(t, tc.want, err.Error())
+			assert.Equal(t, tc.want, EventNote(err))
 			assert.ErrorIs(t, err, ErrAcquire)
 			_, isFetch := errors.AsType[*oerrors.FetchError](err)
 			assert.False(t, isFetch, "an unset value must not retry as a registry fetch failure")
@@ -429,4 +442,88 @@ func TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue(t *testing.T) {
 
 	_, _, err := r.Render(context.Background(), readingInstancePackage(t, `{greeting: "hi", note: "set"}`))
 	assert.ErrorIs(t, err, ErrPlatformNotReady)
+}
+
+// constrainedInstancePackage is needyInstancePackage with a module whose
+// #config holds greeting (required, read by the component), db.host
+// (required, nested), port (constrained, with a default) and note (required).
+func constrainedInstancePackage(t *testing.T, valuesCUE string) string {
+	t.Helper()
+	dir := needyInstancePackage(t, valuesCUE)
+	file := filepath.Join(dir, "instance.cue")
+	pkg, err := os.ReadFile(file)
+	require.NoError(t, err)
+	edited := strings.NewReplacer(
+		"message: string | *\"hello\"", "greeting: string\n\t\tdb: host: string\n\t\tport: int & >0 | *80",
+		"data: message: #config.message", "data: message: #config.greeting",
+	).Replace(string(pkg))
+	require.NotEqual(t, string(pkg), edited, "the package template changed under this helper")
+	require.NoError(t, os.WriteFile(file, []byte(edited), 0o644))
+	return dir
+}
+
+// A ModulePackage whose values do not satisfy the module's #config is told
+// every finding with its positions, where the kernel's own text holds the
+// first finding, a count and no position. A position in the package is
+// relative to the package's CUE module root: the operator extracts a package
+// to a new temporary directory on every reconcile, and the message of an
+// unchanged package must not change with it.
+func TestKernelPackageRenderer_ValuesFailureListsEveryFinding(t *testing.T) {
+	registry := requiredValueRegistry(t)
+	r := &KernelPackageRenderer{
+		Kernel:      kernel.New(kernel.WithRegistry(registry)),
+		Store:       platformstore.NewStore(),
+		RuntimeName: "opm-controller",
+	}
+	const frame = `loading package: Kernel.AcquireInstanceFromDir: instance "needy": `
+
+	for _, tc := range []struct {
+		name   string
+		values string
+		want   string
+	}{
+		{
+			name:   "three unset, one read, one nested",
+			values: `{}`,
+			want: frame + "not fully concrete: values.greeting: incomplete value string (instance.cue:22:13); " +
+				"values.db.host: incomplete value string (instance.cue:23:13); " +
+				"values.note: incomplete value string (instance.cue:25:12)",
+		},
+		{
+			name:   "wrong type",
+			values: `{note: 7, db: host: "h", greeting: "g"}`,
+			want: frame + "#module.#config.note: conflicting values string and 7 " +
+				"(mismatched types string and int) (instance.cue:25:12, instance.cue:35:16)",
+		},
+		{
+			name:   "constraint violated",
+			values: `{note: "n", db: host: "h", greeting: "g", port: -1}`,
+			want: frame + "#module.#config.port: 2 errors in empty disjunction:; " +
+				"#module.#config.port: conflicting values 80 and -1 (instance.cue:24:21, instance.cue:35:57); " +
+				"#module.#config.port: invalid value -1 (out of bound >0) (instance.cue:24:15, instance.cue:35:57)",
+		},
+		{
+			name:   "field not allowed",
+			values: `{note: "n", db: host: "h", greeting: "g", bogus: true}`,
+			want:   frame + "field not allowed (instance.cue:35:51)",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first := constrainedInstancePackage(t, tc.values)
+			_, result, err := r.Render(context.Background(), first)
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Equal(t, tc.want, err.Error())
+			assert.NotContains(t, err.Error(), "more errors", "every finding is written out")
+			assert.NotContains(t, err.Error(), first, "no position names the extraction directory")
+			var ce cueerrors.Error
+			assert.ErrorAs(t, err, &ce, "the wording keeps the kernel's error chain")
+			assert.ErrorIs(t, err, ErrAcquire)
+
+			// The same package in another directory reads the same.
+			_, _, again := r.Render(context.Background(), constrainedInstancePackage(t, tc.values))
+			require.Error(t, again)
+			assert.Equal(t, err.Error(), again.Error())
+		})
+	}
 }

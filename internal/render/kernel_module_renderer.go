@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-
-	cueerrors "cuelang.org/go/cue/errors"
 
 	"github.com/open-platform-model/library/opm/k8s/object"
 	"github.com/open-platform-model/library/opm/kernel"
@@ -41,8 +38,19 @@ type acquireError struct {
 	err error
 }
 
-func (e *acquireError) Error() string   { return e.msg + ": " + e.err.Error() }
+func (e *acquireError) Error() string   { return e.within(conditionMessageLimit) }
 func (e *acquireError) Unwrap() []error { return []error{ErrAcquire, e.err} }
+
+// within words the error in at most limit bytes: a cause that can word
+// itself within a length does so in what the message leaves; any other text
+// is cut.
+func (e *acquireError) within(limit int) string {
+	head := e.msg + ": "
+	if b, ok := e.err.(bounded); ok && limit > len(head) {
+		return head + b.within(limit-len(head))
+	}
+	return cutText(head+e.err.Error(), limit)
+}
 
 // acquireFailed wraps err as msg + ": " + err, the same text as
 // fmt.Errorf("%s: %w", msg, err), and marks it with ErrAcquire.
@@ -151,7 +159,9 @@ func (r *KernelModuleRenderer) synthesize(
 // module itself. Synthesis checks the values against the module's #config
 // (types, constraints, fields the schema does not allow, required values left
 // unset); a failure is worded with every finding and its positions
-// (findingsError).
+// (withFindings). The positions of the module's own files are left as CUE
+// reports them: a module from the registry lies in the CUE module cache,
+// whose paths do not change between reconciles.
 func (r *KernelModuleRenderer) synthesizeFrom(
 	ctx context.Context,
 	mod *module.Module,
@@ -181,63 +191,9 @@ func (r *KernelModuleRenderer) synthesizeFrom(
 		Values:    []kernel.Source{src},
 	})
 	if err != nil {
-		return nil, &findingsError{msg: "synthesizing release: " + withFindings(err), err: err}
+		return nil, withFindings("synthesizing release: ", err, "")
 	}
 	return inst, nil
-}
-
-// findingsError words err with its CUE findings written out in full
-// (withFindings) and keeps err's chain, so the classifiers still find a typed
-// cause (a registry fetch failure, a terminal cause) under it.
-type findingsError struct {
-	msg string
-	err error
-}
-
-func (e *findingsError) Error() string { return e.msg }
-func (e *findingsError) Unwrap() error { return e.err }
-
-// withFindings returns err's text with its CUE findings written out in full.
-// The text of an error that wraps a CUE error list holds the first finding
-// and a count of the rest, and no position; this keeps the text up to that
-// first finding (the kernel's own frame) and appends every finding with its
-// positions (cueFindings). An error with no CUE error in its chain, or whose
-// text does not hold its first finding, is returned as its own text.
-func withFindings(err error) string {
-	text := err.Error()
-	var ce cueerrors.Error
-	if !errors.As(err, &ce) {
-		return text
-	}
-	i := strings.Index(text, cueerrors.Errors(err)[0].Error())
-	if i < 0 {
-		return text
-	}
-	return text[:i] + cueFindings(err)
-}
-
-// cueFindings words a CUE error tree as one finding per entry, each followed
-// by the positions CUE attributed it to, so a values violation reads
-// `message: conflicting values ... (spec.values:1:13, ...)`. A non-CUE error
-// is returned as its own message.
-func cueFindings(err error) string {
-	findings := cueerrors.Errors(err)
-	lines := make([]string, 0, len(findings))
-	for _, e := range findings {
-		line := e.Error()
-		if positions := cueerrors.Positions(e); len(positions) > 0 {
-			at := make([]string, 0, len(positions))
-			for _, p := range positions {
-				at = append(at, p.String())
-			}
-			line += " (" + strings.Join(at, ", ") + ")"
-		}
-		lines = append(lines, line)
-	}
-	if len(lines) == 0 {
-		return err.Error()
-	}
-	return strings.Join(lines, "; ")
 }
 
 // resultFromRender adapts the kernel's render output to the operator's

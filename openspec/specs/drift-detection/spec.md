@@ -107,7 +107,7 @@ Drift reports that the cluster diverged from what the operator asserts. A withhe
 
 ### Requirement: A missing object is restored
 
-An object that the render produces and that does not exist on the cluster is not drift, and the `Drifted` condition SHALL NOT report it. When a ModuleInstance reconcile renders, finds every digest unchanged, withholds nothing, and its dry-run shows that one or more rendered objects do not exist, the controller SHALL apply those missing objects, and only those, through the identity that applies the instance. Objects that exist SHALL NOT be applied by this step, so the `Drifted` condition that the same reconcile computed stays as computed.
+An object that the render produces and that does not exist on the cluster is not drift, and the `Drifted` condition SHALL NOT report it. When a ModuleInstance reconcile renders, finds every digest unchanged, withholds nothing, and its dry-run shows that one or more rendered objects do not exist, the controller SHALL apply those missing objects through the identity that applies the instance. The same step SHALL apply the rendered objects that are taken in: objects that exist, are not in `status.inventory` and that the apply verdict allows (`reconcile-loop-assembly`, "An allowed object outside the inventory is taken in"), also when nothing is missing. It SHALL apply these two sets and only these. Objects that exist and are in `status.inventory` SHALL NOT be applied by this step, so the `Drifted` condition that the same reconcile computed stays as computed. A taken-in object SHALL be left out of the dry-run diff of the reconcile that takes it in, so `Drifted` does not name an object that the same reconcile applies; from the next render on it is compared like every other inventoried object.
 
 A reconcile that restores an object is an apply: its outcome is `Applied`, it records a history entry, moves `status.lastAppliedAt` and judges health from that moment. A failed restore SHALL be classified and retried as a failed apply.
 
@@ -175,6 +175,13 @@ A reconcile that skips its render has no rendered objects and SHALL NOT restore 
 - **GIVEN** a Ready ModuleInstance whose rendered objects all exist
 - **WHEN** the controller reconciles and renders with unchanged digests
 - **THEN** no apply is sent and the outcome is `NoOp`
+
+#### Scenario: A taken-in object is applied by the restore step
+
+- **GIVEN** a Ready ModuleInstance with unchanged digests, a rendered ConfigMap `foo` that exists outside `status.inventory` with the instance's adopt annotation and other data than the render, and an inventoried ConfigMap `bar` modified by hand
+- **WHEN** the controller reconciles and renders
+- **THEN** `foo` has the rendered content and is listed in `status.inventory`, and the outcome is `Applied`
+- **AND** `bar` keeps its modified content, and `Drifted=True` names `bar` and does not name `foo`
 
 ### Requirement: Drift detection runs as the identity that applies
 
@@ -249,3 +256,26 @@ Both cases SHALL count as a failed drift detection, SHALL leave the missing set 
 - **THEN** no dry-run is sent, by any identity
 - **AND** `Drifted` is `Unknown` with reason `ImpersonationFailed`
 - **AND** `status.failureCounters.drift` is incremented and `Ready=True` is preserved
+
+### Requirement: An object adopted by another instance is excluded from drift detection and from the restore
+Drift detection MUST compare only the objects the apply verdict allows, without the objects taken in by the same reconcile ("A missing object is restored"). An object the verdict refuses as `adopted-elsewhere` MUST NOT be reported as drifted or as missing, and MUST NOT be restored. The read the verdict needs MUST be the one read made per object before the dry-run, so a reconcile that renders sends no more requests per object than before. A reconcile with unchanged digests whose read of an object fails MUST report that as a failed drift check, as before (`Drifted=Unknown` with reason `DriftCheckForbidden` when the read is Forbidden), MUST restore nothing and MUST let no object go in that reconcile. Source: 0012:D8:R8.
+
+#### Scenario: A let-go object is not drift
+- **GIVEN** an inventoried ConfigMap whose `opmodel.dev/adopt` annotation names another instance and whose data the other instance changed
+- **WHEN** a reconcile renders with unchanged digests
+- **THEN** `Drifted` does not name the ConfigMap
+
+#### Scenario: A let-go object is not restored
+- **GIVEN** a ConfigMap the instance let go, which the other instance then deleted and created again with its annotation
+- **WHEN** the controller reconciles
+- **THEN** the controller does not write the ConfigMap
+
+#### Scenario: One read per object
+- **GIVEN** a ModuleInstance with ten rendered objects and unchanged digests
+- **WHEN** a reconcile renders
+- **THEN** the controller sends one GET of its own per object before the dry-run, as before this requirement
+
+#### Scenario: A refused read on unchanged digests
+- **GIVEN** an effective ServiceAccount that may not get ConfigMaps, and unchanged digests
+- **WHEN** the controller reconciles
+- **THEN** `Drifted` is `Unknown` with reason `DriftCheckForbidden`, nothing is restored and `status.inventory` keeps its entries

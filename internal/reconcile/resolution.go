@@ -12,7 +12,7 @@ import (
 
 // isTypedResolutionError reports whether err carries one of the library's
 // typed resolution-class failures: an identity mismatch from module acquire
-// (oerrors.IdentityError, a value type returned bare), unresolved platform
+// (*oerrors.IdentityError, returned bare), unresolved platform
 // demands (*oerrors.UnresolvedDemandsError) or components no transformer
 // matched (*oerrors.UnmatchedComponentsError). The last two are the typed
 // causes of the kernel's fail-closed render gate, carried on
@@ -24,7 +24,7 @@ import (
 // a Flux artifact and never acquire from the registry — but the helper is
 // shared unchanged so the two paths cannot drift.
 func isTypedResolutionError(err error) bool {
-	if _, ok := errors.AsType[oerrors.IdentityError](err); ok {
+	if _, ok := errors.AsType[*oerrors.IdentityError](err); ok {
 		return true
 	}
 	if _, ok := errors.AsType[*oerrors.UnresolvedDemandsError](err); ok {

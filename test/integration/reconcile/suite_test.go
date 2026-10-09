@@ -203,7 +203,7 @@ func acquireErr(cause error) error {
 // recheck.
 func identityMismatchRenderer() *stubRenderer {
 	return &stubRenderer{
-		err: acquireErr(oerrors.IdentityError{
+		err: acquireErr(&oerrors.IdentityError{
 			Field:      "path",
 			Declared:   "opmodel.dev/other",
 			Fetched:    "opmodel.dev/test",

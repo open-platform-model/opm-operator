@@ -150,14 +150,67 @@ ModuleInstance only. `<frame>` is `synthesizing release: Kernel.SynthesizeInstan
 
 The Warning event of a failed render carries the same message and reason as the condition, so it changes with it. ModulePackage, Platform and TransformerRegistration: nothing changes.
 
+## After library v1.0.0-beta.8
+
+The first build of this change (2026-10-08, library v1.0.0-beta.7) was held: for an unset required value that a component reads, the kernel named component paths and only the first finding, so the claim "a user loses nothing" above was false for the common case. Library v1.0.0-beta.8 (library#227) closes it: `processInstance` reports one finding for every unset required value at `values.<field>` and nothing else while any is unset. `main` pins beta.8 (opm-operator#273). The sections above are kept as written on beta.7; where they differ from this section, this section holds. Measured on 2026-10-09 with the tests of `internal/render/required_values_test.go`.
+
+### What the kernel's text still lacks
+
+**Context**: on beta.8 the kernel's error tree holds every unset value, but `Error()` of a wrapped CUE list is the first finding and `(and N more errors)`, with no position. A ModulePackage reported that text as it was (`acquireFailed("loading package", err)`).
+
+**Decision**: both renderers word a kernel refusal from the typed tree (`cueerrors.Errors`, `cueerrors.Positions`): the caller's prefix, the kernel's text in front of its first finding, then every finding with its positions (`withFindings`, `internal/render/findings.go`). The wording keeps the error chain. The gate decision of 2026-10-08 that left the ModulePackage wording for later is replaced by the brief of 2026-10-09, which asks for both kinds.
+
+**Rationale**: the only text read from the kernel's message is the frame in front of the first finding, and it is cut by position of that finding's own text, not matched against a pattern. No finding is taken from text. If the text does not hold the first finding, the error keeps its own text.
+
+### Positions of a package
+
+**Context**: the operator extracts a ModulePackage artifact to a new temporary directory on every reconcile (`fetchModulePackageArtifact`), and CUE positions are absolute paths. A stalled package is rechecked every 30 minutes.
+
+**Explored**: (A) positions as CUE reports them: the condition message of an unchanged package changes on every recheck and no two events are equal. (B) no positions on a package: loses where in the package the value is. (C) positions under the package's CUE module root written relative to it; all others (the CUE module cache) as reported.
+
+**Decision**: (C). The root is the nearest directory at or above the package directory that holds `cue.mod`. A ModuleInstance keeps absolute positions: its module lies in the CUE module cache, whose paths are stable, and `main` printed the same positions.
+
+### A registry fetch failure keeps its text
+
+**Context**: a package whose import cannot be fetched fails with a CUE error that holds one position, and its text ends in the registry's answer (`... 401 Unauthorized`), which `internal/render/token_endpoint_test.go` (opm-operator#273) pins.
+
+**Decision**: `withFindings` leaves an error with a `*oerrors.FetchError` in its chain as its own text, on both kinds. This is a test of the type, not of the text.
+
+### Bounds
+
+**Context**: nothing bounded the text of a render failure. The condition message has `maxLength: 32768` in the generated CRDs. events.k8s.io/v1 refuses a note over 1024 bytes and the client-go recorder does not cut (`internal/status/claims.go` records the limit for the two notes the operator already bounds). One unset value costs about 60 characters plus its file path; twenty unset values of a module in the CUE module cache pass 1024.
+
+**Explored**: (A) one bound of 1024 on the error text: no edit in `internal/reconcile`, but the condition then names about six of twenty values although it could hold all. (B) the error text bounded at the condition limit, and the event note bounded at 1024 by a function the two event lines call.
+
+**Decision**: (B). `findingsError.Error()` keeps whole findings up to 32768 bytes; `render.EventNote(err)` keeps whole findings up to 1024 bytes and ends `; and <N> more findings`; a long text with no findings is cut between two characters and ends ` ... (<N> more characters)`. Only the event of the stalled branch is changed in each kind: that is where a values refusal goes. The transient branches (a registry fetch failure, a platform not ready) are not touched.
+
+**Rationale**: the condition is where a user reads the list, so it keeps all of it. An event that the API server refuses is lost, so a cut event is better than none.
+
+### Messages, before (`main` at 7cf939d) and after
+
+Module `#config: {note: string, db: host: string, greeting: string, port: int & >0 | *80}`; a component reads `greeting`. `<f>` is the module's file; `<MI>` is `synthesizing release: Kernel.SynthesizeInstance: instance "needy": `; `<MP>` is `loading package: Kernel.AcquireInstanceFromDir: instance "needy": `; `<old>` is `validating values against the module's #config: `.
+
+| Kind | Defect | Before | After |
+| --- | --- | --- | --- |
+| ModuleInstance | three unset | `<old>#config.note: incomplete value string (<f>:4:8); #config.db.host: incomplete value string (<f>:5:12); #config.greeting: incomplete value string (<f>:6:12)` | `<MI>not fully concrete: values.note: incomplete value string (<f>:4:8); values.db.host: incomplete value string (<f>:5:12); values.greeting: incomplete value string (<f>:6:12)` |
+| ModuleInstance | wrong type | `<old>#config.note: conflicting values string and 7 (mismatched types string and int) (<f>:4:8, spec.values:1:1, spec.values:1:9)` | `<MI>#module.#config.note: conflicting values string and 7 (mismatched types string and int) (<f>:4:8, spec.values:1:1, spec.values:1:9)` |
+| ModuleInstance | constraint | `<old>#config.port: 2 errors in empty disjunction:; #config.port: conflicting values 80 and -1 (<f>:7:20, spec.values:1:1, spec.values:1:53); #config.port: invalid value -1 (out of bound >0) (<f>:7:14, spec.values:1:53)` | the same three findings and positions after `<MI>`, path `#module.#config.port` |
+| ModuleInstance | undeclared key | `<old>field not allowed (spec.values:1:46)` | `<MI>field not allowed (spec.values:1:46)` |
+| ModulePackage | three unset | `<MP>not fully concrete: values.greeting: incomplete value string (and 2 more errors)` | `<MP>not fully concrete: values.greeting: incomplete value string (instance.cue:22:13); values.db.host: incomplete value string (instance.cue:23:13); values.note: incomplete value string (instance.cue:25:12)` |
+| ModulePackage | wrong type | `<MP>#module.#config.note: conflicting values string and 7 (mismatched types string and int)` | the same and ` (instance.cue:25:12, instance.cue:35:16)` |
+| ModulePackage | constraint | `<MP>#module.#config.port: 2 errors in empty disjunction: (and 2 more errors)` | `<MP>#module.#config.port: 2 errors in empty disjunction:; #module.#config.port: conflicting values 80 and -1 (instance.cue:24:21, instance.cue:35:57); #module.#config.port: invalid value -1 (out of bound >0) (instance.cue:24:15, instance.cue:35:57)` |
+| ModulePackage | undeclared key | `<MP>field not allowed` | `<MP>field not allowed (instance.cue:35:51)` |
+
+Reason, `Stalled` and the retry are the same before and after in every row: `RenderFailed`, stalled, 30-minute recheck on a ModuleInstance; `ResolutionFailed`, stalled, 30-minute recheck on a ModulePackage. Every other package load failure that holds CUE findings and is not a registry fetch failure gains its positions and its later findings the same way.
+
 ## Reconcile phase impact
 
 - Source: none.
 - Render: ModuleInstance only. One kernel call fewer on every render; a values defect is refused by synthesis.
 - Apply, Prune: none. A refused render still applies and prunes nothing.
-- Status: message text only, as in the table.
+- Status: message text only, as in the tables. Since the section "After library v1.0.0-beta.8": the ModulePackage message too, and the note of the Warning event of a stalled render failure on both kinds.
 
-What opm-operator#260 to #269 delivered is in other phases or other files and is not touched: no file under `internal/apply`, `internal/inventory`, `internal/status` or `internal/reconcile` changes except one test row.
+What opm-operator#260 to #273 delivered is in other phases or other files and is not touched: no file under `internal/apply`, `internal/inventory` or `internal/status` changes. In `internal/reconcile` two lines change, the `Eventf` of the stalled branch in `classifyRenderError` (`moduleinstance.go`) and in `renderModulePackage` (`modulepackage.go`), plus tests in `resolution_test.go`.
 
 ## Risks / Trade-offs
 

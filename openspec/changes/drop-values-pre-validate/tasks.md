@@ -11,3 +11,18 @@
 
 - [x] 2.1 In `docs/site/diagnostics/operator-conditions.md`, `RenderFailed` row: replace `("validating values against the module's #config")` with the kernel's wording (a failed instance synthesis, "synthesizing release: ...", which includes `spec.values` that do not satisfy the module's `#config` and a required value left unset, "not fully concrete: values.<field>"). Verify: `grep -rn "validating values against" docs internal test` prints nothing.
 - [x] 2.2 `task docs:bundle:check` and `task dev:fmt dev:vet dev:lint dev:test` green, then commit `docs(diagnostics): name the kernel's values refusal under RenderFailed`
+
+## 3. Review fixes of the first build (2026-10-08)
+
+- [x] 3.1 Every failing case of `TestKernelModuleRenderer_ValuesFailureIsTheKernels` asserts that `errors.As` finds the kernel's CUE error on the error `synthesizeFrom` returns; add the case "constraint violated" and `TestWithFindings_TextWithoutTheFindingKeepsItsText`. Commit `test(render): pin the error chain, a constraint violation and the wording fallback`.
+
+## 4. After library v1.0.0-beta.8: both kinds, every finding, bounded
+
+- [x] 4.1 Merge `origin/main` (library v1.0.0-beta.8, opm-operator#273) into the branch with one merge commit. Verify: `go build ./...`.
+- [x] 4.2 `internal/render/findings.go`: `withFindings(prefix, err, root)` returns a `*findingsError` that holds the frame and the findings apart, words a position under `root` relative to it, guards an empty CUE list and leaves a registry fetch failure as its own text; `Error()` stays inside 32768 bytes and `EventNote(err)` inside 1024, both by whole findings and `; and <N> more findings`. Verify: `go test ./internal/render -run 'Findings|EventNote'` (no registry).
+- [x] 4.3 `internal/render/kernel_package_renderer.go`: word a package load failure with `withFindings` and the package's CUE module root. Replace `TestKernelPackageRenderer_UnsetReadValueIsNamedAsAValue` by `TestKernelPackageRenderer_EveryUnsetRequiredValueIsNamed`; add `TestKernelPackageRenderer_ValuesFailureListsEveryFinding` (three unset with one read and one nested, wrong type, constraint, undeclared key, the same package in two directories). Verify: `internal/render/token_endpoint_test.go` passes unchanged.
+- [x] 4.4 Replace the test of `main` that pins "the pre-check and the kernel name the same fields" (`TestKernelModuleRenderer_EveryUnsetRequiredValueIsNamed`) by what holds now: the message through `synthesizeFrom` names `values.note`, `values.db.host` and `values.greeting` and no component path. Add `TestKernelModuleRenderer_TwentyUnsetValuesFitTheEventNote`.
+- [x] 4.5 `internal/reconcile`: the `Eventf` of the stalled branch in `classifyRenderError` and in `renderModulePackage` takes `render.EventNote(err)`; no other line. Tests `TestClassifyRenderError_LongFailureFitsTheEventNote` and `TestRenderModulePackage_LongFailureFitsTheEventNote`. Verify: both fail with the two lines put back.
+- [x] 4.6 Commit `fix(render): name every values finding on both kinds and bound the event note`.
+- [x] 4.7 Docs and specs: the `ResolutionFailed` and `RenderFailed` rows of `docs/site/diagnostics/operator-conditions.md`; the deltas for `module-instance-synthesis`, `modulepackage-kernel-rendering` and `events-emission`. Verify: `openspec validate drop-values-pre-validate --strict`, `task docs:bundle:check`.
+- [x] 4.8 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green.

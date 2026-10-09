@@ -22,9 +22,9 @@ import (
 )
 
 // identityErr mirrors the acquire path: verifyModuleIdentity returns a bare
-// value-typed oerrors.IdentityError, wrapped once by the module renderer.
+// *oerrors.IdentityError, wrapped once by the module renderer.
 func identityErr() error {
-	return oerrors.IdentityError{
+	return &oerrors.IdentityError{
 		Field:      "path",
 		Declared:   "opmodel.dev/modules/other",
 		Fetched:    "opmodel.dev/modules/demo",

@@ -2327,7 +2327,7 @@ var _ = Describe("ModuleInstance Reconcile Loop", func() {
 
 		It("stalls an acquisition failure with a typed terminal cause", func() {
 			ctx := context.Background()
-			renderer := &stubRenderer{err: acquireErr(oerrors.IdentityError{
+			renderer := &stubRenderer{err: acquireErr(&oerrors.IdentityError{
 				Field:      "path",
 				Declared:   "opmodel.dev/test/other",
 				Fetched:    "opmodel.dev/test/module",

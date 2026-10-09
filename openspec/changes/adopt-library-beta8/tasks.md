@@ -1,10 +1,10 @@
 ## 1. Bump the library and leave the deprecated names
 
-- [ ] 1.1 Run `go get github.com/open-platform-model/library@v1.0.0-beta.8` and `go mod tidy`; verify the changed lines of `go.mod` and `go.sum` equal those of `git diff origin/main...origin/deps/cascade -- go.mod go.sum` and that `go build ./...` and `go vet ./...` pass
-- [ ] 1.2 Match `*oerrors.IdentityError` in `isTypedResolutionError` (`internal/reconcile/resolution.go`) and correct its comment; build the error as `&oerrors.IdentityError{...}` in `internal/reconcile/resolution_test.go`, `internal/render/acquire_error_test.go`, `internal/controller/moduleinstance_reconcile_test.go` and `test/integration/reconcile/suite_test.go`, and match the pointer in `acquire_error_test.go`; verify `go test ./internal/reconcile ./internal/render -run 'Identity|Classify|Acquire'` passes
-- [ ] 1.3 Use `module.Source` for the one `catalog.Source` use in `internal/controller/transformerregistration_catalog_test.go`; verify `task dev:lint` reports no SA1019 finding and no exclusion was added
-- [ ] 1.4 Build the operator against a copy of the library at v1.0.0-beta.8 with the `IdentityError` receiver made a pointer and `IdentityError.As` and `catalog.Source` deleted (`go build ./...` and `go vet ./...` with `-modfile`, the worktree's `go.mod` unchanged); verify both exit 0
-- [ ] 1.5 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `fix(deps): bump library to v1.0.0-beta.8`
+- [x] 1.1 Run `go get github.com/open-platform-model/library@v1.0.0-beta.8` and `go mod tidy`; verify the changed lines of `go.mod` and `go.sum` equal those of `git diff origin/main...origin/deps/cascade -- go.mod go.sum` and that `go build ./...` and `go vet ./...` pass
+- [x] 1.2 Match `*oerrors.IdentityError` in `isTypedResolutionError` (`internal/reconcile/resolution.go`) and correct its comment; build the error as `&oerrors.IdentityError{...}` in `internal/reconcile/resolution_test.go`, `internal/render/acquire_error_test.go`, `internal/controller/moduleinstance_reconcile_test.go` and `test/integration/reconcile/suite_test.go`, and match the pointer in `acquire_error_test.go`; verify `go test ./internal/reconcile ./internal/render -run 'Identity|Classify|Acquire'` passes
+- [x] 1.3 Use `module.Source` for the one `catalog.Source` use in `internal/controller/transformerregistration_catalog_test.go`; verify `task dev:lint` reports no SA1019 finding and no exclusion was added
+- [x] 1.4 Build the operator against a copy of the library at v1.0.0-beta.8 with the `IdentityError` receiver made a pointer and `IdentityError.As` and `catalog.Source` deleted (`go build ./...` and `go vet ./...` with `-modfile`, the worktree's `go.mod` unchanged); verify both exit 0
+- [x] 1.5 `task dev:manifests dev:generate dev:fmt dev:vet dev:lint dev:test docs:bundle:check` and `task operator-module:drift` green, then commit `fix(deps): bump library to v1.0.0-beta.8`
 
 ## 2. Pin what beta.8 changes
 

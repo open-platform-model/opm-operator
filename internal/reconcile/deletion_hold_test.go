@@ -52,6 +52,7 @@ type cleanupEnv struct {
 	apiReader  client.Reader
 	restConfig *rest.Config
 	recorder   events.EventRecorder
+	wait       DeletionWait
 }
 
 const cleanupUUID = "11111111-1111-1111-1111-111111111111"
@@ -70,6 +71,7 @@ var cleanupKinds = []cleanupKind{
 		run: func(ctx context.Context, env cleanupEnv, obj client.Object) (ctrl.Result, error) {
 			return handleDeletion(ctx, &ModuleInstanceParams{
 				Client: env.client, APIReader: env.apiReader, RestConfig: env.restConfig, EventRecorder: env.recorder,
+				DeletionWait: env.wait,
 			}, obj.(*releasesv1alpha1.ModuleInstance))
 		},
 	},
@@ -86,6 +88,7 @@ var cleanupKinds = []cleanupKind{
 		run: func(ctx context.Context, env cleanupEnv, obj client.Object) (ctrl.Result, error) {
 			return handleModulePackageDeletion(ctx, &ModulePackageParams{
 				Client: env.client, APIReader: env.apiReader, RestConfig: env.restConfig, EventRecorder: env.recorder,
+				DeletionWait: env.wait,
 			}, obj.(*releasesv1alpha1.ModulePackage))
 		},
 	},
@@ -102,9 +105,9 @@ func claimEntry(name string) releasesv1alpha1.InventoryEntry {
 }
 
 // ownedMeta is the metadata of an object the fixture instance owns.
-func ownedMeta(name string) metav1.ObjectMeta {
+func ownedMeta(name string, finalizers ...string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{
-		Name: name, Namespace: deletionTestNamespace,
+		Name: name, Namespace: deletionTestNamespace, Finalizers: finalizers,
 		Labels: map[string]string{
 			labels.ManagedBy:          labels.ManagedByController,
 			labels.ModuleInstanceUUID: cleanupUUID,
@@ -112,8 +115,8 @@ func ownedMeta(name string) metav1.ObjectMeta {
 	}
 }
 
-func ownedConfigMap(name string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{ObjectMeta: ownedMeta(name)}
+func ownedConfigMap(name string, finalizers ...string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{ObjectMeta: ownedMeta(name, finalizers...)}
 }
 
 func ownedClaim(name string) *corev1.PersistentVolumeClaim {
@@ -302,7 +305,7 @@ func TestCleanupFollowsTheHoldVerdict(t *testing.T) {
 		{
 			reason:   lifecycle.HoldCleanupComplete,
 			fixture:  cleanupFixture{prune: true, entries: []releasesv1alpha1.InventoryEntry{configMapEntry("cm")}},
-			released: true, reads: 1, deletes: 1,
+			released: true, reads: 2, deletes: 1,
 		},
 		{
 			reason: lifecycle.HoldForceOrphan,

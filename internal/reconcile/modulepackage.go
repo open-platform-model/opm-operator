@@ -87,6 +87,10 @@ type ModulePackageParams struct {
 	// of the key on a NoOp.
 	DriftRenderInterval time.Duration
 
+	// DeletionWait tunes the wait of a deletion cleanup for its deleted
+	// objects. The zero value is the production setting; tests set its clock.
+	DeletionWait DeletionWait
+
 	// convert exports a render result for apply. Nil, as in production,
 	// means convertRender; tests in this package set it to observe the
 	// conversion, for example that it runs while the render slot is held.
@@ -1065,6 +1069,7 @@ func handleModulePackageDeletion(ctx context.Context, params *ModulePackageParam
 		restConfig:            params.RestConfig,
 		recorder:              params.EventRecorder,
 		defaultServiceAccount: params.DefaultServiceAccount,
+		wait:                  params.DeletionWait,
 	}, deletionTarget{
 		obj:            pkg,
 		kind:           "ModulePackage",

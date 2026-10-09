@@ -562,7 +562,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 			expectConfigMapGone("idtd-app", "relabelled to B")
 			expectConfigMapGone("idtd-old", "still labelled A")
-			Expect(instanceGone(nn)).To(BeTrue())
+			reconcileInstanceUntilGone(params, nn)
 		})
 	})
 
@@ -591,7 +591,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 			expectConfigMapGone("idw-app", "the live workload, relabelled to the new identity")
 			expectConfigMapGone("idw-old", "not yet relabelled")
-			Expect(instanceGone(nn)).To(BeTrue())
+			reconcileInstanceUntilGone(params, nn)
 			Expect(rec.withReason(status.LeftBehindReason)).To(BeEmpty())
 		})
 
@@ -613,7 +613,8 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			for _, name := range []string{"iddl-other", "iddl-adopted", "iddl-foreign"} {
 				Expect(configMapExists(name)).To(BeTrue(), name)
 			}
-			Expect(instanceGone(nn)).To(BeTrue(), "a skipped object does not hold the finalizer")
+			// A skipped object does not hold the finalizer.
+			reconcileInstanceUntilGone(params, nn)
 			left := rec.withReason(status.LeftBehindReason)
 			Expect(left).To(HaveLen(1))
 			Expect(left[0].eventType).To(Equal(corev1.EventTypeWarning))
@@ -642,7 +643,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 			By("the next cleanup reads the object that now holds the name and judges it")
 			Expect(reconcileInstance(params, nn)).To(Succeed())
 			expectConfigMapGone("iddr-own")
-			Expect(instanceGone(nn)).To(BeTrue())
+			reconcileInstanceUntilGone(params, nn)
 		})
 
 		It("holds the finalizer when a delete fails and reports nothing as left behind", func() {
@@ -657,7 +658,7 @@ var _ = Describe("Instance identities of a ModuleInstance", func() {
 
 			f.failDelete = ""
 			Expect(reconcileInstance(params, nn)).To(Succeed())
-			Expect(instanceGone(nn)).To(BeTrue())
+			reconcileInstanceUntilGone(params, nn)
 			Expect(rec.withReason(status.LeftBehindReason)).To(HaveLen(1), "the cleanup that removes the finalizer reports")
 		})
 	})

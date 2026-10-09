@@ -117,10 +117,14 @@ var _ = Describe("Instance identities of a ModulePackage", func() {
 		Expect(k8sClient.Delete(ctx, &releasesv1alpha1.ModulePackage{
 			ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
 		})).To(Succeed())
-		_, err := opmreconcile.ReconcileModulePackage(ctx, params, ctrl.Request{NamespacedName: nn})
-		Expect(err).NotTo(HaveOccurred())
-		err = k8sClient.Get(ctx, nn, &releasesv1alpha1.ModulePackage{})
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the finalizer must be removed, got %v", err)
+		// The cleanup keeps the finalizer until the objects it deleted are
+		// gone, so it is reconciled until then, as its requeue would.
+		Eventually(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModulePackage(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Get(ctx, nn, &releasesv1alpha1.ModulePackage{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the finalizer must be removed, got %v", err)
+		}, 10*time.Second, 50*time.Millisecond).Should(Succeed())
 	}
 
 	It("records the identity of the instance it renders", func() {

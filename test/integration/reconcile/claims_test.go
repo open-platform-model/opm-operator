@@ -301,6 +301,18 @@ func expectConfigMapGone(name string, description ...any) {
 	expectGone(types.NamespacedName{Name: name, Namespace: namespace}, &corev1.ConfigMap{}, description...)
 }
 
+// reconcileInstanceUntilGone reconciles a deleting instance until its
+// finalizer is removed: the cleanup keeps it until the objects it deleted are
+// gone, and asks for a recheck meanwhile.
+func reconcileInstanceUntilGone(params *opmreconcile.ModuleInstanceParams, nn types.NamespacedName) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		g.Expect(reconcileInstance(params, nn)).To(Succeed())
+		err := k8sClient.Get(ctx, nn, &releasesv1alpha1.ModuleInstance{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the ModuleInstance must be gone, got %v", err)
+	}, 10*time.Second, 50*time.Millisecond).Should(Succeed())
+}
+
 func expectInstanceGone(nn types.NamespacedName) {
 	GinkgoHelper()
 	err := k8sClient.Get(ctx, nn, &releasesv1alpha1.ModuleInstance{})
@@ -540,7 +552,7 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 		rec.events = nil
 		Expect(reconcileInstance(params, nn)).To(Succeed())
 
-		expectInstanceGone(nn)
+		reconcileInstanceUntilGone(params, nn)
 		expectConfigMapGone("cdk-a")
 		expectClaimUntouched("cdk-config")
 		expectClaimUntouched("cdk-cache")
@@ -586,9 +598,21 @@ var _ = Describe("PersistentVolumeClaims of a ModuleInstance", func() {
 		rec.events = nil
 		Expect(reconcileInstance(params, nn)).To(Succeed())
 
-		expectInstanceGone(nn)
 		expectClaimDeleted("cdd-data")
 		expectConfigMapGone("cdd-a")
+
+		By("the instance waits for the claim, which its pvc-protection finalizer holds")
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+		Expect(k8sClient.Get(ctx, nn, &mi)).To(Succeed())
+		ready := apimeta.FindStatusCondition(mi.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(Equal(status.DeletionInProgressReason))
+		Expect(ready.Message).To(ContainSubstring("PersistentVolumeClaim/" + namespace + "/cdd-data"))
+		Expect(ready.Message).To(ContainSubstring("kubernetes.io/pvc-protection"))
+
+		By("the claim goes, as when the volume controller releases it")
+		removeClaims("cdd-data")
+		reconcileInstanceUntilGone(params, nn)
 		Expect(rec.withReason(status.ClaimsKeptReason)).To(BeEmpty())
 	})
 
@@ -841,8 +865,14 @@ var _ = Describe("PersistentVolumeClaims of a ModulePackage", func() {
 
 	expectPackageGone := func(nn types.NamespacedName) {
 		GinkgoHelper()
-		err := k8sClient.Get(ctx, nn, &releasesv1alpha1.ModulePackage{})
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the ModulePackage must be gone, got %v", err)
+		// The cleanup keeps the finalizer until the objects it deleted are
+		// gone, so it is reconciled until then, as its requeue would.
+		Eventually(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModulePackage(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Get(ctx, nn, &releasesv1alpha1.ModulePackage{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the ModulePackage must be gone, got %v", err)
+		}, 10*time.Second, 50*time.Millisecond).Should(Succeed())
 	}
 
 	It("keeps a stale claim by default and drops it from the inventory", func() {
@@ -926,9 +956,19 @@ var _ = Describe("PersistentVolumeClaims of a ModulePackage", func() {
 		Expect(k8sClient.Delete(ctx, &pkg)).To(Succeed())
 		rec.events = nil
 		reconcilePackage(nn, renderOf(nil, nil))
-
-		expectPackageGone(nn)
 		expectClaimDeleted("pdd-data")
+
+		By("the package waits for the claim, which its pvc-protection finalizer holds")
+		reconcilePackage(nn, renderOf(nil, nil))
+		Expect(k8sClient.Get(ctx, nn, &pkg)).To(Succeed())
+		ready := apimeta.FindStatusCondition(pkg.Status.Conditions, status.ReadyCondition)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(Equal(status.DeletionInProgressReason))
+		Expect(ready.Message).To(ContainSubstring("PersistentVolumeClaim/" + namespace + "/pdd-data"))
+
+		By("the claim goes, as when the volume controller releases it")
+		removeClaims("pdd-data")
+		expectPackageGone(nn)
 		Expect(rec.withReason(status.ClaimsKeptReason)).To(BeEmpty())
 	})
 

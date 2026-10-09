@@ -175,3 +175,21 @@ func TestEventNoteIsCutToTheLimit(t *testing.T) {
 		t.Errorf("a short note changed: %q", got)
 	}
 }
+
+func TestDeletionCheckNotes(t *testing.T) {
+	failed := DeletionCheckFailedNote("a read failed: the server is unavailable")
+	for _, want := range []string{"could not be checked", "a read failed: the server is unavailable", "retried"} {
+		if !strings.Contains(failed, want) {
+			t.Errorf("the note does not contain %q: %s", want, failed)
+		}
+	}
+	blocked := DeletionCheckBlockedNote("a read failed: the server is unavailable", 10*time.Minute)
+	for _, want := range []string{
+		"10m0s", "could not be checked", "a read failed: the server is unavailable", "spec.prune=false",
+		"right to impersonate", releasesv1alpha1.AnnotationForceDeleteOrphan + " does not release this wait",
+	} {
+		if !strings.Contains(blocked, want) {
+			t.Errorf("the note does not contain %q: %s", want, blocked)
+		}
+	}
+}

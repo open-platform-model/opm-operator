@@ -25,7 +25,7 @@ const (
 	UnreadIdentityMissing Unread = "is missing"
 	// UnreadIdentityFailed: the ServiceAccount could not be impersonated.
 	UnreadIdentityFailed Unread = "cannot be impersonated"
-	// UnreadForbidden: the reads were refused as Forbidden or Unauthorized.
+	// UnreadForbidden: the reads were refused as Forbidden.
 	UnreadForbidden Unread = "is not allowed to read them"
 )
 
@@ -151,6 +151,24 @@ func DeletionBlockedNote(objects []WaitingObject, after time.Duration) string {
 		"(2) set spec.prune=false on this object to remove its finalizer and leave the objects as they are. "+
 		"The annotation %s does not release this wait.",
 		len(objects), after, listWaiting(objects), releasesv1alpha1.AnnotationForceDeleteOrphan)
+}
+
+// DeletionCheckFailedNote words the Ready message of a waiting deletion
+// whose recheck could not be done. what names the failed check and its cause.
+func DeletionCheckFailedNote(what string) string {
+	return fmt.Sprintf("Every delete was sent; the deleted objects could not be checked: %s. The check is retried.", what)
+}
+
+// DeletionCheckBlockedNote words the Ready message of a deletion that has
+// been waiting for longer than after and whose recheck cannot be done, with
+// the ways out.
+func DeletionCheckBlockedNote(what string, after time.Duration) string {
+	return fmt.Sprintf("Every delete was sent more than %s ago and the deleted objects could not be checked: %s. "+
+		"The check is retried. Ways out: (1) restore what the check needs: the API server, the rights of the "+
+		"ServiceAccount, or the controller's right to impersonate it; "+
+		"(2) set spec.prune=false on this object to remove its finalizer and leave the objects as they are. "+
+		"The annotation %s does not release this wait.",
+		after, what, releasesv1alpha1.AnnotationForceDeleteOrphan)
 }
 
 // EventNote cuts a condition message to the length an event note may have.

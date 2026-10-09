@@ -56,7 +56,7 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/inventory/owner
 
    **`DeletionInProgress`.** The operator deleted the instance's resources and waits until they are gone. The message names what is left. There is nothing to do: a Deployment is gone when its Pods have stopped.
 
-   **`DeletionBlocked`.** A resource has been terminating for more than 10 minutes. The message names it and the finalizer that holds it. The operator keeps checking once a minute and never gives up on its own. You have two ways out:
+   **`DeletionBlocked`.** A resource has been terminating for more than 10 minutes, or the operator could not check the deleted resources for that long. The message names the resource and the finalizer that holds it, or the check that fails and why. The operator keeps checking once a minute and never gives up on its own. You have two ways out:
 
    - Remove what holds the resource. When the message says that the resource waits for its dependents, find the Pod or other dependent that cannot stop, for example a Pod on a node that is gone, and delete it. When the message names another finalizer, fix or remove the controller that owns that finalizer.
    - Let the instance go and leave the resources as they are:
@@ -81,7 +81,7 @@ Check against: cli/internal/cmd/instance/delete.go, cli/internal/inventory/owner
 
    - Do not delete a file that lists the ServiceAccount before the instance with one `kubectl delete -f`. kubectl deletes in file order, so the ServiceAccount is gone before the operator has sent a single delete, and the delete stalls with `DeletionSAMissing`. The ModulePackage sample the operator ships, `config/samples/opmodel.dev_v1alpha1_modulepackage.yaml`, is such a file. Delete the instance by name first and the rest of the file after it, or use one of the three ways out above.
 
-   The order matters only until the operator has sent every delete. When the ServiceAccount or its rights are removed while the operator only waits (the reason is `DeletionInProgress` or `DeletionBlocked`), it lets the instance go and writes a `Warning` event with the reason `DeletionUnconfirmed`: the operator could not check that the resources are gone, so check the namespace for leftovers yourself. This applies only when the ServiceAccount is really gone or refused. When the operator merely fails to reach the API server, it keeps waiting and tries again.
+   The order matters only until the reason is `DeletionInProgress`. When the ServiceAccount or its rights are removed while the operator only waits (the reason is `DeletionInProgress` or `DeletionBlocked`), it lets the instance go and writes a `Warning` event with the reason `DeletionUnconfirmed`: the operator could not check that the resources are gone, so check the namespace for leftovers yourself. This applies only when the ServiceAccount is really gone, or refused while the operator may still act as it. When the operator cannot check (the API server does not answer, or the operator lost its own right to impersonate), it keeps waiting, says why in the message, and tries again.
 
    An instance with `spec.owner: cli` never waits on the finalizer: the operator releases a leftover `opmodel.dev/cleanup` on delete and prunes nothing.
 

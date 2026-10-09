@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -289,6 +290,32 @@ func deleteDeploymentDryRun(name string) func(client.Client) error {
 			client.DryRunAll)
 	}
 }
+
+// Before a waiting deletion is released on a Forbidden answer, the controller
+// asks the API server whether it may itself impersonate the ServiceAccount
+// (a SelfSubjectAccessReview). The role the operator ships has no rule for
+// that review and needs none: every authenticated identity may create one
+// through the bootstrap role system:basic-user. This spec shows it for a
+// ServiceAccount that holds no right on the review and none to impersonate.
+var _ = Describe("The impersonation review of a waiting deletion", func() {
+	It("can be asked by an identity with no rule for it, and answers no for a right it lacks", func() {
+		who := newTenant("dw-review", []string{"get"})
+		review := &authorizationv1.SelfSubjectAccessReview{
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: namespace, Verb: "impersonate", Resource: "serviceaccounts", Name: "dw-review",
+				},
+			},
+		}
+		Expect(who.client().Create(ctx, review)).To(Succeed(), "an authenticated identity may create the review")
+		Expect(review.Status.Allowed).To(BeFalse(), "the tenant may not impersonate")
+
+		own := review.DeepCopy()
+		own.ResourceVersion = ""
+		Expect(k8sClient.Create(ctx, own)).To(Succeed())
+		Expect(own.Status.Allowed).To(BeTrue(), "the suite's client, like a controller with the right, may impersonate")
+	})
+})
 
 var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 	kinds := []struct {

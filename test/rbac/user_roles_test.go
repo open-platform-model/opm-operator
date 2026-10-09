@@ -62,7 +62,7 @@ func userRoleFiles(t *testing.T) []string {
 
 // The Ready reason of a deleting ModuleInstance or ModulePackage is the
 // record that its cleanup sent every delete (internal/reconcile,
-// everyDeleteWasSent). A user who could write the status subresource could
+// recordedWaitReason). A user who could write the status subresource could
 // forge it, so no role the operator ships for users may grant that.
 func TestUserRolesCannotWriteAStatusSubresource(t *testing.T) {
 	sawStatusRule := false

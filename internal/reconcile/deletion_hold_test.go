@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/fluxcd/pkg/runtime/conditions"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -129,6 +130,13 @@ type requestLog struct {
 	mu      sync.Mutex
 	reads   []string
 	deletes []string
+
+	// reviews names each SelfSubjectAccessReview the cleanup asked, as
+	// "verb resource namespace/name". The answer is allowed unless
+	// denyImpersonate is set; reviewErr fails the request.
+	reviews         []string
+	denyImpersonate bool
+	reviewErr       error
 }
 
 func isInventoryObject(obj client.Object) bool {
@@ -155,6 +163,23 @@ func (l *requestLog) logged(c client.WithWatch, getErr, deleteErr func(client.Ob
 				}
 			}
 			return c.Get(ctx, key, obj, opts...)
+		},
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			review, ok := obj.(*authorizationv1.SelfSubjectAccessReview)
+			if !ok {
+				return c.Create(ctx, obj, opts...)
+			}
+			// The API server answers a review in the response; the fake
+			// client stores nothing useful, so the test answers.
+			attrs := review.Spec.ResourceAttributes
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.reviews = append(l.reviews, attrs.Verb+" "+attrs.Resource+" "+attrs.Namespace+"/"+attrs.Name)
+			if l.reviewErr != nil {
+				return l.reviewErr
+			}
+			review.Status.Allowed = !l.denyImpersonate
+			return nil
 		},
 		Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
 			if isInventoryObject(obj) {

@@ -571,23 +571,23 @@ func TestRecordIsKeptWhenARecheckFailsForATransientCause(t *testing.T) {
 func TestRecordIsIgnoredOnALiveObject(t *testing.T) {
 	live := &releasesv1alpha1.ModuleInstance{}
 	live.Status.Conditions = waitRecord(status.DeletionInProgressReason)
-	if everyDeleteWasSent(live) {
+	if recordedWaitReason(live) != "" {
 		t.Error("a live object carries the record")
 	}
 	deleting := deletingMR("", "")
-	if everyDeleteWasSent(deleting) {
+	if recordedWaitReason(deleting) != "" {
 		t.Error("an object without the reason carries the record")
 	}
 	deleting.Status.Conditions = waitRecord(status.DeletionBlockedReason)
-	if !everyDeleteWasSent(deleting) {
+	if recordedWaitReason(deleting) == "" {
 		t.Error("a deleting object with the reason does not carry the record")
 	}
 	deleting.Status.Conditions[0].Status = metav1.ConditionTrue
-	if everyDeleteWasSent(deleting) {
+	if recordedWaitReason(deleting) != "" {
 		t.Error("Ready=True counts as the record")
 	}
 	deleting.Status.Conditions = waitRecord(status.DeletionSAMissingReason)
-	if everyDeleteWasSent(deleting) {
+	if recordedWaitReason(deleting) != "" {
 		t.Error("another reason counts as the record")
 	}
 }
@@ -696,29 +696,198 @@ func TestRecordHoldsOnATransientIdentityFailure(t *testing.T) {
 	}
 }
 
-// With the record, reads the API server refuses as Unauthorized count as
-// lost rights, as Forbidden ones do. Without it they hold and are retried.
-func TestRecordReleasesUnauthorizedReads(t *testing.T) {
+// A 401 answers the controller's own credential, before impersonation. It
+// says nothing about the instance's ServiceAccount, so it is transient: with
+// the record the finalizer and the record stay.
+func TestRecordHoldsOnUnauthorizedReads(t *testing.T) {
 	unauthorized := func(client.Object) error { return apierrors.NewUnauthorized("token rejected") }
-	entries := []releasesv1alpha1.InventoryEntry{configMapEntry("a")}
 	forEachCleanupKind(t, func(t *testing.T, kind cleanupKind) {
-		run := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa", entries: entries,
-			conditions: waitRecord(status.DeletionInProgressReason)}, unauthorized, nil, ownedConfigMap("a", holdFinalizer))
-		run.mustReconcile()
-		if !run.released() {
-			t.Fatalf("the finalizer stays; Ready reason %q", run.readyReason())
+		run := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa",
+			entries:    []releasesv1alpha1.InventoryEntry{configMapEntry("a")},
+			conditions: waitRecord(status.DeletionBlockedReason)}, unauthorized, nil, ownedConfigMap("a", holdFinalizer))
+		if _, err := run.reconcile(); err == nil {
+			t.Fatal("an Unauthorized read must fail the reconcile, so that it is retried")
 		}
-		if evs := drainEvents(run.rec); len(evs) != 1 || !strings.Contains(evs[0], status.DeletionUnconfirmedReason) {
-			t.Errorf("events = %v, want one DeletionUnconfirmed", evs)
+		if run.released() {
+			t.Fatal("one Unauthorized answer removed the cleanup finalizer")
 		}
-
-		first := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa", entries: entries},
-			unauthorized, nil, ownedConfigMap("a"))
-		if _, err := first.reconcile(); err == nil {
-			t.Error("without the record an Unauthorized read must fail the reconcile")
+		if got := run.readyReason(); got != status.DeletionBlockedReason {
+			t.Errorf("Ready reason = %q, want the record kept", got)
 		}
-		if first.released() {
-			t.Error("without the record an Unauthorized read released the finalizer")
+		if evs := drainEvents(run.rec); countEventsWithReason(evs, status.DeletionUnconfirmedReason) != 0 {
+			t.Errorf("events = %v, want no DeletionUnconfirmed", evs)
 		}
 	})
+}
+
+// impersonationRefused is the 403 the API server sends when the controller
+// may not impersonate the ServiceAccount: a plain Forbidden status that names
+// the ServiceAccount, whatever object the request was for
+// (k8s.io/apiserver, endpoints/filters/impersonation).
+func impersonationRefused(client.Object) error {
+	return apierrors.NewForbidden(schema.GroupResource{Resource: "serviceaccounts"}, "deploy-sa",
+		errors.New("User \"system:serviceaccount:opm-operator-system:manager\" cannot impersonate resource \"serviceaccounts\""))
+}
+
+// TestForbiddenReleasesOnlyWhenTheRefusalIsTheInstances: a 403 on a read as
+// the ServiceAccount releases a waiting deletion only when the controller can
+// show that the refusal is the ServiceAccount's and not its own. It asks the
+// API server whether it may still impersonate that ServiceAccount.
+func TestForbiddenReleasesOnlyWhenTheRefusalIsTheInstances(t *testing.T) {
+	entries := []releasesv1alpha1.InventoryEntry{configMapEntry("a")}
+	fixture := cleanupFixture{prune: true, sa: "deploy-sa", entries: entries,
+		conditions: waitRecord(status.DeletionInProgressReason)}
+	const asked = "impersonate serviceaccounts team-a/deploy-sa"
+
+	forEachCleanupKind(t, func(t *testing.T, kind cleanupKind) {
+		t.Run("the controller lost its right to impersonate: holds", func(t *testing.T) {
+			// The ServiceAccount exists and keeps its rights.
+			run := newCleanupRun(t, kind, fixture, impersonationRefused, nil,
+				ownedConfigMap("a", holdFinalizer), saFixture(deletionTestNamespace, "deploy-sa"))
+			run.log.denyImpersonate = true
+			if _, err := run.reconcile(); err == nil {
+				t.Fatal("the reconcile must return an error, so that it is retried")
+			}
+			if run.released() {
+				t.Fatal("a 403 from the controller's own lost right removed the cleanup finalizer")
+			}
+			ready := run.ready()
+			if ready == nil || ready.Reason != status.DeletionInProgressReason {
+				t.Fatalf("Ready = %+v, want the record kept", ready)
+			}
+			if !strings.Contains(ready.Message, "may not impersonate") {
+				t.Errorf("the message must say why the deletion is held: %s", ready.Message)
+			}
+			if len(run.log.reviews) != 1 || run.log.reviews[0] != asked {
+				t.Errorf("reviews = %v, want [%s]", run.log.reviews, asked)
+			}
+			if evs := drainEvents(run.rec); len(evs) != 0 {
+				t.Errorf("events = %v, want none", evs)
+			}
+		})
+
+		t.Run("the review fails: holds", func(t *testing.T) {
+			run := newCleanupRun(t, kind, fixture, forbidden, nil, ownedConfigMap("a", holdFinalizer))
+			run.log.reviewErr = apierrors.NewServiceUnavailable("injected")
+			if _, err := run.reconcile(); err == nil {
+				t.Fatal("the reconcile must return an error, so that it is retried")
+			}
+			if run.released() {
+				t.Fatal("the finalizer was removed although the review failed")
+			}
+			if got := run.readyReason(); got != status.DeletionInProgressReason {
+				t.Errorf("Ready reason = %q, want the record kept", got)
+			}
+		})
+
+		t.Run("the ServiceAccount lost its rights: releases", func(t *testing.T) {
+			run := newCleanupRun(t, kind, fixture, forbidden, nil, ownedConfigMap("a", holdFinalizer))
+			run.mustReconcile()
+			if !run.released() {
+				t.Fatalf("the finalizer stays; Ready reason %q", run.readyReason())
+			}
+			if len(run.log.reviews) != 1 || run.log.reviews[0] != asked {
+				t.Errorf("reviews = %v, want [%s]", run.log.reviews, asked)
+			}
+			if evs := drainEvents(run.rec); len(evs) != 1 || !strings.Contains(evs[0], status.DeletionUnconfirmedReason) {
+				t.Errorf("events = %v, want one DeletionUnconfirmed", evs)
+			}
+		})
+
+		t.Run("the controller deletes as itself and is refused: holds", func(t *testing.T) {
+			own := fixture
+			own.sa = ""
+			run := newCleanupRun(t, kind, own, forbidden, nil, ownedConfigMap("a", holdFinalizer))
+			if _, err := run.reconcile(); err == nil {
+				t.Fatal("the reconcile must return an error, so that it is retried")
+			}
+			if run.released() {
+				t.Fatal("a refusal of the controller's own read removed the cleanup finalizer")
+			}
+			if got := run.readyReason(); got != status.DeletionInProgressReason {
+				t.Errorf("Ready reason = %q, want the record kept", got)
+			}
+		})
+	})
+}
+
+// TestFailingRechecksAreReportedAndBecomeBlocked: a waiting deletion whose
+// rechecks keep failing says why in its status at once, and is reported as
+// DeletionBlocked after the threshold like any other deletion that is stuck.
+// The clock is injected; the test does not sleep.
+func TestFailingRechecksAreReportedAndBecomeBlocked(t *testing.T) {
+	unavailable := func(client.Object) error { return apierrors.NewServiceUnavailable("injected") }
+	causes := map[string]func(t *testing.T, kind cleanupKind) *cleanupRun{
+		"a read of the recheck fails": func(t *testing.T, kind cleanupKind) *cleanupRun {
+			return newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa",
+				entries:    []releasesv1alpha1.InventoryEntry{configMapEntry("a")},
+				conditions: waitRecord(status.DeletionInProgressReason)}, unavailable, nil, ownedConfigMap("a", holdFinalizer))
+		},
+		"the gone-check read fails": func(t *testing.T, kind cleanupKind) *cleanupRun {
+			reads := 0
+			return newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa",
+				entries:    []releasesv1alpha1.InventoryEntry{configMapEntry("a")},
+				conditions: waitRecord(status.DeletionInProgressReason)},
+				func(obj client.Object) error {
+					// Every second read is the gone-check of a reconcile.
+					if reads++; reads%2 == 0 {
+						return unavailable(obj)
+					}
+					return nil
+				}, nil, ownedConfigMap("a", holdFinalizer))
+		},
+		"the ServiceAccount lookup fails": func(t *testing.T, kind cleanupKind) *cleanupRun {
+			run := newCleanupRun(t, kind, cleanupFixture{prune: true, sa: "deploy-sa",
+				entries:    []releasesv1alpha1.InventoryEntry{configMapEntry("a")},
+				conditions: waitRecord(status.DeletionInProgressReason)}, nil, nil, ownedConfigMap("a", holdFinalizer))
+			run.failServiceAccountRead(apierrors.NewServiceUnavailable("injected"))
+			return run
+		},
+	}
+	for name, build := range causes {
+		forEachCleanupKind(t, func(t *testing.T, kind cleanupKind) {
+			t.Run(name, func(t *testing.T) {
+				run := build(t, kind)
+				if _, err := run.reconcile(); err == nil {
+					t.Fatal("the failed recheck must fail the reconcile")
+				}
+				ready := run.ready()
+				if ready == nil || ready.Reason != status.DeletionInProgressReason {
+					t.Fatalf("Ready = %+v, want DeletionInProgress kept", ready)
+				}
+				if !strings.Contains(ready.Message, "could not be checked") || !strings.Contains(ready.Message, "injected") {
+					t.Errorf("the message must say at once that the check failed, and why: %s", ready.Message)
+				}
+				if evs := drainEvents(run.rec); len(evs) != 0 {
+					t.Errorf("events = %v, want none before the threshold", evs)
+				}
+
+				run.env.wait.Now = func() time.Time { return time.Now().Add(11 * time.Minute) }
+				for range 2 {
+					if _, err := run.reconcile(); err == nil {
+						t.Fatal("the failed recheck must fail the reconcile")
+					}
+				}
+				ready = run.ready()
+				if ready == nil || ready.Reason != status.DeletionBlockedReason {
+					t.Fatalf("Ready = %+v, want DeletionBlocked after the threshold", ready)
+				}
+				for _, want := range []string{"could not be checked", "injected", "spec.prune=false"} {
+					if !strings.Contains(ready.Message, want) {
+						t.Errorf("the message does not contain %q: %s", want, ready.Message)
+					}
+				}
+				if c := run.condition(status.StalledCondition); c == nil || c.Status != metav1.ConditionTrue {
+					t.Errorf("Stalled = %+v, want True", c)
+				}
+				evs := drainEvents(run.rec)
+				if len(evs) != 1 || !strings.HasPrefix(evs[0], "Warning "+status.DeletionBlockedReason) {
+					t.Errorf("events = %v, want one Warning DeletionBlocked", evs)
+				}
+				if run.released() {
+					t.Fatal("a blocked deletion gave up its finalizer")
+				}
+			})
+		})
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/conditions"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -165,15 +166,26 @@ func (i identityState) unread() status.Unread {
 //
 // One fact is carried across reconciles: that a reconcile of this deletion
 // reached a release verdict, so every delete was sent. The record is the
-// Ready reason DeletionInProgress or DeletionBlocked (everyDeleteWasSent).
+// Ready reason DeletionInProgress or DeletionBlocked (recordedWaitReason).
 // It decides one thing: with the record, a deleting identity that is really
 // gone during the wait no longer holds the finalizer (DeletionUnconfirmed).
-// Gone means, by the typed API error and never by message text: the
-// ServiceAccount is NotFound, or the reads as that ServiceAccount are refused
-// as Forbidden or Unauthorized. Any other failure (a server error, a
-// timeout, a throttle, a connection error, a cancelled context) is transient:
-// the finalizer and the record stay and the reconcile is retried with
-// backoff. The record never causes a read or a delete.
+// Gone means, by the typed API error and never by message text:
+//
+//   - the ServiceAccount is NotFound; or
+//   - requests as that ServiceAccount are refused as Forbidden, AND the API
+//     server says that the controller may still impersonate it
+//     (refusalIsNotTheInstances). A 403 alone does not show whose refusal it
+//     is: the API server answers a lost impersonate right of the controller
+//     with the same status.
+//
+// Everything else says nothing about the instance's identity: a server
+// error, a timeout, a throttle, a connection error, a cancelled context, an
+// Unauthorized answer (a 401 answers the controller's own credential, before
+// impersonation), a Forbidden answer the controller cannot attribute. The
+// finalizer and the record stay, the Ready message says at once what could
+// not be checked, the reconcile is retried with backoff, and after
+// BlockedAfter the deletion is reported as DeletionBlocked like any other
+// that is stuck (holdRecheck). The record never causes a read or a delete.
 func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.Info("Running deletion cleanup for " + t.kind)
@@ -222,12 +234,13 @@ func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) 
 		if recorded != "" {
 			switch waitFor, unconfirmed, kind := classifyRecheck(cleanup.Deletion); kind {
 			case recheckLostRights:
-				return awaitGone(ctx, env, t, identity, goneCheck{steps: waitFor, unconfirmed: unconfirmed})
+				if why, err := refusalIsNotTheInstances(ctx, env, t, identity); why != "" {
+					return holdRecheck(ctx, env, t, recorded, why, err)
+				}
+				return awaitGone(ctx, env, t, identity,
+					goneCheck{steps: waitFor, unconfirmed: unconfirmed, recorded: recorded})
 			case recheckTransient:
-				// Retried with backoff. The status is not touched: a stall
-				// reason would erase the record.
-				log.Error(cleanup.Failed, "A recheck of the waiting deletion failed, retaining finalizer")
-				return ctrl.Result{}, cleanup.Failed
+				return holdRecheck(ctx, env, t, recorded, "a read or a delete of the recheck failed", cleanup.Failed)
 			case recheckRefusedDelete:
 			}
 		}
@@ -236,7 +249,7 @@ func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) 
 
 	log.Info("Deletion cleanup pruned resources",
 		"deleted", cleanup.Report.Deleted, "skipped", cleanup.Report.Skipped, "keptClaims", len(cleanup.Report.Kept))
-	check := goneCheck{steps: cleanup.Deletion.Deleted()}
+	check := goneCheck{steps: cleanup.Deletion.Deleted(), recorded: recorded}
 	if recorded == "" {
 		// The first reconcile of this deletion that reaches a release
 		// verdict reports; a recheck does not report again.
@@ -245,24 +258,19 @@ func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) 
 	return awaitGone(ctx, env, t, identity, check)
 }
 
-// everyDeleteWasSent reads the record that an earlier reconcile of this
+// recordedWaitReason reads the record that an earlier reconcile of this
 // deletion reached a release verdict: Ready is False with one of the two wait
-// reasons. It is read from the object as the reconcile loaded it, and counts
-// only on an object that is being deleted: on a live object the reasons mean
-// nothing, whoever wrote them.
+// reasons. It returns that reason, or the empty string without a record. It
+// is read from the object as the reconcile loaded it, and counts only on an
+// object that is being deleted: on a live object the reasons mean nothing,
+// whoever wrote them.
 //
 // The record lives in status, so whoever may write the status subresource can
 // write it. Its effect is bounded to this: when the deleting identity is also
-// lost, the finalizer of a deleting object is released early. That leaves
+// gone, the finalizer of a deleting object is released early. That leaves
 // objects in the cluster and never deletes one; spec.prune=false does the
 // same for anyone who may edit the spec. The roles the operator ships give
 // users no write verb on a status subresource (test/rbac).
-func everyDeleteWasSent(obj conditions.Getter) bool {
-	return recordedWaitReason(obj) != ""
-}
-
-// recordedWaitReason returns the wait reason that is the record, or the
-// empty string when the object carries no record.
 func recordedWaitReason(obj conditions.Getter) string {
 	if obj.GetDeletionTimestamp().IsZero() {
 		return ""
@@ -277,11 +285,99 @@ func recordedWaitReason(obj conditions.Getter) string {
 	return ""
 }
 
-// rightsLost reports whether err is the API server's refusal of a request as
-// Forbidden or Unauthorized: the identity that sent it has lost its rights.
-// It reads the typed API status, never the message.
-func rightsLost(err error) bool {
-	return err != nil && (apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err))
+// refused reports whether err is the API server's refusal of a request as
+// Forbidden. It reads the typed API status, never the message. Unauthorized
+// is not a refusal in this sense: a 401 answers the controller's own
+// credential before the API server looks at the impersonation, so it says
+// nothing about the ServiceAccount.
+func refused(err error) bool {
+	return err != nil && apierrors.IsForbidden(err)
+}
+
+// refusalIsNotTheInstances is asked when requests of a recheck were refused
+// as Forbidden. It returns the empty string when the refusal is shown to be
+// the instance's ServiceAccount's: the identity lost its rights. Otherwise it
+// returns why that is not shown, and the error if there is one.
+//
+// The status of a 403 cannot tell the two apart. The API server builds the
+// refusal of the impersonation itself (the controller lost the impersonate
+// verb on the ServiceAccount) as a plain Forbidden status whose details name
+// "serviceaccounts" and the ServiceAccount (k8s.io/apiserver v0.36.4,
+// pkg/endpoints/filters/impersonation and
+// handlers/responsewriters.ForbiddenStatusError). A read of an inventory
+// entry that is a ServiceAccount of that name, refused to the ServiceAccount
+// itself, has the same reason and the same details; only the message
+// differs, and message text is not read. So the controller asks the API
+// server, with a SelfSubjectAccessReview as itself, whether it may
+// impersonate the ServiceAccount. Only a clear "allowed" attributes the
+// refusal to the ServiceAccount. Every authenticated identity may create that
+// review (the bootstrap role system:basic-user), so the controller's role
+// does not change; where a cluster removed that binding, the review fails and
+// the deletion is held, which is the safe direction.
+func refusalIsNotTheInstances(
+	ctx context.Context, env deletionEnv, t deletionTarget, identity identityState,
+) (string, error) {
+	if identity.name == "" {
+		return "the controller deletes as itself and its requests were refused as Forbidden", nil
+	}
+	namespaced := identity.namespaced(t.obj.GetNamespace())
+	review := &authorizationv1.SelfSubjectAccessReview{
+		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Namespace: t.obj.GetNamespace(),
+				Verb:      "impersonate",
+				Resource:  "serviceaccounts",
+				Name:      identity.name,
+			},
+		},
+	}
+	if err := env.client.Create(ctx, review); err != nil {
+		return fmt.Sprintf("requests as ServiceAccount %q were refused as Forbidden, and the controller could not ask "+
+			"whether it may impersonate that ServiceAccount", namespaced), err
+	}
+	if !review.Status.Allowed || review.Status.Denied {
+		return fmt.Sprintf("the controller may not impersonate ServiceAccount %q, so the refused requests "+
+			"do not show that the ServiceAccount lost its rights", namespaced), nil
+	}
+	return "", nil
+}
+
+// holdRecheck keeps the finalizer and the record of a waiting deletion whose
+// recheck could not be done, and makes the cause visible: the Ready message
+// says at once what could not be checked. The wait reason stays, because it
+// is the record: a stall reason would erase it. Once the object has been
+// deleting for BlockedAfter by the controller's clock the deletion is
+// reported as DeletionBlocked, with one Warning event and the ways out, like
+// a deletion whose objects do not go. The returned error retries the
+// reconcile with backoff.
+func holdRecheck(
+	ctx context.Context, env deletionEnv, t deletionTarget, recorded, what string, cause error,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	if cause != nil {
+		what = fmt.Sprintf("%s: %s", what, cause)
+	}
+	failure := fmt.Errorf("rechecking the waiting deletion: %s", what)
+	if cause != nil {
+		failure = fmt.Errorf("rechecking the waiting deletion: %w", cause)
+	}
+	log.Error(failure, "A recheck of the waiting deletion could not be done, retaining finalizer", "what", what)
+
+	age := env.wait.Now().Sub(t.obj.GetDeletionTimestamp().Time)
+	if recorded == status.DeletionBlockedReason || age >= env.wait.BlockedAfter {
+		msg := status.DeletionCheckBlockedNote(what, env.wait.BlockedAfter)
+		if !readyAlreadyStalledWith(t.obj.GetConditions(), status.DeletionBlockedReason) {
+			env.recorder.Eventf(t.obj, nil, corev1.EventTypeWarning, status.DeletionBlockedReason, "Delete",
+				"%s", status.EventNote(msg))
+		}
+		status.MarkDeletionBlocked(t.obj, msg)
+	} else {
+		status.MarkDeletionInProgress(t.obj, status.DeletionCheckFailedNote(what))
+	}
+	if err := t.patchStatus(ctx); err != nil {
+		log.Error(err, "Failed to patch "+t.kind+" status on a failed recheck")
+	}
+	return ctrl.Result{}, failure
 }
 
 // unreadSteps counts the steps of a plan that a cleanup would read: all but
@@ -300,12 +396,14 @@ func unreadSteps(plan lifecycle.DeletionPlan) int {
 type recheckKind int
 
 const (
-	// recheckLostRights: every failure is a refusal (Forbidden or
-	// Unauthorized) of a read, or of a repeated delete of an object that is
-	// already terminating. The identity lost its rights during the wait.
+	// recheckLostRights: every failure is a refusal (Forbidden) of a read,
+	// or of a repeated delete of an object that is already terminating.
+	// Whose refusal it is, the ServiceAccount's or the controller's own, is
+	// asked next (refusalIsNotTheInstances).
 	recheckLostRights recheckKind = iota
 	// recheckTransient: at least one step failed for another cause (a server
-	// error, a timeout, a throttle). Nothing is known; retry.
+	// error, a timeout, a throttle, an Unauthorized answer). Nothing is
+	// known about the identity; retry.
 	recheckTransient
 	// recheckRefusedDelete: no transient failure, and the delete of an
 	// object that is NOT terminating was refused. That object was never
@@ -329,7 +427,7 @@ func classifyRecheck(deletion apply.Deletion) (waitFor []apply.StepResult, uncon
 				waitFor = append(waitFor, step)
 			case lifecycle.ResultFailed:
 				switch {
-				case !rightsLost(step.Err):
+				case !refused(step.Err):
 					return nil, 0, recheckTransient
 				case step.Failed == lifecycle.ActionRead:
 					unconfirmed++
@@ -357,6 +455,9 @@ type goneCheck struct {
 	// report is set by the first reconcile that reaches a release verdict:
 	// its kept claims and left-behind objects are reported once.
 	report *apply.PruneResult
+	// recorded is the wait reason the object carried when the reconcile
+	// started; empty on a first pass.
+	recorded string
 }
 
 // awaitGone keeps the cleanup finalizer until every deleted object is gone:
@@ -375,6 +476,11 @@ func awaitGone(
 	log := logf.FromContext(ctx)
 	left, err := apply.StillThere(ctx, identity.client, check.steps)
 	if err != nil {
+		if check.recorded != "" {
+			return holdRecheck(ctx, env, t, check.recorded, "the read that checks whether a deleted object is gone failed", err)
+		}
+		// A first pass: nothing is recorded, and the next reconcile judges
+		// every entry again.
 		log.Error(err, "Could not check that the deleted objects are gone, retaining finalizer")
 		return ctrl.Result{}, err
 	}
@@ -571,20 +677,9 @@ func actOnLostIdentity(
 	if counts.recorded != "" && identity.held != lifecycle.IdentityMissing {
 		// The ServiceAccount could not be looked up, which says nothing
 		// about whether it exists. The record releases only an identity that
-		// is gone, so this is retried, and the wait reason, which is the
-		// record, is kept: a stall reason here would erase it.
-		log.Error(identity.err, "Could not obtain the deleting identity while the deletion waits; retaining finalizer",
-			"serviceAccount", identity.name, "serviceAccountSource", identity.source)
-		msg := fmt.Sprintf("Every delete was sent; the deleted objects could not be checked: %s. The check is retried.", identity.err)
-		if counts.recorded == status.DeletionBlockedReason {
-			status.MarkDeletionBlocked(t.obj, msg)
-		} else {
-			status.MarkDeletionInProgress(t.obj, msg)
-		}
-		if err := t.patchStatus(ctx); err != nil {
-			log.Error(err, "Failed to patch "+t.kind+" status on a failed identity check")
-		}
-		return ctrl.Result{}, fmt.Errorf("obtaining the deleting identity: %w", identity.err)
+		// is gone.
+		return holdRecheck(ctx, env, t, counts.recorded,
+			fmt.Sprintf("ServiceAccount %q could not be looked up", identity.namespaced(namespace)), identity.err)
 	}
 
 	if counts.recorded != "" {

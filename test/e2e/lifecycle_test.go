@@ -203,13 +203,18 @@ var _ = Describe("ModulePackage live artifact pipeline", Ordered, func() {
 			"--ignore-not-found", "--wait=false"))
 
 		By("waiting until the cleanup has sent every delete, or has finished")
-		Eventually(func(g Gomega) {
+		// Polled by hand and asserted at the end: a failed Eventually would
+		// end this node and skip the rest of the teardown.
+		lastSeen, reachedWait := "", false
+		for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); time.Sleep(500 * time.Millisecond) {
 			out, err := utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "get", "modulepackage", pkgName,
 				"--ignore-not-found", "-o", `jsonpath={.metadata.name}/{.status.conditions[?(@.type=="Ready")].reason}`))
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(Or(BeEmpty(), Equal(pkgName+"/DeletionInProgress")),
-				"the package is neither gone nor waiting for its deleted objects")
-		}, 2*time.Minute, 500*time.Millisecond).Should(Succeed())
+			lastSeen = out
+			if err == nil && (out == "" || out == pkgName+"/DeletionInProgress") {
+				reachedWait = true
+				break
+			}
+		}
 
 		By("removing the ServiceAccount and its RoleBinding while the package may still wait")
 		_, _ = utils.Run(exec.Command("kubectl", "-n", pkgNamespace, "delete", "--ignore-not-found", "--wait=false",
@@ -247,6 +252,8 @@ var _ = Describe("ModulePackage live artifact pipeline", Ordered, func() {
 			_, _ = utils.Run(exec.Command("task", "flux:uninstall"))
 		}
 
+		Expect(reachedWait).To(BeTrue(),
+			"the package was neither gone nor waiting for its deleted objects after 2 minutes; last seen %q", lastSeen)
 		Expect(releaseErr).NotTo(HaveOccurred(),
 			"the ModulePackage must be released when its ServiceAccount goes after every delete was sent")
 	})

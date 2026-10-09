@@ -5,13 +5,13 @@ Before the first write of a reconcile, the controller MUST read every object of 
 
 The read MUST be made by the client that applies: the impersonated ServiceAccount when one is effective, the controller's own identity otherwise. The controller MUST NOT set the verdict's install admission input.
 
-The identities the verdict is asked with are the same for a ModuleInstance and a ModulePackage, and this paragraph is their one definition. With no identity change pending, also when no identity is recorded yet, the controller MUST ask once, with the instance's identity: the render's, or the recorded one when the render carries none. While an identity change is not settled, the controller MUST ask with the new identity and MUST ask again with the earlier identity when the first answer is `foreign-object`, `other-instance` or `adopted-elsewhere`; the object is allowed when either answer allows it, and otherwise the reason and the message of the first answer are the ones reported. A `terminating` answer is never asked again. The controller MUST NOT ask the apply verdict with an empty identity, and MUST NOT hand it the list the prune judges with, which for a ModulePackage with no recorded identity ends with no identity. A reconcile that has no identity at all MUST fail as a failed apply with nothing written.
+The identity the verdict is asked with is the same for a ModuleInstance and a ModulePackage, and this paragraph is its one definition. The controller MUST ask once per object, with the instance's identity: the render's, or the recorded one when the render carries none. This holds when no identity is recorded yet and while an identity change is not settled. The controller MUST NOT ask with the earlier identity of an unsettled change (`status.previousInstanceUUID`): another record can render that identity, so an object that carries it is not proven to be the instance's own. The controller MUST NOT ask the apply verdict with an empty identity, and MUST NOT hand it the list the prune judges with, which holds the earlier identity and for a ModulePackage with no recorded identity ends with no identity. A reconcile that has no identity at all MUST fail as a failed apply with nothing written.
 
 When the verdict refuses an object as `terminating`, `foreign-object` or `other-instance`, and the reconcile would write that object or the object exists and is not in `status.inventory`, the controller MUST NOT write anything in that reconcile: it applies no object, stores no identity and prunes nothing. The refused object MUST be left as it is.
 
 When the verdict refuses an object as `adopted-elsewhere`, the controller MUST NOT apply that object and MUST apply the other objects.
 
-An object that the verdict allows, that exists and that is not in `status.inventory` is taken in. The controller MUST NOT delete and create such an object again in the reconcile that takes it in: with `spec.rollout.forceConflicts`, when the API server refuses its update as immutable, the reconcile MUST fail before its first write, with `Ready=False` and reason `ApplyFailed`, and the message MUST name the object and the refused fields.
+An object that the verdict allows, that exists and that is not in `status.inventory` is taken in. The controller MUST NOT delete and create such an object again in the reconcile that takes it in, also when the object changes between the check and the apply: with `spec.rollout.forceConflicts`, when the API server refuses its update as immutable, the reconcile MUST fail before its first write, with `Ready=False` and reason `ApplyFailed`, and the message MUST name the object and the refused fields.
 
 When the read of an object fails for a reason other than that the object does not exist, a reconcile that would write MUST NOT write anything and MUST fail as a failed apply. An object whose kind the API server does not serve yet, while a CustomResourceDefinition of the same apply list defines that kind, counts as an object that does not exist.
 
@@ -48,10 +48,17 @@ When the read of an object fails for a reason other than that the object does no
 - **THEN** the Deployment is applied
 - **AND** the ConfigMap keeps its content and is not deleted
 
-#### Scenario: The earlier identity is accepted while a change is not settled
+#### Scenario: The earlier identity is not asked with while a change is not settled
 - **GIVEN** an instance whose `status.previousInstanceUUID` is set, and a rendered PersistentVolumeClaim that exists outside the inventory with the earlier identity's UUID label
 - **WHEN** the controller reconciles
-- **THEN** the claim is applied and carries the new identity's label
+- **THEN** nothing is written, the claim keeps the earlier identity's label, and `Ready` is `False` with reason `ApplyRefused`
+- **AND** the message names the `opmodel.dev/adopt` annotation with the new identity
+
+#### Scenario: An object adopted under the earlier identity is let go at once
+- **GIVEN** an inventoried ConfigMap annotated `opmodel.dev/adopt` with the instance's identity, and a change of `spec.module.path` that gives the instance a new identity
+- **WHEN** the controller reconciles and renders under the new identity
+- **THEN** the ConfigMap is not written and leaves `status.inventory`, and the other objects are applied
+- **AND** the ConfigMap is not deleted
 
 #### Scenario: An unreadable object stops the apply
 - **GIVEN** an effective ServiceAccount that may patch ConfigMaps and may not get them, and a changed render with a ConfigMap
@@ -67,7 +74,7 @@ When the read of an object fails for a reason other than that the object does no
 - **GIVEN** a ModulePackage with an empty `status.instanceUUID`, and an inventoried ConfigMap whose `opmodel.dev/adopt` annotation names another instance
 - **WHEN** the controller reconciles and renders
 - **THEN** the ConfigMap is not written and leaves `status.inventory`
-- **AND** the verdict was asked with the render's identity only, never with an empty one
+- **AND** the verdict was asked with the render's identity, never with an empty one
 
 #### Scenario: An inventoried object with another instance's UUID label is applied
 - **GIVEN** two Ready instances that both list Namespace `shared` in `status.inventory`, where the Namespace carries the first instance's UUID label and no adopt annotation

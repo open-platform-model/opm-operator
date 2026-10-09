@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: The operator decides every apply only through the library's ownership package
-Every write of a cluster object that the operator makes on behalf of a ModuleInstance or a ModulePackage MUST follow an apply verdict of the library's `opm/k8s/ownership` package on a live read of that object. The operator MUST declare no ownership rule of its own for an apply: it compares no managed-by label, no UUID label and no adopt annotation itself. Asking the verdict a second time with the earlier recorded identity is not a rule of its own: every answer is the library's. The operator MUST NOT set, change or remove the `opmodel.dev/adopt` annotation on any object. Source: 0012:D4:R2, 0012:D8:R6.
+Every write of a cluster object that the operator makes on behalf of a ModuleInstance or a ModulePackage MUST follow an apply verdict of the library's `opm/k8s/ownership` package on a live read of that object. The operator MUST declare no ownership rule of its own for an apply: it compares no managed-by label, no UUID label and no adopt annotation itself. The operator MUST NOT set, change or remove the `opmodel.dev/adopt` annotation on any object. Source: 0012:D4:R2, 0012:D8:R6.
 
 A test MUST keep the list of places that may write a cluster object closed: the staged apply, the dry runs of drift detection and of the claim check, and the status and finalizer patches of the operator's own kinds. It MUST find a write by the type of the receiver, as the test of the delete call sites does, and a second test MUST show that the matcher finds a write of each form the client and the resource manager offer.
 

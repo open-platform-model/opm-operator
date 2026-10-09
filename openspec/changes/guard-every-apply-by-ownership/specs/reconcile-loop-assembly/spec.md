@@ -53,7 +53,7 @@ When the apply verdict refuses a reconcile (`ssa-apply`, "An apply is judged by 
 - **THEN** the render is applied and `Ready` is `True`
 
 #### Scenario: A refused identity change stores nothing
-- **GIVEN** a ModuleInstance whose `spec.module.path` changed, and a rendered object that the verdict refuses with both identities
+- **GIVEN** a ModuleInstance whose `spec.module.path` changed, and a rendered object that the verdict refuses
 - **WHEN** the controller reconciles
 - **THEN** `status.instanceUUID` keeps the earlier identity and `status.previousInstanceUUID` stays empty
 

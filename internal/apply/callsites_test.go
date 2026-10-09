@@ -289,9 +289,8 @@ func TestDeleteCallMatcher(t *testing.T) {
 // The list of places that may create or change a cluster object is closed
 // (0012:D4:R2). Objects of an instance are written by one call, the staged
 // apply, which the reconcilers reach only after the library's apply verdict.
-// Every other listed call writes no instance object: a dry run, an access
-// review, which stores nothing, or a status or finalizer patch of one of the
-// operator's own kinds.
+// Every other listed call writes no instance object: a dry run, or a status
+// or finalizer patch of one of the operator's own kinds.
 func TestWriteCallSitesAreClosed(t *testing.T) {
 	// The number of writes each file may hold. A further write in a listed
 	// file is either behind the apply verdict or no write of an instance
@@ -303,11 +302,6 @@ func TestWriteCallSitesAreClosed(t *testing.T) {
 		"internal/apply/claims.go": 1,
 		// The dry run of the taken-in check: it changes nothing.
 		"internal/apply/takein.go": 1,
-		// The access review of a waiting deletion: the controller asks the
-		// API server whether it may impersonate a ServiceAccount
-		// (a SelfSubjectAccessReview). The API server answers it in the
-		// response and stores no object.
-		"internal/reconcile/deletion.go": 1,
 		// Status and finalizer patches of the operator's own kinds.
 		"internal/reconcile/moduleinstance.go":                      10,
 		"internal/reconcile/modulepackage.go":                       5,

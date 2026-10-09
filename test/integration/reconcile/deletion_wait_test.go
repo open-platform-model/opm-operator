@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
-	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -291,32 +290,6 @@ func deleteDeploymentDryRun(name string) func(client.Client) error {
 	}
 }
 
-// Before a waiting deletion is released on a Forbidden answer, the controller
-// asks the API server whether it may itself impersonate the ServiceAccount
-// (a SelfSubjectAccessReview). The role the operator ships has no rule for
-// that review and needs none: every authenticated identity may create one
-// through the bootstrap role system:basic-user. This spec shows it for a
-// ServiceAccount that holds no right on the review and none to impersonate.
-var _ = Describe("The impersonation review of a waiting deletion", func() {
-	It("can be asked by an identity with no rule for it, and answers no for a right it lacks", func() {
-		who := newTenant("dw-review", []string{"get"})
-		review := &authorizationv1.SelfSubjectAccessReview{
-			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
-				ResourceAttributes: &authorizationv1.ResourceAttributes{
-					Namespace: namespace, Verb: "impersonate", Resource: "serviceaccounts", Name: "dw-review",
-				},
-			},
-		}
-		Expect(who.client().Create(ctx, review)).To(Succeed(), "an authenticated identity may create the review")
-		Expect(review.Status.Allowed).To(BeFalse(), "the tenant may not impersonate")
-
-		own := review.DeepCopy()
-		own.ResourceVersion = ""
-		Expect(k8sClient.Create(ctx, own)).To(Succeed())
-		Expect(own.Status.Allowed).To(BeTrue(), "the suite's client, like a controller with the right, may impersonate")
-	})
-})
-
 var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 	kinds := []struct {
 		name string
@@ -459,7 +432,11 @@ var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 				})
 			}
 
-			It("releases with DeletionUnconfirmed when every read is forbidden during the wait", func() {
+			// Only a ServiceAccount that is gone releases a waiting deletion.
+			// When its rights go and the ServiceAccount stays, the deletion
+			// holds, says why at once, is DeletionBlocked after the
+			// threshold, and spec.prune=false is the way out.
+			It("holds when the RoleBinding is deleted during the wait, and names the way out", func() {
 				prefix := "dw-rbac-" + kind.short
 				who := newTenant(prefix, allVerbs)
 				s, _ := waiting(prefix, who.name, kind.new)
@@ -468,13 +445,38 @@ var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 
 				Expect(k8sClient.Delete(ctx, who.binding)).To(Succeed())
 				who.expectForbidden("read", readDeployment(prefix+"-web"))
-				Expect(s.mustReconcile()).To(Equal(ctrl.Result{}))
+				_, err := s.reconcile()
+				Expect(err).To(HaveOccurred(), "the failed recheck is retried")
 
-				Expect(s.gone()).To(BeTrue())
-				unconfirmed := s.rec.withReason(status.DeletionUnconfirmedReason)
-				Expect(unconfirmed).To(HaveLen(1))
-				Expect(unconfirmed[0].note).To(ContainSubstring("is not allowed to read them"))
+				Expect(s.gone()).To(BeFalse(), "a Forbidden answer does not show that the ServiceAccount is gone")
+				ready := s.ready()
+				Expect(ready.Reason).To(Equal(status.DeletionInProgressReason), "the wait reason is the record and stays")
+				Expect(ready.Message).To(ContainSubstring("could not be checked"))
+				Expect(ready.Message).To(ContainSubstring("Deployment " + namespace + "/" + prefix + "-web"))
+				Expect(s.rec.withReason(status.DeletionUnconfirmedReason)).To(BeEmpty())
 				Expect(s.rec.withReason(status.ImpersonationFailedReason)).To(BeEmpty())
+
+				By("the deletion is 11 minutes old by the controller's clock")
+				s.setWait(elevenMinutesAhead)
+				_, err = s.reconcile()
+				Expect(err).To(HaveOccurred())
+				ready = s.ready()
+				Expect(ready.Reason).To(Equal(status.DeletionBlockedReason))
+				Expect(ready.Message).To(ContainSubstring("spec.prune=false"))
+				Expect(s.rec.withReason(status.DeletionBlockedReason)).To(HaveLen(1))
+				Expect(s.object().GetFinalizers()).To(ContainElement(opmreconcile.FinalizerName))
+
+				By("the way out: spec.prune is set to false")
+				obj := s.object()
+				switch o := obj.(type) {
+				case *releasesv1alpha1.ModuleInstance:
+					o.Spec.Prune = false
+				case *releasesv1alpha1.ModulePackage:
+					o.Spec.Prune = false
+				}
+				Expect(k8sClient.Update(ctx, obj)).To(Succeed())
+				Expect(s.mustReconcile()).To(Equal(ctrl.Result{}))
+				Expect(s.gone()).To(BeTrue())
 			})
 
 			It("stalls with DeletionSAMissing when the ServiceAccount goes after a cleanup with a failed step", func() {
@@ -501,7 +503,7 @@ var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 				Expect(s.rec.withReason(status.DeletionUnconfirmedReason)).To(BeEmpty())
 			})
 
-			It("keeps waiting for a readable terminating object whose repeated delete is forbidden", func() {
+			It("holds for a readable terminating object whose repeated delete is forbidden", func() {
 				prefix := "dw-nodel-" + kind.short
 				who := newTenant(prefix, allVerbs)
 				s, _ := waiting(prefix, who.name, kind.new)
@@ -513,10 +515,12 @@ var _ = Describe("Deletion cleanup waits for its deleted objects", func() {
 				who.expectForbidden("delete", deleteDeploymentDryRun(prefix+"-web"))
 				Expect(readDeployment(prefix+"-web")(who.client())).To(Succeed(), "the tenant can still read")
 
-				// The interval is a quarter of the age of the wait, which the RBAC
-				// change above has let grow.
-				Expect(s.mustReconcile().RequeueAfter).To(And(BeNumerically(">=", time.Second), BeNumerically("<=", time.Minute)))
-				expectInProgress(s, prefix+"-web")
+				_, err := s.reconcile()
+				Expect(err).To(HaveOccurred(), "the failed recheck is retried")
+				ready := s.ready()
+				Expect(ready.Reason).To(Equal(status.DeletionInProgressReason))
+				Expect(ready.Message).To(ContainSubstring("delete Deployment " + namespace + "/" + prefix + "-web"))
+				Expect(s.object().GetFinalizers()).To(ContainElement(opmreconcile.FinalizerName))
 				Expect(s.rec.withReason(status.ImpersonationFailedReason)).To(BeEmpty())
 				Expect(s.rec.withReason(status.DeletionUnconfirmedReason)).To(BeEmpty())
 			})

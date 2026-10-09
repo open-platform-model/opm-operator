@@ -2,13 +2,13 @@ package reconcile
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/conditions"
-	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -119,6 +119,10 @@ type identityState struct {
 	held lifecycle.Identity
 	// err is the impersonation error of an unavailable identity.
 	err error
+	// gone says that err is the API server's NotFound for exactly this
+	// ServiceAccount (apply.IsServiceAccountGone), read by the controller
+	// itself and not as an impersonated identity.
+	gone bool
 	// name is the effective ServiceAccount name, empty when the controller
 	// deletes as itself; source says where the name came from.
 	name, source string
@@ -167,25 +171,20 @@ func (i identityState) unread() status.Unread {
 // One fact is carried across reconciles: that a reconcile of this deletion
 // reached a release verdict, so every delete was sent. The record is the
 // Ready reason DeletionInProgress or DeletionBlocked (recordedWaitReason).
-// It decides one thing: with the record, a deleting identity that is really
-// gone during the wait no longer holds the finalizer (DeletionUnconfirmed).
-// Gone means, by the typed API error and never by message text:
+// It decides one thing: with the record, the finalizer is released when the
+// instance's ServiceAccount is gone (DeletionUnconfirmed). Gone means exactly
+// one thing: the controller's own read of that ServiceAccount is answered
+// NotFound for that ServiceAccount (apply.IsServiceAccountGone, the typed
+// status, never message text). A NotFound comes from storage; it cannot come
+// from an authorizer that is loading or refusing for a moment.
 //
-//   - the ServiceAccount is NotFound; or
-//   - requests as that ServiceAccount are refused as Forbidden, AND the API
-//     server says that the controller may still impersonate it
-//     (refusalIsNotTheInstances). A 403 alone does not show whose refusal it
-//     is: the API server answers a lost impersonate right of the controller
-//     with the same status.
-//
-// Everything else says nothing about the instance's identity: a server
-// error, a timeout, a throttle, a connection error, a cancelled context, an
-// Unauthorized answer (a 401 answers the controller's own credential, before
-// impersonation), a Forbidden answer the controller cannot attribute. The
-// finalizer and the record stay, the Ready message says at once what could
-// not be checked, the reconcile is retried with backoff, and after
-// BlockedAfter the deletion is reported as DeletionBlocked like any other
-// that is stuck (holdRecheck). The record never causes a read or a delete.
+// Every other answer, on any read or delete, by anyone, holds: Forbidden,
+// Unauthorized, a server error, a throttle, a timeout, a cancelled context,
+// also a Forbidden answer on one object next to readable ones. The finalizer
+// and the record stay, the Ready message says at once what could not be
+// checked, the reconcile is retried with backoff, and once the object has
+// been deleting for BlockedAfter the deletion is reported as DeletionBlocked
+// with the way out (holdRecheck). The record never causes a read or a delete.
 func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.Info("Running deletion cleanup for " + t.kind)
@@ -232,17 +231,10 @@ func runDeletionCleanup(ctx context.Context, env deletionEnv, t deletionTarget) 
 	verdict := holdVerdict(cleanup.Deletion)
 	if !verdict.Release {
 		if recorded != "" {
-			switch waitFor, unconfirmed, kind := classifyRecheck(cleanup.Deletion); kind {
-			case recheckLostRights:
-				if why, err := refusalIsNotTheInstances(ctx, env, t, identity); why != "" {
-					return holdRecheck(ctx, env, t, recorded, why, err)
-				}
-				return awaitGone(ctx, env, t, identity,
-					goneCheck{steps: waitFor, unconfirmed: unconfirmed, recorded: recorded})
-			case recheckTransient:
-				return holdRecheck(ctx, env, t, recorded, "a read or a delete of the recheck failed", cleanup.Failed)
-			case recheckRefusedDelete:
-			}
+			// Every delete was sent before; this recheck could not be
+			// done. Whatever failed, it does not show that the identity
+			// is gone, so nothing is released.
+			return holdRecheck(ctx, env, t, recorded, failedSteps(cleanup.Deletion), nil)
 		}
 		return actOnHold(ctx, env, t, identity, verdict, cleanup)
 	}
@@ -285,77 +277,74 @@ func recordedWaitReason(obj conditions.Getter) string {
 	return ""
 }
 
-// refused reports whether err is the API server's refusal of a request as
-// Forbidden. It reads the typed API status, never the message. Unauthorized
-// is not a refusal in this sense: a 401 answers the controller's own
-// credential before the API server looks at the impersonation, so it says
-// nothing about the ServiceAccount.
-func refused(err error) bool {
-	return err != nil && apierrors.IsForbidden(err)
+// The bounds of the Ready message of a held recheck. A condition message may
+// have 32768 characters and an inventory can hold hundreds of entries, so the
+// message names the first failed steps and counts the rest.
+const (
+	heldMaxSteps = 3
+	heldMaxCause = 240
+)
+
+// cutCause shortens the text of an error for a status message.
+func cutCause(text string) string {
+	runes := []rune(text)
+	if len(runes) <= heldMaxCause {
+		return text
+	}
+	return string(runes[:heldMaxCause]) + "..."
 }
 
-// refusalIsNotTheInstances is asked when requests of a recheck were refused
-// as Forbidden. It returns the empty string when the refusal is shown to be
-// the instance's ServiceAccount's: the identity lost its rights. Otherwise it
-// returns why that is not shown, and the error if there is one.
-//
-// The status of a 403 cannot tell the two apart. The API server builds the
-// refusal of the impersonation itself (the controller lost the impersonate
-// verb on the ServiceAccount) as a plain Forbidden status whose details name
-// "serviceaccounts" and the ServiceAccount (k8s.io/apiserver v0.36.4,
-// pkg/endpoints/filters/impersonation and
-// handlers/responsewriters.ForbiddenStatusError). A read of an inventory
-// entry that is a ServiceAccount of that name, refused to the ServiceAccount
-// itself, has the same reason and the same details; only the message
-// differs, and message text is not read. So the controller asks the API
-// server, with a SelfSubjectAccessReview as itself, whether it may
-// impersonate the ServiceAccount. Only a clear "allowed" attributes the
-// refusal to the ServiceAccount. Every authenticated identity may create that
-// review (the bootstrap role system:basic-user), so the controller's role
-// does not change; where a cluster removed that binding, the review fails and
-// the deletion is held, which is the safe direction.
-func refusalIsNotTheInstances(
-	ctx context.Context, env deletionEnv, t deletionTarget, identity identityState,
-) (string, error) {
-	if identity.name == "" {
-		return "the controller deletes as itself and its requests were refused as Forbidden", nil
+// failedSteps words the failed steps of a recheck for a status message: how
+// many failed, the first heldMaxSteps of them as whole entries (the request,
+// the object and the cause, cut), and the number of the rest. It carries the
+// API server's answer and names of objects, and no object content.
+func failedSteps(deletion apply.Deletion) string {
+	var named []string
+	failed := 0
+	for _, run := range deletion.Runs {
+		for _, step := range run.Steps {
+			if step.Outcome.Result != lifecycle.ResultFailed {
+				continue
+			}
+			failed++
+			if len(named) == heldMaxSteps {
+				continue
+			}
+			verb := "get"
+			if step.Failed == lifecycle.ActionDelete {
+				verb = "delete"
+			}
+			cause := step.Outcome.Message
+			if step.Err != nil {
+				cause = step.Err.Error()
+			}
+			entry := step.Entry
+			named = append(named, fmt.Sprintf("%s %s %s/%s: %s", verb, entry.Kind, entry.Namespace, entry.Name, cutCause(cause)))
+		}
 	}
-	namespaced := identity.namespaced(t.obj.GetNamespace())
-	review := &authorizationv1.SelfSubjectAccessReview{
-		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
-			ResourceAttributes: &authorizationv1.ResourceAttributes{
-				Namespace: t.obj.GetNamespace(),
-				Verb:      "impersonate",
-				Resource:  "serviceaccounts",
-				Name:      identity.name,
-			},
-		},
+	text := fmt.Sprintf("%d step(s) of the recheck failed: %s", failed, strings.Join(named, "; "))
+	if more := failed - len(named); more > 0 {
+		text += fmt.Sprintf("; and %d more", more)
 	}
-	if err := env.client.Create(ctx, review); err != nil {
-		return fmt.Sprintf("requests as ServiceAccount %q were refused as Forbidden, and the controller could not ask "+
-			"whether it may impersonate that ServiceAccount", namespaced), err
-	}
-	if !review.Status.Allowed || review.Status.Denied {
-		return fmt.Sprintf("the controller may not impersonate ServiceAccount %q, so the refused requests "+
-			"do not show that the ServiceAccount lost its rights", namespaced), nil
-	}
-	return "", nil
+	return text
 }
 
 // holdRecheck keeps the finalizer and the record of a waiting deletion whose
 // recheck could not be done, and makes the cause visible: the Ready message
 // says at once what could not be checked. The wait reason stays, because it
 // is the record: a stall reason would erase it. Once the object has been
-// deleting for BlockedAfter by the controller's clock the deletion is
-// reported as DeletionBlocked, with one Warning event and the ways out, like
-// a deletion whose objects do not go. The returned error retries the
-// reconcile with backoff.
+// deleting for BlockedAfter by the controller's clock a failed recheck is
+// reported as DeletionBlocked, with one Warning event and the way out, like a
+// deletion whose objects do not go. The age is the deleting object's own: no
+// deleted object could be read. The returned error retries the reconcile
+// with backoff; it carries a failed status patch too, so that a status that
+// could not be written is not left as it was.
 func holdRecheck(
 	ctx context.Context, env deletionEnv, t deletionTarget, recorded, what string, cause error,
 ) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	if cause != nil {
-		what = fmt.Sprintf("%s: %s", what, cause)
+		what = fmt.Sprintf("%s: %s", what, cutCause(cause.Error()))
 	}
 	failure := fmt.Errorf("rechecking the waiting deletion: %s", what)
 	if cause != nil {
@@ -375,7 +364,7 @@ func holdRecheck(
 		status.MarkDeletionInProgress(t.obj, status.DeletionCheckFailedNote(what))
 	}
 	if err := t.patchStatus(ctx); err != nil {
-		log.Error(err, "Failed to patch "+t.kind+" status on a failed recheck")
+		return ctrl.Result{}, errors.Join(failure, fmt.Errorf("recording the failed recheck: %w", err))
 	}
 	return ctrl.Result{}, failure
 }
@@ -392,66 +381,10 @@ func unreadSteps(plan lifecycle.DeletionPlan) int {
 	return n
 }
 
-// recheckKind says what the failed steps of a recheck are.
-type recheckKind int
-
-const (
-	// recheckLostRights: every failure is a refusal (Forbidden) of a read,
-	// or of a repeated delete of an object that is already terminating.
-	// Whose refusal it is, the ServiceAccount's or the controller's own, is
-	// asked next (refusalIsNotTheInstances).
-	recheckLostRights recheckKind = iota
-	// recheckTransient: at least one step failed for another cause (a server
-	// error, a timeout, a throttle, an Unauthorized answer). Nothing is
-	// known about the identity; retry.
-	recheckTransient
-	// recheckRefusedDelete: no transient failure, and the delete of an
-	// object that is NOT terminating was refused. That object was never
-	// deleted, so the record does not cover it: the hold stands as without
-	// the record.
-	recheckRefusedDelete
-)
-
-// classifyRecheck sorts the failed steps of a recheck that holds, for a
-// deletion that already sent every delete. A failure is read from the typed
-// API error of the step, never from message text. waitFor holds the steps to
-// read again: the ones whose delete was accepted and the terminating ones
-// whose repeated delete was refused. unconfirmed counts the reads that were
-// refused: those entries cannot be confirmed and do not hold.
-func classifyRecheck(deletion apply.Deletion) (waitFor []apply.StepResult, unconfirmed int, kind recheckKind) {
-	refusedDelete := false
-	for _, run := range deletion.Runs {
-		for _, step := range run.Steps {
-			switch step.Outcome.Result {
-			case lifecycle.ResultDeleted:
-				waitFor = append(waitFor, step)
-			case lifecycle.ResultFailed:
-				switch {
-				case !refused(step.Err):
-					return nil, 0, recheckTransient
-				case step.Failed == lifecycle.ActionRead:
-					unconfirmed++
-				case step.Live != nil && !step.Live.GetDeletionTimestamp().IsZero():
-					waitFor = append(waitFor, step)
-				default:
-					refusedDelete = true
-				}
-			case lifecycle.ResultSkipped:
-			}
-		}
-	}
-	if refusedDelete {
-		return nil, 0, recheckRefusedDelete
-	}
-	return waitFor, unconfirmed, recheckLostRights
-}
-
 // goneCheck is what a cleanup waits for after every delete was sent.
 type goneCheck struct {
 	// steps are the deleted objects to read again.
 	steps []apply.StepResult
-	// unconfirmed counts the entries whose read was refused as Forbidden.
-	unconfirmed int
 	// report is set by the first reconcile that reaches a release verdict:
 	// its kept claims and left-behind objects are reported once.
 	report *apply.PruneResult
@@ -491,12 +424,6 @@ func awaitGone(
 		reportLeftBehind(env.recorder, t.obj, "Delete", check.report.Left)
 	}
 	if len(left) == 0 {
-		if check.unconfirmed > 0 {
-			log.Info("Every readable deleted object is gone; releasing without confirming the objects that are forbidden to read",
-				"serviceAccount", identity.name, "unconfirmed", check.unconfirmed)
-			env.recorder.Eventf(t.obj, nil, corev1.EventTypeWarning, status.DeletionUnconfirmedReason, "Delete",
-				"%s", status.DeletionUnconfirmedNote(check.unconfirmed, identity.namespaced(t.obj.GetNamespace()), status.UnreadForbidden))
-		}
 		return releaseFinalizer(ctx, t)
 	}
 
@@ -585,6 +512,7 @@ func resolveDeletingIdentity(ctx context.Context, env deletionEnv, t deletionTar
 		identity.client = impersonated
 	case apply.IsServiceAccountNotFound(err):
 		identity.client, identity.held, identity.err = nil, lifecycle.IdentityMissing, err
+		identity.gone = apply.IsServiceAccountGone(err, name)
 	default:
 		identity.client, identity.held, identity.err = nil, lifecycle.IdentityFailed, err
 	}
@@ -674,16 +602,18 @@ func actOnLostIdentity(
 		return releaseFinalizer(ctx, t)
 	}
 
-	if counts.recorded != "" && identity.held != lifecycle.IdentityMissing {
-		// The ServiceAccount could not be looked up, which says nothing
-		// about whether it exists. The record releases only an identity that
-		// is gone.
+	if counts.recorded != "" && !identity.gone {
+		// The ServiceAccount could not be looked up, or the answer was not a
+		// NotFound of that ServiceAccount. Neither says that it is gone, and
+		// the record releases only a ServiceAccount that is gone.
 		return holdRecheck(ctx, env, t, counts.recorded,
 			fmt.Sprintf("ServiceAccount %q could not be looked up", identity.namespaced(namespace)), identity.err)
 	}
 
 	if counts.recorded != "" {
-		// The ServiceAccount is gone (NotFound). Every delete was sent by an
+		// The ServiceAccount is gone: the controller's own read of it, by
+		// name and in the namespace of the deleting object, was answered
+		// NotFound for that ServiceAccount. Every delete was sent by an
 		// earlier reconcile of this deletion, so it has nothing left to
 		// delete. The objects cannot be read without it: the event says so.
 		log.Info("The deleting identity was lost while the deletion waited; releasing without a read",

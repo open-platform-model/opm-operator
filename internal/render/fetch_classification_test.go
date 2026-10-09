@@ -19,7 +19,7 @@ import (
 	platformstore "github.com/open-platform-model/opm-operator/internal/platform"
 )
 
-// These tests pin what library v1.0.0-beta.7 returns at the operator's two
+// These tests pin what library v1.0.0-beta.8 returns at the operator's two
 // acquisition wrap sites when a registry fetch fails. The
 // reconcile loops decide retry by the library's *oerrors.FetchError alone,
 // so a library change that drops the classification at one of these sites

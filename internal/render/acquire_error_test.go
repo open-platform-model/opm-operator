@@ -14,7 +14,7 @@ import (
 // read exactly as the plain wrap did, while errors.Is finds ErrAcquire and
 // errors.AsType still reaches the typed cause underneath.
 func TestAcquireFailed_MarksWithoutRewording(t *testing.T) {
-	identity := oerrors.IdentityError{
+	identity := &oerrors.IdentityError{
 		Field:      "path",
 		Declared:   "opmodel.dev/modules/other",
 		Fetched:    "opmodel.dev/modules/demo",
@@ -27,7 +27,7 @@ func TestAcquireFailed_MarksWithoutRewording(t *testing.T) {
 
 			assert.Equal(t, fmt.Errorf("%s: %w", msg, cause).Error(), err.Error())
 			assert.ErrorIs(t, err, ErrAcquire)
-			got, ok := errors.AsType[oerrors.IdentityError](err)
+			got, ok := errors.AsType[*oerrors.IdentityError](err)
 			assert.True(t, ok, "the typed cause stays reachable")
 			assert.Equal(t, identity, got)
 		})

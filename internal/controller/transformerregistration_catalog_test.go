@@ -28,6 +28,7 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"github.com/open-platform-model/library/opm/catalog"
 	oerrors "github.com/open-platform-model/library/opm/errors"
+	"github.com/open-platform-model/library/opm/module"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -89,9 +90,9 @@ metadata: {
 
 // catalogSourceRequiring builds the overlay source of a catalog whose
 // committed cue.mod/module.cue declares the given dependencies.
-func catalogSourceRequiring(deps map[string]string) *catalog.Source {
+func catalogSourceRequiring(deps map[string]string) *module.Source {
 	const root = "/synthetic/catalog"
-	return &catalog.Source{
+	return &module.Source{
 		Root: root,
 		Overlay: map[string][]byte{
 			filepath.Join(root, "cue.mod", "module.cue"): []byte(

@@ -313,3 +313,41 @@ func ClassifyKeptClaims(
 	}
 	return kept, left
 }
+
+// Deleted returns the steps whose DELETE the API server accepted, over every
+// plan of the deletion.
+func (d Deletion) Deleted() []StepResult {
+	var out []StepResult
+	for _, run := range d.Runs {
+		for _, step := range run.Steps {
+			if step.Outcome.Result == lifecycle.ResultDeleted {
+				out = append(out, step)
+			}
+		}
+	}
+	return out
+}
+
+// StillThere reads the object of each step again and returns the ones that
+// still exist, as read now: with their deletionTimestamp and finalizers. An
+// object is gone when the read returns NotFound, or when another object (a
+// different UID than the one the plan read) holds its name. It takes a
+// reader, so it cannot delete. A read that fails otherwise ends the check
+// with that error: whether the object is gone is then not known.
+func StillThere(ctx context.Context, c client.Reader, steps []StepResult) ([]*unstructured.Unstructured, error) {
+	var left []*unstructured.Unstructured
+	for _, step := range steps {
+		entry := k8sinventory.Entry(step.Entry)
+		live, err := readEntry(ctx, c, entry)
+		switch {
+		case apierrors.IsNotFound(err):
+			continue
+		case err != nil:
+			return nil, fmt.Errorf("checking that %s %s/%s is gone: %w", entry.Kind, entry.Namespace, entry.Name, err)
+		case step.Live != nil && live.GetUID() != step.Live.GetUID():
+			continue
+		}
+		left = append(left, live)
+	}
+	return left, nil
+}

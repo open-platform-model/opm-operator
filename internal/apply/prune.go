@@ -109,14 +109,54 @@ func Prune(
 	stale []releasesv1alpha1.InventoryEntry,
 	opts PruneOptions,
 ) (*PruneResult, error) {
+	// The caller checked spec.prune, so the plan always prunes.
+	cleanup, err := RunCleanup(ctx, c, identities, stale, lifecycle.Policy{Prune: true}, opts)
+	if err != nil {
+		return cleanup.Report, err
+	}
+	return cleanup.Report, cleanup.Failed
+}
+
+// Cleanup is one deletion of a set of inventory entries: the plans that ran
+// and what they did, worded for a report.
+type Cleanup struct {
+	// Deletion holds the plans, for the hold verdict of a deletion cleanup.
+	Deletion Deletion
+
+	// Report counts and names what was deleted, left behind and kept. Left is
+	// in plan order (descending kind weight), with left-behind claims last.
+	// The order is deterministic and is not a contract.
+	Report *PruneResult
+
+	// Failed joins the errors of the steps that failed; nil when none did.
+	Failed error
+}
+
+// RunCleanup deletes entries through the library's deletion plan as Prune
+// documents, with the given policy, and returns the plans next to the report.
+// The PersistentVolumeClaims that opts keeps never enter a plan: they are
+// read and classified for the report only. With a policy that does not prune
+// nothing is read, also no claim.
+//
+// The returned error is the library's refusal of a plan state, which a run
+// from the zero State never meets; a failed read or delete is in Failed.
+func RunCleanup(
+	ctx context.Context,
+	c client.Client,
+	identities []string,
+	entries []releasesv1alpha1.InventoryEntry,
+	policy lifecycle.Policy,
+	opts PruneOptions,
+) (Cleanup, error) {
 	log := logf.FromContext(ctx)
 	result := &PruneResult{}
+	cleanup := Cleanup{Report: result}
 
-	planned, claims := SplitKeptClaims(stale, opts.DeleteData)
-	// The caller checked spec.prune, so the plan always prunes.
-	deletion, err := RunDeletion(ctx, c, planned, identities, lifecycle.Policy{Prune: true})
-	if err != nil {
-		return result, err
+	planned, claims := SplitKeptClaims(entries, opts.DeleteData)
+	deletion, err := RunDeletion(ctx, c, planned, identities, policy)
+	cleanup.Deletion = deletion
+	if err != nil || !policy.Prune {
+		return cleanup, err
 	}
 
 	var errs []error
@@ -145,7 +185,8 @@ func Prune(
 		result.leave(ctx, l)
 	}
 
-	return result, errors.Join(errs...)
+	cleanup.Failed = errors.Join(errs...)
+	return cleanup, nil
 }
 
 // stepError words a failed step as the prune's error for its entry, keeping

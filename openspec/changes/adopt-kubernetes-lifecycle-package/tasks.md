@@ -28,12 +28,12 @@ No task uses a cluster. The envtest suites are `internal/controller`, `test/inte
 
 ## 4. Controller: deletion cleanup on the plan and the hold verdict
 
-- [ ] 4.1 In `handleDeletion` (`internal/reconcile/moduleinstance.go`): build `lifecycle.Policy{Prune, ForceOrphan}` and `lifecycle.HoldInput{Identity}`, run the plans, and branch on `lifecycle.MayReleaseHold` for every plan, asked with the plans as built after the claim split. Keep each status, event, log line and requeue interval of today's branches (table in proposal.md, item 2). Verify: `internal/reconcile/deletion_test.go` passes; `internal/controller/moduleinstance_deletion_wake_test.go` and the deletion specs of `test/integration/reconcile` pass with the collector helper running
-- [ ] 4.2 The same in `handleModulePackageDeletion` (`internal/reconcile/modulepackage.go`). Verify: the ModulePackage deletion tests of the same suites pass
-- [ ] 4.3 Add a table test that pairs every `HoldReason` with the operator's outcome (finalizer, condition reason, event, requeue), for both kinds. Verify: one row per reason, seven rows
-- [ ] 4.4 Test that with a missing or failed identity and no record no object is read or deleted, and that force-orphan does not lift a failed step. Verify: both tests pass
-- [ ] 4.5 Test the inventory of kept claims only, for both kinds: with the ServiceAccount missing, no object is read, the finalizer is removed, one `DeletionUnconfirmed` event and no `ClaimsKept` event is emitted, and `DeletionSAMissing` is never set; with `spec.dataPolicy: Delete` the same object stalls with `DeletionSAMissing`. Verify: the test fails against the handler of section 3 (it stalls there) and passes now
-- [ ] 4.6 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller)!: run the deletion cleanup on the library plan and its hold verdict`
+- [x] 4.1 In `handleDeletion` (`internal/reconcile/moduleinstance.go`): build `lifecycle.Policy{Prune, ForceOrphan}` and `lifecycle.HoldInput{Identity}`, run the plans, and branch on `lifecycle.MayReleaseHold` for every plan, asked with the plans as built after the claim split. Keep each status, event, log line and requeue interval of today's branches (table in proposal.md, item 2). Verify: `internal/reconcile/deletion_test.go` passes; `internal/controller/moduleinstance_deletion_wake_test.go` and the deletion specs of `test/integration/reconcile` pass with the collector helper running
+- [x] 4.2 The same in `handleModulePackageDeletion` (`internal/reconcile/modulepackage.go`). Verify: the ModulePackage deletion tests of the same suites pass
+- [x] 4.3 Add a table test that pairs every `HoldReason` with the operator's outcome (finalizer, condition reason, event, requeue), for both kinds. Verify: one row per reason, seven rows
+- [x] 4.4 Test that with a missing or failed identity and no record no object is read or deleted, and that force-orphan does not lift a failed step. Verify: both tests pass
+- [x] 4.5 Test the inventory of kept claims only, for both kinds: with the ServiceAccount missing, no object is read, the finalizer is removed, one `DeletionUnconfirmed` event and no `ClaimsKept` event is emitted, and `DeletionSAMissing` is never set; with `spec.dataPolicy: Delete` the same object stalls with `DeletionSAMissing`. Verify: the test fails against the handler of section 3 (it stalls there) and passes now
+- [x] 4.6 `task dev:fmt dev:vet dev:lint dev:test` green, then commit `feat(controller)!: run the deletion cleanup on the library plan and its hold verdict`
 
 ## 5. Controller and status: the wait and its record
 

@@ -1377,151 +1377,34 @@ func handleSuspend(
 	return nil
 }
 
-// handleDeletion runs the deletion cleanup path.
-// If spec.prune is true, all inventory entries are pruned (respecting safety exclusions).
-// On success (or prune disabled), the finalizer is removed.
-// On partial failure, the finalizer is retained and the error is returned for requeue.
-//
-// If the impersonation ServiceAccount is missing, the instance stalls with
-// DeletionSAMissingReason and the finalizer is retained until either the SA
-// is restored or the orphan annotation
-// (v1alpha1.AnnotationForceDeleteOrphan = "true") is set to release it.
+// handleDeletion runs the deletion cleanup of a ModuleInstance: the one
+// cleanup of both kinds, runDeletionCleanup, which documents every branch.
 func handleDeletion(
 	ctx context.Context,
 	params *ModuleInstanceParams,
 	mi *releasesv1alpha1.ModuleInstance,
 ) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-	log.Info("Running deletion cleanup for ModuleInstance")
-
 	patcher := patch.NewSerialPatcher(mi, params.Client)
-
-	if !mi.Spec.Prune || mi.Status.Inventory == nil || len(mi.Status.Inventory.Entries) == 0 {
-		if !mi.Spec.Prune {
-			log.Info("Prune disabled, orphaning managed resources on deletion")
-		}
-		if err := removeFinalizer(ctx, params.Client, mi); err != nil {
-			return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
-		}
-		log.Info("Finalizer removed, deletion can proceed")
-		return ctrl.Result{}, nil
-	}
-
-	effectiveSA, source := resolveEffectiveSA(mi.Spec.ServiceAccountName, params.DefaultServiceAccount)
-	deleteClient := params.Client
-	if effectiveSA != "" && params.RestConfig != nil {
-		impClient, impErr := apply.NewImpersonatedClient(ctx, params.RestConfig, params.APIReader, params.Client.Scheme(), mi.Namespace, effectiveSA)
-		if impErr != nil {
-			return handleDeletionImpersonationFailure(ctx, params, patcher, mi, effectiveSA, source, impErr)
-		}
-		deleteClient = impClient
-	}
-
-	// An object that carries either recorded identity is the instance's own.
-	// With none recorded the verdict is asked with no identity.
-	identities := recordedIdentities(mi.Status.InstanceUUID, mi.Status.PreviousInstanceUUID)
-	pruneResult, err := apply.Prune(ctx, deleteClient, identities, mi.Status.Inventory.Entries,
-		apply.PruneOptions{DeleteData: mi.Spec.DataPolicy.DeletesClaims()})
-	if err != nil {
-		if effectiveSA != "" && isForbidden(err) {
-			log.Error(err, "Impersonation denied during deletion cleanup",
-				"serviceAccount", effectiveSA,
-				"serviceAccountSource", source)
-			emit := !readyAlreadyStalledWith(mi.Status.Conditions, status.ImpersonationFailedReason)
-			status.MarkStalled(mi, status.ImpersonationFailedReason, "%s", err)
-			if emit {
-				params.EventRecorder.Eventf(mi, nil, corev1.EventTypeWarning,
-					status.ImpersonationFailedReason, "Delete", "%s", err)
-			}
-			if patchErr := patchDeletionStatus(ctx, patcher, mi); patchErr != nil {
-				log.Error(patchErr, "Failed to patch ModuleInstance status on Forbidden deletion prune")
-			}
-			return ctrl.Result{RequeueAfter: StalledRecheckInterval}, nil
-		}
-		log.Error(err, "Partial failure during deletion cleanup, retaining finalizer")
-		return ctrl.Result{}, err
-	}
-	log.Info("Deletion cleanup pruned resources",
-		"deleted", pruneResult.Deleted, "skipped", pruneResult.Skipped, "keptClaims", len(pruneResult.Kept))
-	// Reported before the finalizer goes: afterwards the object, and with it
-	// the inventory that named the claims, no longer exists.
-	reportKeptClaims(params.EventRecorder, mi, "Delete", pruneResult.Kept)
-	reportLeftBehind(params.EventRecorder, mi, "Delete", pruneResult.Left)
-
-	if err := removeFinalizer(ctx, params.Client, mi); err != nil {
-		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
-	}
-	log.Info("Finalizer removed, deletion can proceed")
-
-	return ctrl.Result{}, nil
-}
-
-// handleDeletionImpersonationFailure branches on the impersonation error type:
-//   - SA NotFound + orphan annotation set: clear inventory, emit event, remove finalizer.
-//   - SA NotFound, no annotation: stall with DeletionSAMissingReason, retain finalizer.
-//   - Other impersonation error: stall with the generic ImpersonationFailedReason.
-func handleDeletionImpersonationFailure(
-	ctx context.Context,
-	params *ModuleInstanceParams,
-	patcher *patch.SerialPatcher,
-	mi *releasesv1alpha1.ModuleInstance,
-	effectiveSA, source string,
-	impErr error,
-) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
-	if apply.IsServiceAccountNotFound(impErr) {
-		if mi.GetAnnotations()[releasesv1alpha1.AnnotationForceDeleteOrphan] == "true" {
-			orphanCount := int64(len(mi.Status.Inventory.Entries))
-			log.Info("Orphaning inventory and removing finalizer at operator request",
-				"serviceAccount", effectiveSA,
-				"serviceAccountSource", source,
-				"inventoryCount", orphanCount)
-			params.EventRecorder.Eventf(mi, nil, corev1.EventTypeWarning,
-				status.OrphanedOnDeletionReason, "Delete",
-				"Orphaned %d managed resources; ServiceAccount %q missing and %s annotation set",
-				orphanCount, effectiveSA, releasesv1alpha1.AnnotationForceDeleteOrphan)
-			mi.Status.Inventory = nil
-			if err := patchDeletionStatus(ctx, patcher, mi); err != nil {
-				log.Error(err, "Failed to patch ModuleInstance status on orphan-exit")
-			}
-			if err := removeFinalizer(ctx, params.Client, mi); err != nil {
-				return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
-			}
-			log.Info("Finalizer removed, deletion can proceed")
-			return ctrl.Result{}, nil
-		}
-
-		log.Error(impErr, "Impersonation ServiceAccount missing during deletion; release stalled pending operator action",
-			"serviceAccount", effectiveSA,
-			"serviceAccountSource", source,
-			"annotation", releasesv1alpha1.AnnotationForceDeleteOrphan)
-		msg := deletionSAMissingMessage(mi.Namespace, effectiveSA)
-		emit := !readyAlreadyStalledWith(mi.Status.Conditions, status.DeletionSAMissingReason)
-		status.MarkStalled(mi, status.DeletionSAMissingReason, "%s", msg)
-		if emit {
-			params.EventRecorder.Eventf(mi, nil, corev1.EventTypeWarning,
-				status.DeletionSAMissingReason, "Delete", "%s", msg)
-		}
-		if err := patchDeletionStatus(ctx, patcher, mi); err != nil {
-			log.Error(err, "Failed to patch ModuleInstance status on DeletionSAMissing stall")
-		}
-		return ctrl.Result{RequeueAfter: StalledRecheckInterval}, nil
-	}
-
-	log.Error(impErr, "Impersonation failed during deletion cleanup",
-		"serviceAccount", effectiveSA,
-		"serviceAccountSource", source)
-	emit := !readyAlreadyStalledWith(mi.Status.Conditions, status.ImpersonationFailedReason)
-	status.MarkStalled(mi, status.ImpersonationFailedReason, "%s", impErr)
-	if emit {
-		params.EventRecorder.Eventf(mi, nil, corev1.EventTypeWarning,
-			status.ImpersonationFailedReason, "Delete", "%s", impErr)
-	}
-	if err := patchDeletionStatus(ctx, patcher, mi); err != nil {
-		log.Error(err, "Failed to patch ModuleInstance status on ImpersonationFailed stall")
-	}
-	return ctrl.Result{RequeueAfter: StalledRecheckInterval}, nil
+	return runDeletionCleanup(ctx, deletionEnv{
+		client:                params.Client,
+		apiReader:             params.APIReader,
+		restConfig:            params.RestConfig,
+		recorder:              params.EventRecorder,
+		defaultServiceAccount: params.DefaultServiceAccount,
+	}, deletionTarget{
+		obj:            mi,
+		kind:           "ModuleInstance",
+		prune:          mi.Spec.Prune,
+		deleteData:     mi.Spec.DataPolicy.DeletesClaims(),
+		serviceAccount: mi.Spec.ServiceAccountName,
+		entries:        inventoryEntries(mi.Status.Inventory),
+		// An object that carries either recorded identity is the instance's
+		// own. With none recorded the verdict is asked with no identity.
+		identities:      recordedIdentities(mi.Status.InstanceUUID, mi.Status.PreviousInstanceUUID),
+		clearInventory:  func() { mi.Status.Inventory = nil },
+		patchStatus:     func(ctx context.Context) error { return patchDeletionStatus(ctx, patcher, mi) },
+		removeFinalizer: func(ctx context.Context) error { return removeFinalizer(ctx, params.Client, mi) },
+	})
 }
 
 // deletionSAMissingMessage formats the stall-condition message shown to

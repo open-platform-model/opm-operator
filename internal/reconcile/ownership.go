@@ -100,6 +100,20 @@ func (g guardedApply) failsApply(digestsUnchanged bool) bool {
 	return g.err != nil && (!digestsUnchanged || errors.Is(g.err, apply.ErrNoIdentity))
 }
 
+// changesInventory reports whether the verdict changes what the instance
+// holds: an object to take in, or an inventoried object to let go.
+func (g guardedApply) changesInventory() bool {
+	if len(g.takenIn) > 0 {
+		return true
+	}
+	for _, j := range g.letGo {
+		if j.InInventory {
+			return true
+		}
+	}
+	return false
+}
+
 // refusedToWrite returns the refusals of the apply verdict that refuse this
 // reconcile. With changed digests the reconcile would write every rendered
 // object, so each refusal counts. With unchanged digests it writes nothing

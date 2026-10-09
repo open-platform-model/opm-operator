@@ -16,6 +16,7 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
@@ -152,10 +153,7 @@ func ReconcileModulePackage(
 		return ctrl.Result{}, nil
 	}
 
-	if ready := apimeta.FindStatusCondition(pkg.Status.Conditions, status.ReadyCondition); ready != nil && ready.Reason == status.SuspendedReason {
-		log.Info("Reconciliation resumed")
-		params.EventRecorder.Eventf(&pkg, nil, corev1.EventTypeNormal, status.ResumedReason, "Resume", "Reconciliation resumed")
-	}
+	reportPackageResume(ctx, params.EventRecorder, &pkg)
 
 	// Check dependsOn before any other work.
 	if blocker, checkErr := checkDependsOn(ctx, params.Client, &pkg); checkErr != nil {
@@ -205,6 +203,11 @@ func ReconcileModulePackage(
 		// nil until a render result is in hand. A success or a NoOp records
 		// it as lastAppliedInputs; a failure or a panic does not.
 		renderedInputs *status.RenderInputKey
+
+		// adopted is the number of rendered objects the apply verdict let go
+		// in this attempt (adopted by another instance). The message of
+		// Ready=True states it.
+		adopted int
 	)
 
 	// A panic is recovered first: the outcome is still its zero value, NoOp,
@@ -224,7 +227,7 @@ func ReconcileModulePackage(
 		pkg.Status.ObservedGeneration = pkg.Generation
 
 		if outcome == NoOp {
-			status.MarkReady(&pkg, "Reconciliation succeeded")
+			status.MarkReady(&pkg, "%s", status.ReadyMessage(readySucceeded, adopted))
 			updateModulePackageFailureCounters(&pkg.Status, outcome, phases)
 			pkg.Status.NextRetryAt = nil
 			recordNoOpVersion(&pkg.Status.LastAppliedVersion, renderedVersion)
@@ -251,7 +254,11 @@ func ReconcileModulePackage(
 			pkg.Status.LastAppliedRenderDigest = digests.Render
 			recordInputs(&pkg.Status.LastAppliedInputs, renderedInputs, now)
 
+			// The digest stays that of the rendered set: the entries leave
+			// out the objects another instance adopted, and the next no-op
+			// check compares this digest with the next render.
 			pkg.Status.Inventory = nextInventory(pkg.Status.Inventory, newEntries)
+			pkg.Status.Inventory.Digest = digests.Inventory
 			// The apply and the prune succeeded: no object of the earlier
 			// identity is left to judge. The only place that clears it.
 			pkg.Status.PreviousInstanceUUID = ""
@@ -361,18 +368,38 @@ func ReconcileModulePackage(
 		Inventory: inventoryDigestModulePackage(pkg.Status.Inventory),
 	}
 	// An identity change that is not settled is never a NoOp.
-	if identities.keepsNoOp(status.IsNoOp(digests, lastApplied)) {
+	digestsUnchanged := identities.keepsNoOp(status.IsNoOp(digests, lastApplied))
+
+	// The apply guard (0012:D8:R1, R4), before the no-op decision and before
+	// the first write: a package has no drift check to carry a verdict that
+	// could not be asked, so a reconcile that renders and cannot judge its
+	// objects fails, also when every digest matches.
+	guarded, fail := guardModulePackageApply(ctx, params, &pkg, converted.resources,
+		identities.InstanceUUID, adoptedBefore(conditionsAtStart), digestsUnchanged, &phases)
+	if fail != nil {
+		applyFail(fail)
+		return ctrl.Result{RequeueAfter: retryAfter}, nil
+	}
+	guard := guarded.guard
+	adopted = guard.adopted
+
+	// Matching digests are a no-op unless the verdict changes what the
+	// package holds: an object to take in, or an inventoried object another
+	// instance adopted. Then the reconcile applies what the verdict allows
+	// and records the inventory.
+	if digestsUnchanged && !guard.changesInventory() {
 		log.Info("No changes detected, skipping apply")
 		params.EventRecorder.Eventf(&pkg, nil, corev1.EventTypeNormal, status.NoOpReason, "Reconcile", "No changes detected")
 		outcome = NoOp
 		identities.fillEmpty(&pkg.Status.InstanceUUID)
+		reportAdoptedElsewhere(params.EventRecorder, &pkg, guard.letGo, adoptedBefore(conditionsAtStart))
 		// Judged before the deferred NoOp commit, which patches it.
 		v := judgePackageHealth(ctx, params, &pkg, inventoryEntries(pkg.Status.Inventory))
 		applyHealth(&pkg, v)
 		return ctrl.Result{RequeueAfter: packageRequeue(healthRequeue(v, pkg.Status.LastAppliedAt, time.Now()), interval)}, nil
 	}
 
-	applyedResult, fail := applyAndPruneModulePackage(ctx, params, patcher, &pkg, converted, identities, &phases)
+	applyedResult, fail := applyAndPruneModulePackage(ctx, params, patcher, &pkg, converted, identities, guarded, &phases)
 	if fail != nil {
 		applyFail(fail)
 		return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -381,8 +408,9 @@ func ReconcileModulePackage(
 	outcome = applyedResult.outcome
 	newEntries = applyedResult.entries
 	reconciled = true
-	status.MarkReady(&pkg, "Reconciliation succeeded")
-	params.EventRecorder.Eventf(&pkg, nil, corev1.EventTypeNormal, status.ReconciliationSucceededReason, "Reconcile", "Reconciliation succeeded")
+	status.MarkReady(&pkg, "%s", status.ReadyMessage(readySucceeded, adopted))
+	params.EventRecorder.Eventf(&pkg, nil, corev1.EventTypeNormal, status.ReconciliationSucceededReason, "Reconcile", readySucceeded)
+	reportAdoptedElsewhere(params.EventRecorder, &pkg, guard.letGo, adoptedBefore(conditionsAtStart))
 	log.Info("Reconciliation complete", "outcome", outcome.String())
 
 	// Judge health after the apply and prune returned, through the identity
@@ -730,13 +758,16 @@ func applyAndPruneModulePackage(
 	pkg *releasesv1alpha1.ModulePackage,
 	converted *convertedRender,
 	identities identityPlan,
+	guarded *packageApply,
 	phases *phaseOutcomes,
 ) (*applyPruneResult, *phaseFail) {
 	log := logf.FromContext(ctx)
 
-	// The resources were converted under the render slot, and the CUE
-	// values that pinned the build are already gone.
-	resources := converted.resources
+	// The apply list is what the apply verdict allows of the rendered set.
+	// The stale set below is computed from the full render, so an object
+	// another instance adopted is never pruned.
+	guard := guarded.guard
+	resources := guard.allowed
 
 	var previousEntries []releasesv1alpha1.InventoryEntry
 	if pkg.Status.Inventory != nil {
@@ -744,11 +775,7 @@ func applyAndPruneModulePackage(
 	}
 	staleSet := staleEntries(previousEntries, converted.entries)
 
-	applyRM, applyClient, impErr := buildModulePackageApplyClient(ctx, params, pkg)
-	if impErr != nil {
-		status.MarkStalled(pkg, status.ImpersonationFailedReason, "%s", impErr)
-		return nil, &phaseFail{FailedStalled, impErr.Error(), StalledRecheckInterval}
-	}
+	applyRM, applyClient := guarded.rm, guarded.client
 
 	// A changed identity is stored before the first write of the apply: no
 	// apply without the record.
@@ -760,9 +787,11 @@ func applyAndPruneModulePackage(
 
 	// Apply.
 	phases.applyRan = true
-	force := pkg.Spec.Rollout != nil && pkg.Spec.Rollout.ForceConflicts
-	applyResult, err := apply.Apply(ctx, applyRM, resources,
-		apply.ApplyOptions{Force: force, DeleteData: pkg.Spec.DataPolicy.DeletesClaims()})
+	applyResult, err := apply.Apply(ctx, applyRM, resources, apply.ApplyOptions{
+		Force:      forcesConflicts(pkg.Spec.Rollout),
+		DeleteData: pkg.Spec.DataPolicy.DeletesClaims(),
+		TakenIn:    guard.pins,
+	})
 	if err != nil {
 		phases.applyFailed = true
 		reason, msg := status.ApplyFailedReason, err.Error()
@@ -804,7 +833,79 @@ func applyAndPruneModulePackage(
 
 	sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
 	reader := appliedReader(sa, applyClient, params.APIReader, params.Client)
-	return &applyPruneResult{outcome: outcome, entries: converted.entries, healthReader: reader}, nil
+	// An object another instance adopted is in no inventory this package
+	// records (0012:D8:R8); it stays in the cluster.
+	entries := withoutEntries(converted.entries, judgedObjects(guard.letGo))
+	return &applyPruneResult{outcome: outcome, entries: entries, healthReader: reader}, nil
+}
+
+// reportPackageResume logs and emits the Resumed event when pkg was suspended
+// until this reconcile.
+func reportPackageResume(ctx context.Context, recorder events.EventRecorder, pkg *releasesv1alpha1.ModulePackage) {
+	ready := apimeta.FindStatusCondition(pkg.Status.Conditions, status.ReadyCondition)
+	if ready == nil || ready.Reason != status.SuspendedReason {
+		return
+	}
+	logf.FromContext(ctx).Info("Reconciliation resumed")
+	recorder.Eventf(pkg, nil, corev1.EventTypeNormal, status.ResumedReason, "Resume", "Reconciliation resumed")
+}
+
+// packageApply is the client that applies a ModulePackage and what the apply
+// guard judged through it.
+type packageApply struct {
+	rm     *fluxssa.ResourceManager
+	client client.Client
+	guard  guardedApply
+}
+
+// guardModulePackageApply builds the client that applies pkg and runs the
+// apply guard over the rendered resources with identity, the instance's own
+// (guardApply). It returns a failure, with nothing written, when:
+//
+//   - the client cannot be built: Stalled with ImpersonationFailed;
+//   - an object cannot be read, or there is no identity to ask with: Stalled
+//     with ImpersonationFailed when the read is Forbidden under an effective
+//     ServiceAccount, Ready=False with ApplyFailed on the backoff otherwise;
+//   - the verdict refuses an object the reconcile would write, or one that
+//     exists outside the inventory: Ready=False with ApplyRefused, not
+//     stalled, on the backoff.
+//
+// The last two count as a failed apply.
+func guardModulePackageApply(
+	ctx context.Context,
+	params *ModulePackageParams,
+	pkg *releasesv1alpha1.ModulePackage,
+	resources []*unstructured.Unstructured,
+	identity string,
+	adoptedAtStart int,
+	digestsUnchanged bool,
+	phases *phaseOutcomes,
+) (*packageApply, *phaseFail) {
+	applyRM, applyClient, impErr := buildModulePackageApplyClient(ctx, params, pkg)
+	if impErr != nil {
+		status.MarkStalled(pkg, status.ImpersonationFailedReason, "%s", impErr)
+		return nil, &phaseFail{FailedStalled, impErr.Error(), StalledRecheckInterval}
+	}
+	sa, _ := resolveEffectiveSA(pkg.Spec.ServiceAccountName, params.DefaultServiceAccount)
+	guard := guardApply(ctx, nil, appliedReader(sa, applyClient, params.APIReader, params.Client),
+		resources, inventoryEntries(pkg.Status.Inventory), identity, adoptedAtStart)
+
+	if guard.err != nil {
+		phases.applyRan, phases.applyFailed = true, true
+		params.EventRecorder.Eventf(pkg, nil, corev1.EventTypeWarning, status.ApplyFailedReason, "Apply", "%s", guard.err)
+		if sa != "" && isForbidden(guard.err) {
+			status.MarkStalled(pkg, status.ImpersonationFailedReason, "%s", guard.err)
+			return nil, &phaseFail{FailedStalled, guard.err.Error(), StalledRecheckInterval}
+		}
+		status.MarkNotReady(pkg, status.ApplyFailedReason, "%s", guard.err)
+		return nil, &phaseFail{FailedTransient, guard.err.Error(), modulePackageBackoff(pkg)}
+	}
+	if refusing := refusedToWrite(guard.refused, digestsUnchanged); len(refusing) > 0 {
+		phases.applyRan, phases.applyFailed = true, true
+		msg := refuseApply(ctx, params.EventRecorder, pkg, refusing)
+		return nil, &phaseFail{FailedTransient, msg, modulePackageBackoff(pkg)}
+	}
+	return &packageApply{rm: applyRM, client: applyClient, guard: guard}, nil
 }
 
 // patchModulePackageIdentityStatus commits the two identity fields before an

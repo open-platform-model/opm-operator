@@ -1,8 +1,8 @@
 ## Context
 
-See proposal.md for the motivation and the "today / after" tables. Facts about the library package that shape this design, read from the source of the pinned version (`library v1.0.0-beta.7`, `opm/k8s/lifecycle`):
+See proposal.md for the motivation and the "today / after" tables. Facts about the library package that shape this design, read from the source of the pinned version (`library v1.0.0-beta.8`, `opm/k8s/lifecycle`):
 
-1. **A plan has one owner UUID** (`plan.go:51`). The operator judges with up to two identities, and a ModulePackage with no recorded identity also asks with none (`internal/reconcile/identity.go:34-47`, `internal/apply/prune.go:196-212`).
+1. **A plan has one owner UUID** (`plan.go:51`). The operator judges with up to two identities, and a ModulePackage with no recorded identity also asks with none (`internal/reconcile/identity.go:8-16`, `:40-47`, `internal/apply/prune.go:196-212`).
 2. **A plan has no data policy.** `Policy` holds `Prune` and `ForceOrphan` only (`plan.go:12-21`). Keeping PersistentVolumeClaims is the operator's rule.
 3. **The package never waits.** A DELETE the API server accepted is `ResultDeleted` at once (`advance.go:234-239`), and `MayReleaseHold` releases when every step is deleted or skipped (`hold.go:83-123`). An object that stays Terminating is, to the plan, deleted.
 4. **An object already being deleted is judged "proceed"** (`ownership/delete.go:93-94`), so a later plan over the same entry names the delete again. A second DELETE of a terminating object deletes nothing more, but it is not without effect: the API server computes the garbage collector's finalizers again from the options of every DELETE (`k8s.io/apiserver v0.36.4`, `pkg/registry/generic/registry/store.go:984-1010`, `:1082-1085`), so a repeated Foreground DELETE sets `foregroundDeletion` again after the collector removed it. The status message accounts for that (decision "What the message names").
@@ -46,7 +46,7 @@ Reversibility: two-way door. No CRD field, no stored state, no flag. A revert of
 
 **Decision**: option 3.
 
-**Rationale**: the runner is the single delete site, which `TestDeleteCallSitesAreClosed` (`internal/apply/callsites_test.go:189`) pins by file. The callers keep what differs: which entries, which policy, what is reported.
+**Rationale**: the runner is the single delete site, which `TestDeleteCallSitesAreClosed` (`internal/apply/callsites_test.go:237`) pins by file. The callers keep what differs: which entries, which policy, what is reported.
 
 ```go
 // internal/apply/deletion.go
@@ -127,7 +127,7 @@ A Conflict on a delete that carried a precondition is still wrapped in `ErrRepla
 
 **Rationale**: the plan holds exactly the objects that may be deleted, and its state is true. The classification pass sends no delete, so it is outside 0012:D4:R1; it still decides with the library's verdict and no comparison of its own. With `spec.dataPolicy: Delete`, claims are ordinary plan entries.
 
-**Consequence (supervisor ruling 2 of 2026-10-09)**: the hold verdict is asked with the plans as built, after the claim split. With an inventory of kept claims only, the plan is empty and the verdict is `inventory-empty` before it looks at the identity (fact 7). The operator then removes the finalizer without a read, also when the ServiceAccount is missing. Today that deletion stalls with `DeletionSAMissing` (`moduleinstance.go:1292`, `:1303-1308`), although the cleanup would delete nothing. The claims cannot be read without the identity, so no `ClaimsKept` event would be true; the operator emits `DeletionUnconfirmed` with the number of claims left without a read. This is a behaviour change and is in the release note. With the identity available the claims are classified as usual. An inventory that also holds a Namespace or a CRD is not empty for the plan (those are steps, skipped up front), so it still needs the identity, as today.
+**Consequence (supervisor ruling 2 of 2026-10-09)**: the hold verdict is asked with the plans as built, after the claim split. With an inventory of kept claims only, the plan is empty and the verdict is `inventory-empty` before it looks at the identity (fact 7). The operator then removes the finalizer without a read, also when the ServiceAccount is missing. Today that deletion stalls with `DeletionSAMissing` (`moduleinstance.go:1399`, `:1410-1415`), although the cleanup would delete nothing. The claims cannot be read without the identity, so no `ClaimsKept` event would be true; the operator emits `DeletionUnconfirmed` with the number of claims left without a read. This is a behaviour change and is in the release note. With the identity available the claims are classified as usual. An inventory that also holds a Namespace or a CRD is not empty for the plan (those are steps, skipped up front), so it still needs the identity, as today.
 
 ### The finalizer follows the hold verdict
 
@@ -278,7 +278,7 @@ Number of rechecks with `clamp(age/4, 5 s, 60 s)`: about 4 in the first 20 s, ab
 
 What bounds it: the interval (never under 5 s, 60 s when blocked); one reconcile at a time per object; the controller's `MaxConcurrentReconciles` (`internal/controller/moduleinstance_controller.go:202`); and the wait ends when the objects are gone, when `spec.prune` is set to false, or when the identity is lost. A blocked deletion costs E + T requests per minute for as long as it is blocked.
 
-Against the coming apply guard: `guard-every-apply-by-ownership` (proposed in parallel; figure as the supervisor gave it, not read by me) adds one GET per rendered object before each apply, for every live instance at every reconcile that applies. One recheck therefore costs about the reads of one guarded apply of the same instance. The guard's load is steady and on every instance; the wait's load is on deleting objects only and ends. The two never add up on one object: a deleting object applies nothing.
+Against the coming apply guard: `guard-every-apply-by-ownership` (merged as opm-operator#274) adds one GET per rendered object before each apply (`internal/apply/guard.go:137`, read after the merge), for every live instance at every reconcile that applies. One recheck therefore costs about the reads of one guarded apply of the same instance. The guard's load is steady and on every instance; the wait's load is on deleting objects only and ends. The two never add up on one object: a deleting object applies nothing.
 
 ### What the message names
 
@@ -288,7 +288,7 @@ Against the coming apply guard: `guard-every-apply-by-ownership` (proposed in pa
 
 ### Kept claims and left-behind objects are reported once
 
-**Context**: `reportKeptClaims` and `reportLeftBehind` emit on every call (`moduleinstance.go:1341-1342`, `:1527-1535`). Today they run once, because the finalizer goes in the same reconcile. With rechecks they would repeat for as long as the deletion waits.
+**Context**: `reportKeptClaims` and `reportLeftBehind` emit on every call (`moduleinstance.go:1448-1449`, `:1637-1642`, `:1675`). Today they run once, because the finalizer goes in the same reconcile. With rechecks they would repeat for as long as the deletion waits.
 
 **Decision**: both are emitted by the first reconcile that reaches a release verdict, that is when the record is absent at the start of the reconcile. A recheck (record present) emits neither. The two new events are deduplicated the same way the stall events are today (`readyAlreadyStalledWith`).
 
@@ -296,7 +296,7 @@ Against the coming apply guard: `guard-every-apply-by-ownership` (proposed in pa
 
 ### The forced recreate stays outside the plan
 
-**Decision**: `deleteGuard` (`internal/apply/claims.go:141-177`) is unchanged and stays an allowed delete site.
+**Decision**: `deleteGuard` (`internal/apply/claims.go:141-183`) is unchanged and stays an allowed delete site.
 
 **Rationale**: owner decision "UID precondition only". The delete is sent by Flux's engine in the middle of an apply, with Background propagation (`fluxcd/pkg/ssa v0.77.0`, `manager_apply.go:144`), and the object is created again at once; a Foreground delete would leave the name terminating. The object is not leaving the inventory, so it is no step of a deletion plan. 0012:D4:R1 names one exception and this is not it; see Open Questions.
 

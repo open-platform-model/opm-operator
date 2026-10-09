@@ -1,6 +1,6 @@
 ## Why
 
-The operator deletes an instance's objects with a loop of its own (`internal/apply/prune.go:98`): its own order, no propagation policy, and a finalizer rule written in each reconciler. The library has one deletion protocol for every frontend (`opm/k8s/lifecycle` in library `v1.0.0-beta.7`: `NewDeletionPlan`, `Advance`, `MayReleaseHold`), enhancement 0012:D4 binds both frontends to it, and the cli moved to it in cli#350. The ownership verdict on every delete is already in the operator (opm-operator#271). This change moves the operator's two delete paths onto the plan, so a rule added to the plan reaches the operator without a second implementation.
+The operator deletes an instance's objects with a loop of its own (`internal/apply/prune.go:98`): its own order, no propagation policy, and a finalizer rule written in each reconciler. The library has one deletion protocol for every frontend (`opm/k8s/lifecycle` in library `v1.0.0-beta.8`: `NewDeletionPlan`, `Advance`, `MayReleaseHold`), enhancement 0012:D4 binds both frontends to it, and the cli moved to it in cli#350. The ownership verdict on every delete is already in the operator (opm-operator#271). This change moves the operator's two delete paths onto the plan, so a rule added to the plan reaches the operator without a second implementation.
 
 ## What Changes
 
@@ -16,18 +16,18 @@ The operator deletes an instance's objects with a loop of its own (`internal/app
 
 SemVer class: MAJOR after GA (observable delete behaviour changes). In beta it ships as the next `1.0.0-beta.N` under a `feat!:` title.
 
-### 1. Delete paths today (origin/main `5bad00a`)
+### 1. Delete paths today (origin/main `a418b40`; written on `5bad00a`, line numbers corrected after the merge of opm-operator#273 and #274)
 
 | Path | Code | Order | Propagation | Finalizer release rule | Waits for |
 | --- | --- | --- | --- | --- | --- |
-| Deletion cleanup, ModuleInstance | `internal/reconcile/moduleinstance.go:1282-1350` calls `apply.Prune` at `:1316` | The order of `status.inventory.entries`; the loop does not sort (`internal/apply/prune.go:109`) | None set: the DELETE carries only the UID precondition (`prune.go:156-161`), so the API server's default applies | `apply.Prune` returned no error (`moduleinstance.go:1318`, `:1344`): every entry was deleted, absent, skipped by the verdict or a kept claim. Also at once when `spec.prune` is false or the inventory is empty (`:1292-1300`), and on the orphan annotation with a missing ServiceAccount (`:1366-1386`) | Nothing. The finalizer goes in the same reconcile, as soon as the DELETE calls are accepted (`:1344`) |
-| Deletion cleanup, ModulePackage | `internal/reconcile/modulepackage.go:953-1010`, `apply.Prune` at `:983` | Same | Same | Same (`:959-968`, `:1009`) | Nothing |
-| Stale prune, ModuleInstance | `moduleinstance.go:684`, `pruneStaleResources` at `:1482-1515` | The order of the stale set | Same | No finalizer involved. A failed entry fails the reconcile with `PruneFailed` (`:1503`) or stalls with `ImpersonationFailed` when forbidden (`:1499-1501`) | Nothing |
-| Stale prune, ModulePackage | `modulepackage.go:787-803` | Same | Same | No finalizer involved. Every prune error is `PruneFailed` and transient (`:790-794`); there is no Forbidden branch | Nothing |
-| Forced recreate | `internal/apply/apply.go:98` sets Flux `Force`; every delete passes `deleteGuard.Delete` (`internal/apply/claims.go:161-177`) | Flux's apply order | Background, set by Flux (`fluxcd/pkg/ssa v0.77.0`, `manager_apply.go:144`, `:259`) | None | Not traced (Flux internal) |
-| CLI-owned instance, the operator's own instance | `moduleinstance.go:1146-1155`, `:1193-1202` | n/a | n/a | Released without any delete | Nothing |
+| Deletion cleanup, ModuleInstance | `internal/reconcile/moduleinstance.go:1389-1457` calls `apply.Prune` at `:1423` | The order of `status.inventory.entries`; the loop does not sort (`internal/apply/prune.go:109`) | None set: the DELETE carries only the UID precondition (`prune.go:156-161`), so the API server's default applies | `apply.Prune` returned no error (`moduleinstance.go:1425`, `:1451`): every entry was deleted, absent, skipped by the verdict or a kept claim. Also at once when `spec.prune` is false or the inventory is empty (`:1399-1407`), and on the orphan annotation with a missing ServiceAccount (`:1473-1493`) | Nothing. The finalizer goes in the same reconcile, as soon as the DELETE calls are accepted (`:1451`) |
+| Deletion cleanup, ModulePackage | `internal/reconcile/modulepackage.go:1061-1122`, `apply.Prune` at `:1091` | Same | Same | Same (`:1067-1076`, `:1117`) | Nothing |
+| Stale prune, ModuleInstance | `moduleinstance.go:744`, `pruneStaleResources` at `:1589-1622` | The order of the stale set | Same | No finalizer involved. A failed entry fails the reconcile with `PruneFailed` (`:1610`) or stalls with `ImpersonationFailed` when forbidden (`:1606-1608`) | Nothing |
+| Stale prune, ModulePackage | `modulepackage.go:816-832` | Same | Same | No finalizer involved. Every prune error is `PruneFailed` and transient (`:819-824`); there is no Forbidden branch | Nothing |
+| Forced recreate | `internal/apply/apply.go:113` sets Flux `Force`; every delete passes `deleteGuard.Delete` (`internal/apply/claims.go:164-183`) | Flux's apply order | Background, set by Flux (`fluxcd/pkg/ssa v0.77.0`, `manager_apply.go:144`, `:259`) | None | Not traced (Flux internal) |
+| CLI-owned instance, the operator's own instance | `moduleinstance.go:1253-1262`, `:1300-1309` | n/a | n/a | Released without any delete | Nothing |
 
-`internal/apply/callsites_test.go:194-196` keeps the list of delete sites closed: `prune.go` (1) and `claims.go` (2). Failure handling today: a failed read or delete returns an error and controller-runtime retries with backoff (`moduleinstance.go:1334-1335`); Forbidden under impersonation stalls with `ImpersonationFailed` and a 30 minute recheck (`:1319-1333`, `internal/reconcile/backoff.go:17`); a missing ServiceAccount stalls with `DeletionSAMissing` (`:1388-1402`).
+`internal/apply/callsites_test.go:242-245` keeps the list of delete sites closed: `prune.go` (1) and `claims.go` (2). Failure handling today: a failed read or delete returns an error and controller-runtime retries with backoff (`moduleinstance.go:1441-1442`); Forbidden under impersonation stalls with `ImpersonationFailed` and a 30 minute recheck (`:1426-1440`, `internal/reconcile/backoff.go:17`); a missing ServiceAccount stalls with `DeletionSAMissing` (`:1495-1509`).
 
 ### 2. After this change
 
@@ -56,7 +56,7 @@ The hold verdict maps onto the statuses that exist today; no reason is renamed:
 | `identity-unavailable`, other impersonation error | Stalled `ImpersonationFailed`, as today |
 | `cleanup-forbidden` | Stalled `ImpersonationFailed` when impersonating, else an error and a retry, as today |
 | `cleanup-incomplete` | Error, finalizer kept, retry with backoff, as today |
-| `inventory-empty` because only kept claims are left, identity missing or failed | **New**: finalizer removed without a read, `DeletionUnconfirmed` event. Today: stalled `DeletionSAMissing` (`moduleinstance.go:1292`, `:1303-1308`) |
+| `inventory-empty` because only kept claims are left, identity missing or failed | **New**: finalizer removed without a read, `DeletionUnconfirmed` event. Today: stalled `DeletionSAMissing` (`moduleinstance.go:1399`, `:1410-1415`) |
 | `cleanup-complete` | Record it (`Ready` reason `DeletionInProgress`), wait for the deleted objects to be gone, then remove the finalizer |
 | `identity-unavailable` or `cleanup-forbidden` at a recheck, after `cleanup-complete` was recorded | **New**: finalizer removed, `DeletionUnconfirmed` event (owner decision of 2026-10-09) |
 
@@ -139,7 +139,7 @@ None.
 - `internal/status`: two reasons and their notes.
 - `docs/site/operating/deletion-and-pruning.md`, `delete-an-instance-safely.md`, `docs/site/diagnostics/operator-conditions.md`.
 - Tests: envtest runs no garbage collector, so a Foreground delete leaves an object terminating there; section 1 of tasks.md is a spike that proves this and adds a helper that runs for the whole of each envtest suite (`internal/controller`, `test/integration/apply`, `test/integration/reconcile`, `test/integration/operatormodule`). `test/e2e` gains specs that the CI job `test-e2e` runs on the pull request (`.github/workflows/test-e2e.yml:3-6`, `:107`); no agent uses a cluster.
-- No dependency change: `opm/k8s/lifecycle` is in the pinned library `v1.0.0-beta.7` (`go.mod:15`).
+- No dependency change: `opm/k8s/lifecycle` is in the pinned library `v1.0.0-beta.8` (`go.mod:15`).
 
 Size: six sections. They do not fit one agent in about 90 turns: the two reconcilers are symmetric and their deletion tests are many. Two implement launches on the same branch, one PR, nothing merged in between:
 

@@ -167,7 +167,7 @@ The controller MUST emit one `Warning` event with reason `ClaimConflict` and act
 ### Requirement: Events emitted when objects are left behind
 The controller MUST emit one event with reason `LeftBehind` when a prune or a deletion cleanup leaves one or more objects in the cluster because the delete verdict skipped them. The event type MUST be `Normal` when every object left is a Namespace or a CustomResourceDefinition that OPM never deletes, and `Warning` when at least one object was left because it is not managed by OPM, belongs to another instance or is adopted by another instance. The event MUST state the count and MUST carry, for each object, the message the library words for the skip, unchanged (at most ten objects, and fewer when the messages would take the event past 1024 characters; then the number of the rest), with the objects left for an ownership reason first. The `action` field MUST be `Prune` on the stale-prune path and `Delete` on the deletion path. The event text MUST NOT carry an enhancement reference.
 
-The event MUST be emitted only by a run whose result is committed: on the stale-prune path by a prune that returned no error, and on the deletion path by the cleanup that removes the finalizer, before it removes it. A prune or a cleanup that failed for another entry MUST NOT emit it, because its retry judges the same entries again.
+The event MUST be emitted only by a run whose result is committed: on the stale-prune path by a prune that returned no error, and on the deletion path by the first reconcile of the cleanup that reaches a release verdict: the one that removes the finalizer, or the one that starts to wait for deleted objects. A later reconcile of the same wait MUST NOT emit it again. A prune or a cleanup that failed for another entry MUST NOT emit it, because its retry judges the same entries again.
 
 No `LeftBehind` event is emitted for an object that was already absent or for a kept PersistentVolumeClaim, which has its own event.
 
@@ -197,6 +197,11 @@ No `LeftBehind` event is emitted for an object that was already absent or for a 
 - **GIVEN** a prune that deleted every stale object
 - **WHEN** the reconcile completes
 - **THEN** no event with reason `LeftBehind` is emitted
+
+#### Scenario: A waiting deletion reports what it left once
+- **GIVEN** a ModuleInstance being deleted whose inventory holds a core Namespace and a Deployment that takes three rechecks to disappear
+- **WHEN** the deletion completes
+- **THEN** exactly one event with reason `LeftBehind` and action `Delete` was emitted
 
 ### Requirement: Events emitted when an identity change is refused
 The controller MUST emit one `Warning` event with reason `IdentityChangeUnsettled` and action `Reconcile` when it refuses a second change of the instance identity. The message MUST be the message of the `Ready` condition. It MUST NOT emit the event again while `Ready` already carries that reason.
@@ -257,3 +262,37 @@ The `Warning` event the controller emits when a render or a package load stalls 
 
 - **WHEN** a render stalls with a message of 3000 characters that lists no findings
 - **THEN** the event message is at most 1024 characters, starts as the condition message and ends with ` ... (<N> more characters)`
+
+### Requirement: Events emitted while a deletion waits
+The controller MUST emit one Normal event with reason `DeletionInProgress` and action `Delete` when a deletion cleanup starts to wait for deleted objects, and one Warning event with reason `DeletionBlocked` and action `Delete` when the wait becomes blocked. Each event MUST carry the message of the condition. The controller MUST NOT repeat either event at a later reconcile while `Ready` already carries that reason. A deletion that is blocked at its first reconcile emits the `DeletionBlocked` event only.
+
+#### Scenario: One event when the wait starts
+- **GIVEN** a deleting ModuleInstance whose cleanup deleted a Deployment that still exists
+- **WHEN** three reconciles run while it still exists
+- **THEN** exactly one Normal event with reason `DeletionInProgress` was emitted
+
+#### Scenario: One warning when the wait is blocked
+- **GIVEN** a deleting ModuleInstance that has reason `DeletionInProgress` and whose Deployment passes 10 minutes of termination
+- **WHEN** the next reconciles run
+- **THEN** exactly one Warning event with reason `DeletionBlocked` was emitted, and it names the Deployment
+
+### Requirement: Kept claims are reported once per deletion
+On the deletion path the `ClaimsKept` event MUST be emitted by the first reconcile of the cleanup that reaches a release verdict: the one that removes the finalizer, or the one that starts to wait for deleted objects. A later reconcile of the same wait MUST NOT emit it again.
+
+#### Scenario: A waiting deletion reports its kept claims once
+- **GIVEN** a ModuleInstance being deleted whose inventory holds a PersistentVolumeClaim that is kept and a Deployment that takes three rechecks to disappear
+- **WHEN** the deletion completes
+- **THEN** exactly one event with reason `ClaimsKept` and action `Delete` was emitted
+
+### Requirement: Events emitted when a deletion is released without confirmation
+The controller MUST emit one Warning event with reason `DeletionUnconfirmed` and action `Delete` in the reconcile that removes the cleanup finalizer without having read every object: after the deleting identity was lost during the wait, and for an inventory of kept claims only whose identity is missing. The message MUST state the number of objects that were not read, MUST say why (the ServiceAccount is missing, cannot be impersonated, or is forbidden to read), and MUST say that the objects may still exist. It MUST be emitted before the finalizer is removed. The event text MUST NOT carry an enhancement reference.
+
+#### Scenario: Released after the ServiceAccount went
+- **GIVEN** a ModuleInstance with reason `DeletionInProgress` and three inventory objects, whose ServiceAccount no longer exists
+- **WHEN** the controller reconciles it
+- **THEN** one Warning event with reason `DeletionUnconfirmed` is emitted that names the count 3 and the missing ServiceAccount
+
+#### Scenario: A confirmed deletion emits no such event
+- **GIVEN** a deletion whose every deleted object was read as gone
+- **WHEN** the finalizer is removed
+- **THEN** no event with reason `DeletionUnconfirmed` is emitted

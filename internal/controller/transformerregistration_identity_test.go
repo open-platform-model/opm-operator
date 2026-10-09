@@ -93,8 +93,31 @@ func renderedClaimResult() *render.RenderResult {
 		Transformer: "opm#transformer-registration-transformer",
 	}
 
+	// The claim of this fixture carries no UUID label, and the apply guard
+	// refuses to ask the ownership verdict without an instance identity. So
+	// the render holds a second object that carries it, as every object of a
+	// real render does.
+	settings := cueCtx.CompileString(fmt.Sprintf(`{
+	apiVersion: "v1"
+	kind:       "ConfigMap"
+	metadata: {
+		name:      %q
+		namespace: "default"
+		labels: {
+			"app.kubernetes.io/managed-by": "opm-controller"
+			%q:                             %q
+		}
+	}
+}`, spikeClaimInstanceName+"-settings", labels.ModuleInstanceUUID, stubRenderUUID))
+	Expect(settings.Err()).NotTo(HaveOccurred())
+
 	return &render.RenderResult{
-		Resources: []*object.Resource{resource},
+		Resources: []*object.Resource{resource, {
+			Value:       settings,
+			Instance:    spikeClaimInstanceName,
+			Component:   spikeClaimInstanceName,
+			Transformer: "kubernetes#simple",
+		}},
 	}
 }
 

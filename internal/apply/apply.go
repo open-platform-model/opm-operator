@@ -38,6 +38,12 @@ type ApplyOptions struct {
 	// server refuses to update is kept and Apply returns a
 	// *ClaimConflictError.
 	DeleteData bool
+
+	// TakenIn names the objects of the apply list that exist and that this
+	// apply brings under the instance (GuardResult.Pins). Apply writes the
+	// object that was read and no other of the same name, and never deletes
+	// one of them, with or without Force and DeleteData.
+	TakenIn []Pin
 }
 
 // The discovery retry's pacing. They are variables so the package's unit
@@ -86,6 +92,15 @@ type stagedApply func(ctx context.Context) (*fluxssa.ChangeSet, error)
 // also refuses the delete itself (NewResourceManager), which covers a claim
 // that changes between the check and the staged apply.
 //
+// Taken-in objects: an object of opts.TakenIn is one a user handed over, so
+// it is never deleted and created again. Apply sends it with the UID the
+// guard read, so the API server refuses the write when another object took
+// the name since. With Force, Apply first sends the dry-run of each one, as
+// for a claim, and returns a *TakenInConflictError with nothing applied when
+// the API server refuses the update. The resource manager's client also
+// refuses the delete itself, which covers an object that changes between the
+// check and the staged apply.
+//
 // Returns an ApplyResult with counts, or an error on any apply failure. An
 // object counts by the first attempt that created or configured it.
 func Apply(
@@ -96,6 +111,16 @@ func Apply(
 ) (*ApplyResult, error) {
 	fluxOpts := fluxssa.DefaultApplyOptions()
 	fluxOpts.Force = opts.Force
+
+	if len(opts.TakenIn) > 0 {
+		resources = pinTakenIn(resources, opts.TakenIn)
+		ctx = keepTakenIn(ctx, opts.TakenIn)
+		if opts.Force {
+			if err := checkTakenIn(ctx, rm.Client(), resources, opts.TakenIn); err != nil {
+				return nil, fmt.Errorf("failed to apply resources: %w", err)
+			}
+		}
+	}
 
 	switch {
 	case opts.DeleteData:

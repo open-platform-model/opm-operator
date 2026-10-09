@@ -102,11 +102,22 @@ var _ = Describe("Reconcile Withheld Resource Drift", func() {
 		params := reconcileParams()
 		params.EventRecorder = events.NewFakeRecorder(30)
 		params.APIReader = k8sClient
+		ensureFinalizer(params, nn)
+
+		// The provider was applied before its upgrade, so the sidecar is in
+		// its inventory. Without that record the refused reconcile below
+		// would take the sidecar in, and an object a reconcile takes in is
+		// left out of that reconcile's drift comparison.
+		By("the provider is applied with both contracts")
+		params.Renderer = &stubRenderer{result: providerRenderResult(
+			claimName, providerName, contractStorage, contractBackup,
+		)}
+		Expect(reconcileInstance(params, nn)).To(Succeed())
+
+		By("the upgrade drops a contract and is refused")
 		params.Renderer = &stubRenderer{result: providerRenderResult(
 			claimName, providerName, contractStorage,
 		)}
-		ensureFinalizer(params, nn)
-
 		_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
 		Expect(err).NotTo(HaveOccurred())
 

@@ -145,6 +145,9 @@ func claimDeletionAllowed(ctx context.Context) bool {
 // so a forced recreate cannot delete a claim that changed after checkClaims
 // read it, and a caller that sets no option cannot delete one at all.
 //
+// It refuses to delete an object the apply takes in (ApplyOptions.TakenIn):
+// a user handed that object over so that it need not be deleted.
+//
 // It sends every other delete with a precondition on the UID of the object it
 // is handed, which is the live object the resource manager read, so the
 // delete removes that object and not one created under the same name since.
@@ -159,6 +162,9 @@ var ErrCollectionDelete = errors.New("a delete of a collection of objects is not
 	"it cannot name the objects that were read")
 
 func (g deleteGuard) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if pin, taken := takenInPin(ctx, obj); taken {
+		return &TakenInConflictError{Object: pin.Object}
+	}
 	if isClaimObject(obj) && !claimDeletionAllowed(ctx) {
 		return &ClaimConflictError{Namespace: obj.GetNamespace(), Name: obj.GetName()}
 	}

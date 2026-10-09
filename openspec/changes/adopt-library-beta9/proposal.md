@@ -25,6 +25,6 @@ None. No requirement changes, so the change carries no delta spec (`skip_specs: 
 
 - Affected kinds: none. ModuleInstance, ModulePackage, Platform and TransformerRegistration keep every condition, reason, message and retry.
 - Dependencies: one direct Go dependency moves; no new module enters `go.sum`.
-- Code: two comment sentences in `internal/apply`. A parallel change (`adopt-kubernetes-lifecycle-package`) edits that package; the two edits are comment-only and listed by line in the design.
+- Code: two comment sentences in `internal/apply`. A parallel change (`adopt-kubernetes-lifecycle-package`) edits that package; the two edits are comment-only: the last sentence of the comment on `judgeDelete` (`prune.go`) and of the first paragraph of the comment on `Guard` (`guard.go`).
 - Tests: none added, none edited.
 - Generated files, CRDs, `dist/install.yaml`, the operator module: no change.

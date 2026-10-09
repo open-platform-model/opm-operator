@@ -22,7 +22,7 @@ The production diff of the library between the two tags, read from the module ca
 
 `task deps:cascade` moves every upstream pin the resolver reports (catalog, core, fixtures, the cli version file), and it needs the `.github` checkout. This change moves the library only. The adoptions of beta.7 and beta.8 made the same choice. `go.sum` changes through the Go tool only, and the two changed lines are read.
 
-Alternative: wait for the cascade's pull request and review that. Rejected: the brief asks for a reviewed change that replaces it.
+Alternative: wait for the cascade's pull request and review that. Rejected: a breaking library beta gets a reviewed change that records the proof for each removal, as the beta.7 and beta.8 adoptions did.
 
 ### The proof for each removal is the compiler, `go vet` and a search
 
@@ -35,7 +35,7 @@ Alternative: wait for the cascade's pull request and review that. Rejected: the 
 
 The sentence "Admit is never set: it is for the operator install only" describes a field of `ApplyInput` and `DeleteInput`. After the bump the field does not exist, so the sentence names nothing a reader can find, and its second half is false. The sentence is deleted in both places; no text replaces it, because there is nothing left to say about an override that does not exist.
 
-Alternative: leave `internal/apply` untouched, because a parallel change edits the package. Rejected: a comment that names a missing field stays wrong until someone trips on it. The cost is a possible two-line comment conflict for the parallel branch, which the report lists by line.
+Alternative: leave `internal/apply` untouched, because a parallel change edits the package. Rejected: a comment that names a missing field stays wrong until someone trips on it. The cost is a possible conflict on those comment lines for the parallel branch.
 
 ### No delta spec
 
@@ -45,4 +45,5 @@ No requirement of the operator changes. The ownership specs describe verdicts th
 
 - [A verdict changes for a live object in a way no operator test covers] → The library's diff removes only branches guarded by `in.Admit`; with `Admit` false, `!opmManaged(live) && !admitted(in)` equals `!opmManaged(live)`. Read in the module cache, not only taken from the release note.
 - [A value-typed `errors.As` target hides in a test] → `go vet` and the search cover it.
-- [The comment edit conflicts with the parallel branch] → Two comment lines; listed in the report.
+- [The comment edit conflicts with the parallel branch] → Comment lines only, named in the proposal; no code line moves.
+- [Every object renders once after the upgrade] → The library version is part of every render input key (`cmd/main.go`), so any library bump has this effect, and so has every operator release through the operator version. It is the designed effect, not traced further here.

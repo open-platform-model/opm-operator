@@ -121,6 +121,7 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 		labels: {
 			%q: %q
 			%q: %q
+			%q: %q
 		}
 	}
 	data: {
@@ -129,6 +130,7 @@ func stubRenderResult(namespace string, values *releasesv1alpha1.RawValues) *ren
 }`, namespace,
 		labels.ManagedBy, labels.ManagedByController,
 		labels.ModuleInstanceNamespace, namespace,
+		labels.ModuleInstanceUUID, stubRenderUUID,
 		message))
 	if cm.Err() != nil {
 		panic(fmt.Sprintf("compiling stub ConfigMap: %v", cm.Err()))
@@ -170,3 +172,8 @@ func acquireFailureRenderer() *stubRenderer {
 		}),
 	}
 }
+
+// stubRenderUUID is the instance identity the stub renders of this suite
+// carry in the UUID label, as every real render does: the apply guard asks
+// the ownership verdict with it and refuses to ask without one.
+const stubRenderUUID = "00000000-0000-0000-0000-00000000c0de"

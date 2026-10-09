@@ -323,6 +323,42 @@ var _ = Describe("Drift detection identity", func() {
 		}, time.Second, 200*time.Millisecond).Should(Succeed())
 	})
 
+	// The apply guard reads each object as the identity that applies. A
+	// ServiceAccount that may patch and not get would otherwise write over an
+	// object nobody judged.
+	It("writes nothing over an object the ServiceAccount may not read, and stalls", func() {
+		params, _, nn, saName := setup("own-noget", true)
+
+		setVerbs("own-noget-role", []string{"list", "watch", "create", "update", "patch", "delete"})
+		Eventually(func(g Gomega) {
+			_, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+			g.Expect(err).NotTo(HaveOccurred())
+			drifted := apimeta.FindStatusCondition(instance(nn).Status.Conditions, status.DriftedCondition)
+			g.Expect(drifted).NotTo(BeNil())
+			g.Expect(drifted.Reason).To(Equal(status.DriftCheckForbiddenReason))
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed(), "the authorizer has seen the role change")
+
+		By("a changed render")
+		mi := instance(nn)
+		mi.Spec.Values = &releasesv1alpha1.RawValues{}
+		mi.Spec.Values.Raw = []byte(`{"message": "changed"}`)
+		Expect(k8sClient.Update(ctx, mi)).To(Succeed())
+		result, err := opmreconcile.ReconcileModuleInstance(ctx, params, ctrl.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(opmreconcile.StalledRecheckInterval))
+
+		stalled := apimeta.FindStatusCondition(instance(nn).Status.Conditions, status.StalledCondition)
+		Expect(stalled).NotTo(BeNil())
+		Expect(stalled.Status).To(Equal(metav1.ConditionTrue))
+		Expect(stalled.Reason).To(Equal(status.ImpersonationFailedReason))
+		Expect(stalled.Message).To(ContainSubstring("system:serviceaccount:" + namespace + ":" + saName))
+		Expect(stalled.Message).To(ContainSubstring("cannot get"))
+
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &cm)).To(Succeed())
+		Expect(cm.Data["message"]).To(Equal("hello"), "nothing is written")
+	})
+
 	// The restore list comes from the dry-run, and the restore is an apply:
 	// both must be the ServiceAccount's, or the operator would create a
 	// tenant's objects with its own rights.

@@ -152,7 +152,13 @@ func providerRenderResult(claimName, providerName string, provides ...string) *r
 // verdict on it so the test can prove the refusal leaves it alone.
 func storeClaim(claimName, providerName string, provides ...string) *releasesv1alpha1.TransformerRegistration {
 	stored := &releasesv1alpha1.TransformerRegistration{
-		ObjectMeta: metav1.ObjectMeta{Name: claimName},
+		// The labels of the provider's earlier apply: without them the claim
+		// is an object OPM does not manage, and the apply guard refuses a
+		// render that names it.
+		ObjectMeta: metav1.ObjectMeta{Name: claimName, Labels: map[string]string{
+			labels.ManagedBy:          labels.ManagedByController,
+			labels.ModuleInstanceUUID: stubInstanceUUID,
+		}},
 		Spec: releasesv1alpha1.TransformerRegistrationSpec{
 			Catalog:  "opmodel.dev/catalogs/example@v1",
 			Version:  storedVersion,

@@ -2,6 +2,8 @@ package status
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,9 +23,69 @@ const (
 	// verdict skipped them.
 	LeftBehindReason = "LeftBehind"
 
-	// leftBehindMaxMessages is the most objects a LeftBehind note names.
+	// ApplyRefusedReason: Ready=False, not Stalled, the apply verdict refused
+	// an object of the render, so nothing was applied or pruned. Retried on
+	// the bounded backoff. Also the reason of the event that reports it.
+	ApplyRefusedReason = "ApplyRefused"
+
+	// AdoptedElsewhereReason is the reason of the event that names the
+	// rendered objects an instance does not apply because their adopt
+	// annotation names another instance. It is no condition reason: the
+	// instance stays Ready, and the Ready message counts the objects.
+	AdoptedElsewhereReason = "AdoptedElsewhere"
+
+	// leftBehindMaxMessages is the most objects a LeftBehind note names. The
+	// ApplyRefused and AdoptedElsewhere notes have the same limit.
 	leftBehindMaxMessages = 10
+
+	// adoptedElsewhereClause is the sentence a Ready message ends with when
+	// rendered objects are adopted by another instance. ReadyMessage writes
+	// it and AdoptedElsewhereCount reads the number back.
+	adoptedElsewhereClause = "%d rendered object(s) are adopted by another instance and are not applied."
 )
+
+var adoptedElsewhereCount = regexp.MustCompile(`(\d+) rendered object\(s\) are adopted by another instance and are not applied\.$`)
+
+// ApplyRefusedNote is the message of the ApplyRefused reason, on the Ready
+// condition and on the event: how many objects the apply verdict refused,
+// that nothing was applied, and for each object the library's message,
+// unchanged. It carries at most ten messages, and fewer when they would take
+// the note past the event note limit; the rest is a count.
+func ApplyRefusedNote(messages []string) string {
+	return listMessages(fmt.Sprintf("Refused to apply over %d object(s), nothing was applied: ", len(messages)), messages)
+}
+
+// AdoptedElsewhereNote is the note of an AdoptedElsewhere event: how many
+// rendered objects are adopted by another instance and, for each, the
+// library's message, unchanged, within the limits of ApplyRefusedNote.
+func AdoptedElsewhereNote(messages []string) string {
+	return listMessages(fmt.Sprintf("%d rendered object(s) are adopted by another instance and are not applied: ",
+		len(messages)), messages)
+}
+
+// ReadyMessage is the message of Ready=True after a reconcile that rendered:
+// base, and when adopted is not zero the number of rendered objects that are
+// adopted by another instance and not applied.
+func ReadyMessage(base string, adopted int) string {
+	if adopted <= 0 {
+		return base
+	}
+	return strings.TrimRight(base, ". ") + ". " + fmt.Sprintf(adoptedElsewhereClause, adopted)
+}
+
+// AdoptedElsewhereCount returns the number of adopted objects a message
+// written by ReadyMessage states, zero when it states none.
+func AdoptedElsewhereCount(readyMessage string) int {
+	m := adoptedElsewhereCount.FindStringSubmatch(readyMessage)
+	if m == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0
+	}
+	return n
+}
 
 // IdentityChangeUnsettledNote is the message of the IdentityChangeUnsettled
 // reason, on the Ready condition and on the event: which change is not
@@ -72,32 +134,42 @@ func LeftBehindNote(left []LeftObject) string {
 		}
 	}
 
-	head := fmt.Sprintf("Left %d object(s) in the cluster: ", len(ordered))
+	messages := make([]string, 0, len(ordered))
+	for _, l := range ordered {
+		messages = append(messages, l.Message)
+	}
+	return listMessages(fmt.Sprintf("Left %d object(s) in the cluster: ", len(ordered)), messages)
+}
+
+// listMessages returns head followed by the messages, joined and unchanged.
+// It carries at most leftBehindMaxMessages of them, and fewer when they would
+// take the text past the event note limit; the rest is a count.
+func listMessages(head string, all []string) string {
 	// Room for the messages: the limit less the head and the longest
 	// possible tail.
-	budget := eventNoteLimit - len(head) - len(fmt.Sprintf("; and %d more.", len(ordered)))
+	budget := eventNoteLimit - len(head) - len(fmt.Sprintf("; and %d more.", len(all)))
 
 	var messages []string
 	used := 0
-	for _, l := range ordered {
+	for _, m := range all {
 		if len(messages) == leftBehindMaxMessages {
 			break
 		}
-		cost := len(l.Message)
+		cost := len(m)
 		if len(messages) > 0 {
 			cost += len("; ")
 		}
 		if used+cost > budget {
 			break
 		}
-		messages = append(messages, l.Message)
+		messages = append(messages, m)
 		used += cost
 	}
 
 	var b strings.Builder
 	b.WriteString(head)
 	b.WriteString(strings.Join(messages, "; "))
-	switch rest := len(ordered) - len(messages); {
+	switch rest := len(all) - len(messages); {
 	case rest == 0:
 		b.WriteString(".")
 	case len(messages) == 0:

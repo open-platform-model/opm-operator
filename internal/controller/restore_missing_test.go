@@ -55,12 +55,14 @@ func configMapResource(name, message string) *object.Resource {
 		labels: {
 			%q: %q
 			%q: %q
+			%q: %q
 		}
 	}
 	data: message: %q
 }`, name, periodicNamespace,
 		labels.ManagedBy, labels.ManagedByController,
 		labels.ModuleInstanceNamespace, periodicNamespace,
+		labels.ModuleInstanceUUID, stubRenderUUID,
 		message))
 	Expect(cm.Err()).NotTo(HaveOccurred())
 	return &object.Resource{Value: cm, Instance: "test-module", Component: "hello", Transformer: "kubernetes#simple"}
@@ -82,6 +84,7 @@ func jobResource(name string, ttl bool) *object.Resource {
 		labels: {
 			%q: %q
 			%q: %q
+			%q: %q
 		}
 	}
 	spec: {
@@ -94,6 +97,7 @@ func jobResource(name string, ttl bool) *object.Resource {
 }`, name, periodicNamespace,
 		labels.ManagedBy, labels.ManagedByController,
 		labels.ModuleInstanceNamespace, periodicNamespace,
+		labels.ModuleInstanceUUID, stubRenderUUID,
 		ttlField))
 	Expect(job.Err()).NotTo(HaveOccurred())
 	return &object.Resource{Value: job, Instance: "test-module", Component: "hello", Transformer: "kubernetes#simple"}

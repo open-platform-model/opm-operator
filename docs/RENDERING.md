@@ -291,6 +291,13 @@ Two cases give no verdict. Both set `Drifted` to `Unknown`, add one to
 | `DriftCheckForbidden` | The API server answered `403 Forbidden` to the read or the dry-run of an object. Most often the identity lacks an RBAC verb; the message then names the identity, the verb and the resource. An admission control (a quota, Pod Security, a webhook) that denies the dry-run with 403 gives the same reason, and so does an operator that may not impersonate the ServiceAccount; the message says which. | For RBAC: give the ServiceAccount `get` and `patch` on every kind the module renders, and `create` so that the dry-run of a missing object is allowed. For an admission denial: read the message; more verbs do not clear it. |
 | `ImpersonationFailed` | The ServiceAccount does not exist, or its client could not be built. No dry-run is sent. | Create the ServiceAccount. |
 
+The read comes first: before the dry-run and before every apply the operator
+reads each rendered object as the identity that applies, to ask who holds the
+object (`docs/site/operating/ownership-on-apply.md`). An impersonated
+ServiceAccount therefore needs `get` on every kind it applies. With a changed
+render a refused read stalls the instance with `ImpersonationFailed` on `Ready`
+and nothing is written.
+
 The operator does not send the dry-run as itself when the ServiceAccount
 fails. A dry-run that fails for another reason (a timeout, a server error)
 adds one to the counter and leaves `Drifted` as it was. The first drift

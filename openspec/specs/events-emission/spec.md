@@ -285,7 +285,7 @@ On the deletion path the `ClaimsKept` event MUST be emitted by the first reconci
 - **THEN** exactly one event with reason `ClaimsKept` and action `Delete` was emitted
 
 ### Requirement: Events emitted when a deletion is released without confirmation
-The controller MUST emit one Warning event with reason `DeletionUnconfirmed` and action `Delete` in the reconcile that removes the cleanup finalizer without having read every object: after the deleting identity was lost during the wait, and for an inventory of kept claims only whose identity is missing. The message MUST state the number of objects that were not read, MUST say why (the ServiceAccount is missing, cannot be impersonated, or is forbidden to read), and MUST say that the objects may still exist. It MUST be emitted before the finalizer is removed. The event text MUST NOT carry an enhancement reference.
+The controller MUST emit one Warning event with reason `DeletionUnconfirmed` and action `Delete` in the reconcile that removes the cleanup finalizer without having read every object: after the ServiceAccount was deleted during the wait, and for an inventory of kept claims only whose identity is missing or failed. The message MUST state the number of objects that were not read, MUST say why (the ServiceAccount is missing or cannot be impersonated), and MUST say that the objects may still exist. It MUST be emitted before the finalizer is removed. The event text MUST NOT carry an enhancement reference.
 
 #### Scenario: Released after the ServiceAccount went
 - **GIVEN** a ModuleInstance with reason `DeletionInProgress` and three inventory objects, whose ServiceAccount no longer exists

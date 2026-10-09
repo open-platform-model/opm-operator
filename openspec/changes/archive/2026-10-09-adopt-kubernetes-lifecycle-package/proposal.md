@@ -58,8 +58,8 @@ The hold verdict maps onto the statuses that exist today; no reason is renamed:
 | `cleanup-incomplete` | Error, finalizer kept, retry with backoff, as today |
 | `inventory-empty` because only kept claims are left, identity missing or failed | **New**: finalizer removed without a read, `DeletionUnconfirmed` event. Today: stalled `DeletionSAMissing` (`moduleinstance.go:1399`, `:1410-1415`) |
 | `cleanup-complete` | Record it (`Ready` reason `DeletionInProgress`), wait for the deleted objects to be gone, then remove the finalizer |
-| At a recheck, after `cleanup-complete` was recorded: the ServiceAccount is NotFound, or reads as it are refused as Forbidden while the controller may still impersonate it (asked with a SelfSubjectAccessReview) | **New**: finalizer removed, `DeletionUnconfirmed` event (owner decision of 2026-10-09) |
-| At a recheck, after `cleanup-complete` was recorded: any other failure (a 5xx, a timeout, a throttle, a connection error, a 401, a 403 the controller cannot attribute to the ServiceAccount) | Finalizer and wait reason kept, the message says why, retried with backoff, `DeletionBlocked` after 10 minutes (supervisor ruling of 2026-10-09 after the self-review) |
+| At a recheck, after `cleanup-complete` was recorded: the ServiceAccount is gone (the controller's read of it is answered NotFound) | **New**: finalizer removed, `DeletionUnconfirmed` event (owner decision of 2026-10-09: "Only when the ServiceAccount is gone") |
+| At a recheck, after `cleanup-complete` was recorded: any other answer (a 403, a 401, a 5xx, a throttle, a timeout), also when the ServiceAccount lost its rights and stays | Finalizer and wait reason kept, the message says why, retried with backoff, `DeletionBlocked` after 10 minutes; way out `spec.prune=false` |
 
 ### 3. What is kept from recent operator work
 
@@ -85,7 +85,7 @@ There is no timeout that gives up. The operator never removes the finalizer whil
 - Up to 10 minutes: reason `DeletionInProgress`. The recheck interval is a quarter of the age of the oldest terminating object, at least 1 s and at most 60 s.
 - After 10 minutes (measured from the `deletionTimestamp` of the oldest remaining object, by the controller's clock): reason `DeletionBlocked`, `Stalled=True`, a Warning event, recheck every 60 s. The message names each remaining object and the finalizer that holds it, for example `Deployment/media/jellyfin (waits for its dependents)` or `ConfigMap/media/x (finalizers: example.com/hold)`.
 - Ways out, written as visible text on `docs/site/operating/delete-an-instance-safely.md` (tasks.md 6.1 carries the text): (1) remove what holds the named object; (2) set `spec.prune` to false on the deleting object: the next reconcile releases the finalizer and leaves the objects as they are. The annotation `opm.dev/force-delete-orphan` keeps its one meaning (missing ServiceAccount) and does not lift this wait.
-- The ServiceAccount or its rights disappear during the wait: the operator releases the finalizer and emits `DeletionUnconfirmed`. It does not stall (owner decision of 2026-10-09). Before every delete was sent, a lost identity still stalls with `DeletionSAMissing` or `ImpersonationFailed`, as today.
+- The ServiceAccount is deleted during the wait: the operator releases the finalizer and emits `DeletionUnconfirmed`. When only its rights disappear (the RoleBinding is deleted, the ServiceAccount stays), the deletion holds, says why, and is `DeletionBlocked` after 10 minutes; `spec.prune=false` releases it (owner decision of 2026-10-09, "Only when the ServiceAccount is gone"). Before every delete was sent, a lost identity still stalls with `DeletionSAMissing` or `ImpersonationFailed`, as today.
 - The periodic reconcile plays no part: a deleting object requeues itself.
 
 ### 6. Breaking, and the release note
@@ -97,7 +97,7 @@ Breaking: yes, `feat!:`. PR title: `feat!: delete through the library deletion p
 > 1. A deleted object that has dependents (a Deployment and its Pods) stays visible, Terminating, until the dependents are gone.
 > 2. With `spec.prune: true`, a ModuleInstance or ModulePackage stays Terminating until every object it deleted is gone, so `kubectl delete moduleinstance` returns later. Its `Ready` condition says `DeletionInProgress`.
 > 3. An object that cannot terminate now holds the instance. After 10 minutes `Ready` says `DeletionBlocked` and names the object. To release it, fix the named object or set `spec.prune` to false.
-> 4. If the ServiceAccount or its rights are removed while the instance only waits, the operator lets the instance go and emits a `DeletionUnconfirmed` event. If they are removed before every delete was sent, the deletion still stalls with `DeletionSAMissing` or `ImpersonationFailed`: delete the instance first and its ServiceAccount after it.
+> 4. If the ServiceAccount is deleted while the instance only waits, the operator lets the instance go and emits a `DeletionUnconfirmed` event. If only its rights are removed (the RoleBinding is deleted and the ServiceAccount stays), the instance keeps waiting, says why, and after 10 minutes says `DeletionBlocked`: set `spec.prune` to false to let it go. If the ServiceAccount is gone before any delete is sent, the deletion still stalls with `DeletionSAMissing`: delete the instance first and its ServiceAccount after it.
 > 5. An instance whose inventory holds only PersistentVolumeClaims that `spec.dataPolicy` keeps is now deleted even when its ServiceAccount is missing; before, it stalled with `DeletionSAMissing`. The claims are left in place, as before.
 >
 > No field, flag or RBAC rule changes; nothing to migrate.

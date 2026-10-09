@@ -87,7 +87,7 @@ If some resources fail to delete, the controller MUST NOT remove the finalizer.
 - **AND** the controller requeues for retry
 
 ### Requirement: Finalizer retained on DeletionSAMissing stall
-While a release is stalled with reason `DeletionSAMissing`, the finalizer MUST remain on the object. A deletion never enters this stall when its inventory holds nothing the cleanup would delete, or after it sent every delete (requirements "The cleanup finalizer follows the library's hold verdict" and "A wait survives the loss of the deleting identity"). The release remains blocked from garbage collection by the apiserver until either:
+While a release is stalled with reason `DeletionSAMissing`, the finalizer MUST remain on the object. A deletion never enters this stall when its inventory holds nothing the cleanup would delete, or after it sent every delete (requirements "The cleanup finalizer follows the library's hold verdict" and "A wait survives the loss of the ServiceAccount"). The release remains blocked from garbage collection by the apiserver until either:
 
 - The ServiceAccount is restored in the release's namespace and the next reconcile succeeds in pruning the inventory, OR
 - The operator sets annotation `opm.dev/force-delete-orphan=true` on the release and the next reconcile removes the finalizer via the orphan-exit path, OR
@@ -232,7 +232,7 @@ A PersistentVolumeClaim that `spec.dataPolicy` keeps MUST NOT be an entry of any
 - **THEN** ConfigMap `team-a/old` is deleted
 
 ### Requirement: The cleanup finalizer follows the library's hold verdict
-The controller MUST remove the cleanup finalizer of a deleting ModuleInstance or ModulePackage only after the library's hold verdict (`lifecycle.MayReleaseHold`) said release for every plan of the cleanup, in this reconcile or in an earlier reconcile of the same deletion (requirement "A wait survives the loss of the deleting identity"). Source: 0012:D4:R1.
+The controller MUST remove the cleanup finalizer of a deleting ModuleInstance or ModulePackage only after the library's hold verdict (`lifecycle.MayReleaseHold`) said release for every plan of the cleanup, in this reconcile or in an earlier reconcile of the same deletion (requirement "A wait survives the loss of the ServiceAccount"). Source: 0012:D4:R1.
 
 The verdict's inputs MUST be: prune from `spec.prune`; force-orphan true only when the annotation `opm.dev/force-delete-orphan` is the literal `"true"`; the deleting identity as available, missing (the ServiceAccount does not exist) or failed (any other impersonation error). The verdict MUST be asked with the plans as they are built, that is without the PersistentVolumeClaims that `spec.dataPolicy` keeps.
 
@@ -310,16 +310,20 @@ Setting `spec.prune` to false on the deleting object MUST release the finalizer 
 - **WHEN** a user sets `spec.prune` to false
 - **THEN** the next reconcile removes the finalizer and deletes nothing more
 
-### Requirement: A wait survives the loss of the deleting identity
-A deletion cleanup has sent every delete when one reconcile of it ended with a release verdict for every plan: each plan step ended as deleted (the API server accepted its DELETE) or as skipped, and no step failed. That reconcile records the fact by setting the `Ready` reason `DeletionInProgress`, or it removes the finalizer at once when nothing is left. The reason `DeletionBlocked` carries the same fact. No other field records it. Source: owner decision of 2026-10-09 (when the ServiceAccount or its permissions disappear during the wait, release the finalizer; the `Ready` reason is the record, with no new CRD field).
+### Requirement: A wait survives the loss of the ServiceAccount
+A deletion cleanup has sent every delete when one reconcile of it ended with a release verdict for every plan: each plan step ended as deleted (the API server accepted its DELETE) or as skipped, and no step failed. That reconcile records the fact by setting the `Ready` reason `DeletionInProgress`, or it removes the finalizer at once when nothing is left. The reason `DeletionBlocked` carries the same fact. No other field records it. Source: owner decisions of 2026-10-09 (the `Ready` reason is the record, with no new CRD field; during the wait the finalizer is released "only when the ServiceAccount is gone").
 
-The controller MUST read the record only from the `Ready` condition the object carried when the reconcile started, and only on an object that has a `deletionTimestamp`. It MUST use the record for one decision: what to do when the deleting identity is gone. The identity is gone when the ServiceAccount does not exist (the API server answers NotFound), or when a read or a repeated delete the cleanup sends as that ServiceAccount is refused as Forbidden and the refusal is the ServiceAccount's own. A Forbidden answer alone does not show that: the API server answers a controller that may no longer impersonate the ServiceAccount with the same status. Before it treats a Forbidden answer as a lost identity, the controller MUST ask the API server, as itself, whether it may impersonate that ServiceAccount (a SelfSubjectAccessReview with the verb `impersonate` on the resource `serviceaccounts`, with its name and namespace), and MUST count the refusal as the ServiceAccount's only on a clear answer that it is allowed. The controller MUST decide all of this from typed API answers and MUST NOT read message text. The review MUST NOT need a rule in the role the operator ships for itself. While the identity is available and every read succeeds, the record MUST NOT change any outcome.
+The controller MUST read the record only from the `Ready` condition the object carried when the reconcile started, and only on an object that has a `deletionTimestamp`. It MUST use the record for one decision: to remove the finalizer when the ServiceAccount the cleanup deletes as is gone. While the ServiceAccount exists and every request succeeds, the record MUST NOT change any outcome.
+
+The ServiceAccount is gone in exactly one case: the controller's own read of it, not an impersonated one, by the name the object uses and in the object's namespace, is answered NotFound for that ServiceAccount. The controller MUST decide this from the typed API status (a NotFound whose details name the core resource `serviceaccounts` and that name) and MUST NOT read message text. A NotFound that names another object or none is not this case. A ServiceAccount that was deleted and created again under the same name exists.
 
 With the record present:
 
-- When the ServiceAccount does not exist, the controller MUST remove the finalizer without a read or a delete, and MUST emit one `Warning` event with reason `DeletionUnconfirmed` and action `Delete` that states how many inventory objects it could not confirm as gone.
-- When the identity is available, reads are refused as Forbidden and the refusal is the ServiceAccount's own, each entry whose read was refused counts as not confirmed and MUST NOT hold the finalizer. An object that was read and still exists MUST keep the wait, also when its repeated DELETE is refused as Forbidden. When no readable deleted object is left, the controller MUST remove the finalizer and emit the same event.
-- Any other failure says nothing about the identity of the instance: a ServiceAccount that could not be looked up (a server error, a timeout, a throttle, a connection error, a cancelled context, a refusal of the controller's own read); a read or a delete of the cleanup that failed for such a cause, or that was answered Unauthorized (a 401 answers the controller's own credential, before the API server looks at the impersonation); and a Forbidden answer when the controller deletes as itself, when the review says that the controller may not impersonate the ServiceAccount, or when the review fails. The controller MUST keep the finalizer, MUST retry with its normal backoff, MUST NOT replace the wait reason with a stall reason (the wait reason is the record), and MUST say in the `Ready` message of that reconcile what could not be checked and why. Once the object has been deleting for 10 minutes by the controller's clock, the controller MUST report such a deletion with reason `DeletionBlocked` and `Stalled=True`, with one `Warning` event and the ways out, as it reports a deletion whose objects do not go. A DELETE refused as Forbidden of an object that is not being deleted MUST hold the finalizer as without the record.
+- When the ServiceAccount is gone, the controller MUST remove the finalizer without a read or a delete, and MUST emit one `Warning` event with reason `DeletionUnconfirmed` and action `Delete` that states how many inventory objects it could not confirm as gone.
+- Every other answer MUST hold the finalizer, on any read or delete of the cleanup and whoever sent it: Forbidden, Unauthorized, a server error, a throttle, a timeout, a connection error, a cancelled context, a ServiceAccount that could not be looked up. This includes a Forbidden answer for one object while other objects are readable, and a ServiceAccount that exists and has lost its rights. The controller MUST retry with its normal backoff, MUST NOT replace the wait reason with a stall reason (the wait reason is the record), and MUST say in the `Ready` message of that reconcile what could not be checked and why. The message MUST name at most three failed requests, MUST count the rest, MUST cut each cause, and MUST stay far below the length a condition message may have. When the status cannot be written, the reconcile MUST fail so that it is retried.
+- Once the object has been deleting for 10 minutes by the controller's clock, the controller MUST report a recheck that could not be done with reason `DeletionBlocked` and `Stalled=True`, with one `Warning` event and the ways out, as it reports a deletion whose objects do not go.
+
+Known limit, by the owner's decision: when the rights of the ServiceAccount are removed during the wait and the ServiceAccount stays (its RoleBinding is deleted), the deletion does not release by itself. It reports `DeletionBlocked` after 10 minutes and names the cause; `spec.prune=false` releases it, and so does deleting the ServiceAccount.
 
 Without the record, a missing or failed identity and a Forbidden step MUST hold the finalizer with `DeletionSAMissing` or `ImpersonationFailed`, however many deletes an earlier, failed reconcile already sent.
 
@@ -332,28 +336,37 @@ The controller MUST NOT set the reasons `DeletionInProgress` and `DeletionBlocke
 - **AND** one `Warning` event with reason `DeletionUnconfirmed` is emitted
 - **AND** `Ready` never carries the reason `DeletionSAMissing`
 
-#### Scenario: RBAC removed during the wait
-- **GIVEN** the same instance, whose ServiceAccount exists and has lost every right
-- **WHEN** the controller reconciles the instance, every read is refused as Forbidden, and the API server says that the controller may impersonate the ServiceAccount
-- **THEN** the finalizer is removed and one `Warning` event with reason `DeletionUnconfirmed` is emitted
-- **AND** `Ready` never carries the reason `ImpersonationFailed`
-
 #### Scenario: A blocked deletion is released the same way
 - **GIVEN** a ModuleInstance being deleted whose `Ready` condition carries the reason `DeletionBlocked`
 - **WHEN** its ServiceAccount is deleted and the controller reconciles the instance
 - **THEN** the finalizer is removed
+
+#### Scenario: RBAC removed during the wait holds
+- **GIVEN** a ModuleInstance being deleted with reason `DeletionInProgress`, whose ServiceAccount exists and has lost every right because its RoleBinding was deleted
+- **WHEN** the controller reconciles the instance and every read is refused as Forbidden
+- **THEN** the finalizer stays, `Ready` keeps the reason `DeletionInProgress` and says that the deleted objects could not be checked, and no event with reason `DeletionUnconfirmed` is emitted
+- **AND** once the instance has been deleting for 10 minutes, `Ready` carries the reason `DeletionBlocked` and names `spec.prune=false` as a way out
+
+#### Scenario: One refused object next to readable ones holds
+- **GIVEN** a ModuleInstance being deleted with reason `DeletionInProgress`, whose read of one inventory object is refused as Forbidden while the others are read
+- **WHEN** the readable objects are gone and the controller reconciles the instance
+- **THEN** the finalizer stays
+
+#### Scenario: A NotFound that is not the ServiceAccount's does not release
+- **GIVEN** a ModuleInstance being deleted with reason `DeletionInProgress`
+- **WHEN** the lookup of its ServiceAccount is answered NotFound for another object, or with a NotFound that names none
+- **THEN** the finalizer stays and the reconcile is retried
+
+#### Scenario: A recreated ServiceAccount does not release
+- **GIVEN** a ModuleInstance being deleted with reason `DeletionInProgress`, whose ServiceAccount was deleted and created again under the same name
+- **WHEN** the controller reconciles the instance
+- **THEN** the recheck runs as that ServiceAccount, and the finalizer stays while a deleted object still exists
 
 #### Scenario: A failed lookup of the ServiceAccount during the wait keeps the finalizer
 - **GIVEN** a ModuleInstance being deleted with reason `DeletionBlocked`, whose ServiceAccount exists
 - **WHEN** the controller's read of the ServiceAccount fails with a server error or a timeout
 - **THEN** the finalizer stays, `Ready` keeps the reason `DeletionBlocked` and says that the check failed, and the reconcile is retried
 - **AND** no event with reason `DeletionUnconfirmed` is emitted
-
-#### Scenario: A lost right to impersonate does not release
-- **GIVEN** a ModuleInstance being deleted with reason `DeletionInProgress`, whose ServiceAccount exists and keeps its rights, and a controller that may no longer impersonate that ServiceAccount
-- **WHEN** the controller reconciles the instance and its read as the ServiceAccount is refused as Forbidden
-- **THEN** the controller asks whether it may impersonate the ServiceAccount, the answer is not "allowed", and the finalizer stays
-- **AND** `Ready` keeps the reason `DeletionInProgress` and says that the controller may not impersonate the ServiceAccount
 
 #### Scenario: An Unauthorized answer does not release
 - **GIVEN** a ModuleInstance being deleted with reason `DeletionBlocked`
@@ -365,6 +378,11 @@ The controller MUST NOT set the reasons `DeletionInProgress` and `DeletionBlocke
 - **WHEN** the controller reconciles it before and after 10 minutes of deletion, by the controller's clock
 - **THEN** the first reconcile keeps `DeletionInProgress` and its message says that the deleted objects could not be checked, with the cause
 - **AND** the later one sets `DeletionBlocked` with `Stalled=True`, names `spec.prune=false` as a way out and emits one `Warning` event
+
+#### Scenario: The message of a failed recheck is bounded
+- **GIVEN** a ModuleInstance being deleted with reason `DeletionInProgress` and 400 inventory objects, whose every read fails
+- **WHEN** the controller reconciles it
+- **THEN** the `Ready` message names three failed requests, says that 397 more failed, and has at most 2048 characters
 
 #### Scenario: Identity lost before every delete was sent
 - **GIVEN** a ModuleInstance being deleted whose first cleanup reconcile deleted one ConfigMap and failed on a second, so that `Ready` carries no deletion wait reason

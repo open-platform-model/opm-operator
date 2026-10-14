@@ -38,8 +38,8 @@
 # schema as it was when vX.Y.0 was tagged, which later module versions
 # carry as jsonschema/golangci.vX.Y.jsonschema.json. It is not
 # jsonschema/golangci.jsonschema.json, which at a release tag still holds
-# the line before. To move the linter: AGENTS.md, "Moving the golangci-lint
-# version".
+# the line before. To move the linter: references/testing-and-lint.md,
+# "Moving the golangci-lint version".
 #
 # Usage: [GOLANGCI_LINT=path] lint-config-check.sh [--root DIR]
 #

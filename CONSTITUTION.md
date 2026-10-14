@@ -39,7 +39,7 @@ For CUE module acquisition, the controller MUST use CUE's native module system t
 The codebase MUST preserve clear package boundaries:
 
 - `internal/controller/` handles reconcile orchestration, watches, and event handling
-- `internal/synthesis/` handles CUE release package generation for module resolution
+- `internal/moduleacquire/` handles module acquisition from the OCI registry, through the library Kernel
 - `internal/source/` handles Flux artifact interaction (used by the `Release` pipeline)
 - `internal/render/` handles CUE evaluation and object generation
 - `internal/apply/` handles server-side apply and prune behavior

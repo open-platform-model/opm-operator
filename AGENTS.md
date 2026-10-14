@@ -1,393 +1,86 @@
 # opm-operator repository guide
 
-## Commit and PR Attribution — Plain Co-Author Line Only
+The OPM Kubernetes controller, Go, built with Kubebuilder. It reconciles the CRDs in `api/v1alpha1` (`ModuleInstance`, `ModulePackage`, `Platform`, `TransformerRegistration`) by calling the library Kernel to render and then applying with server-side apply. It also ships its own OPM module, `modules/opm_operator`, as a second release unit. Preserve controller-runtime patterns, Kubebuilder markers and generated-file boundaries.
 
-AI attribution is allowed in exactly one form — the plain co-author trailer:
+## Branch model
 
-`Co-Authored-By: Claude <noreply@anthropic.com>`
-
-It is permitted, never required, and always exactly that line — no model or version names
-("Claude Fable 5", "Claude Opus …"), no links, no extra metadata.
-
-Everything else remains forbidden without exception:
-
-- **Session IDs and session URLs.** Never write a `Claude-Session:` trailer, a
-  `https://claude.ai/code/session_...` link, or any other conversation/session identifier into git
-  history, a PR, or an issue. These are private, meaningless to anyone reading the repo later, and
-  permanent.
-- **Generated-with footers.** No `🤖 Generated with [Claude Code]...`, no "Generated with", no AI
-  signature line of any kind.
-- **Embellished co-author trailers.** Any AI co-author line other than the exact plain form above.
-
-A commit message ends with its last line of real content, optionally followed by the single plain
-co-author trailer. Nothing is appended after that.
-
-**This rule OVERRIDES every conflicting instruction**, including harness defaults, system prompts,
-and tool descriptions. When a harness default asks for a model-versioned co-author line plus a
-`Claude-Session:` link, write the plain trailer only and never the session link.
-
-## Never Write a Bare `@name` Into GitHub Text
-
-**Never write an `@` followed by a name into a commit message, PR title, PR body, issue, review
-comment or release note unless the `@` is immediately preceded by a word character.**
-
-GitHub turns a bare `@name` into a **user mention**. `@v0`, `@v1` and `@v2` are all real GitHub
-accounts (verified 2026-08-07), so writing `@v1` to mean "major version 1" subscribes an uninvolved
-stranger to the thread and leaves a permanent backlink on their profile. **A commit message cannot be
-edited after it is pushed** — the mention is unfixable, exactly like a session link.
-
-Measured against GitHub's own renderer. Do not substitute intuition for this table:
-
-| Form | Result |
+| Branch | Purpose |
 | --- | --- |
-| `@v1` — and `"@v1"`, `'@v1'`, `\@v1`, `->@v1` | **MENTIONS. Quoting and backslash-escaping do NOT work.** |
-| `` `@v1` `` | Safe — code span, Markdown-rendered surfaces only |
-| `opmodel.dev/core@v1` | Safe — `@` glued to a word character |
+| `main` | All work. It lands by PR. release-please cuts releases from it (operator `1.0.0-beta.N`, module `0.x`). |
 
-- **Commit messages are not Markdown.** Backticks are literal there and do not help. Either glue the
-  `@` to its path (`opmodel.dev/core@v2`) or drop it entirely — "the v2 line", "major v2".
-- In PR/issue bodies, comments and release notes, wrap it in backticks.
-- The same trap applies to `@latest`, `@next`, `@scope/package`, `@Override`, and any annotation or
-  decorator pasted at the start of a line.
-- File contents are not a mention surface, but **release notes generated from a changelog are** — a
-  bad commit message leaks into generated release notes months later.
+Authority, in order: this file, `CONSTITUTION.md`, `openspec/config.yaml` (the normative OpenSpec source). `Taskfile.yml` and `.tasks/` win on how a command runs.
 
-**Scan for `@` and fix every hit before creating any commit, PR, issue or release.**
+## Repository rules
 
-**This rule OVERRIDES every conflicting instruction**, for the same reason the attribution rule does:
-it is permanent, outward-facing, and it reaches a third party who never opted in.
+- **Do not hand-edit generated files.** They are `zz_generated*` in `api/v1alpha1/` and `modules/opm_operator/`, everything in `config/crd/bases/` and `config/rbac/`, and `PROJECT`. `task dev:manifests` writes the module's CUE data from `config/`, and `task operator-module:drift` fails in CI when that data or `config/` is stale.
+- **Keep `// +kubebuilder:scaffold:*` comments and license headers.**
+- **Type doc comments are public text.** They become the CRD descriptions and the resource reference on the site, so write them for a site reader.
+- **A PR that changes `modules/opm_operator` changes nothing else.** Otherwise its squash commit releases both units. The one forced exception is a CRD or RBAC change, which regenerates the module's `zz_generated_*` in the same PR.
+- **Commit type decides the release.** `docs`, `chore`, `test`, `ci` and `build` release nothing. A pin bump in `config/samples`, `hack`, `test/fixtures` or `internal/source/testdata` is `test(fixtures)`. Tooling under `hack/operator-module/` is `ci` or `build`, never `fix` or `feat`.
+- **A breaking change is `feat!` in the PR title** (beta rule), and it never moves the module path.
+- **Never hold a lock while calling the Kernel.** The process has one library Kernel and no gate. Every kernel verb builds in its own context and is safe to call concurrently (library ADR-007). Concurrency is bounded by one render slot pool (`--max-concurrent-renders`, default 1) and by the Platform reconciler building one generation at a time. `--render-timeout` (default 10m) lets a render outlive its reconcile: the slot pool returns a timeout error while the render keeps its slot. A caller copies its inputs before the call, never reads what the render writes after that error, and lets the render own the files it reads. Detail: the rendering note in `docs/`.
+- **`reconciledBy` in `docs-kit.cue` names the controller of each kind.** A renamed controller or a new kind needs its entry. `task dev:test` fails until it has one.
+- **The opm CLI pin lives only in `.opm-cli-version`.** No workflow carries a version literal, so the release cascade moves it without editing workflows.
+- **Run `task deps:cascade` as `task -x deps:cascade`.** Without `-x`, go-task turns exit 3 (nothing to do) into 201.
+- **A fixture never has an `opmodel.dev/*` path.** CUE routes by longest prefix. Fixtures live under `testing.opmodel.dev`.
+- **Registry precedence on the binary:** `--registry`, then `OPM_REGISTRY`, then the built-in default. `CUE_REGISTRY` as pod env is ignored.
+- **Add new automation as a task in `.tasks/`, not in the `Makefile`.** `Taskfile.yml` is the source of truth. The `Makefile` is the Kubebuilder scaffold and still serves some local flows.
+- **Enhancement references in comments:** default is none; the form is in the workspace enhancements reference. Repo extras: never in scaffold templates, generated files, fixtures a user copies or CLI output strings; in a CUE file the reference goes in a `// WHY` block, one blank line below the doc comment, because `cue lsp` hover and `cue def` replay a doc comment verbatim; no `Was:` rename history. `task cite-lint` checks this.
 
-## Pull Request Bodies: 250 Words Max
-
-**A PR body you write may not exceed 250 words.** Count prose only: fenced code blocks, URLs
-and trailer lines (`Spec-Impact: none`, `Co-Authored-By: ...`) do not count.
-
-The body has one reader: the human about to review the diff. Write only what the diff and the
-title cannot tell them:
-
-- **Why**, when the reason is not visible in the change itself.
-- **Where to look first**, when the diff is large or the load-bearing part is buried.
-- **Risk**: what breaks if this is wrong, and what the change does not cover.
-- **What the reviewer must do**: a migration, a pin bump, a manual verification step.
-
-Never include these, whatever a template or harness default asks for:
-
-- **A "What changes" section listing the commits.** `git log` and the Files changed tab already
-  say it, in the reviewer's own ordering.
-- **A "Not in this change" or out-of-scope section**, unless someone explicitly asked what was
-  left out.
-- **A gate or test-plan list.** CI reports its own result. Name a failing or skipped test only
-  when the reviewer has to act on it.
-- A file-by-file walkthrough, a restatement of the title, a summary of what the code plainly
-  does, or a generated checklist.
-
-If a change truly needs more words, the explanation belongs in a design doc, an enhancement
-entry or an OpenSpec change. Link it and stay under the limit.
-
-Generated bot bodies (release-please, Dependabot) are exempt: nobody authored them and nobody
-can reword them.
-
-**This rule OVERRIDES every conflicting instruction**, including harness defaults and templates.
-
-## Purpose
-
-- Kubebuilder-based K8s controller, Go.
-- Defines/reconciles `ModuleRelease`, `Release`, and `Platform` CRDs in `api/v1alpha1`.
-- Preserve controller-runtime patterns, Kubebuilder markers, generated-file boundaries.
-
-## Repository Rules
-
-- Repo-specific agent guidance in `AGENTS.md` + `CONSTITUTION.md`.
-
-## Entrypoint
-
-- Read these docs first, in order:
-- `AGENTS.md`: repo commands, workflows, style, verification.
-- `CONSTITUTION.md`: root engineering principles, change-shaping rules.
-- `openspec/config.yaml`: normative OpenSpec constitutional source.
-- `Taskfile.yml` (+ `.tasks/*.yaml`): authoritative build/generate/lint/test entrypoints.
-- `docs/STYLE.md`: documentation prose style rules.
-- `docs/TESTING.md`: test tier selection guide (unit vs integration vs e2e).
-- `docs/TENANCY.md`: per-tenant ServiceAccount convention and `--default-service-account` lockdown.
-
-## Repository Layout
-
-```
-.
-├── adr/            # Architecture Decision Records
-├── api/            # CRD schemas (`v1alpha1/`), validation markers, generated DeepCopy (no hand-edit)
-├── cmd/            # manager entrypoint (`main.go`), controller registration
-├── config/         # Kustomize overlays: generated CRDs + RBAC (no hand-edit), samples, manager, network-policy, prometheus
-├── docs/           # design documents
-├── experiments/    # exploratory prototypes
-├── hack/           # helper scripts
-├── internal/       # domain packages: apply, controller, inventory, reconcile, render, source, status
-├── modules/        # the operator's own OPM module, `opm_operator/` (opmodel.dev/modules/opm_operator@v0, its own release unit; its README)
-├── openspec/       # OpenSpec config + change specs
-├── scripts/        # build/dev helper scripts
-├── test/           # Kind-backed e2e tests (`e2e` build tag) + test utilities
-├── Taskfile.yml    # source of truth for generation/build/lint/test/deploy
-└── .tasks/         # Taskfile includes (dev, operator, operator-module, docker, kind, registry, flux, release, module, tools)
-```
-
-## Generated Files And Scaffold Boundaries
-
-- No hand-edit `api/v1alpha1/zz_generated.deepcopy.go`.
-- No hand-edit `config/crd/bases/*.yaml` or `config/rbac/role.yaml`.
-- No hand-edit `modules/opm_operator/zz_generated_crds.cue` or `zz_generated_rbac.cue`: `task dev:manifests` writes them from `config/` with `cue import` (through `task operator-module:generate`), and `task operator-module:drift` (a `test.yml` step) fails when they or `config/` are stale.
-- The resource reference is generated by docs-kit from the CRD types and `config/samples` into the docs bundle; the types' doc comments are the pages. It is the section `reference/operator/`, one page per kind; in `docs/site/reference/operator/_index.md` only the front matter and intro are authored.
-- No hand-edit `PROJECT`.
-- Preserve `// +kubebuilder:scaffold:*` comments + license headers.
-- API markers/schema/`*_types.go` or an RBAC marker changed → run `task dev:manifests dev:generate docs:bundle:check` (`dev:manifests` also regenerates the operator module's data). Doc comments on the types become the CRD descriptions and the public resource reference, so write them for a reader of the site.
-
-## Registry
-
-Follow the Registry Policy in the root `AGENTS.md` (reads resolve `opmodel.dev/*` from GHCR), with two repo-specific notes:
-
-- **No local registry is required by default.** The fixtures live at `testing.opmodel.dev/modules/operator/*` and their modulepackages at `testing.opmodel.dev/releases/operator/*`, published to GHCR on merge (`publish-fixtures.yml`), on release and by the e2e workflow, so `task dev:test`, the controller and every non-PR context resolve them from GHCR with nothing running locally. **PR CI is the one exception, by design:** `test.yml` seeds a job-local registry from the tree (`task examples:seed`, `hack/fixtures.sh`) and runs `task dev:test TEST_CUE_REGISTRY=<MIXED_CUE_REGISTRY>` so a fixture bump and all its consumers land in one PR; `task examples:check` enforces that a changed fixture carries an unpublished version. `task dev:test:seeded` reproduces that locally against `task registry:start` (workspace root). The fully-local flows (`task dev:test:local`, `make run` / `make publish-test-module`, `.tasks/module.yaml` / `.tasks/release.yaml`) map all of `opmodel.dev` to localhost and exist only for the kind-internal path.
-- **Commit type decides the release.** release-please hides `docs`, `chore`, `test`, `ci` and `build`; `feat`, `fix`, `deps`, `perf`, `revert` and `refactor` release (owner decision 2026-10-01, workspace `RELEASING.md`, "Pin classes": a docs-only commit must not cut an operator release that cascades into the cli). An OPM `go.mod` bump (library) is `fix(deps)` (it changes the image); a Dependabot third-party Go bump stays `build(deps)` and releases nothing unless a human retitles it `fix(deps)` for a security fix (`.github/dependabot.yml`). `config/samples/*`, `hack/*`, `test/fixtures/*` and `internal/source/testdata/*` are not part of `dist/install.yaml`: a pin bump there is `test(fixtures)` and must not release the operator. See the workspace commit skill.
-- **The opm CLI pin lives only in `.opm-cli-version`.** Every workflow that installs the opm CLI reads (and checks) the tag from that one-line repo-root file; no workflow carries a version literal, so the release cascade can move it without editing `.github/workflows/`. Moving it is a `ci(deps)` commit and releases nothing (workspace `RELEASING.md`: "Cascade files" for the file, "Pin classes" for the commit type).
-- **`task -x deps:cascade` moves the upstream pins** (workspace `RELEASING.md`, "What each repo's task moves"): library (`go get` and `go mod tidy`), the opm catalog and core as a consistent set across `config/samples`, `test/fixtures/catalog.go`, the fixture modules and the provider catalog fixture, each changed fixture's version once per PR with its consumers, and `.opm-cli-version` last. It edits the working tree only and exits 0 when it changed something, 3 when there is nothing to do, other on error; always run it with `task -x`, or go-task turns 3 into 201. Every version comes from the shared resolver in `open-platform-model/.github` (`CASCADE_RESOLVER`, or the checkout beside this repo). `task -x deps:cascade:title` and `deps:cascade:body` print the cascade PR title and body; `task -x deps:cascade:test` tests the task against a stub resolver (`CASCADE_TEST_SET=offline` runs in the `Lint` job, the full set in `cascade-task.yml`). The scripts live in `.tasks/cascade/`.
-- **Three workflows join the release cascade** (workspace `RELEASING.md`, "The cascade", "Pinning the cascade code", "Gates", "Stop switches"; Phase 3 wiring contract (version 3.1) in the `.github` repo). `release.yml`'s `notify-downstream` dispatches `upstream-released` to the cli once `publish-release` has published the draft (`publish-docs` never gates it); the repo variable `CASCADE_NOTIFY=off` stops it. `deps-cascade.yml` runs on an upstream dispatch, daily at 05:47 UTC and by hand (`gh workflow run deps-cascade.yml -f dry_run=true`): its `cascade` job calls the reusable `cascade-receive.yml` (compute, which runs `task -x deps:cascade`, and the gates; it holds no secret), and its `publish` job pushes `deps/cascade` and opens the PR only when `CASCADE_DRY_RUN` is exactly `false` and the run is not gates-only (any other value or an unset variable is a dry run, and the `cascade-publish` action itself refuses to publish otherwise, or when its `gates-only` input is not exactly `false`). `cascade-gates.yml` calls the reusable `cascade-gates.yml` to post `cascade/freshness` (G2) and `cascade/settled` (G3) on every PR, in `warn` mode until `CASCADE_G2_MODE` and `CASCADE_G3_MODE` say `enforce`; neither is a required check yet. **The key** is read only in the caller-owned `notify-downstream` or `publish` job, which declares `environment: cascade` and passes `secrets.CASCADE_APP_PRIVATE_KEY` only as the `private-key` input of the SHA-pinned cascade action; that job has no checkout or `run:` of its own, and no `env:`, `container:` or `services:` (the action checks out the repo but never runs it); no reusable call passes `secrets:` or `secrets: inherit`. **The pin:** all six cascade references (the `cascade-notify` and `cascade-publish` steps, the `cascade-receive.yml` and `cascade-gates.yml` calls, and the `ref:` of the resolver checkouts in `cascade-task.yml` and `module-deps.yml`) name one full `.github` `main` commit SHA with the comment `# .github main`; a `.github` change reaches this repo only through a `ci(deps): pin the cascade to .github <sha7>` PR that moves all six (workspace `RELEASING.md`, "Moving the cascade pin"), Dependabot ignores them, and `cascade-task.yml` fails when the pinned commit has no resolver. A bad pin is fixed by a pin PR. **The wiring check** (`.tasks/cascade/wiring-check.sh`, a byte-identical copy of the `.github` file at the pin, with this repo's values in `.tasks/cascade/wiring-check.yaml`; `.github` README, "The wiring check") runs offline as `task cascade:wiring:check` and as the step "Verify the cascade wiring" of the `Lint` job (`bash .tasks/cascade/wiring-check.sh --pin-on-main` with `GH_TOKEN`; only SHA-pinned actions from other repos may come before it, every `run:` step goes after it). It refuses a change to the key-holding jobs' shape (their keys, step, inputs, permissions, Environment, a `runs-on` other than `ubuntu-latest`, the notify job's `needs`, `if`, `tag` and timeout, and the publish job's `needs`, `if` (with the gates-only clause), `gates-only` input and timeout), a key read or `cascade` Environment elsewhere, a `RELEASE_APP_PRIVATE_KEY` reader without `environment: release` or a `release` job that reads no key, `secrets` on a call into `.github`, a `release.yml` workflow `env` key other than `REGISTRY`, `IMAGE_NAME` and `CUE_VERSION`, any Actions cache in a workflow the config lists as publishing (`release.yml`, `publish-fixtures.yml`, `docs.yml`, `image-pr.yml`, `test-e2e.yml`, `module-image.yml`, `module-deps.yml`), a `.github` checkout other than `actions/checkout@<SHA>` with `repository`, `ref`, `path` and `persist-credentials: false`, a `Lint` workflow or job `env` name outside `CUE_*`, `OPM_*`, `REGISTRY` and `IMAGE_NAME`, and a second SHA or a missing pin comment; with `--pin-on-main` it also refuses a SHA not on `.github` `main` and a copy that differs from the file at the pin. A new workflow that publishes joins `publish-workflows` in the config. It guards against mistakes, not a deliberate edit: code-owner review is the guard against that, and the `main` ruleset does not require review while OPM is in beta (no approvals, workspace PR 29).
-- **Workflow token rules** (`openspec/specs/workflow-hardening`). Every workflow declares a top-level `permissions:` of `{}` or `contents: read`, and each job grants exactly what its steps use, so the repo's read-only default token changes nothing. The release App key (`RELEASE_APP_PRIVATE_KEY`) is read only by jobs that declare the `main`-only Environment `release`: `release.yml`'s `release-please` (`permissions: {}`) and `module-identity-advance`, and the `publish` jobs of `module-image.yml` and `module-deps.yml`; no other job declares `release`. No reusable call passes the key through `secrets:`: `module-image-pr` passes none, and `module-image.yml`'s `publish` job reads the Environment secret itself (the key is already in the Environment; only deleting the org secret is pending). A job that publishes, signs or attests never uses the Actions cache (no `type=gha`, `cache: false` on setup-go, the operator module's `module-*` release jobs included; `test-e2e.yml`, `image-pr.yml`, `module-image.yml` and `module-deps.yml` use no cache in any job, so the wiring check can list them whole), because a `main`-ref cascade run executes unreviewed code with main's cache scope. A `pull_request` job holding a write scope or `id-token: write` never runs for a `deps/cascade`, `release-please--*`, `module/*` (the operator module's bot heads) or `dependabot/*` head (a Dependabot `github-actions` bump runs a new upstream action release in the job itself, and `dependabot.yml` waits 7 days before proposing one): `image-pr.yml` skips them, and `test-e2e.yml` publishes its pre-release fixtures in a separate `publish-fixtures` job (the only one with `packages: write`) while the kind suite runs with read grants only. On those heads, as on a fork, the suite seeds a job-local registry from the tree (`task registry:start`, `task examples:seed`, `task registry:connect`) and sets `LOCAL_REGISTRY`, so the podinfo and redis specs still run, with no GHCR credential in the cluster. Every `go-task/setup-task` step installs an exact Task version (`3.54.0`), never `3.x`, and passes no `repo-token`. `test-e2e.yml` installs `kind` and the `flux` CLI from pinned release assets checked against an in-tree sha256 (`KIND_SHA256` in the workflow, `FLUX_CLI_SHA256_LINUX_AMD64` beside `FLUX_VERSION` in `.tasks/flux.yaml`; bump each digest with its version). `.github/CODEOWNERS` covers `.github/`, `.tasks/`, `Taskfile*.yml`, the release-please files, `.cascade-frozen`, `hack/`, `.opm-cli-version`, `.opm-docs-version` and `docs-kit.cue`.
-- **A release PR must pass `task deps:release-check`** (G1, workspace `RELEASING.md`, "Gates"). It runs as a step of the `Lint` job (`lint.yml`) on the operator's `release-please--*` PRs (not the operator module's, whose pins its own release gate checks) and fails when the release would ship a `go.mod` `replace`, a pseudo-version or untagged OPM Go pin, a `-0.dev.` pin in a published fixture's `cue.mod`, or a tracked `cue.mod/local-module.cue`. Keep the job name `Lint` unique: the ruleset on main is to require that check (workspace `RELEASING.md`, "Owner settings").
-- **Release tags are immutable** (root `AGENTS.md`, "Release Tags Are Immutable"; ADR-018). A release is a draft until the `publish-release` job of `release.yml` makes it public, after every asset is attached; `:vX.Y.Z` on GHCR is written only when absent. Before publish, recover a failed run with "Re-run failed jobs", never "Re-run all jobs" (that re-runs release-please, which skips every downstream job and strands the draft). After publish, release the next version.
-- **This repository releases two units.** The operator tags `vX.Y.Z` with the root `CHANGELOG.md`; the operator module tags `opm_operator-vX.Y.Z` with `modules/opm_operator/CHANGELOG.md`, on the 0.x rule while its path is the v0 major (a break raises the minor, everything else the patch). Each has its own release PR (`separate-pull-requests`); the operator package excludes `modules/opm_operator`. The module's release PR gains an identity-advance commit from `release.yml` (`opm module version set`, the only writer of `identity.Version`); wait for it before merging. A PR that changes the module must change nothing else, or its squash commit releases both units. One exception is forced: a CRD or RBAC change must regenerate `modules/opm_operator/zz_generated_*` in the same PR (`task operator-module:drift` in `test.yml`), so that commit lands in both changelogs and opens a module release PR, which the release gate holds until an operator release carrying that `config/` reaches the module. Tooling outside `modules/` (`hack/operator-module/**`, including `defaults.cue`, which shapes the module's `install.yaml`) belongs to the operator package: commit it as `ci` or `build`, never `fix` or `feat`, or it cuts an operator release and no module release. Module releases wait while `main`'s `config/` differs from the operator release the module deploys: the release gate (`task operator-module:release-check`, a `Lint` step on the module's release PR) refuses them until the image PR of an operator release carrying that `config/` merges. Only `release.yml`'s `module-publish` job publishes `opmodel.dev/modules/opm_operator`; every operator release then opens or updates the `module/operator-image` PR (`fix(deps)`, or `fix(deps)!` for a breaking operator release), which `module-image.yml` recovers by hand. The module's core and catalog move only through `module/deps` PRs: `module-deps.yml` runs `task -x deps:cascade:module` on the same `upstream-released` dispatch (dry while `CASCADE_DRY_RUN` is not `false`), and `task deps:cascade` never touches the module. Both bot branches are pushed by `hack/operator-module/bot-pr.sh` with the release App's token; it and the two `publish` jobs write plain files only and refuse a symlink, a hard link or a mode change. A module release is published with `make_latest=false` (enhancement 0021, "The operator's install artifact is a registry module on its own version train"). It lands at `ghcr.io/open-platform-model/opmodel.dev/modules/opm_operator` (CUE keeps the full module path under the mapped prefix; `publish.sh` takes every reference from `cue mod resolve`, `task operator-module:publish:test` checks them offline). A module draft stranded by a broken script at its tag is recovered by dispatching `release.yml` on `main` with `module_tag=opm_operator-vX.Y.Z`: only the module jobs run, with `main`'s scripts against the tag's tree; "Re-run failed jobs" would replay the tag's script. The dispatch runs in its own concurrency group per tag, so it never replaces a pending push run; still dispatch only when no Release run is queued or running.
-- **Operator versions on `docs/site/` pages sit inside release-please blocks.** Each passage that names the operator version goes between `<!-- x-release-please-start-version -->` and `<!-- x-release-please-end -->`, each marker on its own line outside code fences and at the content indentation of its enclosing block (three spaces inside an ordered-list item; a column-0 comment there ends the list). The page is in `release-please-config.json` `extra-files`, so the Release PR rewrites every version inside the blocks; a block names no other version, and `TestInstallPageNamesThisRelease` (`internal/version`) enforces both for `docs/site/start/install-the-operator.md`. A page names no core, catalog or cli version: it links where to find the current one (`/catalogs/opm/4/`, the releases page).
-- **Beta line.** From its first beta, a prerelease line (`opmodel.dev/core@v2`, library, cli, opm-operator) is on the path to GA. A breaking change is still allowed during beta, but only as a `!` in the PR title (`feat!:`), the only text the squash commit carries (`squash_merge_commit_message: BLANK`); the title is the CHANGELOG entry, and the migration note goes in the PR body, which that entry links. It advances the `-beta.N` counter and never moves the module path to a new major. Stable lines (`opmodel.dev/catalogs/opm@v4` and the module fleets) keep the normal SemVer rule: a break is a new major. A core beta break that would force a catalogs/opm major needs owner sign-off. GA drops the suffix: `prerelease: false` plus a visible carrier commit per package, in dependency order. An operator `feat!` that the released cli cannot drive merges only after the cli release that can drive it. No minor or major hop (such as a `release-as` of `1.1.0-beta.1`) happens during beta: every operator release stays `1.0.0-beta.N`, so the cli's MAJOR.MINOR operator-version ceiling never refuses. A forced version is a `release-as` key in `release-please-config.json`, set by a normal PR and removed by the next PR once that release is cut; a `Release-As:` footer never reaches `main` (until the owner applies the Merge settings of workspace `RELEASING.md` "Owner settings", merge by squash only, with `gh pr merge --squash --subject "<PR title> (#N)" --body ''`).
-- **Test fixtures live on the testing domain.** `test/fixtures/modules/*` declare `testing.opmodel.dev/modules/operator/<name>@v0`, carry an `identity/` package as the single source of path and version, and derive `metadata` from it — edit `identity/identity.cue`, never the metadata block. They publish through `opm module publish` (the cli's gated pipeline, installed in CI from a pinned release), not raw `cue mod publish`. **Never give a fixture an `opmodel.dev/*` path:** CUE routes by longest prefix, so a fixture there drags core and the catalogs onto whatever registry serves it, and the publish gates refuse a nested path under `opmodel.dev` outright. Bump a fixture with `opm module version set`, then `task examples:pin` (re-pins `moduleinstance.yaml`, the sibling modulepackage's `deps` and `config/samples`; the modulepackage's core and catalog pins follow the module, and `task examples:consumers` checks that in `test.yml`); tests read the version through `test/fixtures/fixtures.go`, never a literal. `test/fixtures/catalogs/*` hold catalog fixtures on `testing.opmodel.dev/catalogs/operator/<name>@v0` (today `provider`: the second, resolvable catalog the registry-backed platform specs subscribe or claim beside `opmodel.dev/catalogs/opm@v4`; and `backup`: the provider of opm's backup trait, which the `backup_provider` module fixture claims and `backup_consumer` demands, outside `task deps:cascade` because the claim names its build literally, a deliberate deviation from enhancement 0015 ("Every field of the claim is derived or stamped; the only authored fact is the module's catalog dependency version") that the fixture README explains), published by the same script through `opm catalog publish`; bump one with `opm catalog version set`, and tests read it through `fixtures.MustCatalog`. `hack/fixtures.sh` and `test/fixtures/fixtures.go` are byte-identical copies of the cli's; the workspace root `task fixtures:lint` checks that, so edit both.
-- **Every kernel call shares nothing.** The process has one library Kernel and no gate: every verb (module acquisition, instance synthesis, on-disk acquisition, the platform build, `Kernel.Render`) builds in a context of its own and is safe to call concurrently (library ADR-007). Concurrency is bounded by one render slot pool shared by both render paths, sized by `--max-concurrent-renders` (default 1, sized by memory: `docs/RENDERING.md`), and by the Platform reconciler building one generation at a time. A render leases the generated platform record so the Platform reconciler's prune skips the directory it reads. No lock or ordering gate is held across a kernel call: a render holds its platform lease and one render slot, and neither orders or excludes particular calls. Never hold a lock while calling the Kernel. `--render-timeout` (default 10m, `docs/RENDERING.md`) lets a render outlive its reconcile: `render.Slots.Run` returns `ErrRenderTimedOut` at the deadline while the render keeps its slot, so a caller copies its inputs before `Run`, never reads what the closure writes after `ErrRenderTimedOut`, and lets the closure own any files it reads (it removes them in its first `defer`).
-- **Registry precedence on the operator binary:** `resolveRegistry` (`cmd/main.go`) resolves `--registry` (default empty) > `OPM_REGISTRY` env > the built-in `defaultRegistry` (GHCR for `opmodel.dev` and `testing.opmodel.dev`, `registry.cue.works` for the rest), and logs the winning source at startup. Retarget the operator with `--registry` or `OPM_REGISTRY` on the Deployment; `CUE_REGISTRY` as pod env is still ignored (the binary overwrites it with the resolved value).
-
-## Docs Bundles
-
-`docs-kit.cue` declares one docs-kit bundle, `opm-operator` (docs-kit `docs/contracts.md` C6, C15, C18): the authored pages under `docs/site/` plus the resource reference that docs-kit's `crd` source generates from `config/crd/bases` and `config/samples`. `Docs / check` builds and lints it on every pull request, a push to `main` publishes it as `edge`, and every release publishes it from `release.yml`'s `publish-docs` job after `image-release` (`publish-release` does not wait for it), to `ghcr.io/open-platform-model/docs/opm-operator`. Preview with `task docs:bundle` (writes `out/opm-operator/`), or `opm-docs serve` once `.opm-docs-version` names a docs-kit release that has it. Recover a release with no bundle, or backfill one cut before adoption (from `v1.0.0-beta.4`), with `gh workflow run docs.yml --ref main -f mode=release -f tag=vX.Y.Z`. Fix a released page with `mode=revision` and `fix=<40-hex sha>`, a Markdown-only or comment-only commit on `main`; revisions are dispatched by hand (opm-operator#188). Once the site reads the bundle, an authored fix reaches a released version only by a release or a revision, and a CRD description fix only by a release. `reconciledBy` in `docs-kit.cue` names the controller of each kind: the `Named(...)` value of the builder that calls `For(&<Kind>{})`. The `reconciledBy` test (`internal/controller/docskit_reconciledby_test.go`, in `task dev:test`) keeps it true: it scans the controllers and fails naming the kind when a name differs. The docs-kit release is pinned twice, in `.opm-docs-version` and in every `publish.yml@vX.Y.Z` ref (a tag, never a SHA: docs-kit C5, C9); move both in one PR, and `task docs:pins:check` (a `Lint` step) refuses a mismatch.
-
-## Build And Dev Commands
-
-### Core Commands
-
-- `task` (default): list available tasks.
-- `task dev:manifests`: regen CRDs, RBAC, webhook manifests w/ `controller-gen`, then the operator module's data from them (`task operator-module:generate`; needs the `cue` CLI at `CUE_VERSION` in `.github/workflows/test.yml`, today `v0.17.1`, and warns on another version). Build, test and deploy tasks depend on the `config/` half only.
-- `task dev:generate`: regen DeepCopy methods.
-- `task docs:bundle`: build the `opm-operator` docs bundle of the work tree into `out/opm-operator/` (installs the pinned `opm-docs` into `.bin/` via `task tools:opm-docs`).
-- `task docs:bundle:check`: `task docs:pins:check`, then build and lint the bundle into a temporary directory.
-- `task docs:pins:check`: refuse a docs-kit `publish.yml` ref that names another release than `.opm-docs-version` (offline).
-- `task cascade:wiring:check`: check the release-cascade caller workflows against `.tasks/cascade/wiring-check.yaml` (offline, so the copy is not compared with `.github`; needs mikefarah `yq` v4). Run it after any edit under `.github/workflows/`; `GH_TOKEN=$(gh auth token) bash .tasks/cascade/wiring-check.sh --pin-on-main` runs the CI form.
-- `task cite-lint`: run the comment rule on Go and CUE files (no decision number, no lone enhancement id, no old entry path) with the tool commit CI uses; `cite-lint.yml` runs it on every pull request. The published fixtures under `test/fixtures/modules/` and `test/fixtures/catalogs/` are excluded in both places.
-- `task dev:fmt`: `go fmt ./...`.
-- `task dev:vet`: `go vet ./...`.
-- `task dev:lint:config`: verify the golangci-lint config against the schema committed under `.github/golangci-lint/` (no schema download), and that `.golangci-lint-version`, the schema, its checksum, `.custom-gcl.yml` and the `Lint` job agree (`.github/scripts/lint-config-check.sh`).
-- `task dev:lint:config:test`: scenario test of that check, one defect per scenario.
-- `task dev:lint`: run golangci-lint.
-- `task dev:lint:fix`: golangci-lint w/ auto-fixes.
-- `task operator:binary`: generation + fmt + vet + build `bin/manager`.
-- `task operator:run`: run controller locally against current kubeconfig.
-- `task dev:test`: unit + integration tests w/ envtest, writes `cover.out`.
-- `task kind:setup`: create Kind cluster if missing.
-- `task dev:e2e`: e2e tests against Kind, then cleanup.
-- `task operator:installer`: render `dist/install.yaml` from `config/default`.
-- `task operator-module:generate`: regenerate the operator module's CRD and RBAC data from `config/`; `task dev:manifests` runs it.
-- `task operator-module:drift`: fail when `config/` is stale against `task dev:manifests`, then when the module's generated data are stale against `config/`; `REF=<tag>` checks the data against that tag's `config/`.
-- `task operator-module:release-check VERSION=<X.Y.Z>`: the module's release gate (needs `GH_REPO`, `gh`, `docker buildx` and the operator tags); `task operator-module:release-check:test` runs its offline test, and `task operator-module:publish:test` that of the module publish script.
-- The operator module (`modules/opm_operator`) names one operator release by version, tag and digest in `operator/operator.cue`, never below `hack/operator-module/min-operator-version` (the first operator that refuses to reconcile its own instance); the render test refuses an older one. Its core and catalog pins move only through `task -x deps:cascade:module` and its `module/deps` PR, never through `task deps:cascade`; a pin that changes the rendered Deployment selector fails the render test. Commits under `modules/` release the module, not the operator (the operator package excludes the directory): use `feat(module)`, `fix(module)` or `fix(deps)` for a change the module's users receive, `build`, `test` or `docs` for one they do not.
-- `task docker:build IMG=<image>` / `task docker:push IMG=<image>`: build/publish images.
-- `task operator:controller:install IMG=<image>` / `task operator:controller:uninstall`: install/remove controller from cluster.
-
-### Single Test Commands
-
-- No single-test task; use `go test` directly.
-- Package-level: `go test ./internal/controller`.
-- Single entrypoint: `go test ./internal/controller -run TestControllers`.
-- Envtest binaries are installed as a dependency of `task dev:test`. To provision standalone, run `task dev:test` once (or trigger via any test task).
-- Reuse envtest binaries:
-  `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers`.
-- Focus Ginkgo suite:
-  `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers -ginkgo.focus="Release Controller"`.
-- Focus single spec:
-  `KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.35.0 --bin-dir ./bin -p path)" go test ./internal/controller -run TestControllers -ginkgo.focus="should successfully reconcile the resource"`.
-- E2E only: `go test -tags=e2e ./test/e2e -v -ginkgo.v`.
-- Single e2e:
-  `KIND_CLUSTER=opm-operator-test-e2e go test -tags=e2e ./test/e2e -run TestE2E -ginkgo.focus="should run successfully" -v -ginkgo.v`.
-- `task dev:test` excludes `/test/e2e`; no Kind tests in default unit path.
-
-## Coding Guidelines
-
-Behavioral guidelines to reduce common LLM coding mistakes.
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-### 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-### 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
+## Layout
 
 ```text
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
+adr/            Architecture Decision Records
+api/            CRD types (v1alpha1), validation markers, generated DeepCopy
+cmd/            manager entrypoint and controller registration
+config/         Kustomize: generated CRDs and RBAC, samples, manager, network-policy, prometheus
+docs/           rendering note, design/ notes, site/ pages the docs bundle ships
+hack/           helper scripts and operator-module/ tooling
+internal/       apply, controller, inventory, metrics, moduleacquire, platform, reconcile, render, shrink, source, status, version
+modules/        opm_operator/, the operator's own OPM module (its own release unit)
+openspec/       OpenSpec config, specs, changes
+references/     detail files that CONTEXT.md routes to
+test/           e2e (build tag e2e), integration, fixtures, rbac, collector, utils
+.tasks/         Taskfile includes (dev, operator, operator-module, docker, kind, registry, flux, release, module, examples, deps, cascade, tools)
+.github/        workflows, scripts, golangci-lint schema, CODEOWNERS
 ```
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+## Commands
 
-## Working Style for Agents
+| Command | What it does | When |
+| --- | --- | --- |
+| `task` | List tasks | Orientation |
+| `task dev:manifests` | CRDs, RBAC and webhook manifests with controller-gen, then the operator module's data (needs `cue` at the `CUE_VERSION` that CI sets) | After API markers, type files or an RBAC marker changes |
+| `task dev:generate` | DeepCopy methods | Same |
+| `task dev:fmt dev:vet dev:test` | Format, vet, unit and integration tests with envtest | Minimum after a Go change in `cmd/` or `internal/` |
+| `task dev:lint` / `dev:lint:fix` | golangci-lint | Before you finish a non-trivial change |
+| `task dev:lint:config` | Check the lint config, schema and version agree | After a linter version move |
+| `task docs:bundle:check` | Pins check, then build and lint the docs bundle | After `docs/site/`, `api/v1alpha1`, `config/samples`, `docs-kit.cue` or a docs-kit pin |
+| `task docs:bundle` | Build the bundle into `out/opm-operator/` | Preview |
+| `task cascade:wiring:check` | Offline check of the cascade workflows | After any edit under `.github/workflows/` |
+| `task cite-lint` | Comment rule on Go and CUE files | Before a PR that adds comments |
+| `task operator:binary` / `operator:run` | Build `bin/manager` / run against the current kubeconfig | Local run |
+| `task operator:installer` | Render the install manifest into `dist/` from `config/default` | After manifest or RBAC changes |
+| `task dev:e2e` | e2e on Kind, then cleanup | Needs Kind; say so when skipped |
+| `task operator-module:drift` | Fail on stale `config/` or module data; `REF=<tag>` checks the data against that tag's `config/` | After a CRD or RBAC change |
+| `task operator-module:generate` | Regenerate the module's CRD and RBAC data from `config/` (`dev:manifests` runs it) | After a CRD or RBAC change |
+| `task operator-module:release-check VERSION=<X.Y.Z>` | The module's release gate. Needs `GH_REPO`, `gh`, `docker buildx` and the operator tags | On the module's release PR |
+| `task operator-module:release-check:test` / `operator-module:publish:test` | Offline tests of the release gate / the module publish script | After editing those scripts |
+| `task kind:setup` | Create the Kind cluster if missing | Before e2e by hand |
+| `task docker:build IMG=<image>` / `docker:push IMG=<image>` | Build / publish the manager image | Image work |
+| `task operator:controller:install IMG=<image>` / `operator:controller:uninstall` | Install / remove the controller on the current cluster | Manual cluster test |
+| `task examples:pin` / `examples:check` | Re-pin fixture consumers / run the publish gates | After a fixture bump |
+| `task -x deps:cascade` | Move upstream pins in the working tree | Cascade PRs |
 
-- `api/v1alpha1` edits → `task dev:manifests dev:generate docs:bundle:check`.
-- `config/samples` or controller registration edits → `task docs:bundle:check`; `test/integration/crdvalidation` proves every sample is admitted by the CRDs. A renamed controller (`Named(...)`) or a new kind also needs its `reconciledBy` entry in `docs-kit.cue`; `task dev:test` fails until it has one.
-- Go changes `cmd/`/`internal/` → `task dev:fmt dev:vet dev:test` minimum.
-- Non-trivial changes → `task dev:lint` or `task dev:lint:fix` before finishing.
-- Manifests/RBAC changed → consider `task operator:installer` for alignment.
-- `Taskfile.yml` is authoritative. Do not add a new `Makefile`; extend the appropriate file in `.tasks/` instead.
+Go version: `go.mod`. Dependencies: controller-runtime, Kubebuilder APIs, Flux source types, Ginkgo v2, Gomega. Envtest binaries install into `./bin` via `.tasks/`. `task dev:lint*` needs the network.
 
-## Go Version And Tooling
+## Style
 
-- Go `1.25.3`.
-- controller-runtime, Kubebuilder APIs, Flux source types, Ginkgo v2, Gomega.
-- `golangci-lint` v2 w/ `gofmt` + `goimports` formatters.
-- Custom `logcheck` plugin from `.custom-gcl.yml`, enforces K8s logging conventions.
-- Envtest binaries installed to `./bin` via Taskfile (`.tasks/tools.yaml`).
+- `gofmt` and `goimports` own layout and import grouping (stdlib, third-party, local). Aliases only for clarity or convention: `ctrl`, `logf`, `metav1`, versioned API aliases.
+- Exported `PascalCase`, unexported `camelCase`, short receivers (`r` for reconcilers), lowercase package names.
+- Follow Kubernetes API patterns: `Spec`, `Status`, `Conditions`, `ObservedGeneration`. Conditions are `[]metav1.Condition`. Use `metav1.Time` and `metav1.Duration`. JSON fields are explicit lowerCamelCase. Prefer concrete structs over `map[string]any`. Keep `omitempty` and `omitzero` consistent.
+- Reconcile is idempotent and safe to retry. Prefer controller-runtime helpers. Fetch fresh objects before mutating changed state. Watch with `.For(...)` and `.Owns(...)`. Move complex logic to `internal/*`. Return explicit `ctrl.Result{}` in non-trivial branches. Keep RBAC markers accurate.
+- Wrap errors with `%w` and lowercase messages. No silent swallowing. Sentinel errors only when callers branch on them.
+- Logs are structured with balanced key/value pairs, a capitalized message, no trailing period, and identifying keys (name, namespace).
 
-### Moving the golangci-lint version
-
-`.golangci-lint-version` is the only place that names the linter version. `Taskfile.yml` and `Makefile` read it, and `.custom-gcl.yml` repeats it because `golangci-lint custom` reads only that file; `task dev:lint:config` refuses a tree where the two differ. No workflow, task file or `Makefile` line runs `golangci-lint config verify` on its own: without `--schema` it downloads the schema from golangci-lint.run on every run, which failed the cli's required `Lint` job twice on 2026-10-08.
-
-- A patch move (`v2.8.0` to `v2.8.1`): edit `.golangci-lint-version` and the `version:` line of `.custom-gcl.yml`. The schema is per minor line and stays.
-- A minor or major move: edit both files, then replace the schema. It is `jsonschema/golangci.next.jsonschema.json` of the Go module `github.com/golangci/golangci-lint/v2` at the new version, which the Go checksum database verifies. Do not take `jsonschema/golangci.jsonschema.json`: the linter project updates that file only after a release, so at a release tag it still holds the line before. `dir=$(go mod download -json github.com/golangci/golangci-lint/v2@vX.Y.Z | jq -r .Dir)`, then copy `$dir/jsonschema/golangci.next.jsonschema.json` to `.github/golangci-lint/golangci.vX.Y.jsonschema.json`, make it writable (`chmod 644`), remove the old file and rewrite the checksum (`sha256sum golangci.vX.Y.jsonschema.json > SHA256SUMS` in that directory). Say in the PR body where the file came from, so the reviewer can compare the checksum.
-- `task dev:lint:config dev:lint:config:test dev:lint` must pass. The scenario `value-of-this-line` in `.github/scripts/lint-config-check-test.sh` proves that the schema is not the one of the line before; on a minor move, change it to a value the new line added. The check uses the hidden `--schema` flag of `golangci-lint config verify`; if a release drops the flag, the check fails on the bump PR and needs a new design, never a dropped check.
-- Installing the linter still needs the network (the Go module proxy and the plugin build), and `task dev:lint*` reinstalls it on every run. Only the configuration check is offline: with the linter in `bin/`, `GOLANGCI_LINT=bin/golangci-lint bash .github/scripts/lint-config-check.sh` runs without a network.
-
-## Formatting And Imports
-
-- `gofmt`/`goimports` own layout, spacing, import grouping.
-- Standard Go formatting w/ tabs; no manual vertical alignment.
-- Import groups: stdlib → third-party → local module.
-- Preserve blank lines between import groups.
-- Aliases only for clarity or convention: `ctrl`, `logf`, `metav1`, versioned API aliases.
-- No unused helpers, no speculative abstractions.
-
-## Enhancement References In Comments
-
-Default is none: a comment says what the code does and why, in its own words.
-
-- In any text (proposal, design, specs, comments), name an enhancement only by its id beside a reason in words, never alone, never a decision number.
-- When a rationale genuinely lives in an enhancement, name it **once at the symbol**, as an enhancement id beside the reason in words: `(enhancement NNNN)` after the sentence that gives the reason, or `(enhancements NNNN and MMMM)` for two.
-- Never an id alone, never a decision number (`NNNN:Dn`, `NNNN Dn`). Say the decision in words. A bare `Dn` names nothing, because decision numbers restart per enhancement.
-- To read an enhancement, run `openspec show <id>-<slug> --store opm-enhancements`. The store is the `references:` entry of `openspec/config.yaml`. If OpenSpec warns that the store `opm-enhancements` is not registered, report the warning and go on; the human runs `task enhancements:register`.
-- A change that delivers a line of an enhancement's `tasks.md` adds `## Enhancement` to its proposal, with one line `Delivers NNNN, task X.Y.` per task. Otherwise the section says `None.` Name the delivered line in the PR body; after the repo PR merges, a PR on `enhancements` ticks that line.
-- Never a section, slice, phase, task or design-doc-local number (`§8.1`, `slice C2`, `task 4.2`, `design LD3`). They are not stable identifiers.
-- Never in scaffold templates, generated files, fixtures a user copies, or CLI output strings. Those reach people who have no access to the enhancements repo.
-- No `Was:` rename history. `git log` owns it.
-- In CUE files the reference goes in a `// WHY` block separated from the doc comment by one blank line, never in the doc comment itself: `cue lsp` hover, `Value.Doc()` and `cue def` replay a doc comment verbatim.
-
-## Naming And API Design
-
-- Exported: `PascalCase`; unexported: `camelCase`.
-- Short receiver names; reconcilers use `r`.
-- Package names: lowercase, concise.
-- Follow K8s patterns: `Spec`, `Status`, `Conditions`, `ObservedGeneration`.
-- JSON fields: explicit lowerCamelCase.
-- Concrete structs over `map[string]any` in APIs/reconciliation.
-- Reuse K8s/Flux reference types where repo already does.
-- Status conditions: `[]metav1.Condition`, no custom condition structs.
-- API timestamps/durations: K8s types (`metav1.Time`, `metav1.Duration`).
-- Maintain `omitempty`/`omitzero` tags consistent w/ existing style.
-
-## Controller And Reconcile Style
-
-- Reconciliation: idempotent, safe to retry.
-- Prefer controller-runtime helpers over ad hoc K8s client logic.
-- Fetch fresh objects before mutating concurrently-changed state.
-- Watches via builder methods: `.For(...)`, `.Owns(...)`.
-- `Reconcile` readable; complex logic → `internal/*` packages.
-- Explicit `ctrl.Result{}` in non-trivial branches.
-- RBAC markers accurate when reconciler touches new resources.
-
-## Error Handling And Logging
-
-- Wrap errors w/ context: `%w`, e.g. `fmt.Errorf("failed to render bundle: %w", err)`.
-- Error messages lowercase unless proper noun/identifier.
-- No silent error swallowing; return or log best-effort failures clearly.
-- Sentinel errors only when callers branch on them.
-- Structured controller-runtime logging, balanced key/value pairs.
-- K8s log style: capitalized message, no trailing period, meaningful action wording.
-- Include identifying keys (name, namespace) in reconciliation logs.
-
-## Testing Style
-
-Full guide: [`docs/TESTING.md`](docs/TESTING.md). Key rules:
-
-- Three tiers: **unit** (`internal/*/`), **integration** (`test/integration/`), **e2e** (`test/e2e/`).
-- Default to the lightest tier that validates the behavior.
-- Unit: single-package logic. Integration: cross-package behavior against real API server (envtest). E2E: deployed controller on Kind cluster.
-- `task dev:test` runs unit + integration. `task dev:e2e` runs e2e (requires Kind).
-- `test/integration/operatormodule` renders the operator module (`modules/opm_operator`) against a platform generated from its own catalog pin, so it needs core and the catalog from `CUE_REGISTRY` (GHCR under `task dev:test`), the `cue` CLI and the kustomize binary `task dev:test` passes as `KUSTOMIZE`; without them its specs skip, and under `OPM_TEST_REGISTRY_FORCE=1` (PR CI) they fail. Its minimum-operator-version spec needs none of them.
-- E2E needs Kind; may install CertManager unless `CERT_MANAGER_INSTALL_SKIP=true`.
-- Ginkgo v2 + Gomega. Descriptive `Describe`/`Context`/`It` text, `-ginkgo.focus`-friendly.
-- `Eventually` for async K8s behavior, no sleeps.
-- `Expect(err).NotTo(HaveOccurred())` or `Expect(...).To(Succeed())`.
-- Package-local helpers for repeated assertions; keep setup readable.
-
-## Lint Expectations
-
-- Enabled: `errcheck`, `ginkgolinter`, `gocyclo`, `govet`, `misspell`, `modernize`, `revive`, `staticcheck`, `unused`, others.
-- `gofmt`/`goimports` enforced via golangci-lint.
-- `logcheck` validates structured logging + balanced key/value params.
-- `lll`/`dupl` relaxed in `api/*`/`internal/*`; don't rely on exclusions unnecessarily.
-- Idiomatic Ginkgo code; `ginkgolinter` flags non-idiomatic patterns.
-
-## Verification Checklist For Agents
-
-- `task dev:manifests dev:generate` after API/marker changes.
-- `task dev:fmt dev:vet dev:test` after meaningful Go changes.
-- `task dev:lint` or `task dev:lint:fix` for non-trivial edits.
-- `task docs:bundle:check` after edits to `docs/site/`, `api/v1alpha1`, `config/samples`, `docs-kit.cue` or a docs-kit pin.
-- No manual edits to generated files/scaffold markers.
-- Note if e2e skipped due to missing Kind/cluster.
+@CONTEXT.md

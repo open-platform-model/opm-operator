@@ -14,8 +14,8 @@ context: |
 
   ### II. Separation of Concerns
   The controller MUST maintain clear internal boundaries:
-  - `controllers/`: Reconcile orchestration and event handling.
-  - `internal/synthesis/`: CUE release package generation for module resolution.
+  - `internal/controller/`: Reconcile orchestration and event handling.
+  - `internal/moduleacquire/`: Module acquisition from the OCI registry, through the library Kernel.
   - `internal/source/`: Flux artifact interaction (retained for BundleRelease).
   - `internal/render/`: CUE evaluation and object generation (via shared CLI packages).
   - `internal/apply/`: Server-side apply and prune execution.

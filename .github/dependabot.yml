@@ -26,7 +26,7 @@ updates:
       # titled. Retitle it fix(deps) only for a security fix the image must ship
       # (workspace RELEASING.md, "Dependabot PRs"); until the owner applies the
       # PR_TITLE squash setting, merge that retitled PR with
-      # gh pr merge --squash --subject "<PR title> (#N)" --body '' (root AGENTS.md,
+      # gh pr merge --squash --subject "<PR title> (#N)" --body '' (references/release-units.md,
       # "Beta line"), or the squash keeps the build(deps) commit subject. deps would
       # release: it is a visible section in release-please-config.json.
       prefix: "build"

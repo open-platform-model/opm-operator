@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The workspace rule "Release Tags Are Immutable" (root `AGENTS.md`; enhancement 0021 ("Release tags are immutable")) says no
+The workspace rule "Tags are immutable" (workspace `references/releases.md`; enhancement 0021 ("Release tags are immutable")) says no
 git tag is ever moved, deleted or re-created, by anyone, and a version-named registry tag such as
 `:v1.0.0-beta.3` always names the content first pushed under it. A wrong or broken release is fixed
 by releasing the next version. The documentation site pins a ref per site version, so a moved tag
